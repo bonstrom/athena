@@ -1,4 +1,13 @@
-import { Box, Button, Divider } from "@mui/material";
+import {
+  Box,
+  Button,
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+} from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useUiStore } from "../store/UiStore";
 import { useTopicStore } from "../store/TopicStore";
@@ -7,13 +16,14 @@ import { TopicList } from "./TopicList";
 import { BuildVersion } from "./BuildVersion";
 import { SidebarHeader } from "./SiderbarHeader";
 import { GlobalSearch } from "./GlobalSearch";
-import { JSX } from "react";
+import { JSX, useState } from "react";
 
 export const Sidebar = (): JSX.Element => {
   const navigate = useNavigate();
   const logout = useLogout();
   const { isMobile, closeDrawer } = useUiStore();
   const { createTopic } = useTopicStore();
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
 
   const handleCreate = async (): Promise<void> => {
     const topic = await createTopic();
@@ -73,7 +83,7 @@ export const Sidebar = (): JSX.Element => {
           variant="outlined"
           fullWidth
           onClick={(): void => {
-            logout();
+            setConfirmLogoutOpen(true);
           }}
           sx={{ mb: 1 }}>
           Logout
@@ -83,6 +93,28 @@ export const Sidebar = (): JSX.Element => {
           <BuildVersion />
         </Box>
       </Box>
+
+      <Dialog
+        open={confirmLogoutOpen}
+        onClose={(): void => setConfirmLogoutOpen(false)}>
+        <DialogTitle>Confirm Logout</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to log out? You will need to enter your API key again to return.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={(): void => setConfirmLogoutOpen(false)}>Cancel</Button>
+          <Button
+            onClick={(): void => {
+              setConfirmLogoutOpen(false);
+              logout();
+            }}
+            color="error">
+            Logout
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
