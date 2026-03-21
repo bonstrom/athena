@@ -77,7 +77,10 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
               fullWidth
             />
 
-            <IconButton onClick={(): void => { void save(); }}>
+            <IconButton
+              onClick={(): void => {
+                void save();
+              }}>
               <SaveIcon />
             </IconButton>
 
@@ -90,14 +93,19 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             display="flex"
             alignItems="center"
             width="100%"
-            px={1}>
+            py={0.5}>
             <ListItemButton
               selected={topic.id === topicId}
               onClick={(): void => {
                 if (isMobile) closeDrawer();
                 void navigate(`/chat/${topic.id}`);
               }}
-              sx={{ flexGrow: 1, minHeight: 48 }}>
+              sx={{
+                flexGrow: 1,
+                minHeight: 40,
+                borderRadius: 2,
+                mx: 1,
+              }}>
               <ListItemText
                 primary={topic.name || topic.id}
                 slotProps={{
@@ -177,7 +185,9 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
           <Button onClick={(): void => setConfirmOpen(false)}>Cancel</Button>
 
           <Button
-            onClick={(): void => { void handleDelete(); }}
+            onClick={(): void => {
+              void handleDelete();
+            }}
             color="error">
             Delete
           </Button>

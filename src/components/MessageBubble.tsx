@@ -1,4 +1,17 @@
-import { Box, IconButton, Paper, Tooltip, Typography } from "@mui/material";
+import {
+  Box,
+  IconButton,
+  Paper,
+  Tooltip,
+  Typography,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+} from "@mui/material";
+import { useState } from "react";
 import { useAuthStore } from "../store/AuthStore";
 import MarkdownWithCode from "./MarkdownWithCode";
 import TypingIndicator from "./TypingIndicator";
@@ -19,6 +32,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const { updateMessageContext, deleteMessage, sendMessage, regenerateResponse } = useChatStore();
   const { addNotification } = useNotificationStore();
   const { userName } = useAuthStore();
+  const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
 
   const isAssistant = message.type === "assistant";
 
@@ -32,9 +46,18 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
     }
   };
 
-  const handleDelete = async (): Promise<void> => {
+  const handleDeleteClick = (): void => {
+    setOpenDeleteDialog(true);
+  };
+
+  const handleCloseDeleteDialog = (): void => {
+    setOpenDeleteDialog(false);
+  };
+
+  const handleConfirmDelete = async (): Promise<void> => {
     try {
       await deleteMessage(message.id);
+      setOpenDeleteDialog(false);
     } catch (err) {
       console.error("Failed to delete message:", err);
       const message = err instanceof Error ? err.message : String(err);
@@ -96,9 +119,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
             <Tooltip title="Delete message">
               <IconButton
                 size="small"
-                onClick={(): void => {
-                  void handleDelete();
-                }}>
+                onClick={handleDeleteClick}>
                 <DeleteIcon />
               </IconButton>
             </Tooltip>
@@ -171,6 +192,28 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           </Box>
         )}
       </Box>
+
+      <Dialog
+        open={openDeleteDialog}
+        onClose={handleCloseDeleteDialog}>
+        <DialogTitle>Delete Message</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete this message? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteDialog}>Cancel</Button>
+          <Button
+            onClick={(): void => {
+              void handleConfirmDelete();
+            }}
+            color="error"
+            variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   );
 };
