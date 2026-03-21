@@ -6,6 +6,7 @@ import { useLogout } from "../store/AuthStore";
 import { TopicList } from "./TopicList";
 import { BuildVersion } from "./BuildVersion";
 import { SidebarHeader } from "./SiderbarHeader";
+import { GlobalSearch } from "./GlobalSearch";
 import { JSX } from "react";
 
 export const Sidebar = (): JSX.Element => {
@@ -29,9 +30,11 @@ export const Sidebar = (): JSX.Element => {
       height="100%">
       <SidebarHeader />
 
+      <GlobalSearch />
+
       <Box
         px={2}
-        pt={1}>
+        pt={0}>
         <Button
           variant="contained"
           fullWidth
