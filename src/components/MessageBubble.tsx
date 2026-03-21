@@ -159,91 +159,163 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 
           <Box
             display="flex"
-            alignItems="center">
-            <Tooltip title={copied ? "Copied!" : "Copy message"}>
-              <IconButton
-                size="small"
-                onClick={(): void => {
-                  void handleCopy();
-                }}
-                sx={{
-                  color: (theme): string =>
-                    theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
-                  "&:hover": {
-                    bgcolor: (theme): string =>
-                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
-                  },
-                }}>
-                <Box
-                  position="relative"
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="center"
-                  sx={{ width: 20, height: 20 }}>
-                  <Zoom
-                    in={!copied}
-                    timeout={200}
-                    unmountOnExit>
-                    <ContentCopyIcon
-                      fontSize="small"
-                      sx={{ position: "absolute" }}
-                    />
-                  </Zoom>
-                  <Zoom
-                    in={copied}
-                    timeout={200}
-                    unmountOnExit>
-                    <CheckIcon
-                      fontSize="small"
-                      color="success"
-                      sx={{ position: "absolute" }}
-                    />
-                  </Zoom>
-                </Box>
-              </IconButton>
-            </Tooltip>
+            alignItems="center"
+            gap={1}>
+            {/* Group 1: Regenerate and Delete */}
+            <Box
+              display="flex"
+              alignItems="center"
+              gap={0.5}
+              mr={2}>
+              {isAssistant && message.content !== "" && !message.failed && (
+                <Tooltip title="Regenerate response">
+                  <IconButton
+                    size="small"
+                    onClick={(): void => {
+                      void regenerateResponse(message.id);
+                    }}
+                    sx={{
+                      color: (theme): string =>
+                        theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                      "&:hover": {
+                        bgcolor: (theme): string =>
+                          theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+                      },
+                    }}>
+                    <Box
+                      position="relative"
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      sx={{ width: 20, height: 20 }}>
+                      <Zoom
+                        in
+                        timeout={200}>
+                        <RefreshIcon fontSize="small" />
+                      </Zoom>
+                    </Box>
+                  </IconButton>
+                </Tooltip>
+              )}
 
-            <Tooltip title={message.includeInContext ? "Unpin from context" : "Pin to context"}>
-              <IconButton
-                size="small"
-                onClick={(): void => {
-                  void togglePin();
-                }}
-                sx={{
-                  color: (theme): string =>
-                    theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
-                  "&:hover": {
-                    bgcolor: (theme): string =>
-                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
-                  },
-                }}>
-                <Box
-                  position="relative"
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="center"
-                  sx={{ width: 20, height: 20 }}>
-                  <Zoom
-                    in={!message.includeInContext}
-                    timeout={200}
-                    unmountOnExit>
-                    <PushPinOutlinedIcon
-                      fontSize="small"
-                      sx={{ position: "absolute" }}
-                    />
-                  </Zoom>
-                  <Zoom
-                    in={message.includeInContext}
-                    timeout={200}
-                    unmountOnExit>
-                    <PushPinIcon
-                      fontSize="small"
-                      sx={{ position: "absolute" }}
-                    />
-                  </Zoom>
-                </Box>
-              </IconButton>
-            </Tooltip>
+              <Tooltip title="Delete message">
+                <IconButton
+                  size="small"
+                  onClick={handleDeleteClick}
+                  sx={{
+                    color: (theme): string =>
+                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                    "&:hover": {
+                      bgcolor: (theme): string =>
+                        theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+                    },
+                  }}>
+                  <Box
+                    position="relative"
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    sx={{ width: 20, height: 20 }}>
+                    <Zoom
+                      in
+                      timeout={200}>
+                      <DeleteIcon fontSize="small" />
+                    </Zoom>
+                  </Box>
+                </IconButton>
+              </Tooltip>
+            </Box>
+
+            {/* Group 2: Copy and Pin */}
+            <Box
+              display="flex"
+              alignItems="center"
+              gap={0.5}>
+              <Tooltip title={copied ? "Copied!" : "Copy message"}>
+                <IconButton
+                  size="small"
+                  onClick={(): void => {
+                    void handleCopy();
+                  }}
+                  sx={{
+                    color: (theme): string =>
+                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                    "&:hover": {
+                      bgcolor: (theme): string =>
+                        theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+                    },
+                  }}>
+                  <Box
+                    position="relative"
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    sx={{ width: 20, height: 20 }}>
+                    <Zoom
+                      in={!copied}
+                      timeout={200}
+                      unmountOnExit>
+                      <ContentCopyIcon
+                        fontSize="small"
+                        sx={{ position: "absolute" }}
+                      />
+                    </Zoom>
+                    <Zoom
+                      in={copied}
+                      timeout={200}
+                      unmountOnExit>
+                      <CheckIcon
+                        fontSize="small"
+                        color="success"
+                        sx={{ position: "absolute" }}
+                      />
+                    </Zoom>
+                  </Box>
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title={message.includeInContext ? "Unpin from context" : "Pin to context"}>
+                <IconButton
+                  size="small"
+                  onClick={(): void => {
+                    void togglePin();
+                  }}
+                  sx={{
+                    color: (theme): string =>
+                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                    "&:hover": {
+                      bgcolor: (theme): string =>
+                        theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+                    },
+                  }}>
+                  <Box
+                    position="relative"
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    sx={{ width: 20, height: 20 }}>
+                    <Zoom
+                      in={!message.includeInContext}
+                      timeout={200}
+                      unmountOnExit>
+                      <PushPinOutlinedIcon
+                        fontSize="small"
+                        sx={{ position: "absolute" }}
+                      />
+                    </Zoom>
+                    <Zoom
+                      in={message.includeInContext}
+                      timeout={200}
+                      unmountOnExit>
+                      <PushPinIcon
+                        fontSize="small"
+                        sx={{ position: "absolute" }}
+                      />
+                    </Zoom>
+                  </Box>
+                </IconButton>
+              </Tooltip>
+            </Box>
           </Box>
         </Box>
 
@@ -277,70 +349,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
             </IconButton>
           </Tooltip>
         )}
-
-        <Box
-          display="flex"
-          justifyContent="flex-end"
-          mt={-1}
-          gap={0.5}>
-          {isAssistant && message.content !== "" && !message.failed && (
-            <Tooltip title="Regenerate response">
-              <IconButton
-                size="small"
-                onClick={(): void => {
-                  void regenerateResponse(message.id);
-                }}
-                sx={{
-                  color: (theme): string =>
-                    theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
-                  "&:hover": {
-                    bgcolor: (theme): string =>
-                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
-                  },
-                }}>
-                <Box
-                  position="relative"
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="center"
-                  sx={{ width: 20, height: 20 }}>
-                  <Zoom
-                    in
-                    timeout={200}>
-                    <RefreshIcon fontSize="small" />
-                  </Zoom>
-                </Box>
-              </IconButton>
-            </Tooltip>
-          )}
-
-          <Tooltip title="Delete message">
-            <IconButton
-              size="small"
-              onClick={handleDeleteClick}
-              sx={{
-                color: (theme): string =>
-                  theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
-                "&:hover": {
-                  bgcolor: (theme): string =>
-                    theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
-                },
-              }}>
-              <Box
-                position="relative"
-                display="flex"
-                alignItems="center"
-                justifyContent="center"
-                sx={{ width: 20, height: 20 }}>
-                <Zoom
-                  in
-                  timeout={200}>
-                  <DeleteIcon fontSize="small" />
-                </Zoom>
-              </Box>
-            </IconButton>
-          </Tooltip>
-        </Box>
       </Box>
 
       <Dialog

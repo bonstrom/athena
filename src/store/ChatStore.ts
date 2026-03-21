@@ -190,7 +190,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const existing = await athenaDb.messages.get(messageId);
       if (!existing) throw new Error("Original message not found for retry.");
       userMessage = existing;
-      await get().updateMessage(messageId, { failed: true });
+      await get().updateMessage(messageId, { failed: false });
     } else {
       userMessage = {
         id: crypto.randomUUID(),
@@ -307,7 +307,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const existing = await athenaDb.messages.get(messageId);
       if (!existing) throw new Error("Original message not found for retry.");
       userMessage = existing;
-      await get().updateMessage(messageId, { failed: true });
+      await get().updateMessage(messageId, { failed: false });
     } else {
       userMessage = {
         id: crypto.randomUUID(),

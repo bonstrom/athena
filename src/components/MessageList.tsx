@@ -69,7 +69,8 @@ const Pane: React.FC<{ messages: Message[] }> = ({ messages }) => {
       {messages.map((m) => (
         <ListItem
           key={m.id}
-          disableGutters>
+          disableGutters
+          sx={{ px: 2 }}>
           <MessageBubble
             message={
               m.type === "aiNote" && !showAllMessages ? { ...m, content: "⚠️ Assistant stored a hidden note here." } : m
