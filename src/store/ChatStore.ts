@@ -29,6 +29,9 @@ interface ChatStore {
   setSelectedModel: (model: ChatModel) => void;
   updateMessageContext: (messageId: string, include: boolean) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
+  regenerateResponse: (assistantMessageId: string) => Promise<void>;
+  temperature: number;
+  setTemperature: (temp: number) => void;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -39,7 +42,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   visibleMessageCount: 10,
   sending: false,
   selectedModel: getDefaultModel(),
+  temperature: 1.0,
 
+  setTemperature: (temp): void => set({ temperature: temp }),
   setSending: (value): void => set({ sending: value }),
 
   increaseVisibleMessageCount: (): void => set((state) => ({ visibleMessageCount: state.visibleMessageCount + 10 })),
@@ -393,6 +398,28 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     } finally {
       set({ sending: false });
     }
+  },
+  regenerateResponse: async (assistantId): Promise<void> => {
+    const { messagesByTopic, currentTopicId } = get();
+    if (!currentTopicId) return;
+
+    const messages = messagesByTopic[currentTopicId];
+    const assistantMsgIndex = messages.findIndex((m) => m.id === assistantId);
+    if (assistantMsgIndex === -1) return;
+
+    // Find the user message that was sent before this assistant message
+    const userMsg = messages
+      .slice(0, assistantMsgIndex)
+      .reverse()
+      .find((m) => m.type === "user");
+
+    if (!userMsg) return;
+
+    // Delete the existing assistant message
+    await get().deleteMessage(assistantId);
+
+    // Call sendMessage with the user message content and ID as retry
+    await get().sendMessage(userMsg.content, currentTopicId, userMsg.id);
   },
 }));
 

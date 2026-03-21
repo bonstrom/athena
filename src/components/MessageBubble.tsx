@@ -16,7 +16,7 @@ interface MessageBubbleProps {
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
-  const { updateMessageContext, deleteMessage, sendMessage } = useChatStore();
+  const { updateMessageContext, deleteMessage, sendMessage, regenerateResponse } = useChatStore();
   const { addNotification } = useNotificationStore();
   const { userName } = useAuthStore();
 
@@ -144,6 +144,31 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
               <RefreshIcon />
             </IconButton>
           </Tooltip>
+        )}
+
+        {isAssistant && message.content !== "" && !message.failed && (
+          <Box
+            display="flex"
+            justifyContent="flex-end"
+            mt={-1}>
+            <Tooltip title="Regenerate response">
+              <IconButton
+                size="small"
+                onClick={(): void => {
+                  void regenerateResponse(message.id);
+                }}
+                sx={{
+                  color: (theme): string =>
+                    theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                  "&:hover": {
+                    bgcolor: (theme): string =>
+                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+                  },
+                }}>
+                <RefreshIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
         )}
       </Box>
     </Paper>

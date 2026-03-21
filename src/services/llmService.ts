@@ -37,7 +37,7 @@ function buildPayload(model: ChatModel, messages: LlmMessage[], stream: boolean)
   };
 
   if (model.supportsTemperature) {
-    basePayload.temperature = model.provider === "openai" ? 0.7 : 1.3;
+    basePayload.temperature = useChatStore.getState().temperature;
   } else {
     delete basePayload.temperature;
   }
