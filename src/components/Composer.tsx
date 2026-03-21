@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, IconButton, TextField, Menu, MenuItem, Tooltip, ListSubheader, Divider } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import TuneIcon from "@mui/icons-material/Tune";
+import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
+import TopicContextDialog from "./TopicContextDialog";
 import { useChatStore } from "../store/ChatStore";
 
 interface ComposerProps {
@@ -13,8 +15,9 @@ interface ComposerProps {
 const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
   const questionRef = useRef("");
-  const { selectedModel, temperature, setTemperature } = useChatStore();
+  const { selectedModel, temperature, setTemperature, currentTopicId } = useChatStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [showContextDialog, setShowContextDialog] = useState(false);
   const openTempMenu = Boolean(anchorEl);
 
   const handleTempClick = (event: React.MouseEvent<HTMLButtonElement>): void => {
@@ -105,9 +108,28 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             </MenuItem>
             <Divider />
             <ListSubheader sx={{ lineHeight: "32px" }}>Other</ListSubheader>
-            <MenuItem disabled>More features coming soon...</MenuItem>
+            <MenuItem
+              onClick={(): void => {
+                setShowContextDialog(true);
+                handleTempClose();
+              }}
+              disabled={!currentTopicId}>
+              <MenuBookOutlinedIcon
+                fontSize="small"
+                sx={{ mr: 1 }}
+              />
+              Edit Context
+            </MenuItem>
           </Menu>
         </Box>
+
+        {currentTopicId && (
+          <TopicContextDialog
+            open={showContextDialog}
+            topicId={currentTopicId}
+            onClose={(): void => setShowContextDialog(false)}
+          />
+        )}
 
         <TextField
           inputRef={textFieldRef}
