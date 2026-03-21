@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  Zoom,
 } from "@mui/material";
 import { useState, useRef } from "react";
 import { useAuthStore } from "../store/AuthStore";
@@ -19,6 +20,8 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import DeleteIcon from "@mui/icons-material/Delete";
 import PushPinIcon from "@mui/icons-material/PushPin";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import CheckIcon from "@mui/icons-material/Check";
 import { useChatStore } from "../store/ChatStore";
 import { chatModels } from "./ModelSelector";
 import { Message } from "../database/AthenaDb";
@@ -34,6 +37,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const { userName } = useAuthStore();
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAssistant = message.type === "assistant";
@@ -83,6 +87,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
       timeoutRef.current = null;
     }
     setTooltipOpen(false);
+  };
+
+  const handleCopy = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1000);
+    } catch (err) {
+      console.error("Failed to copy message:", err);
+      addNotification("Error", "Failed to copy message");
+    }
   };
 
   return (
@@ -145,13 +160,88 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           <Box
             display="flex"
             alignItems="center">
+            <Tooltip title={copied ? "Copied!" : "Copy message"}>
+              <IconButton
+                size="small"
+                onClick={(): void => {
+                  void handleCopy();
+                }}
+                sx={{
+                  color: (theme): string =>
+                    theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                  "&:hover": {
+                    bgcolor: (theme): string =>
+                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+                  },
+                }}>
+                <Box
+                  position="relative"
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                  sx={{ width: 20, height: 20 }}>
+                  <Zoom
+                    in={!copied}
+                    timeout={200}
+                    unmountOnExit>
+                    <ContentCopyIcon
+                      fontSize="small"
+                      sx={{ position: "absolute" }}
+                    />
+                  </Zoom>
+                  <Zoom
+                    in={copied}
+                    timeout={200}
+                    unmountOnExit>
+                    <CheckIcon
+                      fontSize="small"
+                      color="success"
+                      sx={{ position: "absolute" }}
+                    />
+                  </Zoom>
+                </Box>
+              </IconButton>
+            </Tooltip>
+
             <Tooltip title={message.includeInContext ? "Unpin from context" : "Pin to context"}>
               <IconButton
                 size="small"
                 onClick={(): void => {
                   void togglePin();
+                }}
+                sx={{
+                  color: (theme): string =>
+                    theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                  "&:hover": {
+                    bgcolor: (theme): string =>
+                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+                  },
                 }}>
-                {message.includeInContext ? <PushPinIcon fontSize="small" /> : <PushPinOutlinedIcon fontSize="small" />}
+                <Box
+                  position="relative"
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                  sx={{ width: 20, height: 20 }}>
+                  <Zoom
+                    in={!message.includeInContext}
+                    timeout={200}
+                    unmountOnExit>
+                    <PushPinOutlinedIcon
+                      fontSize="small"
+                      sx={{ position: "absolute" }}
+                    />
+                  </Zoom>
+                  <Zoom
+                    in={message.includeInContext}
+                    timeout={200}
+                    unmountOnExit>
+                    <PushPinIcon
+                      fontSize="small"
+                      sx={{ position: "absolute" }}
+                    />
+                  </Zoom>
+                </Box>
               </IconButton>
             </Tooltip>
           </Box>
@@ -208,7 +298,18 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                       theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
                   },
                 }}>
-                <RefreshIcon fontSize="small" />
+                <Box
+                  position="relative"
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                  sx={{ width: 20, height: 20 }}>
+                  <Zoom
+                    in
+                    timeout={200}>
+                    <RefreshIcon fontSize="small" />
+                  </Zoom>
+                </Box>
               </IconButton>
             </Tooltip>
           )}
@@ -225,7 +326,18 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                     theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
                 },
               }}>
-              <DeleteIcon fontSize="small" />
+              <Box
+                position="relative"
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                sx={{ width: 20, height: 20 }}>
+                <Zoom
+                  in
+                  timeout={200}>
+                  <DeleteIcon fontSize="small" />
+                </Zoom>
+              </Box>
             </IconButton>
           </Tooltip>
         </Box>
