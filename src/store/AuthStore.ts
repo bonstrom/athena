@@ -5,21 +5,25 @@ interface AuthState {
   openAiKey: string;
   deepSeekKey: string;
   userName: string;
+  backupInterval: number;
   clearAuth: () => void;
   setOpenAiKey: (key: string) => void;
   setDeepSeekKey: (key: string) => void;
   setUserName: (name: string) => void;
+  setBackupInterval: (minutes: number) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => {
   const storedOpenAiKey = localStorage.getItem("openAiKey") ?? "";
   const storedDeepSeekKey = localStorage.getItem("deepSeekKey") ?? "";
   const userName = localStorage.getItem("userName") ?? "";
+  const storedBackupInterval = Number(localStorage.getItem("backupInterval") ?? "1");
 
   return {
     openAiKey: storedOpenAiKey,
     deepSeekKey: storedDeepSeekKey,
     userName: userName,
+    backupInterval: storedBackupInterval,
     clearAuth: (): void => {
       localStorage.removeItem("openAiKey");
       localStorage.removeItem("deepSeekKey");
@@ -37,6 +41,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setUserName: (userName: string): void => {
       localStorage.setItem("userName", userName);
       set({ userName });
+    },
+    setBackupInterval: (minutes: number): void => {
+      localStorage.setItem("backupInterval", String(minutes));
+      set({ backupInterval: minutes });
     },
   };
 });

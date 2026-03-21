@@ -4,8 +4,13 @@ import { GlobalErrorSnackbar } from "./components/GlobalErrorSnackbar";
 import ChatView from "./pages/ChatView";
 import Home from "./pages/Home";
 import Settings from "./pages/Settings";
+import { useAutoBackup } from "./hooks/useAutoBackup";
+import { useAuthStore } from "./store/AuthStore";
 
 const App: React.FC = () => {
+  const { backupInterval } = useAuthStore();
+  useAutoBackup(backupInterval); // Run auto-backup based on user preference
+
   return (
     <HashRouter>
       <Routes>
