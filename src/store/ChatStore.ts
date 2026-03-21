@@ -53,7 +53,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   setInitialLoad: (value: boolean): void => set({ isInitialLoad: value }),
 
-  setSelectedModel: (model): void => set({ selectedModel: model }),
+  setSelectedModel: (model): void => {
+    localStorage.setItem("athena_selected_model", model.id);
+    set({ selectedModel: model });
+  },
 
   deleteMessage: async (id): Promise<void> => {
     const { currentTopicId } = get();

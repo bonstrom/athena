@@ -134,6 +134,12 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
 export default ModelSelector;
 
 export function getDefaultModel(): ChatModel {
+  const savedModelId = localStorage.getItem("athena_selected_model");
+  if (savedModelId) {
+    const savedModel = chatModels.find((m) => m.id === savedModelId);
+    if (savedModel) return savedModel;
+  }
+
   const { openAiKey, deepSeekKey } = useAuthStore.getState();
   const available = chatModels.filter(
     (m) => (m.provider === "openai" && openAiKey) || (m.provider === "deepseek" && deepSeekKey),
