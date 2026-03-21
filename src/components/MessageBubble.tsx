@@ -11,7 +11,7 @@ import {
   DialogContentText,
   DialogTitle,
 } from "@mui/material";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useAuthStore } from "../store/AuthStore";
 import MarkdownWithCode from "./MarkdownWithCode";
 import TypingIndicator from "./TypingIndicator";
@@ -33,6 +33,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const { addNotification } = useNotificationStore();
   const { userName } = useAuthStore();
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAssistant = message.type === "assistant";
 
@@ -69,6 +71,20 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
     return chatModels.find((m) => m.id === id)?.label ?? id ?? "Unknown model";
   };
 
+  const handleMouseEnter = (): void => {
+    timeoutRef.current = setTimeout(() => {
+      setTooltipOpen(true);
+    }, 700);
+  };
+
+  const handleMouseLeave = (): void => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setTooltipOpen(false);
+  };
+
   return (
     <Paper
       sx={{
@@ -93,44 +109,49 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           display="flex"
           justifyContent="space-between"
           mb={0.5}>
-          <Typography
-            variant="subtitle2"
-            color="text.secondary">
-            {message.type === "user" ? userName : getModelLabel(message.model)}
-          </Typography>
+          <Tooltip
+            open={tooltipOpen}
+            title={
+              <Box>
+                <Typography
+                  variant="caption"
+                  display="block">
+                  {new Intl.DateTimeFormat("sv-SE", {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                  }).format(new Date(message.created))}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  display="block">
+                  {`${message.totalCost.toFixed(3)} kr`}
+                </Typography>
+              </Box>
+            }>
+            <Typography
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
+              variant="subtitle2"
+              color="text.secondary"
+              sx={{ cursor: "default", display: "inline-block" }}>
+              {message.type === "user" ? userName : getModelLabel(message.model)}
+            </Typography>
+          </Tooltip>
 
           <Box
             display="flex"
             alignItems="center">
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ mr: 1 }}>
-              {`${message.totalCost.toFixed(3)} kr • ${new Intl.DateTimeFormat("sv-SE", {
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-              }).format(new Date(message.created))}`}
-            </Typography>
-
-            <Tooltip title="Delete message">
-              <IconButton
-                size="small"
-                onClick={handleDeleteClick}>
-                <DeleteIcon />
-              </IconButton>
-            </Tooltip>
-
             <Tooltip title={message.includeInContext ? "Unpin from context" : "Pin to context"}>
               <IconButton
                 size="small"
                 onClick={(): void => {
                   void togglePin();
                 }}>
-                {message.includeInContext ? <PushPinIcon /> : <PushPinOutlinedIcon />}
+                {message.includeInContext ? <PushPinIcon fontSize="small" /> : <PushPinOutlinedIcon fontSize="small" />}
               </IconButton>
             </Tooltip>
           </Box>
@@ -167,11 +188,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           </Tooltip>
         )}
 
-        {isAssistant && message.content !== "" && !message.failed && (
-          <Box
-            display="flex"
-            justifyContent="flex-end"
-            mt={-1}>
+        <Box
+          display="flex"
+          justifyContent="flex-end"
+          mt={-1}
+          gap={0.5}>
+          {isAssistant && message.content !== "" && !message.failed && (
             <Tooltip title="Regenerate response">
               <IconButton
                 size="small"
@@ -189,8 +211,24 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                 <RefreshIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-          </Box>
-        )}
+          )}
+
+          <Tooltip title="Delete message">
+            <IconButton
+              size="small"
+              onClick={handleDeleteClick}
+              sx={{
+                color: (theme): string =>
+                  theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                "&:hover": {
+                  bgcolor: (theme): string =>
+                    theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+                },
+              }}>
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
       </Box>
 
       <Dialog
