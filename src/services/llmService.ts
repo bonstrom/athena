@@ -29,9 +29,25 @@ const PROVIDER_URLS: Record<string, string> = {
 
 function buildPayload(model: ChatModel, messages: LlmMessage[], stream: boolean): LlmPayload {
   const filtered = filterMessagesForModel(model, messages);
+  const auth = useAuthStore.getState();
+  const customInstructions = auth.customInstructions.trim();
+
+  const finalMessages = [...filtered];
+
+  if (customInstructions) {
+    if (finalMessages.length > 0 && finalMessages[0].role === "system") {
+      finalMessages[0] = {
+        ...finalMessages[0],
+        content: `${customInstructions}\n\n${finalMessages[0].content}`,
+      };
+    } else {
+      finalMessages.unshift({ role: "system", content: customInstructions });
+    }
+  }
+
   const basePayload: LlmPayload = {
     model: model.id,
-    messages: filtered,
+    messages: finalMessages,
     stream,
     temperature: 1,
   };

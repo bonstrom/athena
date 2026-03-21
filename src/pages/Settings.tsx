@@ -24,15 +24,18 @@ const Settings: React.FC = () => {
     deepSeekKey,
     userName,
     backupInterval,
+    customInstructions,
     setOpenAiKey,
     setDeepSeekKey,
     setUserName,
     setBackupInterval,
+    setCustomInstructions,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState(openAiKey);
   const [deepSeekInput, setDeepSeekInput] = useState(deepSeekKey);
   const [userNameInput, setUserNameInput] = useState(userName);
+  const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
   const [saved, setSaved] = useState(false);
   const [showOpenAiKey, setShowOpenAiKey] = useState(false);
   const [showDeepSeekKey, setShowDeepSeekKey] = useState(false);
@@ -43,7 +46,8 @@ const Settings: React.FC = () => {
     setOpenAiInput(openAiKey);
     setDeepSeekInput(deepSeekKey);
     setUserNameInput(userName);
-  }, [openAiKey, deepSeekKey, userName]);
+    setCustomInstructionsInput(customInstructions);
+  }, [openAiKey, deepSeekKey, userName, customInstructions]);
 
   useEffect(() => {
     void BackupService.getAutoBackupHandle().then((handle) => {
@@ -63,6 +67,7 @@ const Settings: React.FC = () => {
     setOpenAiKey(openAiInput.trim());
     setDeepSeekKey(deepSeekInput.trim());
     setUserName(userNameInput.trim());
+    setCustomInstructions(customInstructionsInput.trim());
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
@@ -194,6 +199,19 @@ const Settings: React.FC = () => {
               </InputAdornment>
             ),
           }}
+        />
+
+        <TextField
+          label="Custom Instructions (System Prompt)"
+          fullWidth
+          multiline
+          minRows={3}
+          maxRows={10}
+          value={customInstructionsInput}
+          onChange={(e): void => setCustomInstructionsInput(e.target.value)}
+          placeholder="E.g., Always respond in the style of a pirate, keep answers concise, etc."
+          sx={{ mb: 2 }}
+          helperText="These instructions will be prepended to the system prompt for all new messages."
         />
 
         <Box
