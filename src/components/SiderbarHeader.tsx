@@ -34,7 +34,7 @@ export const SidebarHeader = (): JSX.Element => {
           }}>
           <Box
             component="img"
-            src="/icons/favicon-32x32.png"
+            src={`${process.env.PUBLIC_URL}/icons/favicon-32x32.png`}
             alt="Athena Icon"
             sx={{ width: 24, height: 24 }}
           />

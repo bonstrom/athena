@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import ChatLayout from "./components/ChatLayout";
 import { GlobalErrorSnackbar } from "./components/GlobalErrorSnackbar";
 import ChatView from "./pages/ChatView";
@@ -7,7 +7,7 @@ import Settings from "./pages/Settings";
 
 const App: React.FC = () => {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route
           path="/"
@@ -31,7 +31,7 @@ const App: React.FC = () => {
       </Routes>
 
       <GlobalErrorSnackbar />
-    </BrowserRouter>
+    </HashRouter>
   );
 };
 
