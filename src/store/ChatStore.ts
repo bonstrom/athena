@@ -6,6 +6,8 @@ import { Message } from "../database/AthenaDb";
 import { athenaDb } from "../database/AthenaDb";
 import { useNotificationStore } from "./NotificationStore";
 
+export const SCRATCHPAD_LIMIT = 5000;
+
 interface ChatStore {
   messagesByTopic: Record<string, Message[]>;
   currentTopicId: string | null;
@@ -214,6 +216,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       role: m.type === "user" ? "user" : m.type === "assistant" ? "assistant" : "system",
       content: m.content,
     }));
+
+    const topic = topicStoreState.topics.find((t) => t.id === topicId);
+    let scratchpadSystemMsg = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). To append a note to it, include \`<!-- persist: your note here -->\` in your response. To replace the entire scratchpad, use \`<!-- replace: your new content here -->\`. Use the scratchpad to remember key facts, character details, or state during games.`;
+    if (topic?.scratchpad) {
+      scratchpadSystemMsg += "\n\n[Current Scratchpad Content]:\n" + topic.scratchpad;
+    }
+    llmContext.unshift({ role: "system", content: scratchpadSystemMsg });
+
     if (!isRetry) {
       llmContext.push({ role: "user", content: content.trim() });
     }
@@ -243,7 +253,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       const result = await askLlmStream(llmContext, (chunk: string) => {
         streamedContent += chunk;
-        void get().updateMessage(assistantId, { content: streamedContent });
+        const displayContent = streamedContent
+          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
+        void get().updateMessage(assistantId, { content: displayContent });
       });
 
       await get().updateMessage(userMessage.id, {
@@ -253,11 +266,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       });
 
       await get().updateMessage(assistantId, {
-        content: streamedContent,
+        content: result.content,
         completionTokens: result.completionTokens,
         totalCost: calculateCostSEK(selectedModel, 0, result.completionTokens),
         failed: false,
       });
+
+      if (result.aiNote) {
+        const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
+        let updatedScratchpad = "";
+        if (result.aiNoteAction === "replace") {
+          updatedScratchpad = result.aiNote;
+        } else {
+          updatedScratchpad = currentScratchpad ? `${currentScratchpad}\n${result.aiNote}` : result.aiNote;
+        }
+
+        if (updatedScratchpad.length > SCRATCHPAD_LIMIT) {
+          updatedScratchpad = updatedScratchpad.slice(0, SCRATCHPAD_LIMIT);
+        }
+
+        await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
+      }
 
       void topicStoreState.generateTopicName(topicId, content);
     } catch (err) {
@@ -332,6 +361,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       content: m.content,
     }));
 
+    const topic = topicStoreState.topics.find((t) => t.id === topicId);
+    let scratchpadSystemMsg = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). To append a note to it, include \`<!-- persist: your note here -->\` in your response. To replace the entire scratchpad, use \`<!-- replace: your new content here -->\`. Use the scratchpad to remember key facts, character details, or state during games.`;
+    if (topic?.scratchpad) {
+      scratchpadSystemMsg += "\n\n[Current Scratchpad Content]:\n" + topic.scratchpad;
+    }
+    llmContext.unshift({ role: "system", content: scratchpadSystemMsg });
+
     if (!isRetry) {
       llmContext.push({ role: "user", content: content.trim() });
     }
@@ -371,6 +407,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         totalCost: calculateCostSEK(selectedModel, 0, result.completionTokens),
         failed: false,
       });
+
+      if (result.aiNote) {
+        const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
+        let updatedScratchpad = "";
+        if (result.aiNoteAction === "replace") {
+          updatedScratchpad = result.aiNote;
+        } else {
+          updatedScratchpad = currentScratchpad ? `${currentScratchpad}\n${result.aiNote}` : result.aiNote;
+        }
+
+        if (updatedScratchpad.length > SCRATCHPAD_LIMIT) {
+          updatedScratchpad = updatedScratchpad.slice(0, SCRATCHPAD_LIMIT);
+        }
+
+        await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
+      }
 
       void topicStoreState.generateTopicName(topicId, content);
     } catch (err) {

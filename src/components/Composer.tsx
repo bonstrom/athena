@@ -18,8 +18,11 @@ import AnalyticsIcon from "@mui/icons-material/Analytics";
 import ForumIcon from "@mui/icons-material/Forum";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import CheckIcon from "@mui/icons-material/Check";
+import EditNoteIcon from "@mui/icons-material/EditNote";
 import TopicContextDialog from "./TopicContextDialog";
-import { useChatStore } from "../store/ChatStore";
+import ScratchpadDialog from "./ScratchpadDialog";
+import { useChatStore, SCRATCHPAD_LIMIT } from "../store/ChatStore";
+import { useTopicStore } from "../store/TopicStore";
 
 interface ComposerProps {
   sending: boolean;
@@ -30,9 +33,11 @@ interface ComposerProps {
 const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
   const questionRef = useRef("");
+  const topicStore = useTopicStore();
   const { selectedModel, temperature, setTemperature, currentTopicId } = useChatStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showContextDialog, setShowContextDialog] = useState(false);
+  const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
   const openTempMenu = Boolean(anchorEl);
 
   const handleTempClick = (event: React.MouseEvent<HTMLButtonElement>): void => {
@@ -249,15 +254,41 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 secondaryTypographyProps={{ variant: "caption" }}
               />
             </MenuItem>
+
+            <MenuItem
+              onClick={(): void => {
+                setShowScratchpadDialog(true);
+                handleTempClose();
+              }}
+              disabled={!currentTopicId}
+              sx={{ py: 1.5, px: 2, borderRadius: 1.5, mx: 1, mb: 1 }}>
+              <EditNoteIcon
+                fontSize="small"
+                sx={{ mr: 2, color: "text.secondary" }}
+              />
+              <ListItemText
+                primary="View Scratchpad"
+                secondary={`AI persistent memory (${(topicStore.topics.find((t) => t.id === currentTopicId)?.scratchpad?.length ?? 0).toLocaleString()} / ${SCRATCHPAD_LIMIT.toLocaleString()})`}
+                primaryTypographyProps={{ variant: "body2", fontWeight: 500 }}
+                secondaryTypographyProps={{ variant: "caption" }}
+              />
+            </MenuItem>
           </Menu>
         </Box>
 
         {currentTopicId && (
-          <TopicContextDialog
-            open={showContextDialog}
-            topicId={currentTopicId}
-            onClose={(): void => setShowContextDialog(false)}
-          />
+          <>
+            <TopicContextDialog
+              open={showContextDialog}
+              topicId={currentTopicId}
+              onClose={(): void => setShowContextDialog(false)}
+            />
+            <ScratchpadDialog
+              open={showScratchpadDialog}
+              topicId={currentTopicId}
+              onClose={(): void => setShowScratchpadDialog(false)}
+            />
+          </>
         )}
 
         <TextField

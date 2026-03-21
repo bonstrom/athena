@@ -38,6 +38,7 @@ export interface Topic {
   createdOn: string;
   updatedOn: string;
   isDeleted: boolean;
+  scratchpad?: string;
 }
 
 export const athenaDb = new AthenaDatabase();

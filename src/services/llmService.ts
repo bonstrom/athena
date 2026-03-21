@@ -13,6 +13,7 @@ export interface LlmResult {
   promptTokens: number;
   completionTokens: number;
   aiNote?: string | null;
+  aiNoteAction?: "append" | "replace";
 }
 
 interface LlmPayload {
@@ -115,13 +116,30 @@ export async function askLlm(messages: LlmMessage[]): Promise<LlmResult> {
     usage: { prompt_tokens: number; completion_tokens: number };
   };
   const content = data.choices[0].message.content.trim();
-  const noteMatch = /<!--\s*persist:\s*(.*?)\s*-->/i.exec(content);
+
+  const persistMatch = /<!--\s*persist:\s*([\s\S]*?)\s*-->/i.exec(content);
+  const replaceMatch = /<!--\s*replace:\s*([\s\S]*?)\s*-->/i.exec(content);
+
+  let aiNote = null;
+  let aiNoteAction: "append" | "replace" | undefined;
+
+  if (replaceMatch) {
+    aiNote = replaceMatch[1].trim();
+    aiNoteAction = "replace";
+  } else if (persistMatch) {
+    aiNote = persistMatch[1].trim();
+    aiNoteAction = "append";
+  }
 
   return {
-    content: content.replace(/<!--\s*persist:\s*(.*?)\s*-->/i, "").trim(),
+    content: content
+      .replace(/<!--\s*persist:\s*[\s\S]*?\s*-->/gi, "")
+      .replace(/<!--\s*replace:\s*[\s\S]*?\s*-->/gi, "")
+      .trim(),
     promptTokens: data.usage.prompt_tokens,
     completionTokens: data.usage.completion_tokens,
-    aiNote: noteMatch?.[1]?.trim() ?? null,
+    aiNote,
+    aiNoteAction,
   };
 }
 
@@ -179,12 +197,29 @@ export async function askLlmStream(messages: LlmMessage[], onToken?: (token: str
 
   const { promptTokens, completionTokens } = estimateStreamedTokens(messages, accumulated);
 
-  const match = /<!--\s*persist:\s*(.*?)\s*-->/i.exec(accumulated);
+  const persistMatch = /<!--\s*persist:\s*([\s\S]*?)\s*-->/i.exec(accumulated);
+  const replaceMatch = /<!--\s*replace:\s*([\s\S]*?)\s*-->/i.exec(accumulated);
+
+  let aiNote = null;
+  let aiNoteAction: "append" | "replace" | undefined;
+
+  if (replaceMatch) {
+    aiNote = replaceMatch[1].trim();
+    aiNoteAction = "replace";
+  } else if (persistMatch) {
+    aiNote = persistMatch[1].trim();
+    aiNoteAction = "append";
+  }
+
   return {
-    content: accumulated.replace(/<!--\s*persist:\s*(.*?)\s*-->/i, "").trim(),
+    content: accumulated
+      .replace(/<!--\s*persist:\s*[\s\S]*?\s*-->/gi, "")
+      .replace(/<!--\s*replace:\s*[\s\S]*?\s*-->/gi, "")
+      .trim(),
     promptTokens,
     completionTokens,
-    aiNote: match?.[1]?.trim() ?? null,
+    aiNote,
+    aiNoteAction,
   };
 }
 

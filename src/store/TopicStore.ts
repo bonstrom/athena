@@ -21,6 +21,7 @@ interface TopicState {
   generateTopicName(topicId: string, userMessage: string): Promise<void>;
   deleteTopic: (id: string) => Promise<void>;
   getTopicContext(topicId: string): Promise<Message[]>;
+  updateTopicScratchpad: (id: string, scratchpad: string) => Promise<void>;
 }
 
 export const useTopicStore = create<TopicState>((set, get) => ({
@@ -90,6 +91,19 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       console.error("Failed to rename topic", err);
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification("Failed to rename topic", message);
+    }
+  },
+
+  updateTopicScratchpad: async (id, scratchpad): Promise<void> => {
+    try {
+      await athenaDb.topics.update(id, { scratchpad });
+      set((state) => ({
+        topics: state.topics.map((t) => (t.id === id ? { ...t, scratchpad } : t)),
+      }));
+    } catch (err) {
+      console.error("Failed to update topic scratchpad", err);
+      const message = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification("Failed to update scratchpad", message);
     }
   },
 
