@@ -19,6 +19,8 @@ import ForumIcon from "@mui/icons-material/Forum";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import CheckIcon from "@mui/icons-material/Check";
 import EditNoteIcon from "@mui/icons-material/EditNote";
+import OpenInFullIcon from "@mui/icons-material/OpenInFull";
+import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
 import TopicContextDialog from "./TopicContextDialog";
 import ScratchpadDialog from "./ScratchpadDialog";
 import { useChatStore, SCRATCHPAD_LIMIT } from "../store/ChatStore";
@@ -38,6 +40,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const openTempMenu = Boolean(anchorEl);
 
   const handleTempClick = (event: React.MouseEvent<HTMLButtonElement>): void => {
@@ -91,6 +94,15 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 onClick={handleTempClick}
                 disabled={sending}>
                 <TuneIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title={isExpanded ? "Collapse" : "Expand"}>
+            <span>
+              <IconButton
+                onClick={(): void => setIsExpanded(!isExpanded)}
+                disabled={sending}>
+                {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
               </IconButton>
             </span>
           </Tooltip>
@@ -295,8 +307,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           inputRef={textFieldRef}
           fullWidth
           multiline
-          inputProps={{ maxLength: 2000 }}
-          maxRows={15}
+          inputProps={{ maxLength: 100000 }}
+          maxRows={isExpanded ? 40 : 15}
           placeholder="Ask something..."
           onChange={(e): string => (questionRef.current = e.target.value)}
           onKeyDown={(e): void => {
