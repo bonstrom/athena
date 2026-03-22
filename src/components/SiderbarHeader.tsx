@@ -36,12 +36,13 @@ export const SidebarHeader = (): JSX.Element => {
             component="img"
             src={`${process.env.PUBLIC_URL}/icons/favicon-32x32.png`}
             alt="Athena Icon"
-            sx={{ width: 24, height: 24 }}
+            sx={{ width: 32, height: 32 }}
           />
 
           <Typography
             variant="h6"
-            noWrap>
+            noWrap
+            sx={{ fontSize: 32, fontWeight: "bold" }}>
             Athena
           </Typography>
         </Box>
