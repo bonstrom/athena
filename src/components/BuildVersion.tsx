@@ -1,7 +1,7 @@
 import { JSX, useEffect, useState } from "react";
 
 export function BuildVersion(): JSX.Element {
-  const [version, setVersion] = useState<string | null>("2025");
+  const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(process.env.PUBLIC_URL + "/build-version.txt")
