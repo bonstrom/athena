@@ -9,8 +9,12 @@ import {
   ListSubheader,
   Divider,
   ListItemText,
+  Tabs,
+  Tab,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
+import AddIcon from "@mui/icons-material/Add";
+import CloseIcon from "@mui/icons-material/Close";
 import TuneIcon from "@mui/icons-material/Tune";
 import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
 import CodeIcon from "@mui/icons-material/Code";
@@ -31,6 +35,11 @@ interface ComposerProps {
   onSend: (content: string) => void;
   isMobile: boolean;
 }
+interface Page {
+  id: string;
+  title: string;
+  content: string;
+}
 
 const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
@@ -41,6 +50,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [pages, setPages] = useState<Page[]>([{ id: crypto.randomUUID(), title: "Page 1", content: "" }]);
+  const [activePageIndex, setActivePageIndex] = useState(0);
   const openTempMenu = Boolean(anchorEl);
 
   const handleTempClick = (event: React.MouseEvent<HTMLButtonElement>): void => {
@@ -55,9 +66,80 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   };
 
   const handleSend = (): void => {
-    onSend(questionRef.current);
+    const currentContent = textFieldRef.current?.value ?? "";
+    const updatedPages = pages.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p));
+
+    const combinedContent = updatedPages
+      .filter((p) => p.content.trim())
+      .map((p) => p.content.trim())
+      .join("\n\n---\n\n");
+
+    if (!combinedContent) return;
+
+    onSend(combinedContent);
     questionRef.current = "";
     if (textFieldRef.current) textFieldRef.current.value = "";
+    setPages([{ id: crypto.randomUUID(), title: "Page 1", content: "" }]);
+    setActivePageIndex(0);
+  };
+
+  const handleTabChange = (_: React.SyntheticEvent, newValue: number): void => {
+    const currentContent = textFieldRef.current?.value ?? "";
+    setPages((prev) => prev.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p)));
+
+    const targetPage = pages[newValue];
+    if (textFieldRef.current) {
+      textFieldRef.current.value = targetPage.content;
+      questionRef.current = targetPage.content;
+    }
+    setActivePageIndex(newValue);
+  };
+
+  const addPage = (): void => {
+    const currentContent = textFieldRef.current?.value ?? "";
+    setPages((prev) => {
+      const updatedPrev = prev.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p));
+      const newPage: Page = {
+        id: crypto.randomUUID(),
+        title: `Page ${updatedPrev.length + 1}`,
+        content: "",
+      };
+      return [...updatedPrev, newPage];
+    });
+
+    setActivePageIndex(pages.length);
+
+    if (textFieldRef.current) {
+      textFieldRef.current.value = "";
+      questionRef.current = "";
+    }
+  };
+
+  const deletePage = (index: number, e: React.MouseEvent): void => {
+    e.stopPropagation();
+    if (pages.length <= 1) return;
+
+    const currentContent = textFieldRef.current?.value ?? "";
+    const updatedPages = pages.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p));
+    const newPages = updatedPages.filter((_, i) => i !== index);
+
+    let newIndex = activePageIndex;
+    if (activePageIndex === index) {
+      newIndex = Math.max(0, index - 1);
+    } else if (activePageIndex > index) {
+      newIndex = activePageIndex - 1;
+    }
+
+    setPages(newPages);
+    setActivePageIndex(newIndex);
+
+    if (activePageIndex === index) {
+      const targetContent = newPages[newIndex].content;
+      if (textFieldRef.current) {
+        textFieldRef.current.value = targetContent;
+        questionRef.current = targetContent;
+      }
+    }
   };
 
   useEffect(() => {
@@ -84,6 +166,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         width="100%"
         maxWidth="md"
         display="flex"
+        alignItems="flex-end"
         gap={1}>
         <Box
           display="flex"
@@ -303,28 +386,96 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           </>
         )}
 
-        <TextField
-          inputRef={textFieldRef}
-          fullWidth
-          multiline
-          inputProps={{ maxLength: 100000 }}
-          maxRows={isExpanded ? 40 : 15}
-          placeholder="Ask something..."
-          onChange={(e): string => (questionRef.current = e.target.value)}
-          onKeyDown={(e): void => {
-            if (!isMobile && e.key === "Enter" && !e.shiftKey) {
-              handleSend();
-              e.preventDefault();
-            }
-          }}
-          disabled={sending}
-        />
+        <Box
+          display="flex"
+          flexDirection="column"
+          width="100%"
+          gap={isExpanded ? 1 : 0}>
+          {isExpanded && (
+            <Box
+              display="flex"
+              alignItems="center"
+              gap={1}
+              sx={{ borderBottom: 1, borderColor: "divider", mb: 1 }}>
+              <Tabs
+                value={activePageIndex}
+                onChange={handleTabChange}
+                variant="scrollable"
+                scrollButtons="auto"
+                sx={{ minHeight: 40, height: 40 }}>
+                {pages.map((page, index) => (
+                  <Tab
+                    key={page.id}
+                    label={
+                      <Box
+                        display="flex"
+                        alignItems="center"
+                        gap={1}>
+                        {page.title}
+                        {pages.length > 1 && (
+                          <IconButton
+                            size="small"
+                            onClick={(e): void => deletePage(index, e)}
+                            sx={{ p: 0.5 }}>
+                            <CloseIcon sx={{ fontSize: 14 }} />
+                          </IconButton>
+                        )}
+                      </Box>
+                    }
+                    sx={{ minHeight: 40, height: 40, textTransform: "none", fontSize: "0.8rem" }}
+                  />
+                ))}
+              </Tabs>
+              <IconButton
+                size="small"
+                onClick={addPage}
+                sx={{ ml: 1 }}>
+                <AddIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          )}
 
-        <IconButton
-          onClick={handleSend}
-          disabled={sending}>
-          <SendIcon />
-        </IconButton>
+          <TextField
+            inputRef={textFieldRef}
+            fullWidth
+            multiline
+            inputProps={{ maxLength: 100000 }}
+            rows={isExpanded ? undefined : undefined}
+            minRows={isExpanded ? undefined : 1}
+            maxRows={isExpanded ? undefined : 15}
+            placeholder="Ask something..."
+            sx={{
+              "& .MuiInputBase-root": {
+                height: isExpanded ? "80vh" : "auto",
+                minHeight: isExpanded ? "80vh" : "auto",
+                alignItems: "start",
+                overflow: "auto",
+              },
+              "& textarea": {
+                height: isExpanded ? "100% !important" : "auto",
+                overflow: "auto !important",
+              },
+            }}
+            onChange={(e): string => (questionRef.current = e.target.value)}
+            onKeyDown={(e): void => {
+              if (!isMobile && e.key === "Enter" && e.ctrlKey) {
+                handleSend();
+                e.preventDefault();
+              }
+            }}
+            disabled={sending}
+          />
+        </Box>
+
+        <Tooltip title={isMobile ? "Send Message" : "Send Message (Ctrl + Enter)"}>
+          <span>
+            <IconButton
+              onClick={handleSend}
+              disabled={sending}>
+              <SendIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
       </Box>
     </Box>
   );

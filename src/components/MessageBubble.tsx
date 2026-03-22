@@ -11,6 +11,7 @@ import {
   DialogContentText,
   DialogTitle,
   Zoom,
+  alpha,
 } from "@mui/material";
 import { useState, useRef } from "react";
 import { useAuthStore } from "../store/AuthStore";
@@ -124,14 +125,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
         p: 2,
         width: "100%",
         borderRadius: 3,
+        border: message.failed ? (theme): string => `1px solid ${theme.palette.error.main}` : "none",
         bgcolor: (theme): string | undefined => {
-          if (message.failed) return theme.palette.error.main;
+          if (message.failed) return alpha(theme.palette.error.main, 0.1);
           if (message.type === "assistant") return theme.palette.assistant.main;
           if (message.type === "aiNote") return theme.palette.aiNote.main;
           return undefined;
         },
         color: (theme): string | undefined => {
-          if (message.failed) return "white";
+          if (message.failed) return theme.palette.text.primary;
           if (message.type === "assistant") return theme.palette.assistant.contrastText;
           if (message.type === "aiNote") return theme.palette.aiNote.contrastText;
           return undefined;
