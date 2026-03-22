@@ -1,5 +1,5 @@
 import React, { JSX, useEffect, useRef } from "react";
-import { ListItem, Button, Fab } from "@mui/material";
+import { ListItem, Button, Fab, Box, Typography } from "@mui/material";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import ScrollToBottom, { useScrollToBottom, useSticky } from "react-scroll-to-bottom";
 import { css } from "@emotion/css";
@@ -64,20 +64,41 @@ const Pane: React.FC<{ messages: Message[] }> = ({ messages }) => {
     wasStickyRef.current = sticky;
   });
 
+  const contextMessages = messages.filter((m) => m.type === "user" || m.type === "assistant");
+  const firstInWindowId = contextMessages.length > 10 ? contextMessages[contextMessages.length - 10].id : null;
+
   return (
     <>
-      {messages.map((m) => (
-        <ListItem
-          key={m.id}
-          disableGutters
-          sx={{ px: 2 }}>
-          <MessageBubble
-            message={
-              m.type === "aiNote" && !showAllMessages ? { ...m, content: "⚠️ Assistant stored a hidden note here." } : m
-            }
-          />
-        </ListItem>
-      ))}
+      {messages.map((m) => {
+        const isFirstInWindow = m.id === firstInWindowId;
+        return (
+          <React.Fragment key={m.id}>
+            {isFirstInWindow && (
+              <ListItem sx={{ py: 1, px: 2, display: "flex", alignItems: "center", gap: 2 }}>
+                <Box sx={{ flex: 1, height: "1px", bgcolor: "divider", opacity: 0.3 }} />
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ opacity: 0.5, whiteSpace: "nowrap", userSelect: "none" }}>
+                  Context Window
+                </Typography>
+                <Box sx={{ flex: 1, height: "1px", bgcolor: "divider", opacity: 0.3 }} />
+              </ListItem>
+            )}
+            <ListItem
+              disableGutters
+              sx={{ px: 2 }}>
+              <MessageBubble
+                message={
+                  m.type === "aiNote" && !showAllMessages
+                    ? { ...m, content: "⚠️ Assistant stored a hidden note here." }
+                    : m
+                }
+              />
+            </ListItem>
+          </React.Fragment>
+        );
+      })}
 
       <FollowFab />
     </>
