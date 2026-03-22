@@ -22,6 +22,7 @@ interface TopicState {
   deleteTopic: (id: string) => Promise<void>;
   getTopicContext(topicId: string): Promise<Message[]>;
   updateTopicScratchpad: (id: string, scratchpad: string) => Promise<void>;
+  forkTopic: (topicId: string, messageId: string) => Promise<Topic | null>;
 }
 
 export const useTopicStore = create<TopicState>((set, get) => ({
@@ -172,6 +173,50 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       console.error("Failed to delete topic", err);
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification("Failed to delete topic", message);
+    }
+  },
+
+  forkTopic: async (topicId, messageId): Promise<Topic | null> => {
+    try {
+      const originalTopic = get().topics.find((t) => t.id === topicId);
+      if (!originalTopic) return null;
+
+      const newTopic: Topic = {
+        id: uuidv4(),
+        name: `${originalTopic.name} (Fork)`,
+        createdOn: new Date().toISOString(),
+        isDeleted: false,
+        updatedOn: new Date().toISOString(),
+        scratchpad: originalTopic.scratchpad,
+      };
+
+      await athenaDb.topics.add(newTopic);
+      get().addTopic(newTopic);
+
+      const allMessages = await athenaDb.messages.where("topicId").equals(topicId).toArray();
+      const selectedMessage = allMessages.find((m) => m.id === messageId);
+      if (!selectedMessage) return newTopic;
+
+      const messagesToCopy = allMessages
+        .filter((m) => new Date(m.created).getTime() <= new Date(selectedMessage.created).getTime() && !m.isDeleted)
+        .sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+
+      const newMessages: Message[] = messagesToCopy.map((m) => ({
+        ...m,
+        id: uuidv4(),
+        topicId: newTopic.id,
+      }));
+
+      if (newMessages.length > 0) {
+        await athenaDb.messages.bulkAdd(newMessages);
+      }
+
+      return newTopic;
+    } catch (err) {
+      console.error("Failed to fork topic", err);
+      const message = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification("Failed to fork topic", message);
+      return null;
     }
   },
 }));

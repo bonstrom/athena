@@ -26,6 +26,9 @@ import { useChatStore } from "../store/ChatStore";
 import { chatModels } from "./ModelSelector";
 import { Message } from "../database/AthenaDb";
 import { useNotificationStore } from "../store/NotificationStore";
+import { useNavigate } from "react-router-dom";
+import { useTopicStore } from "../store/TopicStore";
+import AltRouteIcon from "@mui/icons-material/AltRoute";
 
 interface MessageBubbleProps {
   message: Message;
@@ -33,8 +36,10 @@ interface MessageBubbleProps {
 
 const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const { updateMessageContext, deleteMessage, sendMessage, regenerateResponse } = useChatStore();
+  const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
   const { userName } = useAuthStore();
+  const navigate = useNavigate();
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -97,6 +102,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
     } catch (err) {
       console.error("Failed to copy message:", err);
       addNotification("Error", "Failed to copy message");
+    }
+  };
+
+  const handleFork = async (): Promise<void> => {
+    try {
+      const newTopic = await forkTopic(message.topicId, message.id);
+      if (newTopic) {
+        void navigate(`/chat/${newTopic.id}`);
+      }
+    } catch (err) {
+      console.error("Failed to fork conversation:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      addNotification("Failed to fork conversation", message);
     }
   };
 
@@ -231,6 +249,39 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
               display="flex"
               alignItems="center"
               gap={0.5}>
+              {isAssistant && message.content !== "" && !message.failed && (
+                <Tooltip title="Fork conversation here">
+                  <IconButton
+                    size="small"
+                    onClick={(): void => {
+                      void handleFork();
+                    }}
+                    sx={{
+                      color: (theme): string =>
+                        theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                      "&:hover": {
+                        bgcolor: (theme): string =>
+                          theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+                      },
+                    }}>
+                    <Box
+                      position="relative"
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      sx={{ width: 20, height: 20 }}>
+                      <Zoom
+                        in
+                        timeout={200}>
+                        <AltRouteIcon
+                          fontSize="small"
+                          sx={{ transform: "rotate(90deg)" }}
+                        />
+                      </Zoom>
+                    </Box>
+                  </IconButton>
+                </Tooltip>
+              )}
               <Tooltip title={copied ? "Copied!" : "Copy message"}>
                 <IconButton
                   size="small"
