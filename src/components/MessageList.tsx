@@ -7,7 +7,6 @@ import { useParams } from "react-router-dom";
 
 import { useChatStore } from "../store/ChatStore";
 import { useUiStore } from "../store/UiStore";
-import { useTopicStore } from "../store/TopicStore";
 import MessageBubble from "./MessageBubble";
 import { Message } from "../database/AthenaDb";
 
@@ -111,13 +110,12 @@ const Pane: React.FC<{ messages: Message[]; maxContextMessages: number }> = ({ m
 
 interface Props {
   messages: Message[];
+  maxContextMessages: number;
 }
 
-const MessageList: React.FC<Props> = ({ messages }) => {
+const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
   const { topicId } = useParams();
   const { visibleMessageCount, increaseVisibleMessageCount } = useChatStore();
-  const topic = useTopicStore((state) => state.topics.find((t) => t.id === topicId));
-  const maxContextMessages = topic?.maxContextMessages ?? 10;
 
   const visible = messages.filter((m) => !m.isDeleted).slice(-visibleMessageCount);
 

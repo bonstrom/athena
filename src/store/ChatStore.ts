@@ -20,6 +20,7 @@ interface ChatStore {
   fetchMessages: (topicId: string, forkId?: string) => Promise<void>;
   increaseVisibleMessageCount: () => void;
   toggleShowAllMessages: () => void;
+  resetVisibleMessageCount: () => void;
   setInitialLoad: (value: boolean) => void;
   addMessage: (message: Message) => Promise<void>;
   addMessages: (messages: Message[]) => Promise<void>;
@@ -52,6 +53,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   increaseVisibleMessageCount: (): void => set((state) => ({ visibleMessageCount: state.visibleMessageCount + 10 })),
 
   toggleShowAllMessages: (): void => set((state) => ({ showAllMessages: !state.showAllMessages })),
+
+  resetVisibleMessageCount: (): void => set({ visibleMessageCount: 10 }),
 
   setInitialLoad: (value: boolean): void => set({ isInitialLoad: value }),
 
@@ -86,6 +89,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messagesByTopic: { [topicId]: all },
       currentTopicId: topicId,
       isInitialLoad: true,
+      visibleMessageCount: 10,
     });
   },
 
