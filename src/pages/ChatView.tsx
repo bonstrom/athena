@@ -17,6 +17,11 @@ const ChatView: React.FC = () => {
   const [displayTopicId, setDisplayTopicId] = useState<string | undefined>(topicId);
   const [isVisible, setIsVisible] = useState(false);
 
+  // Sync state during render to ensure the fade-out starts instantly on topic change
+  if (topicId !== displayTopicId && isVisible) {
+    setIsVisible(false);
+  }
+
   const topic = useTopicStore((state) => state.topics.find((t) => t.id === displayTopicId));
   const maxContextMessages = topic?.maxContextMessages ?? 10;
 
@@ -24,23 +29,21 @@ const ChatView: React.FC = () => {
 
   useEffect(() => {
     if (topicId !== displayTopicId) {
-      // Step 1: Fade out current content
-      setIsVisible(false);
+      // Start fetching data immediately
+      const fetchPromise = topicId ? fetchMessages(topicId) : Promise.resolve();
 
-      // Step 2: Wait for fade out to complete before swapping content
+      // Wait for both the fade out and data fetching to finish
       const timer = setTimeout(() => {
-        setDisplayTopicId(topicId);
-        if (topicId) {
-          void fetchMessages(topicId).then(() => {
-            // Step 3: Fade in new content
-            setIsVisible(true);
-          });
-        }
-      }, 300); // Matches the Fade timeout
+        void fetchPromise.then(() => {
+          setDisplayTopicId(topicId);
+          // Fade in as soon as content is swapped
+          setIsVisible(true);
+        });
+      }, 200); // Shorter exit duration for snappier feel
 
       return () => clearTimeout(timer);
     } else if (topicId && !isVisible) {
-      // Handle initial load or direct navigation
+      // Initial load
       void fetchMessages(topicId).then(() => {
         setIsVisible(true);
       });
@@ -69,7 +72,7 @@ const ChatView: React.FC = () => {
           mx="auto">
           <Fade
             in={isVisible}
-            timeout={300}>
+            timeout={{ enter: 300, exit: 200 }}>
             <Box width="100%">
               {displayTopicId && <ForkTabs topicId={displayTopicId} />}
               <MessageList
