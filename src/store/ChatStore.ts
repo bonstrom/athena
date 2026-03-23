@@ -6,7 +6,7 @@ import { Message } from "../database/AthenaDb";
 import { athenaDb } from "../database/AthenaDb";
 import { useNotificationStore } from "./NotificationStore";
 
-export const SCRATCHPAD_LIMIT = 5000;
+import { SCRATCHPAD_LIMIT } from "../constants";
 
 interface ChatStore {
   messagesByTopic: Record<string, Message[]>;

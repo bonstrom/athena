@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Typography } from "@mui/material";
 import { useTopicStore } from "../store/TopicStore";
-import { SCRATCHPAD_LIMIT } from "../store/ChatStore";
+import { SCRATCHPAD_LIMIT } from "../constants";
 
 interface ScratchpadDialogProps {
   open: boolean;

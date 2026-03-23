@@ -5,6 +5,7 @@ import { athenaDb, Message, Topic } from "../database/AthenaDb";
 import { useAuthStore } from "./AuthStore";
 import { sendOpenAiChat } from "../services/openAi";
 import { getDefaultTopicNameModel } from "../components/ModelSelector";
+import { SCRATCHPAD_LIMIT } from "../constants";
 
 interface TopicState {
   topics: Topic[];
@@ -25,6 +26,7 @@ interface TopicState {
   forkTopic: (topicId: string, messageId: string) => Promise<void>;
   switchFork: (topicId: string, forkId: string) => Promise<void>;
   deleteFork: (topicId: string, forkId: string) => Promise<void>;
+  getTopicTokenCount: (topicId: string) => Promise<number>;
 }
 
 export const useTopicStore = create<TopicState>((set, get) => ({
@@ -294,5 +296,37 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification("Failed to delete branch", message);
     }
+  },
+  getTopicTokenCount: async (topicId: string): Promise<number> => {
+    const topic = get().topics.find((t) => t.id === topicId);
+    const contextMessages = await get().getTopicContext(topicId);
+    const auth = useAuthStore.getState();
+    const customInstructions = auth.customInstructions.trim();
+
+    let totalTokens = 0;
+
+    // 1. Custom Instructions
+    if (customInstructions) {
+      // Approximate overhead for system message structure (+ ~10 tokens)
+      totalTokens += Math.ceil(customInstructions.length / 4) + 10;
+    }
+
+    // 2. Scratchpad System Message
+    let scratchpadSystemMsg = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). To append a note to it, include \`<!-- persist: your note here -->\` in your response. To replace the entire scratchpad, use \`<!-- replace: your new content here -->\`. Use the scratchpad to remember key facts, character details, or state during games.`;
+    if (topic?.scratchpad) {
+      scratchpadSystemMsg += "\n\n[Current Scratchpad Content]:\n" + topic.scratchpad;
+    }
+    totalTokens += Math.ceil(scratchpadSystemMsg.length / 4) + 10;
+
+    // 3. Context Messages
+    for (const msg of contextMessages) {
+      if (msg.promptTokens || msg.completionTokens) {
+        totalTokens += (msg.promptTokens || 0) + (msg.completionTokens || 0);
+      } else {
+        totalTokens += Math.ceil(msg.content.length / 4);
+      }
+    }
+
+    return totalTokens;
   },
 }));

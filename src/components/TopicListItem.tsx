@@ -11,10 +11,11 @@ import {
   DialogTitle,
   Button,
   Box,
+  Tooltip,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUiStore } from "../store/UiStore";
-import { JSX, useState } from "react";
+import { JSX, useState, useEffect } from "react";
 import { useTopicStore } from "../store/TopicStore";
 import EditIcon from "@mui/icons-material/Edit";
 import SaveIcon from "@mui/icons-material/Check";
@@ -37,6 +38,30 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(topic.name);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [tokenCount, setTokenCount] = useState<number | null>(null);
+  const [isLoadingTokens, setIsLoadingTokens] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+
+  useEffect(() => {
+    setTokenCount(null);
+  }, [topic.activeForkId, topic.updatedOn]);
+
+  useEffect(() => {
+    if (isHovering && tokenCount === null && !isLoadingTokens) {
+      const fetch = async (): Promise<void> => {
+        setIsLoadingTokens(true);
+        try {
+          const count = await useTopicStore.getState().getTopicTokenCount(topic.id);
+          setTokenCount(count);
+        } catch (err) {
+          console.error("Failed to fetch token count", err);
+        } finally {
+          setIsLoadingTokens(false);
+        }
+      };
+      void fetch();
+    }
+  }, [isHovering, tokenCount, isLoadingTokens, topic.id]);
 
   const save = async (): Promise<void> => {
     await renameTopic(topic.id, editedName);
@@ -94,28 +119,43 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             alignItems="center"
             width="100%"
             py={0.5}>
-            <ListItemButton
-              selected={topic.id === topicId}
-              onClick={(): void => {
-                if (isMobile) closeDrawer();
-                void navigate(`/chat/${topic.id}`);
-              }}
-              sx={{
-                flexGrow: 1,
-                minHeight: 40,
-                borderRadius: 2,
-                mx: 1,
-              }}>
-              <ListItemText
-                primary={topic.name || topic.id}
-                slotProps={{
-                  primary: {
-                    noWrap: true,
-                    fontSize: "0.8rem",
-                  },
+            <Tooltip
+              title={
+                isLoadingTokens || tokenCount === null
+                  ? "Calculating context tokens..."
+                  : `Context: ~${tokenCount} tokens active`
+              }
+              placement="right"
+              enterDelay={500}>
+              <ListItemButton
+                selected={topic.id === topicId}
+                onMouseEnter={(): void => {
+                  setIsHovering(true);
                 }}
-              />
-            </ListItemButton>
+                onMouseLeave={(): void => {
+                  setIsHovering(false);
+                }}
+                onClick={(): void => {
+                  if (isMobile) closeDrawer();
+                  void navigate(`/chat/${topic.id}`);
+                }}
+                sx={{
+                  flexGrow: 1,
+                  minHeight: 40,
+                  borderRadius: 2,
+                  mx: 1,
+                }}>
+                <ListItemText
+                  primary={topic.name || topic.id}
+                  slotProps={{
+                    primary: {
+                      noWrap: true,
+                      fontSize: "0.8rem",
+                    },
+                  }}
+                />
+              </ListItemButton>
+            </Tooltip>
 
             <IconButton
               size="small"

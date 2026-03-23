@@ -27,8 +27,9 @@ import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
 import TopicContextDialog from "./TopicContextDialog";
 import ScratchpadDialog from "./ScratchpadDialog";
-import { useChatStore, SCRATCHPAD_LIMIT } from "../store/ChatStore";
+import { useChatStore } from "../store/ChatStore";
 import { useTopicStore } from "../store/TopicStore";
+import { SCRATCHPAD_LIMIT } from "../constants";
 
 interface ComposerProps {
   sending: boolean;
