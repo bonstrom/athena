@@ -22,7 +22,9 @@ interface TopicState {
   deleteTopic: (id: string) => Promise<void>;
   getTopicContext(topicId: string): Promise<Message[]>;
   updateTopicScratchpad: (id: string, scratchpad: string) => Promise<void>;
-  forkTopic: (topicId: string, messageId: string) => Promise<Topic | null>;
+  forkTopic: (topicId: string, messageId: string) => Promise<void>;
+  switchFork: (topicId: string, forkId: string) => Promise<void>;
+  deleteFork: (topicId: string, forkId: string) => Promise<void>;
 }
 
 export const useTopicStore = create<TopicState>((set, get) => ({
@@ -109,7 +111,16 @@ export const useTopicStore = create<TopicState>((set, get) => ({
   },
 
   async getTopicContext(topicId: string): Promise<Message[]> {
-    const allMessages = await athenaDb.messages.where("topicId").equals(topicId).toArray();
+    const topic = get().topics.find((t) => t.id === topicId);
+    if (!topic) return [];
+
+    const activeForkId = topic.activeForkId ?? "main";
+
+    const allMessages = await athenaDb.messages
+      .where("topicId")
+      .equals(topicId)
+      .and((m) => m.forkId === activeForkId)
+      .toArray();
 
     const recent = allMessages
       .filter((m) => (m.type === "user" || m.type === "assistant") && !m.isDeleted)
@@ -176,26 +187,56 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     }
   },
 
-  forkTopic: async (topicId, messageId): Promise<Topic | null> => {
+  switchFork: async (topicId, forkId): Promise<void> => {
+    try {
+      await athenaDb.topics.update(topicId, { activeForkId: forkId });
+      set((state) => ({
+        topics: state.topics.map((t) => (t.id === topicId ? { ...t, activeForkId: forkId } : t)),
+      }));
+    } catch (err) {
+      console.error("Failed to switch fork", err);
+      const message = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification("Failed to switch tab", message);
+    }
+  },
+
+  forkTopic: async (topicId: string, messageId: string): Promise<void> => {
     try {
       const originalTopic = get().topics.find((t) => t.id === topicId);
-      if (!originalTopic) return null;
+      if (!originalTopic) return;
 
-      const newTopic: Topic = {
-        id: uuidv4(),
-        name: `${originalTopic.name} (Fork)`,
+      const currentForkId = originalTopic.activeForkId ?? "main";
+      const newForkId = uuidv4();
+      const newForkName = `Fork ${originalTopic.forks?.length ?? 1}`;
+
+      const newFork = {
+        id: newForkId,
+        name: newForkName,
         createdOn: new Date().toISOString(),
-        isDeleted: false,
-        updatedOn: new Date().toISOString(),
-        scratchpad: originalTopic.scratchpad,
       };
 
-      await athenaDb.topics.add(newTopic);
-      get().addTopic(newTopic);
+      const updatedForks = [...(originalTopic.forks ?? []), newFork];
 
-      const allMessages = await athenaDb.messages.where("topicId").equals(topicId).toArray();
+      await athenaDb.topics.update(topicId, {
+        forks: updatedForks,
+        activeForkId: newForkId,
+        updatedOn: new Date().toISOString(),
+      });
+
+      set((state) => ({
+        topics: state.topics.map((t) =>
+          t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newForkId } : t,
+        ),
+      }));
+
+      const allMessages = await athenaDb.messages
+        .where("topicId")
+        .equals(topicId)
+        .and((m) => m.forkId === currentForkId)
+        .toArray();
+
       const selectedMessage = allMessages.find((m) => m.id === messageId);
-      if (!selectedMessage) return newTopic;
+      if (!selectedMessage) return;
 
       const messagesToCopy = allMessages
         .filter((m) => new Date(m.created).getTime() <= new Date(selectedMessage.created).getTime() && !m.isDeleted)
@@ -204,19 +245,54 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       const newMessages: Message[] = messagesToCopy.map((m) => ({
         ...m,
         id: uuidv4(),
-        topicId: newTopic.id,
+        forkId: newForkId,
       }));
 
       if (newMessages.length > 0) {
         await athenaDb.messages.bulkAdd(newMessages);
       }
-
-      return newTopic;
     } catch (err) {
       console.error("Failed to fork topic", err);
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification("Failed to fork topic", message);
-      return null;
+    }
+  },
+
+  deleteFork: async (topicId: string, forkId: string): Promise<void> => {
+    try {
+      const topic = get().topics.find((t) => t.id === topicId);
+      if (!topic?.forks) return;
+
+      const updatedForks = topic.forks.filter((f) => f.id !== forkId);
+      if (updatedForks.length === 0) return; // Don't delete the last fork
+
+      let newActiveForkId = topic.activeForkId;
+      if (topic.activeForkId === forkId) {
+        newActiveForkId = updatedForks[0].id;
+      }
+
+      await athenaDb.topics.update(topicId, {
+        forks: updatedForks,
+        activeForkId: newActiveForkId,
+        updatedOn: new Date().toISOString(),
+      });
+
+      set((state) => ({
+        topics: state.topics.map((t) =>
+          t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newActiveForkId } : t,
+        ),
+      }));
+
+      // Delete messages unique to this fork
+      await athenaDb.messages
+        .where("topicId")
+        .equals(topicId)
+        .and((m) => m.forkId === forkId)
+        .delete();
+    } catch (err) {
+      console.error("Failed to delete fork", err);
+      const message = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification("Failed to delete branch", message);
     }
   },
 }));

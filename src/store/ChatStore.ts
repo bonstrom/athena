@@ -17,7 +17,7 @@ interface ChatStore {
   selectedModel: ChatModel;
   visibleMessageCount: number;
   setSending: (value: boolean) => void;
-  fetchMessages: (topicId: string) => Promise<void>;
+  fetchMessages: (topicId: string, forkId?: string) => Promise<void>;
   increaseVisibleMessageCount: () => void;
   toggleShowAllMessages: () => void;
   setInitialLoad: (value: boolean) => void;
@@ -72,8 +72,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
   },
 
-  fetchMessages: async (topicId: string): Promise<void> => {
-    const all = await athenaDb.messages.where("topicId").equals(topicId).sortBy("created");
+  fetchMessages: async (topicId: string, forkId?: string): Promise<void> => {
+    const topic = useTopicStore.getState().topics.find((t) => t.id === topicId);
+    const activeForkId = forkId ?? topic?.activeForkId ?? "main";
+
+    const all = await athenaDb.messages
+      .where("topicId")
+      .equals(topicId)
+      .and((m) => m.forkId === activeForkId)
+      .sortBy("created");
 
     set({
       messagesByTopic: { [topicId]: all },
@@ -188,6 +195,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     let userMessage: Message;
 
+    const topic = topicStoreState.topics.find((t) => t.id === topicId);
+    const activeForkId = topic?.activeForkId ?? "main";
+
     if (isRetry) {
       const existing = await athenaDb.messages.get(messageId);
       if (!existing) throw new Error("Original message not found for retry.");
@@ -197,6 +207,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       userMessage = {
         id: crypto.randomUUID(),
         topicId,
+        forkId: activeForkId,
         type: "user",
         content: content.trim(),
         created: now,
@@ -217,7 +228,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       content: m.content,
     }));
 
-    const topic = topicStoreState.topics.find((t) => t.id === topicId);
     let scratchpadSystemMsg = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). To append a note to it, include \`<!-- persist: your note here -->\` in your response. To replace the entire scratchpad, use \`<!-- replace: your new content here -->\`. Use the scratchpad to remember key facts, character details, or state during games.`;
     if (topic?.scratchpad) {
       scratchpadSystemMsg += "\n\n[Current Scratchpad Content]:\n" + topic.scratchpad;
@@ -235,6 +245,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const assistantMessage: Message = {
       id: assistantId,
       topicId,
+      forkId: activeForkId,
       type: "assistant",
       content: "",
       created: assistantCreated,
@@ -332,6 +343,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     let userMessage: Message;
 
+    const topic = topicStoreState.topics.find((t) => t.id === topicId);
+    const activeForkId = topic?.activeForkId ?? "main";
+
     if (isRetry) {
       const existing = await athenaDb.messages.get(messageId);
       if (!existing) throw new Error("Original message not found for retry.");
@@ -341,6 +355,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       userMessage = {
         id: crypto.randomUUID(),
         topicId,
+        forkId: activeForkId,
         type: "user",
         content: content.trim(),
         created: now,
@@ -361,7 +376,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       content: m.content,
     }));
 
-    const topic = topicStoreState.topics.find((t) => t.id === topicId);
     let scratchpadSystemMsg = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). To append a note to it, include \`<!-- persist: your note here -->\` in your response. To replace the entire scratchpad, use \`<!-- replace: your new content here -->\`. Use the scratchpad to remember key facts, character details, or state during games.`;
     if (topic?.scratchpad) {
       scratchpadSystemMsg += "\n\n[Current Scratchpad Content]:\n" + topic.scratchpad;
@@ -378,6 +392,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const assistantMessage: Message = {
       id: assistantId,
       topicId,
+      forkId: activeForkId,
       type: "assistant",
       content: "",
       created: assistantCreated,

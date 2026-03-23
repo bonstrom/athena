@@ -27,7 +27,6 @@ import { useChatStore } from "../store/ChatStore";
 import { chatModels } from "./ModelSelector";
 import { Message } from "../database/AthenaDb";
 import { useNotificationStore } from "../store/NotificationStore";
-import { useNavigate } from "react-router-dom";
 import { useTopicStore } from "../store/TopicStore";
 import AltRouteIcon from "@mui/icons-material/AltRoute";
 
@@ -40,7 +39,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
   const { userName } = useAuthStore();
-  const navigate = useNavigate();
+
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -108,10 +107,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 
   const handleFork = async (): Promise<void> => {
     try {
-      const newTopic = await forkTopic(message.topicId, message.id);
-      if (newTopic) {
-        void navigate(`/chat/${newTopic.id}`);
-      }
+      await forkTopic(message.topicId, message.id);
     } catch (err) {
       console.error("Failed to fork conversation:", err);
       const message = err instanceof Error ? err.message : String(err);

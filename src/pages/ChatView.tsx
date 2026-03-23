@@ -5,6 +5,7 @@ import { useChatStore } from "../store/ChatStore";
 import { Message } from "../database/AthenaDb";
 import MessageList from "../components/MessageList";
 import Composer from "../components/Composer";
+import ForkTabs from "../components/ForkTabs";
 
 const ChatView: React.FC = () => {
   const { topicId } = useParams<{ topicId: string }>();
@@ -41,6 +42,7 @@ const ChatView: React.FC = () => {
           maxWidth={{ xs: "100%", md: "md" }}
           px={{ xs: 1, md: 2 }}
           mx="auto">
+          {topicId && <ForkTabs topicId={topicId} />}
           <MessageList messages={messages} />
         </Box>
       </Box>
