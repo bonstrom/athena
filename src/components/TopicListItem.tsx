@@ -12,10 +12,11 @@ import {
   Button,
   Box,
   Tooltip,
+  Typography,
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUiStore } from "../store/UiStore";
-import { JSX, useState, useEffect } from "react";
+import { JSX, useState, useEffect, useRef } from "react";
 import { useTopicStore } from "../store/TopicStore";
 import EditIcon from "@mui/icons-material/Edit";
 import SaveIcon from "@mui/icons-material/Check";
@@ -26,6 +27,7 @@ import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import TopicContextDialog from "./TopicContextDialog";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
+import AltRouteIcon from "@mui/icons-material/AltRoute";
 import { Topic } from "../database/AthenaDb";
 
 export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
@@ -42,6 +44,8 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
   const [totalCost, setTotalCost] = useState<number | null>(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setTokenCount(null);
@@ -91,6 +95,22 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
     setMenuAnchorEl(null);
   };
 
+  const handleMouseEnter = (): void => {
+    setIsHovering(true);
+    timeoutRef.current = setTimeout(() => {
+      setTooltipOpen(true);
+    }, 700);
+  };
+
+  const handleMouseLeave = (): void => {
+    setIsHovering(false);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    setTooltipOpen(false);
+  };
+
   return (
     <>
       <ListItem disablePadding>
@@ -126,6 +146,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             width="100%"
             py={0.5}>
             <Tooltip
+              open={tooltipOpen}
               title={
                 isLoadingStats || tokenCount === null || totalCost === null ? (
                   "Calculating stats..."
@@ -136,16 +157,11 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                   </Box>
                 )
               }
-              placement="right"
-              enterDelay={500}>
+              placement="right">
               <ListItemButton
                 selected={topic.id === topicId}
-                onMouseEnter={(): void => {
-                  setIsHovering(true);
-                }}
-                onMouseLeave={(): void => {
-                  setIsHovering(false);
-                }}
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
                 onClick={(): void => {
                   if (isMobile) closeDrawer();
                   void navigate(`/chat/${topic.id}`);
@@ -157,10 +173,44 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                   mx: 1,
                 }}>
                 <ListItemText
-                  primary={topic.name || topic.id}
+                  primary={
+                    <Box
+                      display="flex"
+                      alignItems="center"
+                      gap={1}>
+                      <Box
+                        component="span"
+                        sx={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}>
+                        {topic.name || topic.id}
+                      </Box>
+                      {(topic.forks?.length ?? 0) > 1 && (
+                        <Box
+                          display="flex"
+                          alignItems="center"
+                          sx={{ opacity: 0.6, ml: "auto", flexShrink: 0 }}>
+                          <AltRouteIcon
+                            sx={{
+                              fontSize: "0.85rem",
+                              mr: 0.3,
+                              transform: "rotate(90deg)",
+                            }}
+                          />
+                          <Typography
+                            variant="caption"
+                            sx={{ fontSize: "0.75rem", fontWeight: "bold", lineHeight: 1 }}>
+                            {(topic.forks?.length ?? 1) - 1}
+                          </Typography>
+                        </Box>
+                      )}
+                    </Box>
+                  }
                   slotProps={{
                     primary: {
-                      noWrap: true,
+                      noWrap: false, // Changed to false because we wrap the name in a box with ellipsis
                       fontSize: "0.8rem",
                     },
                   }}
