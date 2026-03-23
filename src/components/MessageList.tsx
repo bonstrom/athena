@@ -7,6 +7,7 @@ import { useParams } from "react-router-dom";
 
 import { useChatStore } from "../store/ChatStore";
 import { useUiStore } from "../store/UiStore";
+import { useTopicStore } from "../store/TopicStore";
 import MessageBubble from "./MessageBubble";
 import { Message } from "../database/AthenaDb";
 
@@ -43,7 +44,7 @@ const FollowFab = (): JSX.Element | null => {
   );
 };
 
-const Pane: React.FC<{ messages: Message[] }> = ({ messages }) => {
+const Pane: React.FC<{ messages: Message[]; maxContextMessages: number }> = ({ messages, maxContextMessages }) => {
   const { showAllMessages } = useUiStore();
 
   const scrollToBottom = useScrollToBottom();
@@ -65,7 +66,10 @@ const Pane: React.FC<{ messages: Message[] }> = ({ messages }) => {
   });
 
   const contextMessages = messages.filter((m) => m.type === "user" || m.type === "assistant");
-  const firstInWindowId = contextMessages.length > 10 ? contextMessages[contextMessages.length - 10].id : null;
+  const firstInWindowId =
+    contextMessages.length > maxContextMessages
+      ? contextMessages[contextMessages.length - maxContextMessages].id
+      : null;
 
   return (
     <>
@@ -112,6 +116,8 @@ interface Props {
 const MessageList: React.FC<Props> = ({ messages }) => {
   const { topicId } = useParams();
   const { visibleMessageCount, increaseVisibleMessageCount } = useChatStore();
+  const topic = useTopicStore((state) => state.topics.find((t) => t.id === topicId));
+  const maxContextMessages = topic?.maxContextMessages ?? 10;
 
   const visible = messages.filter((m) => !m.isDeleted).slice(-visibleMessageCount);
 
@@ -135,7 +141,10 @@ const MessageList: React.FC<Props> = ({ messages }) => {
         </ListItem>
       )}
 
-      <Pane messages={visible} />
+      <Pane
+        messages={visible}
+        maxContextMessages={maxContextMessages}
+      />
     </ScrollToBottom>
   );
 };

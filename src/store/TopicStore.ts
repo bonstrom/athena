@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { useNotificationStore } from "./NotificationStore";
+import { encode } from "gpt-tokenizer";
 import { v4 as uuidv4 } from "uuid";
 import { athenaDb, Message, Topic } from "../database/AthenaDb";
 import { useAuthStore } from "./AuthStore";
@@ -28,6 +29,7 @@ interface TopicState {
   deleteFork: (topicId: string, forkId: string) => Promise<void>;
   getTopicTokenCount: (topicId: string) => Promise<number>;
   getTopicTotalCost: (topicId: string) => Promise<number>;
+  updateTopicMaxContextMessages: (id: string, maxContextMessages: number) => Promise<void>;
 }
 
 export const useTopicStore = create<TopicState>((set, get) => ({
@@ -128,7 +130,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     const recent = allMessages
       .filter((m) => (m.type === "user" || m.type === "assistant") && !m.isDeleted)
       .sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime())
-      .slice(-10);
+      .slice(-(topic.maxContextMessages ?? 10));
 
     const pinned = allMessages.filter((m) => m.includeInContext);
     const aiNotes = allMessages.filter((m) => m.type === "aiNote");
@@ -308,8 +310,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
     // 1. Custom Instructions
     if (customInstructions) {
-      // Approximate overhead for system message structure (+ ~10 tokens)
-      totalTokens += Math.ceil(customInstructions.length / 4) + 10;
+      totalTokens += encode(`system: ${customInstructions}`).length;
     }
 
     // 2. Scratchpad System Message
@@ -317,14 +318,14 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     if (topic?.scratchpad) {
       scratchpadSystemMsg += "\n\n[Current Scratchpad Content]:\n" + topic.scratchpad;
     }
-    totalTokens += Math.ceil(scratchpadSystemMsg.length / 4) + 10;
+    totalTokens += encode(`system: ${scratchpadSystemMsg}`).length;
 
     // 3. Context Messages
     for (const msg of contextMessages) {
       if (msg.promptTokens || msg.completionTokens) {
         totalTokens += (msg.promptTokens || 0) + (msg.completionTokens || 0);
       } else {
-        totalTokens += Math.ceil(msg.content.length / 4);
+        totalTokens += encode(`${msg.type}: ${msg.content}`).length;
       }
     }
 
@@ -333,5 +334,17 @@ export const useTopicStore = create<TopicState>((set, get) => ({
   getTopicTotalCost: async (topicId: string): Promise<number> => {
     const allMessages = await athenaDb.messages.where("topicId").equals(topicId).toArray();
     return allMessages.reduce((sum, msg) => sum + (msg.totalCost || 0), 0);
+  },
+  updateTopicMaxContextMessages: async (id, maxContextMessages): Promise<void> => {
+    try {
+      await athenaDb.topics.update(id, { maxContextMessages });
+      set((state) => ({
+        topics: state.topics.map((t) => (t.id === id ? { ...t, maxContextMessages } : t)),
+      }));
+    } catch (err) {
+      console.error("Failed to update topic max context messages", err);
+      const message = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification("Failed to update context limit", message);
+    }
   },
 }));

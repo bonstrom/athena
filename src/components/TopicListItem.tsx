@@ -46,7 +46,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
   useEffect(() => {
     setTokenCount(null);
     setTotalCost(null);
-  }, [topic.activeForkId, topic.updatedOn]);
+  }, [topic.activeForkId, topic.updatedOn, topic.maxContextMessages]);
 
   useEffect(() => {
     if (isHovering && (tokenCount === null || totalCost === null) && !isLoadingStats) {

@@ -48,6 +48,11 @@ class AthenaDatabase extends Dexie {
             }
           });
       });
+
+    this.version(3).stores({
+      topics: "id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages",
+      messages: "id, topicId, forkId, type, created, isDeleted, includeInContext",
+    });
   }
 }
 
@@ -84,6 +89,7 @@ export interface Topic {
   scratchpad?: string;
   forks?: Fork[]; // Optional for backward compatibility
   activeForkId?: string; // Optional for backward compatibility
+  maxContextMessages?: number;
 }
 
 export const athenaDb = new AthenaDatabase();

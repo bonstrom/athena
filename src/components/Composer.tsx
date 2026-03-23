@@ -11,6 +11,8 @@ import {
   ListItemText,
   Tabs,
   Tab,
+  Slider,
+  Typography,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import AddIcon from "@mui/icons-material/Add";
@@ -53,6 +55,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [pages, setPages] = useState<Page[]>([{ id: crypto.randomUUID(), title: "Page 1", content: "" }]);
   const [activePageIndex, setActivePageIndex] = useState(0);
+  const [localMaxContext, setLocalMaxContext] = useState<number | null>(null);
   const openTempMenu = Boolean(anchorEl);
 
   const handleTempClick = (event: React.MouseEvent<HTMLButtonElement>): void => {
@@ -149,6 +152,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     }
   }, [sending]);
 
+  useEffect(() => {
+    setLocalMaxContext(null);
+  }, [currentTopicId]);
+
   return (
     <Box
       display="flex"
@@ -172,7 +179,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         <Box
           display="flex"
           alignItems="center">
-          <Tooltip title="Generation Settings">
+          <Tooltip title="Topic Settings">
             <span>
               <IconButton
                 onClick={handleTempClick}
@@ -317,6 +324,52 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 />
               )}
             </MenuItem>
+
+            <Divider sx={{ my: 1, opacity: 0.6 }} />
+
+            <ListSubheader
+              sx={{
+                lineHeight: "36px",
+                fontWeight: "bold",
+                fontSize: "0.75rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                bgcolor: "transparent",
+              }}>
+              Context Limit
+            </ListSubheader>
+            <Box sx={{ px: 3, py: 1 }}>
+              <Box
+                display="flex"
+                justifyContent="space-between"
+                mb={1}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary">
+                  Recent messages:{" "}
+                  {localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 10}
+                </Typography>
+              </Box>
+              <Slider
+                value={
+                  localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 10
+                }
+                min={1}
+                max={50}
+                step={1}
+                onChange={(_, value): void => {
+                  setLocalMaxContext(value);
+                }}
+                onChangeCommitted={(_, value): void => {
+                  if (currentTopicId) {
+                    void topicStore.updateTopicMaxContextMessages(currentTopicId, value);
+                    setLocalMaxContext(null);
+                  }
+                }}
+                valueLabelDisplay="auto"
+                size="small"
+              />
+            </Box>
 
             <Divider sx={{ my: 1, opacity: 0.6 }} />
 
