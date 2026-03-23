@@ -39,29 +39,35 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
   const [editedName, setEditedName] = useState(topic.name);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [tokenCount, setTokenCount] = useState<number | null>(null);
-  const [isLoadingTokens, setIsLoadingTokens] = useState(false);
+  const [totalCost, setTotalCost] = useState<number | null>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
 
   useEffect(() => {
     setTokenCount(null);
+    setTotalCost(null);
   }, [topic.activeForkId, topic.updatedOn]);
 
   useEffect(() => {
-    if (isHovering && tokenCount === null && !isLoadingTokens) {
-      const fetch = async (): Promise<void> => {
-        setIsLoadingTokens(true);
+    if (isHovering && (tokenCount === null || totalCost === null) && !isLoadingStats) {
+      const fetchStats = async (): Promise<void> => {
+        setIsLoadingStats(true);
         try {
-          const count = await useTopicStore.getState().getTopicTokenCount(topic.id);
+          const [count, cost] = await Promise.all([
+            useTopicStore.getState().getTopicTokenCount(topic.id),
+            useTopicStore.getState().getTopicTotalCost(topic.id),
+          ]);
           setTokenCount(count);
+          setTotalCost(cost);
         } catch (err) {
-          console.error("Failed to fetch token count", err);
+          console.error("Failed to fetch topic stats", err);
         } finally {
-          setIsLoadingTokens(false);
+          setIsLoadingStats(false);
         }
       };
-      void fetch();
+      void fetchStats();
     }
-  }, [isHovering, tokenCount, isLoadingTokens, topic.id]);
+  }, [isHovering, tokenCount, totalCost, isLoadingStats, topic.id]);
 
   const save = async (): Promise<void> => {
     await renameTopic(topic.id, editedName);
@@ -121,9 +127,14 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             py={0.5}>
             <Tooltip
               title={
-                isLoadingTokens || tokenCount === null
-                  ? "Calculating context tokens..."
-                  : `Context: ~${tokenCount} tokens active`
+                isLoadingStats || tokenCount === null || totalCost === null ? (
+                  "Calculating stats..."
+                ) : (
+                  <Box>
+                    <Box>Context: ~{tokenCount} tokens active</Box>
+                    <Box>Total Cost: {totalCost.toFixed(3)} SEK</Box>
+                  </Box>
+                )
               }
               placement="right"
               enterDelay={500}>

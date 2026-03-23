@@ -8,6 +8,7 @@ export interface ChatModel {
   id: string;
   label: string;
   input: number;
+  cachedInput: number;
   output: number;
   provider: "openai" | "deepseek";
   streaming: boolean;
@@ -19,6 +20,7 @@ export const chatModels: ChatModel[] = [
     id: "gpt-5.4",
     label: "GPT-5.4",
     input: 2.5,
+    cachedInput: 0.25,
     output: 15,
     provider: "openai",
     streaming: true,
@@ -28,6 +30,7 @@ export const chatModels: ChatModel[] = [
     id: "gpt-5.4-mini",
     label: "GPT-5.4 Mini",
     input: 0.75,
+    cachedInput: 0.075,
     output: 4.5,
     provider: "openai",
     streaming: true,
@@ -37,6 +40,7 @@ export const chatModels: ChatModel[] = [
     id: "gpt-5.4-nano",
     label: "GPT-5.4 Nano",
     input: 0.2,
+    cachedInput: 0.02,
     output: 1.25,
     provider: "openai",
     streaming: true,
@@ -46,6 +50,7 @@ export const chatModels: ChatModel[] = [
     id: "deepseek-chat",
     label: "Deepseek Chat",
     input: 0.28,
+    cachedInput: 0.028,
     output: 0.42,
     provider: "deepseek",
     streaming: true,
@@ -55,6 +60,7 @@ export const chatModels: ChatModel[] = [
     id: "deepseek-reasoner",
     label: "Deepseek Reasoner",
     input: 0.28,
+    cachedInput: 0.028,
     output: 0.42,
     provider: "deepseek",
     streaming: true,
@@ -62,12 +68,29 @@ export const chatModels: ChatModel[] = [
   },
 ];
 
-export function calculateCostUSD(model: ChatModel, prompt: number, completion: number): number {
-  return (prompt / 1_000_000) * model.input + (completion / 1_000_000) * model.output;
+export function calculateCostUSD(
+  model: ChatModel,
+  prompt: number,
+  completion: number,
+  promptDetails?: { cached_tokens?: number },
+): number {
+  const cachedTokens = promptDetails?.cached_tokens ?? 0;
+  const regularPromptTokens = Math.max(0, prompt - cachedTokens);
+
+  return (
+    (regularPromptTokens / 1_000_000) * model.input +
+    (cachedTokens / 1_000_000) * model.cachedInput +
+    (completion / 1_000_000) * model.output
+  );
 }
 
-export function calculateCostSEK(model: ChatModel, prompt: number, completion: number): number {
-  return calculateCostUSD(model, prompt, completion) * USD_TO_SEK;
+export function calculateCostSEK(
+  model: ChatModel,
+  prompt: number,
+  completion: number,
+  promptDetails?: { cached_tokens?: number },
+): number {
+  return calculateCostUSD(model, prompt, completion, promptDetails) * USD_TO_SEK;
 }
 
 interface Props {

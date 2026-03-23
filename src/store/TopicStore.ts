@@ -27,6 +27,7 @@ interface TopicState {
   switchFork: (topicId: string, forkId: string) => Promise<void>;
   deleteFork: (topicId: string, forkId: string) => Promise<void>;
   getTopicTokenCount: (topicId: string) => Promise<number>;
+  getTopicTotalCost: (topicId: string) => Promise<number>;
 }
 
 export const useTopicStore = create<TopicState>((set, get) => ({
@@ -328,5 +329,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     }
 
     return totalTokens;
+  },
+  getTopicTotalCost: async (topicId: string): Promise<number> => {
+    const allMessages = await athenaDb.messages.where("topicId").equals(topicId).toArray();
+    return allMessages.reduce((sum, msg) => sum + (msg.totalCost || 0), 0);
   },
 }));

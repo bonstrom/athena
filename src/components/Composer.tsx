@@ -415,6 +415,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                         {page.title}
                         {pages.length > 1 && (
                           <IconButton
+                            component="span"
                             size="small"
                             onClick={(e): void => deletePage(index, e)}
                             sx={{ p: 0.5 }}>

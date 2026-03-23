@@ -272,7 +272,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       await get().updateMessage(userMessage.id, {
         promptTokens: result.promptTokens,
-        totalCost: calculateCostSEK(selectedModel, result.promptTokens, 0),
+        totalCost: calculateCostSEK(selectedModel, result.promptTokens, 0, result.promptTokensDetails),
         failed: false,
       });
 
@@ -412,7 +412,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       await get().updateMessage(userMessage.id, {
         promptTokens: result.promptTokens,
-        totalCost: calculateCostSEK(selectedModel, result.promptTokens, 0),
+        totalCost: calculateCostSEK(selectedModel, result.promptTokens, 0, result.promptTokensDetails),
         failed: false,
       });
 

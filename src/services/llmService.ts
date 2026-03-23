@@ -14,6 +14,8 @@ export interface LlmResult {
   completionTokens: number;
   aiNote?: string | null;
   aiNoteAction?: "append" | "replace";
+  promptTokensDetails?: { cached_tokens?: number };
+  completionTokensDetails?: { reasoning_tokens?: number };
 }
 
 interface LlmPayload {
@@ -21,6 +23,7 @@ interface LlmPayload {
   messages: LlmMessage[];
   temperature?: number;
   stream: boolean;
+  stream_options?: { include_usage: boolean };
 }
 
 const PROVIDER_URLS: Record<string, string> = {
@@ -57,6 +60,10 @@ function buildPayload(model: ChatModel, messages: LlmMessage[], stream: boolean)
     basePayload.temperature = useChatStore.getState().temperature;
   } else {
     delete basePayload.temperature;
+  }
+
+  if (stream) {
+    basePayload.stream_options = { include_usage: true };
   }
 
   return basePayload;
@@ -138,6 +145,9 @@ export async function askLlm(messages: LlmMessage[]): Promise<LlmResult> {
       .trim(),
     promptTokens: data.usage.prompt_tokens,
     completionTokens: data.usage.completion_tokens,
+    promptTokensDetails: (data.usage as { prompt_tokens_details?: { cached_tokens?: number } }).prompt_tokens_details,
+    completionTokensDetails: (data.usage as { completion_tokens_details?: { reasoning_tokens?: number } })
+      .completion_tokens_details,
     aiNote,
     aiNoteAction,
   };
@@ -164,8 +174,11 @@ export async function askLlmStream(messages: LlmMessage[], onToken?: (token: str
   const reader = res.body.getReader();
   const decoder = new TextDecoder("utf-8");
 
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let promptTokensDetails: { cached_tokens?: number } | undefined;
+  let completionTokensDetails: { reasoning_tokens?: number } | undefined;
   let accumulated = "";
-
   let done = false;
 
   while (!done) {
@@ -185,7 +198,23 @@ export async function askLlmStream(messages: LlmMessage[], onToken?: (token: str
       }
 
       try {
-        const parsed = JSON.parse(json) as { choices?: { delta?: { content?: string } }[] };
+        const parsed = JSON.parse(json) as {
+          choices?: { delta?: { content?: string } }[];
+          usage?: {
+            prompt_tokens: number;
+            completion_tokens: number;
+            prompt_tokens_details?: { cached_tokens?: number };
+            completion_tokens_details?: { reasoning_tokens?: number };
+          };
+        };
+
+        if (parsed.usage) {
+          promptTokens = parsed.usage.prompt_tokens;
+          completionTokens = parsed.usage.completion_tokens;
+          promptTokensDetails = parsed.usage.prompt_tokens_details;
+          completionTokensDetails = parsed.usage.completion_tokens_details;
+        }
+
         const token = parsed.choices?.[0]?.delta?.content ?? "";
         accumulated += token;
         if (onToken && token) onToken(token);
@@ -195,7 +224,12 @@ export async function askLlmStream(messages: LlmMessage[], onToken?: (token: str
     }
   }
 
-  const { promptTokens, completionTokens } = estimateStreamedTokens(messages, accumulated);
+  // Fallback to estimation if usage was not provided in the stream
+  if (promptTokens === 0 && completionTokens === 0) {
+    const estimated = estimateStreamedTokens(messages, accumulated);
+    promptTokens = estimated.promptTokens;
+    completionTokens = estimated.completionTokens;
+  }
 
   const persistMatch = /<!--\s*persist:\s*([\s\S]*?)\s*-->/i.exec(accumulated);
   const replaceMatch = /<!--\s*replace:\s*([\s\S]*?)\s*-->/i.exec(accumulated);
@@ -218,6 +252,8 @@ export async function askLlmStream(messages: LlmMessage[], onToken?: (token: str
       .trim(),
     promptTokens,
     completionTokens,
+    promptTokensDetails,
+    completionTokensDetails,
     aiNote,
     aiNoteAction,
   };

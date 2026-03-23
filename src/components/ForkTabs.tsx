@@ -95,6 +95,7 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
                   {fork.name}
                   {topic.forks && topic.forks.length > 1 && (
                     <IconButton
+                      component="span"
                       size="small"
                       onClick={(e): void => handleDeleteClick(e, fork.id)}
                       sx={{
