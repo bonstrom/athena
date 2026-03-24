@@ -278,6 +278,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       // Show typing indicator
       await get().addMessage(assistantMessage);
 
+      const loopStartTime = Date.now();
       const { finalContent, totalPromptTokens, totalCompletionTokens, lastResult } = await orchestrateLlmLoop(
         selectedModel,
         get().temperature,
@@ -303,6 +304,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
           await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
         },
       );
+      const latencyMs = Date.now() - loopStartTime;
 
       await get().updateMessage(userMessage.id, {
         promptTokens: totalPromptTokens,
@@ -318,6 +320,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         completionTokens: totalCompletionTokens,
         totalCost: calculateCostSEK(selectedModel, 0, totalCompletionTokens),
         failed: false,
+        latencyMs,
       });
 
       void topicStoreState.generateTopicName(topicId, content);
@@ -441,6 +444,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
     try {
       await get().addMessage(assistantMessage);
 
+      const loopStartTime = Date.now();
       const { finalContent, totalPromptTokens, totalCompletionTokens, lastResult } = await orchestrateLlmLoop(
         selectedModel,
         get().temperature,
@@ -460,6 +464,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
           await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
         },
       );
+      const latencyMs = Date.now() - loopStartTime;
 
       await get().updateMessage(userMessage.id, {
         promptTokens: totalPromptTokens,
@@ -475,6 +480,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         completionTokens: totalCompletionTokens,
         totalCost: calculateCostSEK(selectedModel, 0, totalCompletionTokens),
         failed: false,
+        latencyMs,
       });
 
       void topicStoreState.generateTopicName(topicId, content);

@@ -78,6 +78,7 @@ export interface Message {
   promptTokens: number;
   completionTokens: number;
   totalCost: number;
+  latencyMs?: number;
 }
 
 export interface Topic {

@@ -161,6 +161,23 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                   display="block">
                   {`${message.totalCost.toFixed(3)} kr`}
                 </Typography>
+                {message.latencyMs && (
+                  <>
+                    <Typography
+                      variant="caption"
+                      display="block">
+                      {`Time: ${(message.latencyMs / 1000).toFixed(1)} s`}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      display="block">
+                      {`Speed: ${(
+                        (message.promptTokens + message.completionTokens) /
+                        (message.latencyMs / 1000)
+                      ).toFixed(1)} TPS`}
+                    </Typography>
+                  </>
+                )}
               </Box>
             }>
             <Typography
