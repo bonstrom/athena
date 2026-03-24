@@ -13,10 +13,13 @@ import {
   MenuItem,
   Switch,
   FormControlLabel,
+  CircularProgress,
 } from "@mui/material";
 import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { useAuthStore } from "../store/AuthStore";
 import { BackupService } from "../services/backupService";
+import { getMoonshotBalance, getDeepSeekBalance } from "../services/llmService";
+import { USD_TO_SEK } from "../components/ModelSelector";
 
 const Settings: React.FC = () => {
   const {
@@ -48,6 +51,8 @@ const Settings: React.FC = () => {
   const [showGoogleKey, setShowGoogleKey] = useState(false);
   const [showMoonshotKey, setShowMoonshotKey] = useState(false);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
+  const [moonshotBalance, setMoonshotBalance] = useState<number | null>(null);
+  const [deepSeekBalance, setDeepSeekBalance] = useState<{ balance: number; currency: string } | null>(null);
   const [lastBackupTime, setLastBackupTime] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,6 +63,26 @@ const Settings: React.FC = () => {
     setUserNameInput(userName);
     setCustomInstructionsInput(customInstructions);
   }, [openAiKey, deepSeekKey, googleApiKey, moonshotApiKey, userName, customInstructions]);
+
+  useEffect(() => {
+    if (moonshotApiKey) {
+      void getMoonshotBalance().then((data) => {
+        if (data) setMoonshotBalance(data.available_balance);
+      });
+    } else {
+      setMoonshotBalance(null);
+    }
+  }, [moonshotApiKey]);
+
+  useEffect(() => {
+    if (deepSeekKey) {
+      void getDeepSeekBalance().then((data) => {
+        if (data) setDeepSeekBalance(data);
+      });
+    } else {
+      setDeepSeekBalance(null);
+    }
+  }, [deepSeekKey]);
 
   useEffect(() => {
     void BackupService.getAutoBackupHandle().then((handle) => {
@@ -200,17 +225,41 @@ const Settings: React.FC = () => {
           type={showDeepSeekKey ? "text" : "password"}
           fullWidth
           value={deepSeekInput}
-          onChange={(e): void => setDeepSeekInput(e.target.value)}
+          onChange={(e): void => {
+            setDeepSeekInput(e.target.value);
+            if (!e.target.value) setDeepSeekBalance(null);
+          }}
           sx={{ mb: 2 }}
           InputProps={{
             endAdornment: (
               <InputAdornment position="end">
+                {deepSeekBalance !== null && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ mr: 1, fontWeight: "bold" }}>
+                    Balance:{" "}
+                    {(deepSeekBalance.balance * (deepSeekBalance.currency === "CNY" ? 1.5 : USD_TO_SEK)).toFixed(2)}
+                    kr
+                  </Typography>
+                )}
                 <IconButton onClick={(): void => setShowDeepSeekKey((prev) => !prev)}>
                   {showDeepSeekKey ? <VisibilityOff /> : <Visibility />}
                 </IconButton>
               </InputAdornment>
             ),
           }}
+          helperText={
+            deepSeekKey && deepSeekBalance === null ? (
+              <Box
+                display="flex"
+                alignItems="center"
+                gap={1}>
+                <CircularProgress size={12} />
+                <Typography variant="caption">Fetching balance...</Typography>
+              </Box>
+            ) : null
+          }
         />
 
         <TextField
@@ -236,17 +285,39 @@ const Settings: React.FC = () => {
           type={showMoonshotKey ? "text" : "password"}
           fullWidth
           value={moonshotInput}
-          onChange={(e): void => setMoonshotInput(e.target.value)}
+          onChange={(e): void => {
+            setMoonshotInput(e.target.value);
+            if (!e.target.value) setMoonshotBalance(null);
+          }}
           sx={{ mb: 2 }}
           InputProps={{
             endAdornment: (
               <InputAdornment position="end">
+                {moonshotBalance !== null && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ mr: 1, fontWeight: "bold" }}>
+                    Balance: {(moonshotBalance * USD_TO_SEK).toFixed(2)}kr
+                  </Typography>
+                )}
                 <IconButton onClick={(): void => setShowMoonshotKey((prev) => !prev)}>
                   {showMoonshotKey ? <VisibilityOff /> : <Visibility />}
                 </IconButton>
               </InputAdornment>
             ),
           }}
+          helperText={
+            moonshotApiKey && moonshotBalance === null ? (
+              <Box
+                display="flex"
+                alignItems="center"
+                gap={1}>
+                <CircularProgress size={12} />
+                <Typography variant="caption">Fetching balance...</Typography>
+              </Box>
+            ) : null
+          }
         />
 
         <TextField

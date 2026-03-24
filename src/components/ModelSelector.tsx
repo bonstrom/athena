@@ -2,7 +2,7 @@ import React from "react";
 import { FormControl, InputLabel, MenuItem, Select, Box, Typography } from "@mui/material";
 import { useAuthStore } from "../store/AuthStore";
 
-const USD_TO_SEK = 10;
+export const USD_TO_SEK = 10;
 
 export interface ChatModel {
   id: string;
@@ -80,7 +80,7 @@ export const chatModels: ChatModel[] = [
     id: "kimi-k2.5",
     label: "Kimi 2.5",
     input: 0.6,
-    cachedInput: 0.06,
+    cachedInput: 0.1,
     output: 3,
     provider: "moonshot",
     streaming: true,

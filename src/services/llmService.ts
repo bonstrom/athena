@@ -286,3 +286,75 @@ export function estimateStreamedTokens(
   const costSEK = calculateCostSEK(selectedModel, promptTokens, completionTokens);
   return { promptTokens, completionTokens, costSEK };
 }
+
+interface MoonshotBalanceResponse {
+  status: boolean;
+  data: {
+    available_balance: number;
+    voucher_balance: number;
+    cash_balance: number;
+  };
+}
+
+export async function getMoonshotBalance(): Promise<{ available_balance: number } | null> {
+  const auth = useAuthStore.getState();
+  const key = auth.moonshotApiKey;
+  if (!key) return null;
+
+  try {
+    const res = await fetch("https://api.moonshot.ai/v1/users/me/balance", {
+      headers: {
+        Authorization: `Bearer ${key}`,
+      },
+    });
+
+    if (!res.ok) return null;
+    const data = (await res.json()) as MoonshotBalanceResponse;
+    if (data.status) {
+      return data.data;
+    }
+    return null;
+  } catch (e) {
+    console.error("Failed to fetch Moonshot balance:", e);
+    return null;
+  }
+}
+
+interface DeepSeekBalanceResponse {
+  is_available: boolean;
+  balance_infos: {
+    currency: string;
+    total_balance: string;
+    granted_balance: string;
+    topped_up_balance: string;
+  }[];
+}
+
+export async function getDeepSeekBalance(): Promise<{ balance: number; currency: string } | null> {
+  const auth = useAuthStore.getState();
+  const key = auth.deepSeekKey;
+  if (!key) return null;
+
+  try {
+    const res = await fetch("https://api.deepseek.com/user/balance", {
+      headers: {
+        Authorization: `Bearer ${key}`,
+        Accept: "application/json",
+      },
+    });
+
+    if (!res.ok) return null;
+    const data = (await res.json()) as DeepSeekBalanceResponse;
+    if (data.is_available && data.balance_infos.length > 0) {
+      const info = data.balance_infos[0];
+      return {
+        balance: parseFloat(info.total_balance),
+        currency: info.currency,
+      };
+    }
+    return null;
+  } catch (e) {
+    console.error("Failed to fetch DeepSeek balance:", e);
+    return null;
+  }
+}
