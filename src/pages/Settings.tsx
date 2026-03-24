@@ -249,6 +249,7 @@ const Settings: React.FC = () => {
               </InputAdornment>
             ),
           }}
+          FormHelperTextProps={{ component: "div" }}
           helperText={
             deepSeekKey && deepSeekBalance === null ? (
               <Box
@@ -307,6 +308,7 @@ const Settings: React.FC = () => {
               </InputAdornment>
             ),
           }}
+          FormHelperTextProps={{ component: "div" }}
           helperText={
             moonshotApiKey && moonshotBalance === null ? (
               <Box

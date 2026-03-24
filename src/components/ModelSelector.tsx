@@ -13,6 +13,7 @@ export interface ChatModel {
   provider: "openai" | "deepseek" | "google" | "moonshot";
   streaming: boolean;
   supportsTemperature: boolean;
+  supportsTools: boolean;
 }
 
 export const chatModels: ChatModel[] = [
@@ -25,6 +26,7 @@ export const chatModels: ChatModel[] = [
     provider: "openai",
     streaming: true,
     supportsTemperature: false,
+    supportsTools: true,
   },
   {
     id: "gpt-5.4-mini",
@@ -35,6 +37,7 @@ export const chatModels: ChatModel[] = [
     provider: "openai",
     streaming: true,
     supportsTemperature: false,
+    supportsTools: true,
   },
   {
     id: "gpt-5.4-nano",
@@ -45,6 +48,7 @@ export const chatModels: ChatModel[] = [
     provider: "openai",
     streaming: true,
     supportsTemperature: false,
+    supportsTools: true,
   },
   {
     id: "deepseek-chat",
@@ -55,6 +59,7 @@ export const chatModels: ChatModel[] = [
     provider: "deepseek",
     streaming: true,
     supportsTemperature: true,
+    supportsTools: true,
   },
   {
     id: "deepseek-reasoner",
@@ -65,6 +70,7 @@ export const chatModels: ChatModel[] = [
     provider: "deepseek",
     streaming: true,
     supportsTemperature: true,
+    supportsTools: false,
   },
   {
     id: "gemini-3-flash-preview",
@@ -75,6 +81,7 @@ export const chatModels: ChatModel[] = [
     provider: "google",
     streaming: true,
     supportsTemperature: true,
+    supportsTools: true,
   },
   {
     id: "kimi-k2.5",
@@ -85,6 +92,7 @@ export const chatModels: ChatModel[] = [
     provider: "moonshot",
     streaming: true,
     supportsTemperature: true,
+    supportsTools: true,
   },
 ];
 

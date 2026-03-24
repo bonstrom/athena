@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { calculateCostSEK, ChatModel, getDefaultModel } from "../components/ModelSelector";
 import { useTopicStore } from "./TopicStore";
-import { askLlm, askLlmStream, LlmMessage } from "../services/llmService";
+import { orchestrateLlmLoop, LlmMessage } from "../services/llmService";
 import { Message } from "../database/AthenaDb";
 import { athenaDb } from "../database/AthenaDb";
 import { useNotificationStore } from "./NotificationStore";
@@ -232,16 +232,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       content: m.content,
     }));
 
-    let scratchpadSystemMsg = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). To append a note to it, include \`<!-- persist: your note here -->\` in your response. To replace the entire scratchpad, use \`<!-- replace: your new content here -->\`. Use the scratchpad to remember key facts, character details, or state during games.`;
-    if (topic?.scratchpad) {
-      scratchpadSystemMsg += "\n\n[Current Scratchpad Content]:\n" + topic.scratchpad;
-    }
-    llmContext.unshift({ role: "system", content: scratchpadSystemMsg });
-
-    if (!isRetry) {
-      llmContext.push({ role: "user", content: content.trim() });
-    }
-
     const assistantId = crypto.randomUUID();
     const assistantCreated = new Date().toISOString();
     let streamedContent = "";
@@ -262,46 +252,73 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       totalCost: 0,
     };
 
+    const systems: LlmMessage[] = [];
+    const scratchpadRules = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). 
+
+**Rules for the Scratchpad:**
+* **What to store:** Only persistent, long-term facts (user preferences, ongoing goals, core character details, or established rules). 
+* **What NOT to store:** Transient conversation history, short-term tasks that were just completed, or immediate context (I already remember recent messages).
+* **Managing space:** If the scratchpad is getting full or contains outdated facts (e.g., a goal was completed, or a preference changed), use the \`replace\` action to rewrite the entire scratchpad, keeping only the currently relevant facts and discarding the dead ones.
+
+[Current Scratchpad Content]:
+${topic?.scratchpad ?? "(Empty)"}`;
+
+    if (selectedModel.supportsTools) {
+      systems.push({ role: "system", content: scratchpadRules });
+    } else {
+      systems.push({
+        role: "system",
+        content: `${scratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`,
+      });
+    }
+
+    llmContext.unshift(...systems);
+
     try {
       // Show typing indicator
       await get().addMessage(assistantMessage);
 
-      const result = await askLlmStream(llmContext, (chunk: string) => {
-        streamedContent += chunk;
-        const displayContent = streamedContent
-          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
-          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
-        void get().updateMessage(assistantId, { content: displayContent });
-      });
+      const { finalContent, totalPromptTokens, totalCompletionTokens, lastResult } = await orchestrateLlmLoop(
+        selectedModel,
+        get().temperature,
+        llmContext,
+        (chunk: string) => {
+          streamedContent += chunk;
+          const displayContent = streamedContent
+            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
+          void get().updateMessage(assistantId, { content: displayContent });
+        },
+        async (aiNote, action) => {
+          const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
+          let updatedScratchpad = "";
+          if (action === "replace") {
+            updatedScratchpad = aiNote;
+          } else {
+            updatedScratchpad = currentScratchpad ? `${currentScratchpad}\n${aiNote}` : aiNote;
+          }
+          if (updatedScratchpad.length > SCRATCHPAD_LIMIT) {
+            updatedScratchpad = updatedScratchpad.slice(0, SCRATCHPAD_LIMIT);
+          }
+          await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
+        },
+      );
 
       await get().updateMessage(userMessage.id, {
-        promptTokens: result.promptTokens,
-        totalCost: calculateCostSEK(selectedModel, result.promptTokens, 0, result.promptTokensDetails),
+        promptTokens: totalPromptTokens,
+        totalCost: calculateCostSEK(selectedModel, totalPromptTokens, 0, lastResult.promptTokensDetails),
         failed: false,
       });
 
       await get().updateMessage(assistantId, {
-        content: result.content,
-        completionTokens: result.completionTokens,
-        totalCost: calculateCostSEK(selectedModel, 0, result.completionTokens),
+        content: finalContent
+          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
+          .trim(),
+        completionTokens: totalCompletionTokens,
+        totalCost: calculateCostSEK(selectedModel, 0, totalCompletionTokens),
         failed: false,
       });
-
-      if (result.aiNote) {
-        const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
-        let updatedScratchpad = "";
-        if (result.aiNoteAction === "replace") {
-          updatedScratchpad = result.aiNote;
-        } else {
-          updatedScratchpad = currentScratchpad ? `${currentScratchpad}\n${result.aiNote}` : result.aiNote;
-        }
-
-        if (updatedScratchpad.length > SCRATCHPAD_LIMIT) {
-          updatedScratchpad = updatedScratchpad.slice(0, SCRATCHPAD_LIMIT);
-        }
-
-        await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
-      }
 
       void topicStoreState.generateTopicName(topicId, content);
     } catch (err) {
@@ -322,8 +339,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                   ...m,
                   retry: (): Promise<void> =>
                     selectedModel.streaming
-                      ? get().sendMessageStream(content, topicId, messageId)
-                      : get().sendMessageWithoutStream(content, topicId, messageId),
+                      ? get().sendMessageStream(content, topicId, userMessage.id)
+                      : get().sendMessageWithoutStream(content, topicId, userMessage.id),
                 }
               : m,
           ),
@@ -380,15 +397,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       content: m.content,
     }));
 
-    let scratchpadSystemMsg = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). To append a note to it, include \`<!-- persist: your note here -->\` in your response. To replace the entire scratchpad, use \`<!-- replace: your new content here -->\`. Use the scratchpad to remember key facts, character details, or state during games.`;
-    if (topic?.scratchpad) {
-      scratchpadSystemMsg += "\n\n[Current Scratchpad Content]:\n" + topic.scratchpad;
-    }
-    llmContext.unshift({ role: "system", content: scratchpadSystemMsg });
+    const systems: LlmMessage[] = [];
+    const scratchpadRules = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). 
 
-    if (!isRetry) {
-      llmContext.push({ role: "user", content: content.trim() });
+**Rules for the Scratchpad:**
+* **What to store:** Only persistent, long-term facts (user preferences, ongoing goals, core character details, or established rules). 
+* **What NOT to store:** Transient conversation history, short-term tasks that were just completed, or immediate context (I already remember recent messages).
+* **Managing space:** If the scratchpad is getting full or contains outdated facts (e.g., a goal was completed, or a preference changed), use the \`replace\` action to rewrite the entire scratchpad, keeping only the currently relevant facts and discarding the dead ones.
+
+[Current Scratchpad Content]:
+${topic?.scratchpad ?? "(Empty)"}`;
+
+    if (selectedModel.supportsTools) {
+      systems.push({ role: "system", content: scratchpadRules });
+    } else {
+      systems.push({
+        role: "system",
+        content: `${scratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`,
+      });
     }
+
+    llmContext.unshift(...systems);
 
     const assistantId = crypto.randomUUID();
     const assistantCreated = new Date().toISOString();
@@ -412,36 +441,41 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     try {
       await get().addMessage(assistantMessage);
 
-      const result = await askLlm(llmContext);
+      const { finalContent, totalPromptTokens, totalCompletionTokens, lastResult } = await orchestrateLlmLoop(
+        selectedModel,
+        get().temperature,
+        llmContext,
+        undefined,
+        async (aiNote, action) => {
+          const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
+          let updatedScratchpad = "";
+          if (action === "replace") {
+            updatedScratchpad = aiNote;
+          } else {
+            updatedScratchpad = currentScratchpad ? `${currentScratchpad}\n${aiNote}` : aiNote;
+          }
+          if (updatedScratchpad.length > SCRATCHPAD_LIMIT) {
+            updatedScratchpad = updatedScratchpad.slice(0, SCRATCHPAD_LIMIT);
+          }
+          await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
+        },
+      );
 
       await get().updateMessage(userMessage.id, {
-        promptTokens: result.promptTokens,
-        totalCost: calculateCostSEK(selectedModel, result.promptTokens, 0, result.promptTokensDetails),
+        promptTokens: totalPromptTokens,
+        totalCost: calculateCostSEK(selectedModel, totalPromptTokens, 0, lastResult.promptTokensDetails),
         failed: false,
       });
 
       await get().updateMessage(assistantId, {
-        content: result.content,
-        completionTokens: result.completionTokens,
-        totalCost: calculateCostSEK(selectedModel, 0, result.completionTokens),
+        content: finalContent
+          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
+          .trim(),
+        completionTokens: totalCompletionTokens,
+        totalCost: calculateCostSEK(selectedModel, 0, totalCompletionTokens),
         failed: false,
       });
-
-      if (result.aiNote) {
-        const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
-        let updatedScratchpad = "";
-        if (result.aiNoteAction === "replace") {
-          updatedScratchpad = result.aiNote;
-        } else {
-          updatedScratchpad = currentScratchpad ? `${currentScratchpad}\n${result.aiNote}` : result.aiNote;
-        }
-
-        if (updatedScratchpad.length > SCRATCHPAD_LIMIT) {
-          updatedScratchpad = updatedScratchpad.slice(0, SCRATCHPAD_LIMIT);
-        }
-
-        await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
-      }
 
       void topicStoreState.generateTopicName(topicId, content);
     } catch (err) {
@@ -462,8 +496,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                   ...m,
                   retry: (): Promise<void> =>
                     selectedModel.streaming
-                      ? get().sendMessageStream(content, topicId, messageId)
-                      : get().sendMessageWithoutStream(content, topicId, messageId),
+                      ? get().sendMessageStream(content, topicId, userMessage.id)
+                      : get().sendMessageWithoutStream(content, topicId, userMessage.id),
                 }
               : m,
           ),
