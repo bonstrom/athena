@@ -4,12 +4,14 @@ import { useNavigate } from "react-router-dom";
 interface AuthState {
   openAiKey: string;
   deepSeekKey: string;
+  googleApiKey: string;
   userName: string;
   backupInterval: number;
   customInstructions: string;
   clearAuth: () => void;
   setOpenAiKey: (key: string) => void;
   setDeepSeekKey: (key: string) => void;
+  setGoogleApiKey: (key: string) => void;
   setUserName: (name: string) => void;
   setBackupInterval: (minutes: number) => void;
   setCustomInstructions: (instructions: string) => void;
@@ -18,6 +20,7 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => {
   const storedOpenAiKey = localStorage.getItem("openAiKey") ?? "";
   const storedDeepSeekKey = localStorage.getItem("deepSeekKey") ?? "";
+  const storedGoogleApiKey = localStorage.getItem("googleApiKey") ?? "";
   const userName = localStorage.getItem("userName") ?? "";
   const storedBackupInterval = Number(localStorage.getItem("backupInterval") ?? "1");
   const storedCustomInstructions = localStorage.getItem("customInstructions") ?? "";
@@ -25,15 +28,17 @@ export const useAuthStore = create<AuthState>((set) => {
   return {
     openAiKey: storedOpenAiKey,
     deepSeekKey: storedDeepSeekKey,
+    googleApiKey: storedGoogleApiKey,
     userName: userName,
     backupInterval: storedBackupInterval,
     customInstructions: storedCustomInstructions,
     clearAuth: (): void => {
       localStorage.removeItem("openAiKey");
       localStorage.removeItem("deepSeekKey");
+      localStorage.removeItem("googleApiKey");
       localStorage.removeItem("userName");
       localStorage.removeItem("customInstructions");
-      set({ openAiKey: "", deepSeekKey: "", userName: undefined, customInstructions: "" });
+      set({ openAiKey: "", deepSeekKey: "", googleApiKey: "", userName: undefined, customInstructions: "" });
     },
     setOpenAiKey: (key: string): void => {
       localStorage.setItem("openAiKey", key);
@@ -42,6 +47,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setDeepSeekKey: (key: string): void => {
       localStorage.setItem("deepSeekKey", key);
       set({ deepSeekKey: key });
+    },
+    setGoogleApiKey: (key: string): void => {
+      localStorage.setItem("googleApiKey", key);
+      set({ googleApiKey: key });
     },
     setUserName: (userName: string): void => {
       localStorage.setItem("userName", userName);

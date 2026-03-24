@@ -22,11 +22,13 @@ const Settings: React.FC = () => {
   const {
     openAiKey,
     deepSeekKey,
+    googleApiKey,
     userName,
     backupInterval,
     customInstructions,
     setOpenAiKey,
     setDeepSeekKey,
+    setGoogleApiKey,
     setUserName,
     setBackupInterval,
     setCustomInstructions,
@@ -34,20 +36,23 @@ const Settings: React.FC = () => {
 
   const [openAiInput, setOpenAiInput] = useState(openAiKey);
   const [deepSeekInput, setDeepSeekInput] = useState(deepSeekKey);
+  const [googleInput, setGoogleInput] = useState(googleApiKey);
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
   const [saved, setSaved] = useState(false);
   const [showOpenAiKey, setShowOpenAiKey] = useState(false);
   const [showDeepSeekKey, setShowDeepSeekKey] = useState(false);
+  const [showGoogleKey, setShowGoogleKey] = useState(false);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [lastBackupTime, setLastBackupTime] = useState<string | null>(null);
 
   useEffect(() => {
     setOpenAiInput(openAiKey);
     setDeepSeekInput(deepSeekKey);
+    setGoogleInput(googleApiKey);
     setUserNameInput(userName);
     setCustomInstructionsInput(customInstructions);
-  }, [openAiKey, deepSeekKey, userName, customInstructions]);
+  }, [openAiKey, deepSeekKey, googleApiKey, userName, customInstructions]);
 
   useEffect(() => {
     void BackupService.getAutoBackupHandle().then((handle) => {
@@ -66,6 +71,7 @@ const Settings: React.FC = () => {
   function handleSave(): void {
     setOpenAiKey(openAiInput.trim());
     setDeepSeekKey(deepSeekInput.trim());
+    setGoogleApiKey(googleInput.trim());
     setUserName(userNameInput.trim());
     setCustomInstructions(customInstructionsInput.trim());
     setSaved(true);
@@ -195,6 +201,24 @@ const Settings: React.FC = () => {
               <InputAdornment position="end">
                 <IconButton onClick={(): void => setShowDeepSeekKey((prev) => !prev)}>
                   {showDeepSeekKey ? <VisibilityOff /> : <Visibility />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
+        />
+
+        <TextField
+          label="Google API Key"
+          type={showGoogleKey ? "text" : "password"}
+          fullWidth
+          value={googleInput}
+          onChange={(e): void => setGoogleInput(e.target.value)}
+          sx={{ mb: 2 }}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton onClick={(): void => setShowGoogleKey((prev) => !prev)}>
+                  {showGoogleKey ? <VisibilityOff /> : <Visibility />}
                 </IconButton>
               </InputAdornment>
             ),

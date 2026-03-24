@@ -29,6 +29,7 @@ interface LlmPayload {
 const PROVIDER_URLS: Record<string, string> = {
   openai: "https://api.openai.com/v1/chat/completions",
   deepseek: "https://api.deepseek.com/v1/chat/completions",
+  google: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
 };
 
 function buildPayload(model: ChatModel, messages: LlmMessage[], stream: boolean): LlmPayload {
@@ -266,6 +267,8 @@ function getApiKey(model: ChatModel): string {
       return auth.openAiKey;
     case "deepseek":
       return auth.deepSeekKey;
+    case "google":
+      return auth.googleApiKey;
     default:
       throw new Error(`No API key found for provider "${String(model.provider)}"`);
   }

@@ -10,7 +10,7 @@ export interface ChatModel {
   input: number;
   cachedInput: number;
   output: number;
-  provider: "openai" | "deepseek";
+  provider: "openai" | "deepseek" | "google";
   streaming: boolean;
   supportsTemperature: boolean;
 }
@@ -66,6 +66,16 @@ export const chatModels: ChatModel[] = [
     streaming: true,
     supportsTemperature: true,
   },
+  {
+    id: "gemini-3-flash-preview",
+    label: "Gemini 3 Flash Preview",
+    input: 0.5,
+    cachedInput: 0.05,
+    output: 3,
+    provider: "google",
+    streaming: true,
+    supportsTemperature: true,
+  },
 ];
 
 export function calculateCostUSD(
@@ -99,10 +109,13 @@ interface Props {
 }
 
 const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
-  const { openAiKey, deepSeekKey } = useAuthStore();
+  const { openAiKey, deepSeekKey, googleApiKey } = useAuthStore();
 
   const availableModels = chatModels.filter(
-    (model) => (model.provider === "openai" && openAiKey) || (model.provider === "deepseek" && deepSeekKey),
+    (model) =>
+      (model.provider === "openai" && openAiKey) ||
+      (model.provider === "deepseek" && deepSeekKey) ||
+      (model.provider === "google" && googleApiKey),
   );
 
   if (availableModels.length === 0) {
@@ -163,17 +176,23 @@ export function getDefaultModel(): ChatModel {
     if (savedModel) return savedModel;
   }
 
-  const { openAiKey, deepSeekKey } = useAuthStore.getState();
+  const { openAiKey, deepSeekKey, googleApiKey } = useAuthStore.getState();
   const available = chatModels.filter(
-    (m) => (m.provider === "openai" && openAiKey) || (m.provider === "deepseek" && deepSeekKey),
+    (m) =>
+      (m.provider === "openai" && openAiKey) ||
+      (m.provider === "deepseek" && deepSeekKey) ||
+      (m.provider === "google" && googleApiKey),
   );
   return available[0] ?? chatModels[0];
 }
 
 export function getDefaultTopicNameModel(): ChatModel {
-  const { openAiKey, deepSeekKey } = useAuthStore.getState();
+  const { openAiKey, deepSeekKey, googleApiKey } = useAuthStore.getState();
   const available = chatModels.filter(
-    (m) => (m.provider === "openai" && openAiKey) || (m.provider === "deepseek" && deepSeekKey),
+    (m) =>
+      (m.provider === "openai" && openAiKey) ||
+      (m.provider === "deepseek" && deepSeekKey) ||
+      (m.provider === "google" && googleApiKey),
   );
-  return available.find((m) => m.id.includes("nano")) ?? chatModels[0];
+  return available.find((m) => m.id.includes("nano") || m.id.includes("flash")) ?? chatModels[0];
 }
