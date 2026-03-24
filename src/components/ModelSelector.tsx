@@ -10,7 +10,7 @@ export interface ChatModel {
   input: number;
   cachedInput: number;
   output: number;
-  provider: "openai" | "deepseek" | "google";
+  provider: "openai" | "deepseek" | "google" | "moonshot";
   streaming: boolean;
   supportsTemperature: boolean;
 }
@@ -76,6 +76,16 @@ export const chatModels: ChatModel[] = [
     streaming: true,
     supportsTemperature: true,
   },
+  {
+    id: "kimi-k2.5",
+    label: "Kimi 2.5",
+    input: 0.6,
+    cachedInput: 0.06,
+    output: 3,
+    provider: "moonshot",
+    streaming: true,
+    supportsTemperature: true,
+  },
 ];
 
 export function calculateCostUSD(
@@ -109,13 +119,14 @@ interface Props {
 }
 
 const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
-  const { openAiKey, deepSeekKey, googleApiKey } = useAuthStore();
+  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore();
 
   const availableModels = chatModels.filter(
     (model) =>
       (model.provider === "openai" && openAiKey) ||
       (model.provider === "deepseek" && deepSeekKey) ||
-      (model.provider === "google" && googleApiKey),
+      (model.provider === "google" && googleApiKey) ||
+      (model.provider === "moonshot" && moonshotApiKey),
   );
 
   if (availableModels.length === 0) {
@@ -176,23 +187,25 @@ export function getDefaultModel(): ChatModel {
     if (savedModel) return savedModel;
   }
 
-  const { openAiKey, deepSeekKey, googleApiKey } = useAuthStore.getState();
+  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore.getState();
   const available = chatModels.filter(
     (m) =>
       (m.provider === "openai" && openAiKey) ||
       (m.provider === "deepseek" && deepSeekKey) ||
-      (m.provider === "google" && googleApiKey),
+      (m.provider === "google" && googleApiKey) ||
+      (m.provider === "moonshot" && moonshotApiKey),
   );
   return available[0] ?? chatModels[0];
 }
 
 export function getDefaultTopicNameModel(): ChatModel {
-  const { openAiKey, deepSeekKey, googleApiKey } = useAuthStore.getState();
+  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore.getState();
   const available = chatModels.filter(
     (m) =>
       (m.provider === "openai" && openAiKey) ||
       (m.provider === "deepseek" && deepSeekKey) ||
-      (m.provider === "google" && googleApiKey),
+      (m.provider === "google" && googleApiKey) ||
+      (m.provider === "moonshot" && moonshotApiKey),
   );
   return available.find((m) => m.id.includes("nano") || m.id.includes("flash")) ?? chatModels[0];
 }

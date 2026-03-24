@@ -5,6 +5,7 @@ interface AuthState {
   openAiKey: string;
   deepSeekKey: string;
   googleApiKey: string;
+  moonshotApiKey: string;
   userName: string;
   backupInterval: number;
   customInstructions: string;
@@ -12,6 +13,7 @@ interface AuthState {
   setOpenAiKey: (key: string) => void;
   setDeepSeekKey: (key: string) => void;
   setGoogleApiKey: (key: string) => void;
+  setMoonshotApiKey: (key: string) => void;
   setUserName: (name: string) => void;
   setBackupInterval: (minutes: number) => void;
   setCustomInstructions: (instructions: string) => void;
@@ -21,6 +23,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedOpenAiKey = localStorage.getItem("openAiKey") ?? "";
   const storedDeepSeekKey = localStorage.getItem("deepSeekKey") ?? "";
   const storedGoogleApiKey = localStorage.getItem("googleApiKey") ?? "";
+  const storedMoonshotApiKey = localStorage.getItem("moonshotApiKey") ?? "";
   const userName = localStorage.getItem("userName") ?? "";
   const storedBackupInterval = Number(localStorage.getItem("backupInterval") ?? "1");
   const storedCustomInstructions = localStorage.getItem("customInstructions") ?? "";
@@ -29,6 +32,7 @@ export const useAuthStore = create<AuthState>((set) => {
     openAiKey: storedOpenAiKey,
     deepSeekKey: storedDeepSeekKey,
     googleApiKey: storedGoogleApiKey,
+    moonshotApiKey: storedMoonshotApiKey,
     userName: userName,
     backupInterval: storedBackupInterval,
     customInstructions: storedCustomInstructions,
@@ -36,9 +40,17 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem("openAiKey");
       localStorage.removeItem("deepSeekKey");
       localStorage.removeItem("googleApiKey");
+      localStorage.removeItem("moonshotApiKey");
       localStorage.removeItem("userName");
       localStorage.removeItem("customInstructions");
-      set({ openAiKey: "", deepSeekKey: "", googleApiKey: "", userName: undefined, customInstructions: "" });
+      set({
+        openAiKey: "",
+        deepSeekKey: "",
+        googleApiKey: "",
+        moonshotApiKey: "",
+        userName: undefined,
+        customInstructions: "",
+      });
     },
     setOpenAiKey: (key: string): void => {
       localStorage.setItem("openAiKey", key);
@@ -51,6 +63,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setGoogleApiKey: (key: string): void => {
       localStorage.setItem("googleApiKey", key);
       set({ googleApiKey: key });
+    },
+    setMoonshotApiKey: (key: string): void => {
+      localStorage.setItem("moonshotApiKey", key);
+      set({ moonshotApiKey: key });
     },
     setUserName: (userName: string): void => {
       localStorage.setItem("userName", userName);

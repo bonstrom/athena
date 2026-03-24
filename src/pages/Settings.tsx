@@ -23,12 +23,14 @@ const Settings: React.FC = () => {
     openAiKey,
     deepSeekKey,
     googleApiKey,
+    moonshotApiKey,
     userName,
     backupInterval,
     customInstructions,
     setOpenAiKey,
     setDeepSeekKey,
     setGoogleApiKey,
+    setMoonshotApiKey,
     setUserName,
     setBackupInterval,
     setCustomInstructions,
@@ -37,12 +39,14 @@ const Settings: React.FC = () => {
   const [openAiInput, setOpenAiInput] = useState(openAiKey);
   const [deepSeekInput, setDeepSeekInput] = useState(deepSeekKey);
   const [googleInput, setGoogleInput] = useState(googleApiKey);
+  const [moonshotInput, setMoonshotInput] = useState(moonshotApiKey);
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
   const [saved, setSaved] = useState(false);
   const [showOpenAiKey, setShowOpenAiKey] = useState(false);
   const [showDeepSeekKey, setShowDeepSeekKey] = useState(false);
   const [showGoogleKey, setShowGoogleKey] = useState(false);
+  const [showMoonshotKey, setShowMoonshotKey] = useState(false);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [lastBackupTime, setLastBackupTime] = useState<string | null>(null);
 
@@ -50,9 +54,10 @@ const Settings: React.FC = () => {
     setOpenAiInput(openAiKey);
     setDeepSeekInput(deepSeekKey);
     setGoogleInput(googleApiKey);
+    setMoonshotInput(moonshotApiKey);
     setUserNameInput(userName);
     setCustomInstructionsInput(customInstructions);
-  }, [openAiKey, deepSeekKey, googleApiKey, userName, customInstructions]);
+  }, [openAiKey, deepSeekKey, googleApiKey, moonshotApiKey, userName, customInstructions]);
 
   useEffect(() => {
     void BackupService.getAutoBackupHandle().then((handle) => {
@@ -72,6 +77,7 @@ const Settings: React.FC = () => {
     setOpenAiKey(openAiInput.trim());
     setDeepSeekKey(deepSeekInput.trim());
     setGoogleApiKey(googleInput.trim());
+    setMoonshotApiKey(moonshotInput.trim());
     setUserName(userNameInput.trim());
     setCustomInstructions(customInstructionsInput.trim());
     setSaved(true);
@@ -219,6 +225,24 @@ const Settings: React.FC = () => {
               <InputAdornment position="end">
                 <IconButton onClick={(): void => setShowGoogleKey((prev) => !prev)}>
                   {showGoogleKey ? <VisibilityOff /> : <Visibility />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
+        />
+
+        <TextField
+          label="Moonshot API Key (Kimi)"
+          type={showMoonshotKey ? "text" : "password"}
+          fullWidth
+          value={moonshotInput}
+          onChange={(e): void => setMoonshotInput(e.target.value)}
+          sx={{ mb: 2 }}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton onClick={(): void => setShowMoonshotKey((prev) => !prev)}>
+                  {showMoonshotKey ? <VisibilityOff /> : <Visibility />}
                 </IconButton>
               </InputAdornment>
             ),
