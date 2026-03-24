@@ -94,6 +94,17 @@ export const chatModels: ChatModel[] = [
     supportsTemperature: true,
     supportsTools: true,
   },
+  {
+    id: "kimi-k2-turbo-preview",
+    label: "Kimi K2 Turbo Preview",
+    input: 1.15,
+    cachedInput: 0.15,
+    output: 8,
+    provider: "moonshot",
+    streaming: true,
+    supportsTemperature: true,
+    supportsTools: true,
+  },
 ];
 
 export function calculateCostUSD(
