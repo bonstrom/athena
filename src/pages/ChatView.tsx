@@ -13,14 +13,9 @@ const ChatView: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
-  const { messagesByTopic, sending, sendMessage, fetchMessages } = useChatStore();
+  const { messagesByTopic, sending, sendMessageStream, fetchMessages } = useChatStore();
   const [displayTopicId, setDisplayTopicId] = useState<string | undefined>(topicId);
   const [isVisible, setIsVisible] = useState(false);
-
-  // Sync state during render to ensure the fade-out starts instantly on topic change
-  if (topicId !== displayTopicId && isVisible) {
-    setIsVisible(false);
-  }
 
   const topic = useTopicStore((state) => state.topics.find((t) => t.id === displayTopicId));
   const maxContextMessages = topic?.maxContextMessages ?? 10;
@@ -29,26 +24,32 @@ const ChatView: React.FC = () => {
 
   useEffect(() => {
     if (topicId !== displayTopicId) {
-      // Start fetching data immediately
+      // 1. Start fade out
+      setIsVisible(false);
+
+      // 2. Start fetching data immediately
       const fetchPromise = topicId ? fetchMessages(topicId) : Promise.resolve();
 
-      // Wait for both the fade out and data fetching to finish
+      // 3. Wait for both the fade out (200ms) and data fetching to finish
       const timer = setTimeout(() => {
         void fetchPromise.then(() => {
           setDisplayTopicId(topicId);
-          // Fade in as soon as content is swapped
+          // 4. Fade in as soon as content is swapped
           setIsVisible(true);
         });
-      }, 200); // Shorter exit duration for snappier feel
+      }, 200);
 
       return () => clearTimeout(timer);
     } else if (topicId && !isVisible) {
-      // Initial load
+      // Initial load or refresh
       void fetchMessages(topicId).then(() => {
         setIsVisible(true);
       });
     }
-  }, [fetchMessages, topicId, displayTopicId, isVisible]);
+    // We intentionally exclude isVisible from dependencies to avoid re-triggering the effect
+    // when we toggle it for animations.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchMessages, topicId, displayTopicId]);
 
   return (
     <Box
@@ -88,7 +89,7 @@ const ChatView: React.FC = () => {
         sending={sending}
         onSend={(content): void => {
           if (!topicId) return;
-          void sendMessage(content, topicId);
+          void sendMessageStream(content, topicId);
         }}
         isMobile={isMobile}
       />

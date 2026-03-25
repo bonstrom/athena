@@ -27,7 +27,7 @@ interface ChatStore {
   updateMessage: (id: string, patch: Partial<Message>) => Promise<void>;
   updateMessages: (updates: { id: string; patch: Partial<Message> }[]) => Promise<void>;
   updateMessageStateOnly: (id: string, patch: Partial<Message>) => void;
-  sendMessage: (content: string, topicId: string, messageId?: string) => Promise<void>;
+  sendMessageStream: (content: string, topicId: string, messageId?: string) => Promise<void>;
   setSelectedModel: (model: ChatModel) => void;
   updateMessageContext: (messageId: string, include: boolean) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
@@ -84,12 +84,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       .and((m) => m.forkId === activeForkId)
       .sortBy("created");
 
-    set({
-      messagesByTopic: { [topicId]: all },
+    set((state) => ({
+      messagesByTopic: { ...state.messagesByTopic, [topicId]: all },
       currentTopicId: topicId,
       isInitialLoad: true,
       visibleMessageCount: 10,
-    });
+    }));
   },
 
   updateMessageContext: async (id, include): Promise<void> => {
@@ -189,7 +189,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  sendMessage: async (content: string, topicId: string, messageId?: string): Promise<void> => {
+  sendMessageStream: async (content: string, topicId: string, messageId?: string): Promise<void> => {
     const { selectedModel } = get();
     const topicStoreState = useTopicStore.getState();
 
@@ -281,15 +281,21 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
       const loopStartTime = Date.now();
       let streamedContent = "";
+      let lastRenderTime = 0;
+      const RENDER_THROTTLE_MS = 64; // ~15fps for smooth but efficient UI
 
       // Conditionally create the stream callback
       const onTokenCallback = selectedModel.streaming
         ? (chunk: string): void => {
             streamedContent += chunk;
-            const displayContent = streamedContent
-              .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
-              .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
-            get().updateMessageStateOnly(assistantId, { content: displayContent });
+            const now = Date.now();
+            if (now - lastRenderTime > RENDER_THROTTLE_MS) {
+              const displayContent = streamedContent
+                .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+                .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
+              get().updateMessageStateOnly(assistantId, { content: displayContent });
+              lastRenderTime = now;
+            }
           }
         : undefined;
 
@@ -316,23 +322,30 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
       const latencyMs = Date.now() - loopStartTime;
 
-      // 5. Finalize DB Updates
-      await get().updateMessage(userMessage.id, {
-        promptTokens: totalPromptTokens,
-        totalCost: calculateCostSEK(selectedModel, totalPromptTokens, 0, lastResult.promptTokensDetails),
-        failed: false,
-      });
-
-      await get().updateMessage(assistantId, {
-        content: finalContent
-          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
-          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
-          .trim(),
-        completionTokens: totalCompletionTokens,
-        totalCost: calculateCostSEK(selectedModel, 0, totalCompletionTokens),
-        failed: false,
-        latencyMs,
-      });
+      // 5. Finalize DB Updates in batch
+      await get().updateMessages([
+        {
+          id: userMessage.id,
+          patch: {
+            promptTokens: totalPromptTokens,
+            totalCost: calculateCostSEK(selectedModel, totalPromptTokens, 0, lastResult.promptTokensDetails),
+            failed: false,
+          },
+        },
+        {
+          id: assistantId,
+          patch: {
+            content: finalContent
+              .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+              .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
+              .trim(),
+            completionTokens: totalCompletionTokens,
+            totalCost: calculateCostSEK(selectedModel, 0, totalCompletionTokens),
+            failed: false,
+            latencyMs,
+          },
+        },
+      ]);
 
       void topicStoreState.generateTopicName(topicId, content);
     } catch (err) {
@@ -351,7 +364,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
               ? {
                   ...m,
                   // The retry logic is now much cleaner too!
-                  retry: (): Promise<void> => get().sendMessage(content, topicId, userMessage.id),
+                  retry: (): Promise<void> => get().sendMessageStream(content, topicId, userMessage.id),
                 }
               : m,
           ),
@@ -380,8 +393,8 @@ ${topic?.scratchpad ?? "(Empty)"}`;
     // Delete the existing assistant message
     await get().deleteMessage(assistantId);
 
-    // Call sendMessage with the user message content and ID as retry
-    await get().sendMessage(userMsg.content, currentTopicId, userMsg.id);
+    // Call sendMessageStream with the user message content and ID as retry
+    await get().sendMessageStream(userMsg.content, currentTopicId, userMsg.id);
   },
 }));
 

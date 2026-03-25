@@ -425,19 +425,19 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           </Menu>
         </Box>
 
-        {currentTopicId && (
-          <>
-            <TopicContextDialog
-              open={showContextDialog}
-              topicId={currentTopicId}
-              onClose={(): void => setShowContextDialog(false)}
-            />
-            <ScratchpadDialog
-              open={showScratchpadDialog}
-              topicId={currentTopicId}
-              onClose={(): void => setShowScratchpadDialog(false)}
-            />
-          </>
+        {currentTopicId && showContextDialog && (
+          <TopicContextDialog
+            open={showContextDialog}
+            topicId={currentTopicId}
+            onClose={(): void => setShowContextDialog(false)}
+          />
+        )}
+        {currentTopicId && showScratchpadDialog && (
+          <ScratchpadDialog
+            open={showScratchpadDialog}
+            topicId={currentTopicId}
+            onClose={(): void => setShowScratchpadDialog(false)}
+          />
         )}
 
         <Box

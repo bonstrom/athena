@@ -1,20 +1,13 @@
-import React, { useEffect, useState } from "react";
-import { Box, CssBaseline, Drawer, IconButton, useMediaQuery, useTheme } from "@mui/material";
+import React, { useEffect } from "react";
+import { Box, CssBaseline, Drawer, useMediaQuery, useTheme, IconButton } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import { Outlet } from "react-router-dom";
-import { useTopicStore } from "../store/TopicStore";
 import { useUiStore } from "../store/UiStore";
-import { useNotificationStore } from "../store/NotificationStore";
 import { Sidebar } from "./Sidebar";
-import { athenaDb } from "../database/AthenaDb";
 
 const drawerWidth = 300;
 
 const ChatLayout: React.FC = () => {
-  const { setTopics } = useTopicStore();
-  const { addNotification } = useNotificationStore();
-  const [, setLoading] = useState(true);
-
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
@@ -23,24 +16,6 @@ const ChatLayout: React.FC = () => {
   useEffect(() => {
     setMobile(isMobile);
   }, [isMobile, setMobile]);
-
-  useEffect(() => {
-    const fetchTopics = async (): Promise<void> => {
-      setLoading(true);
-      try {
-        const localTopics = await athenaDb.topics.orderBy("updatedOn").reverse().toArray();
-        setTopics(localTopics);
-      } catch (err) {
-        console.error("Failed to load local topics", err);
-        const message = err instanceof Error ? err.message : String(err);
-        addNotification("Failed to load local topics", message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void fetchTopics();
-  }, [addNotification, setTopics]);
 
   return (
     <Box sx={{ display: "flex", height: "100vh" }}>

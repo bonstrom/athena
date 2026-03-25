@@ -60,21 +60,33 @@ export const GlobalSearch = (): JSX.Element => {
 
   const performSearch = async (searchQuery: string): Promise<void> => {
     try {
-      // 1. Search Topics
-      const matchedTopics = await athenaDb.topics
-        .filter((t) => !t.isDeleted && t.name.toLowerCase().includes(searchQuery))
+      // 1. Search Topics - Use index for prefix matches first
+      const prefixMatchedTopics = await athenaDb.topics
+        .where("name")
+        .startsWithIgnoreCase(searchQuery)
+        .filter((t) => !t.isDeleted)
         .toArray();
 
-      // 2. Search Messages
+      // Also search for partial matches if needed (still a scan but more focused)
+      const otherMatchedTopics = await athenaDb.topics
+        .where("isDeleted")
+        .equals(0)
+        .filter((t) => t.name.toLowerCase().includes(searchQuery) && !t.name.toLowerCase().startsWith(searchQuery))
+        .toArray();
+
+      const matchedTopics = [...prefixMatchedTopics, ...otherMatchedTopics];
+
+      // 2. Search Messages - Start with isDeleted index to avoid full table scan
       const matchedMessages = await athenaDb.messages
-        .filter((m) => !m.isDeleted && m.content.toLowerCase().includes(searchQuery))
+        .where("isDeleted")
+        .equals(0)
+        .filter((m) => m.content.toLowerCase().includes(searchQuery))
         .toArray();
 
       // We need to fetch the parent topics for the matched messages to display their names
       const topicIdsFromMessages = Array.from(new Set<string>(matchedMessages.map((m) => m.topicId)));
 
-      // Filter out topic IDs we already fetched in matchedTopics to avoid redundant DB calls if possible,
-      // but it's easier to just bulk get them all.
+      // Fetch parents in bulk
       const topicsForMessages = await athenaDb.topics.bulkGet(topicIdsFromMessages);
 
       // Create a lookup map for fast title retrieval

@@ -56,7 +56,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     set({ loading: true, error: null });
 
     try {
-      const topics = await athenaDb.topics.orderBy("createdOn").reverse().toArray();
+      const topics = await athenaDb.topics.orderBy("updatedOn").reverse().toArray();
 
       set({ topics });
     } catch (err) {

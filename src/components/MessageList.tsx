@@ -62,7 +62,7 @@ const Pane: React.FC<{ messages: Message[]; maxContextMessages: number }> = ({ m
 
     prevSigRef.current = sig;
     wasStickyRef.current = sticky;
-  });
+  }, [sig, sticky, scrollToBottom]);
 
   const contextMessages = messages.filter((m) => m.type === "user" || m.type === "assistant");
   const firstInWindowId =
@@ -113,21 +113,22 @@ interface Props {
   maxContextMessages: number;
 }
 
+const ROOT_CLASS = css({ height: "100%" });
+const FOLLOW_BUTTON_CLASS = css({ display: "none" });
+
 const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
   const { topicId } = useParams();
   const { visibleMessageCount, increaseVisibleMessageCount } = useChatStore();
 
   const visible = messages.filter((m) => !m.isDeleted).slice(-visibleMessageCount);
 
-  const ROOT = css({ height: "100%" });
-
   return (
     <ScrollToBottom
       key={topicId}
-      className={ROOT}
+      className={ROOT_CLASS}
       initialScrollBehavior="auto"
       scrollViewClassName="my-scroll-view"
-      followButtonClassName={css({ display: "none" })}>
+      followButtonClassName={FOLLOW_BUTTON_CLASS}>
       {messages.length > visible.length && (
         <ListItem>
           <Button

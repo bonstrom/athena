@@ -13,7 +13,7 @@ import {
   Zoom,
   alpha,
 } from "@mui/material";
-import { useState, useRef } from "react";
+import { useState, useRef, memo } from "react";
 import { useAuthStore } from "../store/AuthStore";
 import MarkdownWithCode from "./MarkdownWithCode";
 import TypingIndicator from "./TypingIndicator";
@@ -34,8 +34,8 @@ interface MessageBubbleProps {
   message: Message;
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
-  const { updateMessageContext, deleteMessage, sendMessage, regenerateResponse } = useChatStore();
+const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble({ message }) {
+  const { updateMessageContext, deleteMessage, sendMessageStream, regenerateResponse } = useChatStore();
   const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
   const { userName } = useAuthStore();
@@ -408,7 +408,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
           <Tooltip title="Retry">
             <IconButton
               onClick={(): void => {
-                void sendMessage(message.content, message.topicId, message.id);
+                void sendMessageStream(message.content, message.topicId, message.id);
               }}
               color="inherit">
               <RefreshIcon />
@@ -440,6 +440,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
       </Dialog>
     </Paper>
   );
-};
+});
 
 export default MessageBubble;
