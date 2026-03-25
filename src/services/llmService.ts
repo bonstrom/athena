@@ -5,6 +5,7 @@ import { estimateTokens } from "./estimateTokens";
 export interface LlmMessage {
   role: "user" | "assistant" | "system" | "tool";
   content: string | null;
+  reasoning_content?: string;
   tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[];
   tool_call_id?: string;
 }
@@ -78,7 +79,15 @@ function buildPayload(
   const auth = useAuthStore.getState();
   const customInstructions = auth.customInstructions.trim();
 
-  const finalMessages = [...filtered];
+  const finalMessages = filtered.map((msg) => {
+    const m = { ...msg };
+    if (m.role === "assistant" && !m.reasoning_content) {
+      // Ensure we don't send empty reasoning_content if not needed,
+      // but some APIs might require it if it's a reasoning model.
+      // For now, only include if present.
+    }
+    return m;
+  });
 
   if (customInstructions) {
     if (finalMessages.length > 0 && finalMessages[0].role === "system") {
@@ -93,7 +102,13 @@ function buildPayload(
 
   return {
     model: model.id,
-    messages: finalMessages,
+    messages: finalMessages.map((m) => ({
+      role: m.role,
+      content: m.content,
+      ...(typeof m.reasoning_content === "string" && { reasoning_content: m.reasoning_content }),
+      ...(m.tool_calls && { tool_calls: m.tool_calls }),
+      ...(m.tool_call_id && { tool_call_id: m.tool_call_id }),
+    })),
     stream,
     ...(model.supportsTemperature && { temperature }),
     ...(stream && { stream_options: { include_usage: true } }),
@@ -139,6 +154,7 @@ export async function askLlm(
   temperature: number,
   messages: LlmMessage[],
   tools?: LlmTool[],
+  signal?: AbortSignal,
 ): Promise<LlmResult> {
   const url = PROVIDER_URLS[model.provider];
   const key = getApiKey(model);
@@ -152,6 +168,7 @@ export async function askLlm(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
+    signal,
   });
 
   if (!res.ok) {
@@ -225,7 +242,7 @@ export async function askLlm(
     aiNoteAction,
     toolCalls,
     finishReason,
-    reasoning: reasoning.trim() || undefined,
+    reasoning: reasoning.trim(),
   };
 
   if (!result.content && result.aiNote) {
@@ -241,6 +258,7 @@ export async function askLlmStream(
   messages: LlmMessage[],
   onToken?: (token: string) => void,
   tools?: LlmTool[],
+  signal?: AbortSignal,
 ): Promise<LlmResult> {
   const url = PROVIDER_URLS[model.provider];
   const key = getApiKey(model);
@@ -254,6 +272,7 @@ export async function askLlmStream(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
+    signal,
   });
 
   if (!res.ok || !res.body) {
@@ -423,7 +442,7 @@ export async function askLlmStream(
     aiNoteAction,
     toolCalls,
     finishReason,
-    reasoning: reasoning.trim() || undefined,
+    reasoning: reasoning.trim(),
   };
 
   if (!result.content && result.aiNote) {
@@ -446,6 +465,7 @@ export async function orchestrateLlmLoop(
   messages: LlmMessage[],
   onToken?: (token: string) => void,
   onScratchpadUpdate?: (content: string, action: "append" | "replace") => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<OrchestrateResult> {
   const llmContext = [...messages];
   let loopCount = 0;
@@ -457,8 +477,8 @@ export async function orchestrateLlmLoop(
   while (loopCount < 5) {
     loopCount++;
     const result = model.streaming
-      ? await askLlmStream(model, temperature, llmContext, onToken, [SCRATCHPAD_TOOL])
-      : await askLlm(model, temperature, llmContext, [SCRATCHPAD_TOOL]);
+      ? await askLlmStream(model, temperature, llmContext, onToken, [SCRATCHPAD_TOOL], signal)
+      : await askLlm(model, temperature, llmContext, [SCRATCHPAD_TOOL], signal);
 
     lastResult = result;
     totalPromptTokens += result.promptTokens;
@@ -479,6 +499,7 @@ export async function orchestrateLlmLoop(
       llmContext.push({
         role: "assistant",
         content: result.content || null,
+        reasoning_content: result.reasoning ?? "",
         tool_calls: result.toolCalls.map((tc) => ({
           id: tc.id,
           type: "function",

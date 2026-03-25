@@ -9,7 +9,9 @@ export function estimateTokens(
   completionTokens: number;
   totalTokens: number;
 } {
-  const prompt = messages.map((m) => `${m.role}: ${m.content}`).join("\n");
+  const prompt = messages
+    .map((m) => `${m.role}: ${m.content ?? ""}${m.reasoning_content ? `\nreasoning: ${m.reasoning_content}` : ""}`)
+    .join("\n");
   const promptTokens = encode(prompt).length;
   const completionTokens = reply ? encode(reply).length : 0;
   return {

@@ -35,6 +35,9 @@ interface ChatStore {
   switchMessageVersion: (userMessageId: string, assistantMessageId: string) => Promise<void>;
   temperature: number;
   setTemperature: (temp: number) => void;
+  abortController: AbortController | null;
+  currentRequestMessageIds: { userMessageId: string; assistantMessageId: string } | null;
+  stopSending: () => Promise<string | null>;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -46,6 +49,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   sending: false,
   selectedModel: getDefaultModel(),
   temperature: 1.0,
+  abortController: null,
+  currentRequestMessageIds: null,
 
   setTemperature: (temp): void => set({ temperature: temp }),
   setSending: (value): void => set({ sending: value }),
@@ -195,8 +200,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const topicStoreState = useTopicStore.getState();
 
     if (!content.trim() || !topicId) return;
-
-    set({ sending: true });
+    const controller = new AbortController();
+    set({ sending: true, abortController: controller });
 
     const now = new Date().toISOString();
     const isRetry = !!messageId;
@@ -236,6 +241,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const llmContext: LlmMessage[] = existingContext.map((m) => ({
       role: m.type === "user" ? "user" : m.type === "assistant" ? "assistant" : "system",
       content: m.content,
+      reasoning_content: m.reasoning,
     }));
 
     const systems: LlmMessage[] = [];
@@ -285,6 +291,8 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       // Update parent message to point to this as active response
       await get().updateMessage(userMessage.id, { activeResponseId: assistantId });
 
+      set({ currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId } });
+
       const loopStartTime = Date.now();
       let streamedContent = "";
       let lastRenderTime = 0;
@@ -324,6 +332,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
           }
           await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
         },
+        controller.signal,
       );
 
       const latencyMs = Date.now() - loopStartTime;
@@ -356,6 +365,9 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
       void topicStoreState.generateTopicName(topicId, content);
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
       console.error("LLM request failed", err);
       const msg = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification("LLM request failed", msg);
@@ -378,7 +390,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         },
       }));
     } finally {
-      set({ sending: false });
+      set({ sending: false, abortController: null, currentRequestMessageIds: null });
     }
   },
   regenerateResponse: async (assistantId): Promise<void> => {
@@ -399,6 +411,41 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
     // Call sendMessageStream with the user message content and ID as retry
     await get().sendMessageStream(userMsg.content, currentTopicId, userMsg.id);
+  },
+  stopSending: async (): Promise<string | null> => {
+    const { abortController, currentRequestMessageIds, currentTopicId, messagesByTopic } = get();
+    if (abortController) {
+      abortController.abort();
+    }
+
+    if (currentRequestMessageIds && currentTopicId) {
+      const { userMessageId, assistantMessageId } = currentRequestMessageIds;
+      const messages = messagesByTopic[currentTopicId] || [];
+      const userMsg = messages.find((m) => m.id === userMessageId);
+      const content = userMsg?.content ?? null;
+
+      // Delete from DB
+      await athenaDb.messages.delete(userMessageId);
+      await athenaDb.messages.delete(assistantMessageId);
+
+      // Update state
+      set((state) => ({
+        sending: false,
+        abortController: null,
+        currentRequestMessageIds: null,
+        messagesByTopic: {
+          ...state.messagesByTopic,
+          [currentTopicId]: state.messagesByTopic[currentTopicId].filter(
+            (m) => m.id !== userMessageId && m.id !== assistantMessageId,
+          ),
+        },
+      }));
+
+      return content;
+    }
+
+    set({ sending: false, abortController: null, currentRequestMessageIds: null });
+    return null;
   },
   switchMessageVersion: async (userMessageId, assistantId): Promise<void> => {
     const { currentTopicId, updateMessage } = get();

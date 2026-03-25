@@ -15,6 +15,7 @@ import {
   Typography,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
+import StopCircleIcon from "@mui/icons-material/StopCircle";
 import AddIcon from "@mui/icons-material/Add";
 import CloseIcon from "@mui/icons-material/Close";
 import TuneIcon from "@mui/icons-material/Tune";
@@ -48,7 +49,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
   const questionRef = useRef("");
   const topicStore = useTopicStore();
-  const { selectedModel, temperature, setTemperature, currentTopicId } = useChatStore();
+  const { selectedModel, temperature, setTemperature, currentTopicId, stopSending } = useChatStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
@@ -142,6 +143,18 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       if (textFieldRef.current) {
         textFieldRef.current.value = targetContent;
         questionRef.current = targetContent;
+      }
+    }
+  };
+
+  const handleStop = async (): Promise<void> => {
+    const restoredContent = await stopSending();
+    if (restoredContent) {
+      setPages([{ id: crypto.randomUUID(), title: "Page 1", content: restoredContent }]);
+      setActivePageIndex(0);
+      if (textFieldRef.current) {
+        textFieldRef.current.value = restoredContent;
+        questionRef.current = restoredContent;
       }
     }
   };
@@ -522,12 +535,13 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           />
         </Box>
 
-        <Tooltip title={isMobile ? "Send Message" : "Send Message (Ctrl + Enter)"}>
+        <Tooltip title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Ctrl + Enter)"}>
           <span>
             <IconButton
-              onClick={handleSend}
-              disabled={sending}>
-              <SendIcon />
+              onClick={sending ? handleStop : handleSend}
+              disabled={false}
+              color={sending ? "error" : "primary"}>
+              {sending ? <StopCircleIcon /> : <SendIcon />}
             </IconButton>
           </span>
         </Tooltip>
