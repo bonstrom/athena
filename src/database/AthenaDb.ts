@@ -49,10 +49,42 @@ class AthenaDatabase extends Dexie {
           });
       });
 
-    this.version(3).stores({
+    this.version(4).stores({
       topics: "id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages",
-      messages: "id, topicId, forkId, type, created, isDeleted, includeInContext",
+      messages: "id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId",
     });
+
+    this.version(5)
+      .stores({
+        messages: "id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId",
+      })
+      .upgrade(async (trans) => {
+        const allMessages = (await trans.table("messages").toArray()) as Message[];
+
+        // Sort by topic and created time
+        const sorted = allMessages.sort((a, b) => {
+          if (a.topicId !== b.topicId) return a.topicId.localeCompare(b.topicId);
+          return new Date(a.created).getTime() - new Date(b.created).getTime();
+        });
+
+        const updates: { id: string; parentMessageId: string }[] = [];
+        const lastUserMessageByTopic = new Map<string, string>();
+
+        for (const m of sorted) {
+          if (m.type === "user") {
+            lastUserMessageByTopic.set(m.topicId, m.id);
+          } else if (m.type === "assistant" && !m.parentMessageId) {
+            const parentId = lastUserMessageByTopic.get(m.topicId);
+            if (parentId) {
+              updates.push({ id: m.id, parentMessageId: parentId });
+            }
+          }
+        }
+
+        for (const update of updates) {
+          await trans.table("messages").update(update.id, { parentMessageId: update.parentMessageId });
+        }
+      });
   }
 }
 
@@ -80,6 +112,8 @@ export interface Message {
   totalCost: number;
   latencyMs?: number;
   reasoning?: string;
+  parentMessageId?: string;
+  activeResponseId?: string;
 }
 
 export interface Topic {

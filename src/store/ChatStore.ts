@@ -32,6 +32,7 @@ interface ChatStore {
   updateMessageContext: (messageId: string, include: boolean) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   regenerateResponse: (assistantMessageId: string) => Promise<void>;
+  switchMessageVersion: (userMessageId: string, assistantMessageId: string) => Promise<void>;
   temperature: number;
   setTemperature: (temp: number) => void;
 }
@@ -231,6 +232,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     // 2. Build Context
     const existingContext = await topicStoreState.getTopicContext(topicId);
+
     const llmContext: LlmMessage[] = existingContext.map((m) => ({
       role: m.type === "user" ? "user" : m.type === "assistant" ? "assistant" : "system",
       content: m.content,
@@ -274,10 +276,14 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       promptTokens: 0,
       completionTokens: 0,
       totalCost: 0,
+      parentMessageId: userMessage.id,
     };
 
     try {
       await get().addMessage(assistantMessage);
+
+      // Update parent message to point to this as active response
+      await get().updateMessage(userMessage.id, { activeResponseId: assistantId });
 
       const loopStartTime = Date.now();
       let streamedContent = "";
@@ -391,11 +397,14 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
     if (!userMsg) return;
 
-    // Delete the existing assistant message
-    await get().deleteMessage(assistantId);
-
     // Call sendMessageStream with the user message content and ID as retry
     await get().sendMessageStream(userMsg.content, currentTopicId, userMsg.id);
+  },
+  switchMessageVersion: async (userMessageId, assistantId): Promise<void> => {
+    const { currentTopicId, updateMessage } = get();
+    if (!currentTopicId) return;
+
+    await updateMessage(userMessageId, { activeResponseId: assistantId });
   },
 }));
 

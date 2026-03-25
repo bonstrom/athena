@@ -43,13 +43,16 @@ const FollowFab = (): JSX.Element | null => {
   );
 };
 
-const Pane: React.FC<{ messages: Message[]; maxContextMessages: number }> = ({ messages, maxContextMessages }) => {
-  const { showAllMessages } = useUiStore();
-
+const Pane: React.FC<{
+  groups: { msg: Message; versions?: Message[] }[];
+  maxContextMessages: number;
+  showAllMessages: boolean;
+}> = ({ groups, maxContextMessages, showAllMessages }) => {
   const scrollToBottom = useScrollToBottom();
   const [sticky] = useSticky();
 
-  const last = messages.length > 0 ? messages[messages.length - 1] : undefined;
+  const lastGroup = groups.length > 0 ? groups[groups.length - 1] : undefined;
+  const last = lastGroup?.msg;
   const sig = last ? `${last.id}:${last.content.length}` : "";
 
   const prevSigRef = useRef(sig);
@@ -64,7 +67,8 @@ const Pane: React.FC<{ messages: Message[]; maxContextMessages: number }> = ({ m
     wasStickyRef.current = sticky;
   }, [sig, sticky, scrollToBottom]);
 
-  const contextMessages = messages.filter((m) => m.type === "user" || m.type === "assistant");
+  // For the context window indicator, we need the active sequence
+  const contextMessages = groups.map((g) => g.msg).filter((m) => m.type === "user" || m.type === "assistant");
   const firstInWindowId =
     contextMessages.length > maxContextMessages
       ? contextMessages[contextMessages.length - maxContextMessages].id
@@ -72,7 +76,7 @@ const Pane: React.FC<{ messages: Message[]; maxContextMessages: number }> = ({ m
 
   return (
     <>
-      {messages.map((m) => {
+      {groups.map(({ msg: m, versions }) => {
         const isFirstInWindow = m.id === firstInWindowId;
         return (
           <React.Fragment key={m.id}>
@@ -97,6 +101,7 @@ const Pane: React.FC<{ messages: Message[]; maxContextMessages: number }> = ({ m
                     ? { ...m, content: "⚠️ Assistant stored a hidden note here." }
                     : m
                 }
+                versions={versions}
               />
             </ListItem>
           </React.Fragment>
@@ -119,8 +124,50 @@ const FOLLOW_BUTTON_CLASS = css({ display: "none" });
 const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
   const { topicId } = useParams();
   const { visibleMessageCount, increaseVisibleMessageCount } = useChatStore();
+  const { showAllMessages } = useUiStore();
 
-  const visible = messages.filter((m) => !m.isDeleted).slice(-visibleMessageCount);
+  // 1. Filter deleted and sort
+  const all = messages
+    .filter((m) => !m.isDeleted)
+    .sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+
+  // 2. Group versions
+  const processedGroups: { msg: Message; versions?: Message[] }[] = [];
+  const processedIds = new Set<string>();
+
+  // Pre-index assistant messages by parentId for O(N) grouping
+  const assistantByParent = new Map<string, Message[]>();
+  for (const m of all) {
+    if (m.type === "assistant" && m.parentMessageId) {
+      const existing = assistantByParent.get(m.parentMessageId) ?? [];
+      existing.push(m);
+      assistantByParent.set(m.parentMessageId, existing);
+    }
+  }
+
+  for (const m of all) {
+    if (processedIds.has(m.id)) continue;
+
+    if (m.type === "user") {
+      processedIds.add(m.id);
+      processedGroups.push({ msg: m });
+
+      const versions = assistantByParent.get(m.id);
+      if (versions && versions.length > 0) {
+        const activeId = m.activeResponseId ?? versions[versions.length - 1].id;
+        const activeVersion = versions.find((v) => v.id === activeId) ?? versions[versions.length - 1];
+        processedGroups.push({ msg: activeVersion, versions });
+        versions.forEach((v) => processedIds.add(v.id));
+      }
+    } else {
+      // Standalone assistant, aiNote, system, etc.
+      processedGroups.push({ msg: m });
+      processedIds.add(m.id);
+    }
+  }
+
+  // 3. Slice the groups based on visible count
+  const visibleGroups = processedGroups.slice(-visibleMessageCount);
 
   return (
     <ScrollToBottom
@@ -129,20 +176,21 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
       initialScrollBehavior="auto"
       scrollViewClassName="my-scroll-view"
       followButtonClassName={FOLLOW_BUTTON_CLASS}>
-      {messages.length > visible.length && (
+      {processedGroups.length > visibleGroups.length && (
         <ListItem>
           <Button
             onClick={increaseVisibleMessageCount}
             fullWidth
             variant="outlined">
-            Load older messages
+            Load older messages ({processedGroups.length - visibleGroups.length} more)
           </Button>
         </ListItem>
       )}
 
       <Pane
-        messages={visible}
+        groups={visibleGroups}
         maxContextMessages={maxContextMessages}
+        showAllMessages={showAllMessages}
       />
     </ScrollToBottom>
   );

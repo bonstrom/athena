@@ -127,9 +127,35 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       .and((m) => m.forkId === activeForkId)
       .toArray();
 
-    const recent = allMessages
-      .filter((m) => (m.type === "user" || m.type === "assistant") && !m.isDeleted)
-      .sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime())
+    // Sort all messages once to ensure order
+    const sorted = allMessages.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+
+    // Filter for active sequence: User messages and their active assistant responses
+    const activeSequence: Message[] = [];
+    const userMessageMap = new Map<string, Message>();
+
+    for (const m of sorted) {
+      if (m.isDeleted) continue;
+
+      if (m.type === "user") {
+        userMessageMap.set(m.id, m);
+        activeSequence.push(m);
+      } else if (m.type === "assistant") {
+        if (m.parentMessageId) {
+          const parent = userMessageMap.get(m.parentMessageId);
+          // Only include if it's the active response for its parent
+          if (parent && parent.activeResponseId === m.id) {
+            activeSequence.push(m);
+          }
+        } else {
+          // Legacy or standalone assistant message
+          activeSequence.push(m);
+        }
+      }
+    }
+
+    const recent = activeSequence
+      .filter((m) => m.type === "user" || m.type === "assistant")
       .slice(-(topic.maxContextMessages ?? 10));
 
     const pinned = allMessages.filter((m) => m.includeInContext);

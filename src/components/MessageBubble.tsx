@@ -35,10 +35,12 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 
 interface MessageBubbleProps {
   message: Message;
+  versions?: Message[];
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble({ message }) {
-  const { updateMessageContext, deleteMessage, sendMessageStream, regenerateResponse } = useChatStore();
+const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble({ message, versions }) {
+  const { updateMessageContext, deleteMessage, sendMessageStream, regenerateResponse, switchMessageVersion } =
+    useChatStore();
   const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
   const { userName } = useAuthStore();
@@ -144,55 +146,110 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           display="flex"
           justifyContent="space-between"
           mb={0.5}>
-          <Tooltip
-            open={tooltipOpen}
-            title={
-              <Box>
+          <Box
+            display="flex"
+            alignItems="center">
+            <Tooltip
+              open={tooltipOpen}
+              title={
+                <Box>
+                  <Typography
+                    variant="caption"
+                    display="block">
+                    {new Intl.DateTimeFormat("sv-SE", {
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                    }).format(new Date(message.created))}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    display="block">
+                    {`${message.totalCost.toFixed(3)} kr`}
+                  </Typography>
+                  {message.latencyMs && (
+                    <>
+                      <Typography
+                        variant="caption"
+                        display="block">
+                        {`Time: ${(message.latencyMs / 1000).toFixed(1)} s`}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        display="block">
+                        {`Speed: ${(
+                          (message.promptTokens + message.completionTokens) /
+                          (message.latencyMs / 1000)
+                        ).toFixed(1)} TPS`}
+                      </Typography>
+                    </>
+                  )}
+                </Box>
+              }>
+              <Typography
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
+                variant="subtitle2"
+                color="text.secondary"
+                sx={{ cursor: "default", display: "inline-block" }}>
+                {message.type === "user" ? userName : getModelLabel(message.model)}
+              </Typography>
+            </Tooltip>
+
+            {isAssistant && versions && versions.length > 1 && (
+              <Box
+                display="flex"
+                alignItems="center"
+                ml={1.5}
+                sx={{
+                  bgcolor: (theme): string =>
+                    theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.05)" : "rgba(0, 0, 0, 0.03)",
+                  borderRadius: 1.5,
+                  px: 0.5,
+                  height: 24,
+                }}>
+                <IconButton
+                  size="small"
+                  disabled={versions.findIndex((v) => v.id === message.id) === 0}
+                  onClick={(): void => {
+                    const currentIndex = versions.findIndex((v) => v.id === message.id);
+                    if (currentIndex > 0 && message.parentMessageId) {
+                      void switchMessageVersion(message.parentMessageId, versions[currentIndex - 1].id);
+                    }
+                  }}
+                  sx={{ p: 0.25, color: "text.secondary" }}>
+                  <ExpandLessIcon
+                    fontSize="small"
+                    sx={{ transform: "rotate(-90deg)", fontSize: "1.1rem" }}
+                  />
+                </IconButton>
                 <Typography
                   variant="caption"
-                  display="block">
-                  {new Intl.DateTimeFormat("sv-SE", {
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hour12: false,
-                  }).format(new Date(message.created))}
+                  color="text.secondary"
+                  sx={{ mx: 0.5, fontWeight: "bold", minWidth: "2.5em", textAlign: "center", fontSize: "0.7rem" }}>
+                  {`${versions.findIndex((v) => v.id === message.id) + 1} / ${versions.length}`}
                 </Typography>
-                <Typography
-                  variant="caption"
-                  display="block">
-                  {`${message.totalCost.toFixed(3)} kr`}
-                </Typography>
-                {message.latencyMs && (
-                  <>
-                    <Typography
-                      variant="caption"
-                      display="block">
-                      {`Time: ${(message.latencyMs / 1000).toFixed(1)} s`}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      display="block">
-                      {`Speed: ${(
-                        (message.promptTokens + message.completionTokens) /
-                        (message.latencyMs / 1000)
-                      ).toFixed(1)} TPS`}
-                    </Typography>
-                  </>
-                )}
+                <IconButton
+                  size="small"
+                  disabled={versions.findIndex((v) => v.id === message.id) === versions.length - 1}
+                  onClick={(): void => {
+                    const currentIndex = versions.findIndex((v) => v.id === message.id);
+                    if (currentIndex < versions.length - 1 && message.parentMessageId) {
+                      void switchMessageVersion(message.parentMessageId, versions[currentIndex + 1].id);
+                    }
+                  }}
+                  sx={{ p: 0.25, color: "text.secondary" }}>
+                  <ExpandMoreIcon
+                    fontSize="small"
+                    sx={{ transform: "rotate(-90deg)", fontSize: "1.1rem" }}
+                  />
+                </IconButton>
               </Box>
-            }>
-            <Typography
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-              variant="subtitle2"
-              color="text.secondary"
-              sx={{ cursor: "default", display: "inline-block" }}>
-              {message.type === "user" ? userName : getModelLabel(message.model)}
-            </Typography>
-          </Tooltip>
+            )}
+          </Box>
 
           <Box
             display="flex"
