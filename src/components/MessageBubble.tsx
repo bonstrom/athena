@@ -29,6 +29,9 @@ import { Message } from "../database/AthenaDb";
 import { useNotificationStore } from "../store/NotificationStore";
 import { useTopicStore } from "../store/TopicStore";
 import AltRouteIcon from "@mui/icons-material/AltRoute";
+import PsychologyIcon from "@mui/icons-material/Psychology";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 
 interface MessageBubbleProps {
   message: Message;
@@ -43,6 +46,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showReasoning, setShowReasoning] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAssistant = message.type === "assistant";
@@ -382,6 +386,35 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 </IconButton>
               </Tooltip>
             </Box>
+
+            {/* Group 3: Reasoning Toggle */}
+            {message.reasoning && (
+              <Box
+                display="flex"
+                alignItems="center">
+                <Tooltip title={showReasoning ? "Hide Reasoning" : "Show Reasoning"}>
+                  <Button
+                    size="small"
+                    onClick={(): void => setShowReasoning(!showReasoning)}
+                    sx={{
+                      minWidth: 40,
+                      p: "4px",
+                      borderRadius: 1.5,
+                      display: "flex",
+                      gap: 0.25,
+                      color: (theme): string =>
+                        theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.7)" : "rgba(0, 0, 0, 0.6)",
+                      "&:hover": {
+                        bgcolor: (theme): string =>
+                          theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+                      },
+                    }}>
+                    <PsychologyIcon fontSize="small" />
+                    {showReasoning ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                  </Button>
+                </Tooltip>
+              </Box>
+            )}
           </Box>
         </Box>
 
@@ -397,6 +430,31 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             <MarkdownWithCode>{message.content}</MarkdownWithCode>
           )}
         </Box>
+
+        {showReasoning && message.reasoning && (
+          <Box
+            sx={{
+              mt: 1.5,
+              mb: 1.5,
+              p: 1.5,
+              borderRadius: 2,
+              bgcolor: (theme): string => (theme.palette.mode === "dark" ? alpha("#fff", 0.05) : alpha("#000", 0.03)),
+              borderLeft: (theme): string => `4px solid ${alpha(theme.palette.text.secondary, 0.2)}`,
+            }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: "bold", mb: 0.5, display: "block", textTransform: "uppercase" }}>
+              Reasoning
+            </Typography>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ whiteSpace: "pre-wrap", fontStyle: "italic", fontSize: "0.85rem" }}>
+              {message.reasoning}
+            </Typography>
+          </Box>
+        )}
 
         {isAssistant && message.content === "" && (
           <Box mt={1}>

@@ -79,6 +79,7 @@ export interface Message {
   completionTokens: number;
   totalCost: number;
   latencyMs?: number;
+  reasoning?: string;
 }
 
 export interface Topic {

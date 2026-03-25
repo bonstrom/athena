@@ -343,6 +343,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
             totalCost: calculateCostSEK(selectedModel, 0, totalCompletionTokens),
             failed: false,
             latencyMs,
+            reasoning: lastResult.reasoning,
           },
         },
       ]);

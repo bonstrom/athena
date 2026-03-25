@@ -19,6 +19,7 @@ export interface LlmResult {
   completionTokensDetails?: { reasoning_tokens?: number };
   toolCalls?: { id: string; function: { name: string; arguments: string } }[];
   finishReason?: string;
+  reasoning?: string;
 }
 
 export const SCRATCHPAD_TOOL: LlmTool = {
@@ -162,6 +163,8 @@ export async function askLlm(
     choices: {
       message: {
         content: string;
+        reasoning_content?: string;
+        reasoning?: string;
         tool_calls?: { id?: string; function: { name: string; arguments: string } }[];
       };
     }[];
@@ -175,6 +178,7 @@ export async function askLlm(
     function: tc.function,
   }));
   const content = (toolCalls && toolCalls.length > 0 ? message.content : message.content.trim()) || "";
+  const reasoning = message.reasoning_content ?? message.reasoning ?? "";
 
   const persistMatch = /<!--\s*persist:\s*([\s\S]*?)\s*-->/i.exec(content);
   const replaceMatch = /<!--\s*replace:\s*([\s\S]*?)\s*-->/i.exec(content);
@@ -221,6 +225,7 @@ export async function askLlm(
     aiNoteAction,
     toolCalls,
     finishReason,
+    reasoning: reasoning.trim() || undefined,
   };
 
   if (!result.content && result.aiNote) {
@@ -267,6 +272,7 @@ export async function askLlmStream(
   let toolCallStarted = false;
   let toolCalls: { id: string; function: { name: string; arguments: string } }[] | undefined;
   let finishReason: string | undefined;
+  let reasoning = "";
   let done = false;
 
   try {
@@ -292,6 +298,8 @@ export async function askLlmStream(
               finish_reason?: string;
               delta?: {
                 content?: string;
+                reasoning_content?: string;
+                reasoning?: string;
                 tool_calls?: {
                   id: string; // id only appears in the first chunk for a tool call usually
                   index: number;
@@ -323,6 +331,10 @@ export async function askLlmStream(
           const token = delta?.content ?? "";
           accumulated += token;
           if (onToken && token) onToken(token);
+
+          if (delta?.reasoning_content || delta?.reasoning) {
+            reasoning += delta.reasoning_content ?? delta.reasoning ?? "";
+          }
 
           if (delta?.tool_calls) {
             if (!toolCallStarted) {
@@ -411,6 +423,7 @@ export async function askLlmStream(
     aiNoteAction,
     toolCalls,
     finishReason,
+    reasoning: reasoning.trim() || undefined,
   };
 
   if (!result.content && result.aiNote) {
