@@ -334,7 +334,8 @@ export async function askLlmStream(
               }
             }
             for (const tc of delta.tool_calls) {
-              const idx = tc.index;
+              // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+              const idx = tc.index ?? 0;
               if (!toolCalls) toolCalls = [];
               let existing: { id: string; function: { name: string; arguments: string } } | undefined = toolCalls[idx];
               // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -453,10 +454,8 @@ export async function orchestrateLlmLoop(
     if (loopCount === 1) {
       finalContent = result.content;
     } else if (result.content) {
-      finalContent += result.content;
-    }
-
-    // Process AI Note (Scratchpad)
+      finalContent = finalContent ? `${finalContent}\n\n${result.content}` : result.content;
+    } // Process AI Note (Scratchpad)
     if (result.aiNote && onScratchpadUpdate) {
       await onScratchpadUpdate(result.aiNote, result.aiNoteAction ?? "append");
     }

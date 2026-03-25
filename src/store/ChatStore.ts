@@ -26,8 +26,7 @@ interface ChatStore {
   addMessages: (messages: Message[]) => Promise<void>;
   updateMessage: (id: string, patch: Partial<Message>) => Promise<void>;
   updateMessages: (updates: { id: string; patch: Partial<Message> }[]) => Promise<void>;
-  sendMessageWithoutStream: (content: string, topicId: string, messageId?: string) => Promise<void>;
-  sendMessageStream: (content: string, topicId: string, messageId?: string) => Promise<void>;
+  updateMessageStateOnly: (id: string, patch: Partial<Message>) => void;
   sendMessage: (content: string, topicId: string, messageId?: string) => Promise<void>;
   setSelectedModel: (model: ChatModel) => void;
   updateMessageContext: (messageId: string, include: boolean) => Promise<void>;
@@ -178,15 +177,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  sendMessage: async (content, topicId, messageId?): Promise<void> => {
-    const { selectedModel } = get();
+  updateMessageStateOnly: (id, patch): void => {
+    const { currentTopicId, messagesByTopic } = get();
+    if (!currentTopicId) return;
 
-    return selectedModel.streaming
-      ? get().sendMessageStream(content, topicId, messageId)
-      : get().sendMessageWithoutStream(content, topicId, messageId);
+    set({
+      messagesByTopic: {
+        ...messagesByTopic,
+        [currentTopicId]: messagesByTopic[currentTopicId].map((m) => (m.id === id ? { ...m, ...patch } : m)),
+      },
+    });
   },
 
-  sendMessageStream: async (content: string, topicId: string, messageId?: string): Promise<void> => {
+  sendMessage: async (content: string, topicId: string, messageId?: string): Promise<void> => {
     const { selectedModel } = get();
     const topicStoreState = useTopicStore.getState();
 
@@ -198,10 +201,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const isRetry = !!messageId;
 
     let userMessage: Message;
-
     const topic = topicStoreState.topics.find((t) => t.id === topicId);
     const activeForkId = topic?.activeForkId ?? "main";
 
+    // 1. Handle User Message
     if (isRetry) {
       const existing = await athenaDb.messages.get(messageId);
       if (!existing) throw new Error("Original message not found for retry.");
@@ -226,174 +229,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       await get().addMessage(userMessage);
     }
 
-    const existingContext = await topicStoreState.getTopicContext(topicId);
-    const llmContext: LlmMessage[] = existingContext.map((m) => ({
-      role: m.type === "user" ? "user" : m.type === "assistant" ? "assistant" : "system",
-      content: m.content,
-    }));
-
-    const assistantId = crypto.randomUUID();
-    const assistantCreated = new Date().toISOString();
-    let streamedContent = "";
-
-    const assistantMessage: Message = {
-      id: assistantId,
-      topicId,
-      forkId: activeForkId,
-      type: "assistant",
-      content: "",
-      created: assistantCreated,
-      model: selectedModel.id,
-      isDeleted: false,
-      includeInContext: false,
-      failed: false,
-      promptTokens: 0,
-      completionTokens: 0,
-      totalCost: 0,
-    };
-
-    const systems: LlmMessage[] = [];
-    const scratchpadRules = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). 
-
-**Rules for the Scratchpad:**
-* **What to store:** Only persistent, long-term facts (user preferences, ongoing goals, core character details, or established rules). 
-* **What NOT to store:** Transient conversation history, short-term tasks that were just completed, or immediate context (I already remember recent messages).
-* **Managing space:** If the scratchpad is getting full or contains outdated facts (e.g., a goal was completed, or a preference changed), use the \`replace\` action to rewrite the entire scratchpad, keeping only the currently relevant facts and discarding the dead ones.
-
-[Current Scratchpad Content]:
-${topic?.scratchpad ?? "(Empty)"}`;
-
-    if (selectedModel.supportsTools) {
-      systems.push({ role: "system", content: scratchpadRules });
-    } else {
-      systems.push({
-        role: "system",
-        content: `${scratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`,
-      });
-    }
-
-    llmContext.unshift(...systems);
-
-    try {
-      // Show typing indicator
-      await get().addMessage(assistantMessage);
-
-      const loopStartTime = Date.now();
-      const { finalContent, totalPromptTokens, totalCompletionTokens, lastResult } = await orchestrateLlmLoop(
-        selectedModel,
-        get().temperature,
-        llmContext,
-        (chunk: string) => {
-          streamedContent += chunk;
-          const displayContent = streamedContent
-            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
-            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
-          void get().updateMessage(assistantId, { content: displayContent });
-        },
-        async (aiNote, action) => {
-          const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
-          let updatedScratchpad = "";
-          if (action === "replace") {
-            updatedScratchpad = aiNote;
-          } else {
-            updatedScratchpad = currentScratchpad ? `${currentScratchpad}\n${aiNote}` : aiNote;
-          }
-          if (updatedScratchpad.length > SCRATCHPAD_LIMIT) {
-            updatedScratchpad = updatedScratchpad.slice(0, SCRATCHPAD_LIMIT);
-          }
-          await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
-        },
-      );
-      const latencyMs = Date.now() - loopStartTime;
-
-      await get().updateMessage(userMessage.id, {
-        promptTokens: totalPromptTokens,
-        totalCost: calculateCostSEK(selectedModel, totalPromptTokens, 0, lastResult.promptTokensDetails),
-        failed: false,
-      });
-
-      await get().updateMessage(assistantId, {
-        content: finalContent
-          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
-          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
-          .trim(),
-        completionTokens: totalCompletionTokens,
-        totalCost: calculateCostSEK(selectedModel, 0, totalCompletionTokens),
-        failed: false,
-        latencyMs,
-      });
-
-      void topicStoreState.generateTopicName(topicId, content);
-    } catch (err) {
-      console.error("LLM request failed", err);
-      const msg = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification("LLM request failed", msg);
-
-      await get().updateMessage(userMessage.id, { failed: true });
-
-      await get().updateMessage(assistantId, { isDeleted: true });
-
-      set((state) => ({
-        messagesByTopic: {
-          ...state.messagesByTopic,
-          [topicId]: state.messagesByTopic[topicId].map((m) =>
-            m.id === userMessage.id
-              ? {
-                  ...m,
-                  retry: (): Promise<void> =>
-                    selectedModel.streaming
-                      ? get().sendMessageStream(content, topicId, userMessage.id)
-                      : get().sendMessageWithoutStream(content, topicId, userMessage.id),
-                }
-              : m,
-          ),
-        },
-      }));
-    } finally {
-      set({ sending: false });
-    }
-  },
-
-  sendMessageWithoutStream: async (content, topicId, messageId): Promise<void> => {
-    const { selectedModel } = get();
-    const topicStoreState = useTopicStore.getState();
-
-    if (!content.trim() || !topicId) return;
-
-    set({ sending: true });
-
-    const now = new Date().toISOString();
-    const isRetry = !!messageId;
-
-    let userMessage: Message;
-
-    const topic = topicStoreState.topics.find((t) => t.id === topicId);
-    const activeForkId = topic?.activeForkId ?? "main";
-
-    if (isRetry) {
-      const existing = await athenaDb.messages.get(messageId);
-      if (!existing) throw new Error("Original message not found for retry.");
-      userMessage = existing;
-      await get().updateMessage(messageId, { failed: false });
-    } else {
-      userMessage = {
-        id: crypto.randomUUID(),
-        topicId,
-        forkId: activeForkId,
-        type: "user",
-        content: content.trim(),
-        created: now,
-        model: undefined,
-        isDeleted: false,
-        includeInContext: false,
-        failed: false,
-        promptTokens: 0,
-        completionTokens: 0,
-        totalCost: 0,
-      };
-      await get().addMessage(userMessage);
-    }
-
+    // 2. Build Context
     const existingContext = await topicStoreState.getTopicContext(topicId);
     const llmContext: LlmMessage[] = existingContext.map((m) => ({
       role: m.type === "user" ? "user" : m.type === "assistant" ? "assistant" : "system",
@@ -422,16 +258,15 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
     llmContext.unshift(...systems);
 
+    // 3. Prepare Assistant Message
     const assistantId = crypto.randomUUID();
-    const assistantCreated = new Date().toISOString();
-
     const assistantMessage: Message = {
       id: assistantId,
       topicId,
       forkId: activeForkId,
       type: "assistant",
       content: "",
-      created: assistantCreated,
+      created: new Date().toISOString(),
       model: selectedModel.id,
       isDeleted: false,
       includeInContext: false,
@@ -445,11 +280,25 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       await get().addMessage(assistantMessage);
 
       const loopStartTime = Date.now();
+      let streamedContent = "";
+
+      // Conditionally create the stream callback
+      const onTokenCallback = selectedModel.streaming
+        ? (chunk: string): void => {
+            streamedContent += chunk;
+            const displayContent = streamedContent
+              .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+              .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
+            get().updateMessageStateOnly(assistantId, { content: displayContent });
+          }
+        : undefined;
+
+      // 4. Call the Orchestrator
       const { finalContent, totalPromptTokens, totalCompletionTokens, lastResult } = await orchestrateLlmLoop(
         selectedModel,
         get().temperature,
         llmContext,
-        undefined,
+        onTokenCallback, // Will be undefined if not streaming
         async (aiNote, action) => {
           const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
           let updatedScratchpad = "";
@@ -464,8 +313,10 @@ ${topic?.scratchpad ?? "(Empty)"}`;
           await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
         },
       );
+
       const latencyMs = Date.now() - loopStartTime;
 
+      // 5. Finalize DB Updates
       await get().updateMessage(userMessage.id, {
         promptTokens: totalPromptTokens,
         totalCost: calculateCostSEK(selectedModel, totalPromptTokens, 0, lastResult.promptTokensDetails),
@@ -490,7 +341,6 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       useNotificationStore.getState().addNotification("LLM request failed", msg);
 
       await get().updateMessage(userMessage.id, { failed: true });
-
       await get().updateMessage(assistantId, { isDeleted: true });
 
       set((state) => ({
@@ -500,10 +350,8 @@ ${topic?.scratchpad ?? "(Empty)"}`;
             m.id === userMessage.id
               ? {
                   ...m,
-                  retry: (): Promise<void> =>
-                    selectedModel.streaming
-                      ? get().sendMessageStream(content, topicId, userMessage.id)
-                      : get().sendMessageWithoutStream(content, topicId, userMessage.id),
+                  // The retry logic is now much cleaner too!
+                  retry: (): Promise<void> => get().sendMessage(content, topicId, userMessage.id),
                 }
               : m,
           ),
