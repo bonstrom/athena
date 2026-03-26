@@ -1,7 +1,27 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return */
 import { exportDB, importDB } from "dexie-export-import";
 import { athenaDb } from "../database/AthenaDb";
 import { get, set } from "idb-keyval";
+
+interface FileSystemWritableFileStream extends WritableStream {
+  write(data: BufferSource | Blob | string): Promise<void>;
+  seek(position: number): Promise<void>;
+  truncate(size: number): Promise<void>;
+}
+
+interface FileSystemFileHandle {
+  readonly kind: "file";
+  readonly name: string;
+  getFile(): Promise<File>;
+  createWritable(options?: { keepExistingData?: boolean }): Promise<FileSystemWritableFileStream>;
+  queryPermission(descriptor?: { mode: "read" | "readwrite" }): Promise<PermissionState>;
+  requestPermission(descriptor?: { mode: "read" | "readwrite" }): Promise<PermissionState>;
+}
+
+declare global {
+  interface Window {
+    showSaveFilePicker?: (options?: any) => Promise<FileSystemFileHandle>;
+  }
+}
 
 const BACKUP_HANDLE_KEY = "autoBackupFileHandle";
 const LAST_BACKUP_TIME_KEY = "lastAutoBackupTime";
@@ -50,7 +70,7 @@ export const BackupService = {
         throw new Error("File System Access API not supported in this browser.");
       }
 
-      const fileHandle = await (window as any).showSaveFilePicker({
+      const fileHandle = await window.showSaveFilePicker!({
         suggestedName: "athena_backup.json",
         types: [
           {
@@ -65,8 +85,8 @@ export const BackupService = {
         return true;
       }
       return false;
-    } catch (error: any) {
-      if (error.name === "AbortError") {
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
         return false;
       }
       console.error("Failed to select auto-backup file", error);
@@ -77,8 +97,8 @@ export const BackupService = {
   /**
    * Retrieves the saved file handle. Returns null if none exists.
    */
-  async getAutoBackupHandle(): Promise<any | null> {
-    return (await get(BACKUP_HANDLE_KEY)) || null;
+  async getAutoBackupHandle(): Promise<FileSystemFileHandle | null> {
+    return (await get(BACKUP_HANDLE_KEY)) as FileSystemFileHandle | null;
   },
 
   /**

@@ -18,7 +18,7 @@ import { CheckCircle as CheckCircleIcon } from "@mui/icons-material";
 import { useAuthStore } from "../store/AuthStore";
 import { BackupService } from "../services/backupService";
 import { getMoonshotBalance, getDeepSeekBalance } from "../services/llmService";
-import { USD_TO_SEK } from "../components/ModelSelector";
+import { USD_TO_SEK } from "../constants";
 
 const Settings: React.FC = () => {
   const {

@@ -126,48 +126,54 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
   const { visibleMessageCount, increaseVisibleMessageCount } = useChatStore();
   const { showAllMessages } = useUiStore();
 
-  // 1. Filter deleted and sort
-  const all = messages
-    .filter((m) => !m.isDeleted)
-    .sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+  // 1. Filter, Sort, and Group
+  const processedGroups = React.useMemo(() => {
+    // 1.1 Filter deleted and sort
+    const all = messages
+      .filter((m) => !m.isDeleted)
+      .sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
-  // 2. Group versions
-  const processedGroups: { msg: Message; versions?: Message[] }[] = [];
-  const processedIds = new Set<string>();
+    // 1.2 Group versions
+    const groups: { msg: Message; versions?: Message[] }[] = [];
+    const processedIds = new Set<string>();
 
-  // Pre-index assistant messages by parentId for O(N) grouping
-  const assistantByParent = new Map<string, Message[]>();
-  for (const m of all) {
-    if (m.type === "assistant" && m.parentMessageId) {
-      const existing = assistantByParent.get(m.parentMessageId) ?? [];
-      existing.push(m);
-      assistantByParent.set(m.parentMessageId, existing);
-    }
-  }
-
-  for (const m of all) {
-    if (processedIds.has(m.id)) continue;
-
-    if (m.type === "user") {
-      processedIds.add(m.id);
-      processedGroups.push({ msg: m });
-
-      const versions = assistantByParent.get(m.id);
-      if (versions && versions.length > 0) {
-        const activeId = m.activeResponseId ?? versions[versions.length - 1].id;
-        const activeVersion = versions.find((v) => v.id === activeId) ?? versions[versions.length - 1];
-        processedGroups.push({ msg: activeVersion, versions });
-        versions.forEach((v) => processedIds.add(v.id));
+    // Pre-index assistant messages by parentId for O(N) grouping
+    const assistantByParent = new Map<string, Message[]>();
+    for (const m of all) {
+      if (m.type === "assistant" && m.parentMessageId) {
+        const existing = assistantByParent.get(m.parentMessageId) ?? [];
+        existing.push(m);
+        assistantByParent.set(m.parentMessageId, existing);
       }
-    } else {
-      // Standalone assistant, aiNote, system, etc.
-      processedGroups.push({ msg: m });
-      processedIds.add(m.id);
     }
-  }
 
-  // 3. Slice the groups based on visible count
-  const visibleGroups = processedGroups.slice(-visibleMessageCount);
+    for (const m of all) {
+      if (processedIds.has(m.id)) continue;
+
+      if (m.type === "user") {
+        processedIds.add(m.id);
+        groups.push({ msg: m });
+
+        const versions = assistantByParent.get(m.id);
+        if (versions && versions.length > 0) {
+          const activeId = m.activeResponseId ?? versions[versions.length - 1].id;
+          const activeVersion = versions.find((v) => v.id === activeId) ?? versions[versions.length - 1];
+          groups.push({ msg: activeVersion, versions });
+          versions.forEach((v) => processedIds.add(v.id));
+        }
+      } else {
+        // Standalone assistant, aiNote, system, etc.
+        groups.push({ msg: m });
+        processedIds.add(m.id);
+      }
+    }
+    return groups;
+  }, [messages]);
+
+  // 2. Slice the groups based on visible count
+  const visibleGroups = React.useMemo(() => {
+    return processedGroups.slice(-visibleMessageCount);
+  }, [processedGroups, visibleMessageCount]);
 
   return (
     <ScrollToBottom

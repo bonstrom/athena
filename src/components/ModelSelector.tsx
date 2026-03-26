@@ -1,8 +1,7 @@
 import React from "react";
 import { FormControl, InputLabel, MenuItem, Select, Box, Typography } from "@mui/material";
 import { useAuthStore } from "../store/AuthStore";
-
-export const USD_TO_SEK = 10;
+import { USD_TO_SEK } from "../constants";
 
 export interface ChatModel {
   id: string;

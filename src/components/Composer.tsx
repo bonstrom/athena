@@ -196,7 +196,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             <span>
               <IconButton
                 onClick={handleTempClick}
-                disabled={sending}>
+                disabled={sending}
+                aria-label="Topic Settings">
                 <TuneIcon />
               </IconButton>
             </span>
@@ -205,7 +206,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             <span>
               <IconButton
                 onClick={(): void => setIsExpanded(!isExpanded)}
-                disabled={sending}>
+                disabled={sending}
+                aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}>
                 {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
               </IconButton>
             </span>
@@ -540,7 +542,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             <IconButton
               onClick={sending ? handleStop : handleSend}
               disabled={false}
-              color={sending ? "error" : "primary"}>
+              color={sending ? "error" : "primary"}
+              aria-label={sending ? "Stop generating" : "Send message"}>
               {sending ? <StopCircleIcon /> : <SendIcon />}
             </IconButton>
           </span>

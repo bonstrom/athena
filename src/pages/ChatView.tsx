@@ -25,13 +25,9 @@ const ChatView: React.FC = () => {
 
   useEffect(() => {
     if (topicId !== displayTopicId) {
-      // 1. Start fade out
       setIsVisible(false);
-
-      // 2. Start fetching data immediately
       const fetchPromise = topicId ? fetchMessages(topicId) : Promise.resolve();
 
-      // 3. Wait for both the fade out (200ms) and data fetching to finish
       const timer = setTimeout(() => {
         void fetchPromise.then(() => {
           const exists = topicId ? useTopicStore.getState().topics.some((t) => t.id === topicId) : true;
@@ -46,8 +42,12 @@ const ChatView: React.FC = () => {
       }, 200);
 
       return () => clearTimeout(timer);
-    } else if (topicId && !isVisible) {
-      // Initial load or refresh
+    }
+  }, [fetchMessages, topicId, displayTopicId]);
+
+  useEffect(() => {
+    if (topicId && topicId === displayTopicId && !isVisible && !error) {
+      // Initial load or refresh when displayTopicId is already correct but not visible
       void fetchMessages(topicId).then(() => {
         const exists = useTopicStore.getState().topics.some((t) => t.id === topicId);
         if (!exists) {
@@ -58,10 +58,7 @@ const ChatView: React.FC = () => {
         }
       });
     }
-    // We intentionally exclude isVisible from dependencies to avoid re-triggering the effect
-    // when we toggle it for animations.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchMessages, topicId, displayTopicId]);
+  }, [fetchMessages, topicId, displayTopicId, isVisible, error]);
 
   return (
     <Box
