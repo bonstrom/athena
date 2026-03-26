@@ -4,7 +4,6 @@ import { useParams } from "react-router-dom";
 import { useAuthStore } from "../store/AuthStore";
 import { useChatStore } from "../store/ChatStore";
 import { useTopicStore } from "../store/TopicStore";
-import { Message } from "../database/AthenaDb";
 import MessageList from "../components/MessageList";
 import Composer from "../components/Composer";
 import ForkTabs from "../components/ForkTabs";
@@ -23,7 +22,7 @@ const ChatView: React.FC = () => {
   const topic = useTopicStore((state) => state.topics.find((t) => t.id === displayTopicId));
   const maxContextMessages = topic?.maxContextMessages ?? 10;
 
-  const messages = displayTopicId ? ((messagesByTopic[displayTopicId] as Message[] | undefined) ?? []) : [];
+  const messages = displayTopicId ? (messagesByTopic[displayTopicId] ?? []) : [];
 
   useEffect(() => {
     if (topicId !== displayTopicId) {
@@ -48,19 +47,13 @@ const ChatView: React.FC = () => {
   }, [fetchMessages, topicId, displayTopicId]);
 
   useEffect(() => {
-    if (topicId && topicId === displayTopicId && !isVisible && !error) {
-      // Initial load or refresh when displayTopicId is already correct but not visible
-      void fetchMessages(topicId).then(() => {
-        const exists = useTopicStore.getState().topics.some((t) => t.id === topicId);
-        if (!exists) {
-          setError("Topic not found");
-        } else {
-          setError(null);
-          setIsVisible(true);
-        }
+    if (topicId && topicId === displayTopicId && topic?.activeForkId) {
+      void fetchMessages(topicId, topic.activeForkId).then(() => {
+        setIsVisible(true);
+        setError(null);
       });
     }
-  }, [fetchMessages, topicId, displayTopicId, isVisible, error]);
+  }, [fetchMessages, topicId, displayTopicId, topic?.activeForkId]);
 
   return (
     <Box

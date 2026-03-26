@@ -425,15 +425,18 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         // Show status in UI
         onTokenCallback("*(Reviewing and improving...)*");
 
+        const reviewerPrompt =
+          "You are an expert quality-assurance AI. Your task is to review a drafted response to a user's prompt and improve it. Correct any factual, logical, or grammatical errors. Ensure the formatting is clean and the tone matches the user's original intent. If the draft contains code, ensure it is syntactically correct and complete. Do not unnecessarily rewrite accurate content. Provide ONLY the final, polished response without any introductory or concluding meta-text.";
+
         const reviewMessages: LlmMessage[] = [
-          {
-            role: "system",
-            content:
-              "You are an expert scientific editor. Your goal is to correct any logical or factual errors in the initial response.\n\nCRITICAL: You must maintain high-quality, professional grammar. Do not omit words or take shortcuts in phrasing. If the logic is correct but the tone is poor, fix the tone. Provide ONLY the final, polished response.",
-          },
+          { role: "system", content: reviewerPrompt },
+          ...llmContext.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
           {
             role: "user",
-            content: `User Question: ${content.trim()}\n\nInitial Response: ${primaryResult.finalContent}`,
+            content: `Draft response to review and polish:\n${primaryResult.finalContent}`,
           },
         ];
 
@@ -460,27 +463,37 @@ ${topic?.scratchpad ?? "(Empty)"}`;
           }
         };
 
-        const reviewerResult = await orchestrateLlmLoop(
-          secondModel,
-          get().temperature,
-          reviewMessages,
-          onReviewerTokenCallback,
-          onReviewerReasoningCallback,
-          undefined, // Reviewer doesn't update scratchpad
-          controller.signal,
-        );
+        try {
+          const reviewerResult = await orchestrateLlmLoop(
+            secondModel,
+            get().temperature,
+            reviewMessages,
+            onReviewerTokenCallback,
+            onReviewerReasoningCallback,
+            undefined, // Reviewer doesn't update scratchpad
+            controller.signal,
+          );
 
-        finalContent = reviewerResult.finalContent;
-        totalPromptTokens += reviewerResult.totalPromptTokens;
-        totalCompletionTokens += reviewerResult.totalCompletionTokens;
+          finalContent = reviewerResult.finalContent;
+          totalPromptTokens += reviewerResult.totalPromptTokens;
+          totalCompletionTokens += reviewerResult.totalCompletionTokens;
 
-        // Add cost of reviewer model
-        finalTotalCost += calculateCostSEK(
-          secondModel,
-          reviewerResult.totalPromptTokens,
-          reviewerResult.totalCompletionTokens,
-          reviewerResult.lastResult.promptTokensDetails,
-        );
+          // Add cost of reviewer model
+          finalTotalCost += calculateCostSEK(
+            secondModel,
+            reviewerResult.totalPromptTokens,
+            reviewerResult.totalCompletionTokens,
+            reviewerResult.lastResult.promptTokensDetails,
+          );
+        } catch (err) {
+          console.error("Reviewer model failed, falling back to primary draft:", err);
+          const message = err instanceof Error ? err.message : String(err);
+          useNotificationStore
+            .getState()
+            .addNotification("Reviewer failed", `Falling back to primary draft: ${message}`);
+          // Fallback: Stick with primary model results but update state just in case
+          get().updateMessageStateOnly(assistantId, { content: finalContent });
+        }
       }
 
       const latencyMs = Date.now() - loopStartTime;

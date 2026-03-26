@@ -273,10 +273,18 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         .filter((m) => new Date(m.created).getTime() <= new Date(selectedMessage.created).getTime() && !m.isDeleted)
         .sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
+      // Create ID mapping for internal references (parentMessageId, activeResponseId)
+      const idMap: Record<string, string> = {};
+      messagesToCopy.forEach((m) => {
+        idMap[m.id] = crypto.randomUUID();
+      });
+
       const newMessages: Message[] = messagesToCopy.map((m) => ({
         ...m,
-        id: crypto.randomUUID(),
+        id: idMap[m.id],
         forkId: newForkId,
+        parentMessageId: m.parentMessageId ? idMap[m.parentMessageId] : undefined,
+        activeResponseId: m.activeResponseId ? idMap[m.activeResponseId] : undefined,
       }));
 
       if (newMessages.length > 0) {
