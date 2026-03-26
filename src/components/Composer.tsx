@@ -13,6 +13,11 @@ import {
   Tab,
   Slider,
   Typography,
+  ToggleButton as MuiToggleButton,
+  ToggleButtonGroup as MuiToggleButtonGroup,
+  FormControl,
+  Select,
+  SelectChangeEvent,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import StopCircleIcon from "@mui/icons-material/StopCircle";
@@ -24,15 +29,16 @@ import CodeIcon from "@mui/icons-material/Code";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
 import ForumIcon from "@mui/icons-material/Forum";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
-import CheckIcon from "@mui/icons-material/Check";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
 import TopicContextDialog from "./TopicContextDialog";
 import ScratchpadDialog from "./ScratchpadDialog";
+import { useAuthStore } from "../store/AuthStore";
 import { useChatStore } from "../store/ChatStore";
 import { useTopicStore } from "../store/TopicStore";
-import { SCRATCHPAD_LIMIT } from "../constants";
+import { chatModels } from "./ModelSelector";
+import { SCRATCHPAD_LIMIT, USD_TO_SEK } from "../constants";
 
 interface ComposerProps {
   sending: boolean;
@@ -49,7 +55,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
   const questionRef = useRef("");
   const topicStore = useTopicStore();
-  const { selectedModel, temperature, setTemperature, currentTopicId, stopSending } = useChatStore();
+  const { selectedModel, setSelectedModel, temperature, setTemperature, currentTopicId, stopSending } = useChatStore();
+  const { chatWidth, setChatWidth, openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
@@ -57,6 +64,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const [pages, setPages] = useState<Page[]>([{ id: crypto.randomUUID(), title: "Page 1", content: "" }]);
   const [activePageIndex, setActivePageIndex] = useState(0);
   const [localMaxContext, setLocalMaxContext] = useState<number | null>(null);
+
+  const availableModels = chatModels.filter(
+    (model) =>
+      (model.provider === "openai" && openAiKey) ||
+      (model.provider === "deepseek" && deepSeekKey) ||
+      (model.provider === "google" && googleApiKey) ||
+      (model.provider === "moonshot" && moonshotApiKey),
+  );
   const openTempMenu = Boolean(anchorEl);
 
   const handleTempClick = (event: React.MouseEvent<HTMLButtonElement>): void => {
@@ -185,7 +200,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       }}>
       <Box
         width="100%"
-        maxWidth="md"
+        maxWidth={chatWidth === "full" ? "100%" : chatWidth}
         display="flex"
         alignItems="flex-end"
         gap={1}>
@@ -238,6 +253,58 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 letterSpacing: "0.05em",
                 bgcolor: "transparent",
               }}>
+              Active Model
+            </ListSubheader>
+            <Box sx={{ px: 2, pb: 1 }}>
+              <FormControl
+                fullWidth
+                size="small">
+                <Select
+                  value={selectedModel.id}
+                  onChange={(e: SelectChangeEvent): void => {
+                    const selected = chatModels.find((m) => m.id === e.target.value);
+                    if (selected) setSelectedModel(selected);
+                  }}
+                  sx={{
+                    fontSize: "0.85rem",
+                    "& .MuiSelect-select": {
+                      py: 1,
+                    },
+                  }}>
+                  {availableModels.map((m) => (
+                    <MenuItem
+                      key={m.id}
+                      value={m.id}>
+                      <Box
+                        display="flex"
+                        justifyContent="space-between"
+                        width="100%"
+                        alignItems="center">
+                        <Typography variant="body2">{m.label}</Typography>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          ml={2}>
+                          {`${(m.input * USD_TO_SEK).toFixed(0)}kr | ${(m.output * USD_TO_SEK).toFixed(0)}kr / 1M`}
+                        </Typography>
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+
+            <Divider sx={{ my: 1, opacity: 0.6 }} />
+
+            <ListSubheader
+              sx={{
+                lineHeight: "36px",
+                fontWeight: "bold",
+                fontSize: "0.75rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                bgcolor: "transparent",
+              }}>
               Temperature Presets
               {!selectedModel.supportsTemperature && (
                 <Box
@@ -248,97 +315,126 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               )}
             </ListSubheader>
 
-            <MenuItem
-              onClick={(): void => handleTempSelect(0.0)}
-              selected={temperature === 0.0}
-              disabled={!selectedModel.supportsTemperature}
-              sx={{ py: 1.5, px: 2, borderRadius: 1.5, mx: 1 }}>
-              <CodeIcon
-                fontSize="small"
-                sx={{ mr: 2, color: "primary.main" }}
-              />
-              <ListItemText
-                primary="Coding / Math"
-                secondary="Deterministic and precise (0.0)"
-                primaryTypographyProps={{ variant: "body2", fontWeight: 500 }}
-                secondaryTypographyProps={{ variant: "caption" }}
-              />
-              {temperature === 0.0 && (
-                <CheckIcon
-                  fontSize="small"
-                  color="primary"
-                />
-              )}
-            </MenuItem>
+            <Box sx={{ px: 2, pb: 1, display: "flex", justifyContent: "center" }}>
+              <MuiToggleButtonGroup
+                value={temperature}
+                exclusive
+                onChange={(_, value: number | null): void => {
+                  if (value !== null) handleTempSelect(value);
+                }}
+                disabled={!selectedModel.supportsTemperature}
+                size="small"
+                fullWidth
+                sx={{
+                  bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"),
+                  p: 0.5,
+                  "& .MuiToggleButton-root": {
+                    border: "none",
+                    borderRadius: "8px !important",
+                    mx: 0.25,
+                    px: 1,
+                    py: 0.5,
+                    fontSize: "0.75rem",
+                    fontWeight: "bold",
+                    color: "text.secondary",
+                    "&.Mui-selected": {
+                      bgcolor: "primary.main",
+                      color: "primary.contrastText",
+                      "&:hover": {
+                        bgcolor: "primary.dark",
+                      },
+                    },
+                  },
+                }}>
+                <MuiToggleButton value={0.0}>
+                  <Tooltip title="Coding / Math (0.0)">
+                    <CodeIcon fontSize="small" />
+                  </Tooltip>
+                </MuiToggleButton>
+                <MuiToggleButton value={1.0}>
+                  <Tooltip title="Data Analysis (1.0)">
+                    <AnalyticsIcon fontSize="small" />
+                  </Tooltip>
+                </MuiToggleButton>
+                <MuiToggleButton value={1.3}>
+                  <Tooltip title="General Chat (1.3)">
+                    <ForumIcon fontSize="small" />
+                  </Tooltip>
+                </MuiToggleButton>
+                <MuiToggleButton value={1.5}>
+                  <Tooltip title="Creative Writing (1.5)">
+                    <AutoAwesomeIcon fontSize="small" />
+                  </Tooltip>
+                </MuiToggleButton>
+              </MuiToggleButtonGroup>
+            </Box>
 
-            <MenuItem
-              onClick={(): void => handleTempSelect(1.0)}
-              selected={temperature === 1.0}
-              disabled={!selectedModel.supportsTemperature}
-              sx={{ py: 1.5, px: 2, borderRadius: 1.5, mx: 1 }}>
-              <AnalyticsIcon
-                fontSize="small"
-                sx={{ mr: 2, color: "success.main" }}
-              />
-              <ListItemText
-                primary="Data Analysis"
-                secondary="Balanced and factual (1.0)"
-                primaryTypographyProps={{ variant: "body2", fontWeight: 500 }}
-                secondaryTypographyProps={{ variant: "caption" }}
-              />
-              {temperature === 1.0 && (
-                <CheckIcon
-                  fontSize="small"
-                  color="primary"
-                />
-              )}
-            </MenuItem>
+            <Divider sx={{ my: 1, opacity: 0.6 }} />
 
-            <MenuItem
-              onClick={(): void => handleTempSelect(1.3)}
-              selected={temperature === 1.3}
-              disabled={!selectedModel.supportsTemperature}
-              sx={{ py: 1.5, px: 2, borderRadius: 1.5, mx: 1 }}>
-              <ForumIcon
-                fontSize="small"
-                sx={{ mr: 2, color: "info.main" }}
-              />
-              <ListItemText
-                primary="General Chat"
-                secondary="Natural and engaging (1.3)"
-                primaryTypographyProps={{ variant: "body2", fontWeight: 500 }}
-                secondaryTypographyProps={{ variant: "caption" }}
-              />
-              {temperature === 1.3 && (
-                <CheckIcon
-                  fontSize="small"
-                  color="primary"
-                />
-              )}
-            </MenuItem>
+            <ListSubheader
+              sx={{
+                lineHeight: "36px",
+                fontWeight: "bold",
+                fontSize: "0.75rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                bgcolor: "transparent",
+              }}>
+              Layout Width
+            </ListSubheader>
 
-            <MenuItem
-              onClick={(): void => handleTempSelect(1.5)}
-              selected={temperature === 1.5}
-              disabled={!selectedModel.supportsTemperature}
-              sx={{ py: 1.5, px: 2, borderRadius: 1.5, mx: 1 }}>
-              <AutoAwesomeIcon
-                fontSize="small"
-                sx={{ mr: 2, color: "warning.main" }}
-              />
-              <ListItemText
-                primary="Creative Writing"
-                secondary="Imaginative and varied (1.5)"
-                primaryTypographyProps={{ variant: "body2", fontWeight: 500 }}
-                secondaryTypographyProps={{ variant: "caption" }}
-              />
-              {temperature === 1.5 && (
-                <CheckIcon
-                  fontSize="small"
-                  color="primary"
-                />
-              )}
-            </MenuItem>
+            <Box sx={{ px: 2, pb: 1, display: "flex", justifyContent: "center" }}>
+              <MuiToggleButtonGroup
+                value={chatWidth}
+                exclusive
+                onChange={(_, value: "sm" | "md" | "lg" | "full" | null): void => {
+                  if (value) setChatWidth(value);
+                }}
+                size="small"
+                fullWidth
+                sx={{
+                  bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"),
+                  p: 0.5,
+                  "& .MuiToggleButton-root": {
+                    border: "none",
+                    borderRadius: "8px !important",
+                    mx: 0.25,
+                    px: 1.5,
+                    py: 0.5,
+                    fontSize: "0.75rem",
+                    fontWeight: "bold",
+                    color: "text.secondary",
+                    "&.Mui-selected": {
+                      bgcolor: "primary.main",
+                      color: "primary.contrastText",
+                      "&:hover": {
+                        bgcolor: "primary.dark",
+                      },
+                    },
+                  },
+                }}>
+                <MuiToggleButton value="sm">
+                  <Tooltip title="Compact (600px)">
+                    <span>S</span>
+                  </Tooltip>
+                </MuiToggleButton>
+                <MuiToggleButton value="md">
+                  <Tooltip title="Standard (900px)">
+                    <span>M</span>
+                  </Tooltip>
+                </MuiToggleButton>
+                <MuiToggleButton value="lg">
+                  <Tooltip title="Wide (1200px)">
+                    <span>L</span>
+                  </Tooltip>
+                </MuiToggleButton>
+                <MuiToggleButton value="full">
+                  <Tooltip title="Full Width">
+                    <span>Full</span>
+                  </Tooltip>
+                </MuiToggleButton>
+              </MuiToggleButtonGroup>
+            </Box>
 
             <Divider sx={{ my: 1, opacity: 0.6 }} />
 

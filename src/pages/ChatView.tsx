@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Box, useMediaQuery, useTheme, Fade } from "@mui/material";
 import { useParams } from "react-router-dom";
+import { useAuthStore } from "../store/AuthStore";
 import { useChatStore } from "../store/ChatStore";
 import { useTopicStore } from "../store/TopicStore";
 import { Message } from "../database/AthenaDb";
@@ -13,6 +14,7 @@ const ChatView: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
+  const { chatWidth } = useAuthStore();
   const { messagesByTopic, sending, sendMessageStream, fetchMessages } = useChatStore();
   const [displayTopicId, setDisplayTopicId] = useState<string | undefined>(topicId);
   const [isVisible, setIsVisible] = useState(false);
@@ -77,7 +79,7 @@ const ChatView: React.FC = () => {
         }}>
         <Box
           width="100%"
-          maxWidth={{ xs: "100%", md: "md" }}
+          maxWidth={{ xs: "100%", md: chatWidth === "full" ? "100%" : chatWidth }}
           px={{ xs: 1, md: 2 }}
           mx="auto">
           {error ? (

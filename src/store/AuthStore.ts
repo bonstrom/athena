@@ -10,6 +10,7 @@ interface AuthState {
   userName: string;
   backupInterval: number;
   customInstructions: string;
+  chatWidth: "sm" | "md" | "lg" | "full";
   clearAuth: () => void;
   setOpenAiKey: (key: string) => void;
   setDeepSeekKey: (key: string) => void;
@@ -18,6 +19,7 @@ interface AuthState {
   setUserName: (name: string) => void;
   setBackupInterval: (minutes: number) => void;
   setCustomInstructions: (instructions: string) => void;
+  setChatWidth: (width: "sm" | "md" | "lg" | "full") => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => {
@@ -28,6 +30,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const userName = localStorage.getItem("userName") ?? "";
   const storedBackupInterval = Number(localStorage.getItem("backupInterval") ?? "1");
   const storedCustomInstructions = localStorage.getItem("customInstructions") ?? "";
+  const storedChatWidth = (localStorage.getItem("chatWidth") as "sm" | "md" | "lg" | "full" | null) ?? "lg";
 
   return {
     openAiKey: storedOpenAiKey,
@@ -37,6 +40,7 @@ export const useAuthStore = create<AuthState>((set) => {
     userName: userName,
     backupInterval: storedBackupInterval,
     customInstructions: storedCustomInstructions,
+    chatWidth: storedChatWidth,
     clearAuth: (): void => {
       localStorage.removeItem("openAiKey");
       localStorage.removeItem("deepSeekKey");
@@ -44,6 +48,7 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem("moonshotApiKey");
       localStorage.removeItem("userName");
       localStorage.removeItem("customInstructions");
+      localStorage.removeItem("chatWidth");
       set({
         openAiKey: "",
         deepSeekKey: "",
@@ -51,6 +56,7 @@ export const useAuthStore = create<AuthState>((set) => {
         moonshotApiKey: "",
         userName: undefined,
         customInstructions: "",
+        chatWidth: "lg",
       });
     },
     setOpenAiKey: (key: string): void => {
@@ -80,6 +86,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setCustomInstructions: (instructions: string): void => {
       localStorage.setItem("customInstructions", instructions);
       set({ customInstructions: instructions });
+    },
+    setChatWidth: (width: "sm" | "md" | "lg" | "full"): void => {
+      localStorage.setItem("chatWidth", width);
+      set({ chatWidth: width });
     },
   };
 });

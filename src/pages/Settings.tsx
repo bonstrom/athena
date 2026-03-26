@@ -29,6 +29,7 @@ const Settings: React.FC = () => {
     userName,
     backupInterval,
     customInstructions,
+    chatWidth,
     setOpenAiKey,
     setDeepSeekKey,
     setGoogleApiKey,
@@ -36,6 +37,7 @@ const Settings: React.FC = () => {
     setUserName,
     setBackupInterval,
     setCustomInstructions,
+    setChatWidth,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState("");
@@ -310,8 +312,32 @@ const Settings: React.FC = () => {
           fullWidth
           value={userNameInput}
           onChange={(e): void => setUserNameInput(e.target.value)}
-          sx={{ mb: 2 }}
+          sx={{ mb: 3 }}
         />
+
+        <Box sx={{ mb: 4 }}>
+          <Typography
+            variant="subtitle2"
+            color="text.secondary"
+            gutterBottom
+            sx={{ fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.7rem" }}>
+            Chat Layout
+          </Typography>
+          <FormControl
+            fullWidth
+            size="small">
+            <InputLabel>Max Chat Width</InputLabel>
+            <Select
+              value={chatWidth}
+              label="Max Chat Width"
+              onChange={(e): void => setChatWidth(e.target.value as "sm" | "md" | "lg")}>
+              <MenuItem value="full">Full Width</MenuItem>
+              <MenuItem value="lg">Wide (1200px)</MenuItem>
+              <MenuItem value="md">Standard (900px)</MenuItem>
+              <MenuItem value="sm">Compact (600px)</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
 
         {/* OpenAI Section */}
         {isUpdatingOpenAi ? (
