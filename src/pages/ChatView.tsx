@@ -16,6 +16,7 @@ const ChatView: React.FC = () => {
   const { messagesByTopic, sending, sendMessageStream, fetchMessages } = useChatStore();
   const [displayTopicId, setDisplayTopicId] = useState<string | undefined>(topicId);
   const [isVisible, setIsVisible] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const topic = useTopicStore((state) => state.topics.find((t) => t.id === displayTopicId));
   const maxContextMessages = topic?.maxContextMessages ?? 10;
@@ -33,9 +34,14 @@ const ChatView: React.FC = () => {
       // 3. Wait for both the fade out (200ms) and data fetching to finish
       const timer = setTimeout(() => {
         void fetchPromise.then(() => {
-          setDisplayTopicId(topicId);
-          // 4. Fade in as soon as content is swapped
-          setIsVisible(true);
+          const exists = topicId ? useTopicStore.getState().topics.some((t) => t.id === topicId) : true;
+          if (!exists) {
+            setError("Topic not found");
+          } else {
+            setError(null);
+            setDisplayTopicId(topicId);
+            setIsVisible(true);
+          }
         });
       }, 200);
 
@@ -43,7 +49,13 @@ const ChatView: React.FC = () => {
     } else if (topicId && !isVisible) {
       // Initial load or refresh
       void fetchMessages(topicId).then(() => {
-        setIsVisible(true);
+        const exists = useTopicStore.getState().topics.some((t) => t.id === topicId);
+        if (!exists) {
+          setError("Topic not found");
+        } else {
+          setError(null);
+          setIsVisible(true);
+        }
       });
     }
     // We intentionally exclude isVisible from dependencies to avoid re-triggering the effect
@@ -71,17 +83,28 @@ const ChatView: React.FC = () => {
           maxWidth={{ xs: "100%", md: "md" }}
           px={{ xs: 1, md: 2 }}
           mx="auto">
-          <Fade
-            in={isVisible}
-            timeout={{ enter: 300, exit: 200 }}>
-            <Box width="100%">
-              {displayTopicId && <ForkTabs topicId={displayTopicId} />}
-              <MessageList
-                messages={messages}
-                maxContextMessages={maxContextMessages}
-              />
+          {error ? (
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              height="50vh"
+              color="text.secondary">
+              {error}
             </Box>
-          </Fade>
+          ) : (
+            <Fade
+              in={isVisible}
+              timeout={{ enter: 300, exit: 200 }}>
+              <Box width="100%">
+                {displayTopicId && <ForkTabs topicId={displayTopicId} />}
+                <MessageList
+                  messages={messages}
+                  maxContextMessages={maxContextMessages}
+                />
+              </Box>
+            </Fade>
+          )}
         </Box>
       </Box>
 

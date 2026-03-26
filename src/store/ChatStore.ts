@@ -215,7 +215,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const existing = await athenaDb.messages.get(messageId);
       if (!existing) throw new Error("Original message not found for retry.");
       userMessage = existing;
-      await get().updateMessage(messageId, { failed: false });
     } else {
       userMessage = {
         id: crypto.randomUUID(),
@@ -232,7 +231,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         completionTokens: 0,
         totalCost: 0,
       };
-      await get().addMessage(userMessage);
     }
 
     // 2. Build Context
@@ -286,39 +284,64 @@ ${topic?.scratchpad ?? "(Empty)"}`;
     };
 
     try {
-      await get().addMessage(assistantMessage);
+      // Create initial DB state in a single transaction
+      await athenaDb.transaction("rw", athenaDb.messages, async () => {
+        if (isRetry) {
+          await athenaDb.messages.update(userMessage.id, { failed: false });
+        } else {
+          await athenaDb.messages.add(userMessage);
+        }
+        await athenaDb.messages.add(assistantMessage);
+        await athenaDb.messages.update(userMessage.id, { activeResponseId: assistantId });
+      });
 
-      // Update parent message to point to this as active response
-      await get().updateMessage(userMessage.id, { activeResponseId: assistantId });
+      // Update state once for both messages
+      set((state) => {
+        const existingMessages = state.messagesByTopic[topicId] || [];
+        let updated = [...existingMessages];
 
-      set({ currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId } });
+        if (isRetry) {
+          updated = updated.map((m) =>
+            m.id === userMessage.id ? { ...m, failed: false, activeResponseId: assistantId } : m,
+          );
+        } else {
+          updated.push(userMessage);
+        }
+        updated.push(assistantMessage);
+
+        return {
+          messagesByTopic: {
+            ...state.messagesByTopic,
+            [topicId]: sortMessages(updated),
+          },
+          currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId },
+        };
+      });
 
       const loopStartTime = Date.now();
       let streamedContent = "";
       let lastRenderTime = 0;
       const RENDER_THROTTLE_MS = 64; // ~15fps for smooth but efficient UI
 
-      // Conditionally create the stream callback
-      const onTokenCallback = selectedModel.streaming
-        ? (chunk: string): void => {
-            streamedContent += chunk;
-            const now = Date.now();
-            if (now - lastRenderTime > RENDER_THROTTLE_MS) {
-              const displayContent = streamedContent
-                .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
-                .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
-              get().updateMessageStateOnly(assistantId, { content: displayContent });
-              lastRenderTime = now;
-            }
-          }
-        : undefined;
+      // 3. Create the stream callback
+      const onTokenCallback = (chunk: string): void => {
+        streamedContent += chunk;
+        const now = Date.now();
+        if (now - lastRenderTime > RENDER_THROTTLE_MS) {
+          const displayContent = streamedContent
+            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
+          get().updateMessageStateOnly(assistantId, { content: displayContent });
+          lastRenderTime = now;
+        }
+      };
 
       // 4. Call the Orchestrator
       const { finalContent, totalPromptTokens, totalCompletionTokens, lastResult } = await orchestrateLlmLoop(
         selectedModel,
         get().temperature,
         llmContext,
-        onTokenCallback, // Will be undefined if not streaming
+        onTokenCallback,
         async (aiNote, action) => {
           const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
           let updatedScratchpad = "";
@@ -337,31 +360,40 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
       const latencyMs = Date.now() - loopStartTime;
 
-      // 5. Finalize DB Updates in batch
-      await get().updateMessages([
-        {
-          id: userMessage.id,
-          patch: {
-            promptTokens: totalPromptTokens,
-            totalCost: calculateCostSEK(selectedModel, totalPromptTokens, 0, lastResult.promptTokensDetails),
-            failed: false,
-          },
+      // 5. Finalize DB Updates in atomic transaction
+      const userPatch = {
+        promptTokens: totalPromptTokens,
+        totalCost: calculateCostSEK(selectedModel, totalPromptTokens, 0, lastResult.promptTokensDetails),
+        failed: false,
+      };
+      const assistantPatch = {
+        content: finalContent
+          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
+          .trim(),
+        completionTokens: totalCompletionTokens,
+        totalCost: calculateCostSEK(selectedModel, 0, totalCompletionTokens),
+        failed: false,
+        latencyMs,
+        reasoning: lastResult.reasoning,
+      };
+
+      await athenaDb.transaction("rw", athenaDb.messages, async () => {
+        await athenaDb.messages.update(userMessage.id, userPatch);
+        await athenaDb.messages.update(assistantId, assistantPatch);
+      });
+
+      // Update state in one go
+      set((state) => ({
+        messagesByTopic: {
+          ...state.messagesByTopic,
+          [topicId]: state.messagesByTopic[topicId].map((m) => {
+            if (m.id === userMessage.id) return { ...m, ...userPatch };
+            if (m.id === assistantId) return { ...m, ...assistantPatch };
+            return m;
+          }),
         },
-        {
-          id: assistantId,
-          patch: {
-            content: finalContent
-              .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
-              .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
-              .trim(),
-            completionTokens: totalCompletionTokens,
-            totalCost: calculateCostSEK(selectedModel, 0, totalCompletionTokens),
-            failed: false,
-            latencyMs,
-            reasoning: lastResult.reasoning,
-          },
-        },
-      ]);
+      }));
 
       void topicStoreState.generateTopicName(topicId, content);
     } catch (err) {

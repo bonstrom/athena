@@ -294,11 +294,25 @@ export async function askLlmStream(
   let reasoning = "";
   let done = false;
 
+  const onAbort = (): void => {
+    reader.cancel().catch((err) => {
+      console.warn("Reader cancel failed:", err);
+    });
+  };
+  signal?.addEventListener("abort", onAbort);
+
   try {
     while (!done) {
+      if (signal?.aborted) {
+        break;
+      }
       const result = await reader.read();
       done = result.done;
       if (done) break;
+
+      if (signal?.aborted) {
+        break;
+      }
 
       const chunk = decoder.decode(result.value);
       for (const line of chunk.split("\n")) {
@@ -389,6 +403,7 @@ export async function askLlmStream(
       }
     }
   } finally {
+    signal?.removeEventListener("abort", onAbort);
     reader.releaseLock();
   }
 
