@@ -283,6 +283,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     "& .MuiSelect-select": {
                       py: 1,
                     },
+                  }}
+                  renderValue={(selected): React.ReactNode => {
+                    const model = chatModels.find((m) => m.id === selected);
+                    return model ? model.label : selected;
                   }}>
                   {availableModels.map((m) => (
                     <MenuItem

@@ -170,7 +170,11 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
           const selected = chatModels.find((m) => m.id === e.target.value);
           if (selected) onChange(selected);
         }}
-        label="Model">
+        label="Model"
+        renderValue={(selected): React.ReactNode => {
+          const model = chatModels.find((m) => m.id === selected);
+          return model ? model.label : selected;
+        }}>
         {availableModels.map((m) => (
           <MenuItem
             key={m.id}
