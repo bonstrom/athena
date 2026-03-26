@@ -146,7 +146,8 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             width="100%"
             py={0.5}>
             <Tooltip
-              open={tooltipOpen}
+              open={isMobile ? false : tooltipOpen}
+              disableTouchListener={isMobile}
               title={
                 isLoadingStats || tokenCount === null || totalCost === null ? (
                   "Calculating stats..."

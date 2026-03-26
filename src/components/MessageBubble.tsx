@@ -28,6 +28,7 @@ import { chatModels } from "./ModelSelector";
 import { Message } from "../database/AthenaDb";
 import { useNotificationStore } from "../store/NotificationStore";
 import { useTopicStore } from "../store/TopicStore";
+import { useUiStore } from "../store/UiStore";
 import AltRouteIcon from "@mui/icons-material/AltRoute";
 import PsychologyIcon from "@mui/icons-material/Psychology";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -44,6 +45,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
   const { userName } = useAuthStore();
+  const { isMobile } = useUiStore();
 
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
@@ -150,7 +152,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             display="flex"
             alignItems="center">
             <Tooltip
-              open={tooltipOpen}
+              open={isMobile ? false : tooltipOpen}
+              disableTouchListener={isMobile}
               title={
                 <Box>
                   <Typography
@@ -262,7 +265,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               gap={0.5}
               mr={2}>
               {isAssistant && message.content !== "" && !message.failed && (
-                <Tooltip title="Regenerate response">
+                <Tooltip
+                  title="Regenerate response"
+                  disableTouchListener={isMobile}>
                   <IconButton
                     size="small"
                     onClick={(): void => {
@@ -292,7 +297,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 </Tooltip>
               )}
 
-              <Tooltip title="Delete message">
+              <Tooltip
+                title="Delete message"
+                disableTouchListener={isMobile}>
                 <IconButton
                   size="small"
                   onClick={handleDeleteClick}
@@ -326,7 +333,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               alignItems="center"
               gap={0.5}>
               {isAssistant && message.content !== "" && !message.failed && (
-                <Tooltip title="Fork conversation here">
+                <Tooltip
+                  title="Fork conversation here"
+                  disableTouchListener={isMobile}>
                   <IconButton
                     size="small"
                     onClick={(): void => {
@@ -358,7 +367,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   </IconButton>
                 </Tooltip>
               )}
-              <Tooltip title={copied ? "Copied!" : "Copy message"}>
+              <Tooltip
+                title={copied ? "Copied!" : "Copy message"}
+                disableTouchListener={isMobile}>
                 <IconButton
                   size="small"
                   onClick={(): void => {
@@ -401,7 +412,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 </IconButton>
               </Tooltip>
 
-              <Tooltip title={message.includeInContext ? "Unpin from context" : "Pin to context"}>
+              <Tooltip
+                title={message.includeInContext ? "Unpin from context" : "Pin to context"}
+                disableTouchListener={isMobile}>
                 <IconButton
                   size="small"
                   onClick={(): void => {
@@ -449,7 +462,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               <Box
                 display="flex"
                 alignItems="center">
-                <Tooltip title={showReasoning ? "Hide Reasoning" : "Show Reasoning"}>
+                <Tooltip
+                  title={showReasoning ? "Hide Reasoning" : "Show Reasoning"}
+                  disableTouchListener={isMobile}>
                   <Button
                     size="small"
                     onClick={(): void => setShowReasoning(!showReasoning)}

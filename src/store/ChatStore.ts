@@ -9,7 +9,7 @@ import { useNotificationStore } from "./NotificationStore";
 import { SCRATCHPAD_LIMIT } from "../constants";
 
 interface ChatStore {
-  messagesByTopic: Record<string, Message[]>;
+  messagesByTopic: Record<string, Message[] | undefined>;
   currentTopicId: string | null;
   isInitialLoad: boolean;
   showAllMessages: boolean;
@@ -75,7 +75,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((state) => ({
       messagesByTopic: {
         ...state.messagesByTopic,
-        [currentTopicId]: state.messagesByTopic[currentTopicId].filter((m) => m.id !== id),
+        [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? []).filter((m) => m.id !== id),
       },
     }));
   },
@@ -104,7 +104,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { currentTopicId, messagesByTopic } = get();
     if (!currentTopicId) return;
 
-    const updated = messagesByTopic[currentTopicId].map((m) => (m.id === id ? { ...m, includeInContext: include } : m));
+    const updated = (messagesByTopic[currentTopicId] ?? []).map((m) =>
+      m.id === id ? { ...m, includeInContext: include } : m,
+    );
 
     set({ messagesByTopic: { ...messagesByTopic, [currentTopicId]: updated } });
   },
@@ -118,7 +120,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     await athenaDb.messages.add(message);
 
     set((state) => {
-      const existing = state.messagesByTopic[topicId] as Message[] | undefined;
+      const existing = state.messagesByTopic[topicId];
       const updated = [...(existing ?? []), message];
       return {
         messagesByTopic: {
@@ -141,7 +143,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     set((state) => {
       const topicId = newMessages[0].topicId;
-      const existing = state.messagesByTopic[topicId] as Message[] | undefined;
+      const existing = state.messagesByTopic[topicId];
       const merged = [...(existing ?? []), ...newMessages];
       return {
         messagesByTopic: {
@@ -161,7 +163,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({
       messagesByTopic: {
         ...messagesByTopic,
-        [currentTopicId]: messagesByTopic[currentTopicId].map((m) => (m.id === id ? { ...m, ...patch } : m)),
+        [currentTopicId]: (messagesByTopic[currentTopicId] ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m)),
       },
     });
   },
@@ -175,7 +177,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({
       messagesByTopic: {
         ...messagesByTopic,
-        [currentTopicId]: messagesByTopic[currentTopicId].map((msg) => {
+        [currentTopicId]: (messagesByTopic[currentTopicId] ?? []).map((msg) => {
           const update = updates.find((u) => u.id === msg.id);
           return update ? { ...msg, ...update.patch } : msg;
         }),
@@ -190,7 +192,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({
       messagesByTopic: {
         ...messagesByTopic,
-        [currentTopicId]: messagesByTopic[currentTopicId].map((m) => (m.id === id ? { ...m, ...patch } : m)),
+        [currentTopicId]: (messagesByTopic[currentTopicId] ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m)),
       },
     });
   },
@@ -297,7 +299,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
       // Update state once for both messages
       set((state) => {
-        const existingMessages = state.messagesByTopic[topicId] || [];
+        const existingMessages = state.messagesByTopic[topicId] ?? [];
         let updated = [...existingMessages];
 
         if (isRetry) {
@@ -387,7 +389,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       set((state) => ({
         messagesByTopic: {
           ...state.messagesByTopic,
-          [topicId]: state.messagesByTopic[topicId].map((m) => {
+          [topicId]: (state.messagesByTopic[topicId] ?? []).map((m) => {
             if (m.id === userMessage.id) return { ...m, ...userPatch };
             if (m.id === assistantId) return { ...m, ...assistantPatch };
             return m;
@@ -410,7 +412,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       set((state) => ({
         messagesByTopic: {
           ...state.messagesByTopic,
-          [topicId]: state.messagesByTopic[topicId].map((m) =>
+          [topicId]: (state.messagesByTopic[topicId] ?? []).map((m) =>
             m.id === userMessage.id
               ? {
                   ...m,
@@ -429,7 +431,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
     const { messagesByTopic, currentTopicId } = get();
     if (!currentTopicId) return;
 
-    const messages = messagesByTopic[currentTopicId];
+    const messages = messagesByTopic[currentTopicId] ?? [];
     const assistantMsgIndex = messages.findIndex((m) => m.id === assistantId);
     if (assistantMsgIndex === -1) return;
 
@@ -452,7 +454,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
     if (currentRequestMessageIds && currentTopicId) {
       const { userMessageId, assistantMessageId } = currentRequestMessageIds;
-      const messages = messagesByTopic[currentTopicId] || [];
+      const messages = messagesByTopic[currentTopicId] ?? [];
       const userMsg = messages.find((m) => m.id === userMessageId);
       const content = userMsg?.content ?? null;
 
@@ -467,7 +469,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         currentRequestMessageIds: null,
         messagesByTopic: {
           ...state.messagesByTopic,
-          [currentTopicId]: state.messagesByTopic[currentTopicId].filter(
+          [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? []).filter(
             (m) => m.id !== userMessageId && m.id !== assistantMessageId,
           ),
         },

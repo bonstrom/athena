@@ -19,7 +19,7 @@ interface FileSystemFileHandle {
 
 declare global {
   interface Window {
-    showSaveFilePicker?: (options?: any) => Promise<FileSystemFileHandle>;
+    showSaveFilePicker?: (options?: unknown) => Promise<FileSystemFileHandle>;
   }
 }
 
@@ -70,11 +70,12 @@ export const BackupService = {
    */
   async selectAutoBackupFile(): Promise<boolean> {
     try {
-      if (!("showSaveFilePicker" in window)) {
+      const showSaveFilePicker = window.showSaveFilePicker;
+      if (!showSaveFilePicker) {
         throw new Error("File System Access API not supported in this browser.");
       }
 
-      const fileHandle = await window.showSaveFilePicker!({
+      const fileHandle = await showSaveFilePicker({
         suggestedName: "athena_backup.json",
         types: [
           {
@@ -84,11 +85,8 @@ export const BackupService = {
         ],
       });
 
-      if (fileHandle) {
-        await set(BACKUP_HANDLE_KEY, fileHandle);
-        return true;
-      }
-      return false;
+      await set(BACKUP_HANDLE_KEY, fileHandle);
+      return true;
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         return false;

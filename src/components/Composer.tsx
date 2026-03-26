@@ -207,7 +207,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         <Box
           display="flex"
           alignItems="center">
-          <Tooltip title="Topic Settings">
+          <Tooltip
+            title="Topic Settings"
+            disableTouchListener={isMobile}>
             <span>
               <IconButton
                 onClick={handleTempClick}
@@ -217,7 +219,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </IconButton>
             </span>
           </Tooltip>
-          <Tooltip title={isExpanded ? "Collapse" : "Expand"}>
+          <Tooltip
+            title={isExpanded ? "Collapse" : "Expand"}
+            disableTouchListener={isMobile}>
             <span>
               <IconButton
                 onClick={(): void => setIsExpanded(!isExpanded)}
@@ -347,22 +351,30 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   },
                 }}>
                 <MuiToggleButton value={0.0}>
-                  <Tooltip title="Coding / Math (0.0)">
+                  <Tooltip
+                    title="Coding / Math (0.0)"
+                    disableTouchListener={isMobile}>
                     <CodeIcon fontSize="small" />
                   </Tooltip>
                 </MuiToggleButton>
                 <MuiToggleButton value={1.0}>
-                  <Tooltip title="Data Analysis (1.0)">
+                  <Tooltip
+                    title="Data Analysis (1.0)"
+                    disableTouchListener={isMobile}>
                     <AnalyticsIcon fontSize="small" />
                   </Tooltip>
                 </MuiToggleButton>
                 <MuiToggleButton value={1.3}>
-                  <Tooltip title="General Chat (1.3)">
+                  <Tooltip
+                    title="General Chat (1.3)"
+                    disableTouchListener={isMobile}>
                     <ForumIcon fontSize="small" />
                   </Tooltip>
                 </MuiToggleButton>
                 <MuiToggleButton value={1.5}>
-                  <Tooltip title="Creative Writing (1.5)">
+                  <Tooltip
+                    title="Creative Writing (1.5)"
+                    disableTouchListener={isMobile}>
                     <AutoAwesomeIcon fontSize="small" />
                   </Tooltip>
                 </MuiToggleButton>
@@ -414,22 +426,30 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   },
                 }}>
                 <MuiToggleButton value="sm">
-                  <Tooltip title="Compact (600px)">
+                  <Tooltip
+                    title="Compact (600px)"
+                    disableTouchListener={isMobile}>
                     <span>S</span>
                   </Tooltip>
                 </MuiToggleButton>
                 <MuiToggleButton value="md">
-                  <Tooltip title="Standard (900px)">
+                  <Tooltip
+                    title="Standard (900px)"
+                    disableTouchListener={isMobile}>
                     <span>M</span>
                   </Tooltip>
                 </MuiToggleButton>
                 <MuiToggleButton value="lg">
-                  <Tooltip title="Wide (1200px)">
+                  <Tooltip
+                    title="Wide (1200px)"
+                    disableTouchListener={isMobile}>
                     <span>L</span>
                   </Tooltip>
                 </MuiToggleButton>
                 <MuiToggleButton value="full">
-                  <Tooltip title="Full Width">
+                  <Tooltip
+                    title="Full Width"
+                    disableTouchListener={isMobile}>
                     <span>Full</span>
                   </Tooltip>
                 </MuiToggleButton>
@@ -633,7 +653,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           />
         </Box>
 
-        <Tooltip title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Ctrl + Enter)"}>
+        <Tooltip
+          title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Ctrl + Enter)"}
+          disableTouchListener={isMobile}>
           <span>
             <IconButton
               onClick={sending ? handleStop : handleSend}

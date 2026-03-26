@@ -208,10 +208,7 @@ const Settings: React.FC = () => {
     if (type === "openai" || type === "deepseek") {
       return trimmed.startsWith("sk-") && trimmed.length > 20;
     }
-    if (type === "google") {
-      return trimmed.length >= 30; // Gemini keys are typically long
-    }
-    return true;
+    return trimmed.length >= 30; // Gemini keys are typically long
   };
 
   const KeyConfirmation = ({
