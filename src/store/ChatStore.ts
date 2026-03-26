@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { calculateCostSEK, ChatModel, getDefaultModel } from "../components/ModelSelector";
+import { calculateCostSEK, ChatModel, getDefaultModel, chatModels } from "../components/ModelSelector";
 import { useTopicStore } from "./TopicStore";
 import { orchestrateLlmLoop, LlmMessage } from "../services/llmService";
 import { Message } from "../database/AthenaDb";
@@ -30,6 +30,10 @@ interface ChatStore {
   updateMessageStateOnly: (id: string, patch: Partial<Message>) => void;
   sendMessageStream: (content: string, topicId: string, messageId?: string) => Promise<void>;
   setSelectedModel: (model: ChatModel) => void;
+  isChaining: boolean;
+  setIsChaining: (value: boolean) => void;
+  secondModel: ChatModel;
+  setSecondModel: (model: ChatModel) => void;
   updateMessageContext: (messageId: string, include: boolean) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   regenerateResponse: (assistantMessageId: string) => Promise<void>;
@@ -64,9 +68,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   setInitialLoad: (value: boolean): void => set({ isInitialLoad: value }),
 
-  setSelectedModel: (model): void => {
+  setSelectedModel: (model: ChatModel): void => {
     localStorage.setItem("athena_selected_model", model.id);
     set({ selectedModel: model });
+  },
+
+  isChaining: false,
+  setIsChaining: (value: boolean): void => {
+    const { currentTopicId, secondModel } = get();
+    set({ isChaining: value });
+    if (currentTopicId) {
+      void useTopicStore.getState().updateTopicChaining(currentTopicId, value, secondModel.id);
+    }
+  },
+
+  secondModel: chatModels.find((m) => m.id.includes("mini") || m.id.includes("flash")) ?? chatModels[0],
+  setSecondModel: (model: ChatModel): void => {
+    const { currentTopicId, isChaining } = get();
+    set({ secondModel: model });
+    if (currentTopicId) {
+      void useTopicStore.getState().updateTopicChaining(currentTopicId, isChaining, model.id);
+    }
   },
 
   deleteMessage: async (id): Promise<void> => {
@@ -96,6 +118,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       currentTopicId: topicId,
       isInitialLoad: true,
       visibleMessageCount: 10,
+      isChaining: topic?.isChaining ?? false,
+      secondModel: chatModels.find((m) => m.id === topic?.secondModelId) ?? state.secondModel,
     }));
   },
 
@@ -270,6 +294,9 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
     llmContext.unshift(...systems);
 
+    // Add current user message to context before calling loop
+    llmContext.push({ role: "user", content: userMessage.content });
+
     // 3. Prepare Assistant Message
     const assistantId = crypto.randomUUID();
     const assistantMessage: Message = {
@@ -329,7 +356,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       let lastRenderTime = 0;
       const RENDER_THROTTLE_MS = 64; // ~15fps for smooth but efficient UI
 
-      // 3. Create the stream callback
+      let streamedReasoning = "";
       const onTokenCallback = (chunk: string): void => {
         streamedContent += chunk;
         const now = Date.now();
@@ -342,13 +369,23 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         }
       };
 
-      // 4. Call the Orchestrator
-      const { finalContent, totalPromptTokens, totalCompletionTokens, lastResult } = await orchestrateLlmLoop(
+      const onReasoningCallback = (token: string): void => {
+        streamedReasoning += token;
+        const now = Date.now();
+        if (now - lastRenderTime > RENDER_THROTTLE_MS) {
+          get().updateMessageStateOnly(assistantId, { reasoning: streamedReasoning.trim() });
+          lastRenderTime = now;
+        }
+      };
+
+      // 4. Call the Orchestrator for the Primary Model
+      const primaryResult = await orchestrateLlmLoop(
         selectedModel,
         get().temperature,
         llmContext,
         onTokenCallback,
-        async (aiNote, action) => {
+        onReasoningCallback,
+        async (aiNote: string, action: "append" | "replace") => {
           const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
           let updatedScratchpad = "";
           if (action === "replace") {
@@ -364,12 +401,94 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         controller.signal,
       );
 
+      let finalContent = primaryResult.finalContent;
+      let finalReasoning = primaryResult.lastResult.reasoning ?? "";
+      let totalPromptTokens = primaryResult.totalPromptTokens;
+      let totalCompletionTokens = primaryResult.totalCompletionTokens;
+      const lastResult = primaryResult.lastResult;
+      let finalTotalCost = calculateCostSEK(
+        selectedModel,
+        totalPromptTokens,
+        totalCompletionTokens,
+        lastResult.promptTokensDetails,
+      );
+
+      // 5. If Chaining is enabled, call the Reviewer Model
+      if (get().isChaining && !controller.signal.aborted) {
+        const secondModel = get().secondModel;
+
+        // Optimize: Move Step 1 content to reasoning and clear content for Step 2
+        finalReasoning =
+          (finalReasoning ? `${finalReasoning}\n\n` : "") + `Draft Answer:\n${primaryResult.finalContent}`;
+        get().updateMessageStateOnly(assistantId, { content: "", reasoning: finalReasoning });
+
+        // Show status in UI
+        onTokenCallback("*(Reviewing and improving...)*");
+
+        const reviewMessages: LlmMessage[] = [
+          {
+            role: "system",
+            content:
+              "You are an expert scientific editor. Your goal is to correct any logical or factual errors in the initial response.\n\nCRITICAL: You must maintain high-quality, professional grammar. Do not omit words or take shortcuts in phrasing. If the logic is correct but the tone is poor, fix the tone. Provide ONLY the final, polished response.",
+          },
+          {
+            role: "user",
+            content: `User Question: ${content.trim()}\n\nInitial Response: ${primaryResult.finalContent}`,
+          },
+        ];
+
+        let reviewerStreamedContent = "";
+        let reviewerStreamedReasoning = "";
+        const onReviewerTokenCallback = (chunk: string): void => {
+          reviewerStreamedContent += chunk;
+          const now = Date.now();
+          if (now - lastRenderTime > RENDER_THROTTLE_MS) {
+            get().updateMessageStateOnly(assistantId, { content: reviewerStreamedContent.trim() });
+            lastRenderTime = now;
+          }
+        };
+
+        const onReviewerReasoningCallback = (chunk: string): void => {
+          reviewerStreamedReasoning += chunk;
+          const now = Date.now();
+          if (now - lastRenderTime > RENDER_THROTTLE_MS) {
+            const currentReasoning =
+              (finalReasoning ? `${finalReasoning}\n\n` : "") +
+              `Reviewer Thinking:\n${reviewerStreamedReasoning.trim()}`;
+            get().updateMessageStateOnly(assistantId, { reasoning: currentReasoning });
+            lastRenderTime = now;
+          }
+        };
+
+        const reviewerResult = await orchestrateLlmLoop(
+          secondModel,
+          get().temperature,
+          reviewMessages,
+          onReviewerTokenCallback,
+          onReviewerReasoningCallback,
+          undefined, // Reviewer doesn't update scratchpad
+          controller.signal,
+        );
+
+        finalContent = reviewerResult.finalContent;
+        totalPromptTokens += reviewerResult.totalPromptTokens;
+        totalCompletionTokens += reviewerResult.totalCompletionTokens;
+
+        // Add cost of reviewer model
+        finalTotalCost += calculateCostSEK(
+          secondModel,
+          reviewerResult.totalPromptTokens,
+          reviewerResult.totalCompletionTokens,
+          reviewerResult.lastResult.promptTokensDetails,
+        );
+      }
+
       const latencyMs = Date.now() - loopStartTime;
 
-      // 5. Finalize DB Updates in atomic transaction
+      // 6. Finalize DB Updates in atomic transaction
       const userPatch = {
         promptTokens: totalPromptTokens,
-        totalCost: calculateCostSEK(selectedModel, totalPromptTokens, 0, lastResult.promptTokensDetails),
+        totalCost: finalTotalCost,
         failed: false,
       };
       const assistantPatch = {
@@ -377,11 +496,12 @@ ${topic?.scratchpad ?? "(Empty)"}`;
           .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
           .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
           .trim(),
+        reasoning: finalReasoning.trim(),
         completionTokens: totalCompletionTokens,
-        totalCost: calculateCostSEK(selectedModel, 0, totalCompletionTokens),
+        totalCost: finalTotalCost,
         failed: false,
         latencyMs,
-        reasoning: lastResult.reasoning,
+        model: get().isChaining ? `${selectedModel.id} - ${get().secondModel.id}` : selectedModel.id,
       };
 
       await athenaDb.transaction("rw", athenaDb.messages, async () => {

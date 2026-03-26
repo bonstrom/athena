@@ -257,6 +257,7 @@ export async function askLlmStream(
   temperature: number,
   messages: LlmMessage[],
   onToken?: (token: string) => void,
+  onReasoning?: (token: string) => void,
   tools?: LlmTool[],
   signal?: AbortSignal,
 ): Promise<LlmResult> {
@@ -366,7 +367,9 @@ export async function askLlmStream(
           if (onToken && token) onToken(token);
 
           if (delta?.reasoning_content || delta?.reasoning) {
-            reasoning += delta.reasoning_content ?? delta.reasoning ?? "";
+            const rToken = delta.reasoning_content ?? delta.reasoning ?? "";
+            reasoning += rToken;
+            if (onReasoning && rToken) onReasoning(rToken);
           }
 
           if (delta?.tool_calls) {
@@ -479,6 +482,7 @@ export async function orchestrateLlmLoop(
   temperature: number,
   messages: LlmMessage[],
   onToken?: (token: string) => void,
+  onReasoning?: (token: string) => void,
   onScratchpadUpdate?: (content: string, action: "append" | "replace") => Promise<void>,
   signal?: AbortSignal,
 ): Promise<OrchestrateResult> {
@@ -492,7 +496,7 @@ export async function orchestrateLlmLoop(
   while (loopCount < 5) {
     loopCount++;
     const result = model.streaming
-      ? await askLlmStream(model, temperature, llmContext, onToken, [SCRATCHPAD_TOOL], signal)
+      ? await askLlmStream(model, temperature, llmContext, onToken, onReasoning, [SCRATCHPAD_TOOL], signal)
       : await askLlm(model, temperature, llmContext, [SCRATCHPAD_TOOL], signal);
 
     lastResult = result;

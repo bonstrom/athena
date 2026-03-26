@@ -85,7 +85,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   };
 
   const getModelLabel = (id?: string): string => {
-    return chatModels.find((m) => m.id === id)?.label ?? id ?? "Unknown model";
+    if (!id) return "Unknown model";
+    if (id.includes(" - ")) {
+      const parts = id.split(" - ");
+      return parts.map((p) => chatModels.find((m) => m.id === p)?.label ?? p).join(" - ");
+    }
+    return chatModels.find((m) => m.id === id)?.label ?? id;
   };
 
   const handleMouseEnter = (): void => {
@@ -504,7 +509,28 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           )}
         </Box>
 
-        {showReasoning && message.reasoning && (
+        {isAssistant && message.content === "" && !message.failed && (
+          <Box
+            sx={{
+              mt: 1,
+              mb: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+            }}>
+            <TypingIndicator />
+            {message.reasoning && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ fontStyle: "italic", animation: "pulse 2s infinite" }}>
+                Thinking...
+              </Typography>
+            )}
+          </Box>
+        )}
+
+        {((showReasoning && message.reasoning) || (isAssistant && message.content === "" && !!message.reasoning)) && (
           <Box
             sx={{
               mt: 1.5,
@@ -513,6 +539,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               borderRadius: 2,
               bgcolor: (theme): string => (theme.palette.mode === "dark" ? alpha("#fff", 0.05) : alpha("#000", 0.03)),
               borderLeft: (theme): string => `4px solid ${alpha(theme.palette.text.secondary, 0.2)}`,
+              maxHeight: "300px",
+              overflowY: "auto",
             }}>
             <Typography
               variant="caption"
@@ -526,12 +554,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               sx={{ whiteSpace: "pre-wrap", fontStyle: "italic", fontSize: `${Math.max(12, chatFontSize - 2)}px` }}>
               {message.reasoning}
             </Typography>
-          </Box>
-        )}
-
-        {isAssistant && message.content === "" && (
-          <Box mt={1}>
-            <TypingIndicator />
           </Box>
         )}
 

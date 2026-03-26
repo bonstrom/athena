@@ -126,6 +126,8 @@ export interface Topic {
   forks?: Fork[]; // Optional for backward compatibility
   activeForkId?: string; // Optional for backward compatibility
   maxContextMessages?: number;
+  isChaining?: boolean;
+  secondModelId?: string;
 }
 
 export const athenaDb = new AthenaDatabase();

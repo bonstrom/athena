@@ -29,6 +29,7 @@ interface TopicState {
   getTopicTokenCount: (topicId: string) => Promise<number>;
   getTopicTotalCost: (topicId: string) => Promise<number>;
   updateTopicMaxContextMessages: (id: string, maxContextMessages: number) => Promise<void>;
+  updateTopicChaining: (id: string, isChaining: boolean, secondModelId: string) => Promise<void>;
 }
 
 export const useTopicStore = create<TopicState>((set, get) => ({
@@ -370,6 +371,18 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       console.error("Failed to update topic max context messages", err);
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification("Failed to update context limit", message);
+    }
+  },
+  updateTopicChaining: async (id, isChaining, secondModelId): Promise<void> => {
+    try {
+      await athenaDb.topics.update(id, { isChaining, secondModelId });
+      set((state) => ({
+        topics: state.topics.map((t) => (t.id === id ? { ...t, isChaining, secondModelId } : t)),
+      }));
+    } catch (err) {
+      console.error("Failed to update topic chaining settings", err);
+      const message = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification("Failed to update chaining settings", message);
     }
   },
 }));

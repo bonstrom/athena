@@ -66,6 +66,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     googleApiKey,
     moonshotApiKey,
   } = useAuthStore();
+  const { isChaining, setIsChaining, secondModel, setSecondModel } = useChatStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
@@ -310,6 +311,93 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 </Select>
               </FormControl>
             </Box>
+
+            <Divider sx={{ my: 1, opacity: 0.6 }} />
+
+            <ListSubheader
+              sx={{
+                lineHeight: "36px",
+                fontWeight: "bold",
+                fontSize: "0.75rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                bgcolor: "transparent",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                pr: 1,
+              }}>
+              Chain Models
+              <MuiToggleButton
+                value="check"
+                selected={isChaining}
+                onChange={(): void => setIsChaining(!isChaining)}
+                size="small"
+                sx={{
+                  width: 32,
+                  height: 20,
+                  borderRadius: 10,
+                  p: 0,
+                  "&.Mui-selected": {
+                    bgcolor: "primary.main",
+                    color: "white",
+                    "&:hover": { bgcolor: "primary.dark" },
+                  },
+                }}>
+                <Typography sx={{ fontSize: "0.6rem", fontWeight: "bold" }}>{isChaining ? "ON" : "OFF"}</Typography>
+              </MuiToggleButton>
+            </ListSubheader>
+
+            {isChaining && (
+              <Box sx={{ px: 2, pb: 1 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ mb: 1, display: "block" }}>
+                  Reviewer Model
+                </Typography>
+                <FormControl
+                  fullWidth
+                  size="small">
+                  <Select
+                    value={secondModel.id}
+                    onChange={(e: SelectChangeEvent): void => {
+                      const selected = chatModels.find((m) => m.id === e.target.value);
+                      if (selected) setSecondModel(selected);
+                    }}
+                    sx={{
+                      fontSize: "0.85rem",
+                      "& .MuiSelect-select": {
+                        py: 1,
+                      },
+                    }}
+                    renderValue={(selected): React.ReactNode => {
+                      const model = chatModels.find((m) => m.id === selected);
+                      return model ? model.label : selected;
+                    }}>
+                    {availableModels.map((m) => (
+                      <MenuItem
+                        key={m.id}
+                        value={m.id}>
+                        <Box
+                          display="flex"
+                          justifyContent="space-between"
+                          width="100%"
+                          alignItems="center">
+                          <Typography variant="body2">{m.label}</Typography>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            ml={2}>
+                            {`${(m.input * USD_TO_SEK).toFixed(0)}kr | ${(m.output * USD_TO_SEK).toFixed(0)}kr / 1M`}
+                          </Typography>
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+            )}
 
             <Divider sx={{ my: 1, opacity: 0.6 }} />
 
