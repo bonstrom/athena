@@ -28,7 +28,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedGoogleApiKey = SecurityUtils.decode(localStorage.getItem("googleApiKey") ?? "");
   const storedMoonshotApiKey = SecurityUtils.decode(localStorage.getItem("moonshotApiKey") ?? "");
   const userName = localStorage.getItem("userName") ?? "";
-  const storedBackupInterval = Number(localStorage.getItem("backupInterval") ?? "1");
+  const storedBackupInterval = Number(localStorage.getItem("backupInterval") ?? "30");
   const storedCustomInstructions = localStorage.getItem("customInstructions") ?? "";
   const storedChatWidth = (localStorage.getItem("chatWidth") as "sm" | "md" | "lg" | "full" | null) ?? "lg";
 

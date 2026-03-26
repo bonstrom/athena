@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { BackupService } from "../services/backupService";
 import { useNotificationStore } from "../store/NotificationStore";
 
-export const useAutoBackup = (intervalMinutes = 2): void => {
+export const useAutoBackup = (intervalMinutes = 30): void => {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { addNotification } = useNotificationStore();
@@ -11,19 +11,11 @@ export const useAutoBackup = (intervalMinutes = 2): void => {
     // Helper function to try running the backup
     const runBackup = async (): Promise<void> => {
       try {
-        await BackupService.performAutoBackup();
+        await BackupService.performAutoBackup(false);
       } catch (error: unknown) {
-        const err = error as Error;
-        // Only notify user of actual failures, silence common permission issues if they are expected
-        if (err.name !== "NotAllowedError" && err.name !== "AbortError") {
-          if (process.env.NODE_ENV === "development") {
-            console.error("AutoBackup failed:", err);
-          }
-          addNotification("Auto-backup failed", err.message || "Unknown error");
-        } else {
-          if (process.env.NODE_ENV === "development") {
-            console.debug("AutoBackup skipped due to permissions.");
-          }
+        // Errors are now handled within BackupService and published to BackupStore
+        if (process.env.NODE_ENV === "development") {
+          console.error("AutoBackup failed in hook:", error);
         }
       }
     };

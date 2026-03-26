@@ -5,6 +5,7 @@ import { orchestrateLlmLoop, LlmMessage } from "../services/llmService";
 import { Message } from "../database/AthenaDb";
 import { athenaDb } from "../database/AthenaDb";
 import { useNotificationStore } from "./NotificationStore";
+import { BackupService } from "../services/backupService";
 
 import { SCRATCHPAD_LIMIT } from "../constants";
 
@@ -198,6 +199,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   sendMessageStream: async (content: string, topicId: string, messageId?: string): Promise<void> => {
+    // Trigger auto-backup on user gesture to ensure permissions are refreshed
+    void BackupService.performAutoBackup(true);
+
     const { selectedModel } = get();
     const topicStoreState = useTopicStore.getState();
 

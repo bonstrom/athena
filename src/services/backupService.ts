@@ -1,6 +1,7 @@
 import { exportDB, importDB } from "dexie-export-import";
 import { athenaDb } from "../database/AthenaDb";
 import { get, set } from "idb-keyval";
+import { useBackupStore } from "../store/BackupStore";
 
 interface FileSystemWritableFileStream extends WritableStream {
   write(data: BufferSource | Blob | string): Promise<void>;
@@ -105,31 +106,50 @@ export const BackupService = {
 
   /**
    * Exports the database and writes it automatically to the previously selected file handle.
+   * @param interactive If true, will attempt to request permission from the user (requires user gesture).
    */
-  async performAutoBackup(): Promise<void> {
+  async performAutoBackup(interactive = false): Promise<void> {
+    const store = useBackupStore.getState();
     try {
       const handle = await this.getAutoBackupHandle();
       if (!handle) {
-        return; // No auto-backup location set
+        store.setStatus("no_handle");
+        return;
       }
 
-      // Check if we have write permission, request if we don't
-      if ((await handle.queryPermission({ mode: "readwrite" })) !== "granted") {
-        const permission = await handle.requestPermission({ mode: "readwrite" });
-        if (permission !== "granted") {
-          throw new Error("Write permission denied for auto-backup file.");
-        }
+      // Check if we have write permission
+      let permission = await handle.queryPermission({ mode: "readwrite" });
+
+      if (permission !== "granted" && interactive) {
+        permission = await handle.requestPermission({ mode: "readwrite" });
       }
 
+      if (permission !== "granted") {
+        store.setStatus("permission_required");
+        return;
+      }
+
+      store.setStatus("in-progress");
       const blob = await exportDB(athenaDb, { prettyJson: true });
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
-      localStorage.setItem(LAST_BACKUP_TIME_KEY, new Date().toISOString());
-      console.debug("Auto-backup completed successfully at", new Date().toISOString());
-    } catch (error) {
+
+      const now = new Date().toISOString();
+      localStorage.setItem(LAST_BACKUP_TIME_KEY, now);
+      store.setLastBackupTime(now);
+      store.setStatus("success");
+      store.setErrorMessage(null);
+
       if (process.env.NODE_ENV === "development") {
-        console.error("Failed silent auto-backup:", error);
+        console.debug("Auto-backup completed successfully at", now);
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      store.setErrorMessage(msg);
+      store.setStatus("error");
+      if (process.env.NODE_ENV === "development") {
+        console.error("Failed auto-backup:", error);
       }
       throw error;
     }

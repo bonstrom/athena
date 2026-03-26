@@ -17,6 +17,7 @@ import {
 import { CheckCircle as CheckCircleIcon } from "@mui/icons-material";
 import { useAuthStore } from "../store/AuthStore";
 import { BackupService } from "../services/backupService";
+import { useBackupStore } from "../store/BackupStore";
 import { getMoonshotBalance, getDeepSeekBalance } from "../services/llmService";
 import { USD_TO_SEK } from "../constants";
 
@@ -56,7 +57,8 @@ const Settings: React.FC = () => {
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [moonshotBalance, setMoonshotBalance] = useState<number | null>(null);
   const [deepSeekBalance, setDeepSeekBalance] = useState<{ balance: number; currency: string } | null>(null);
-  const [lastBackupTime, setLastBackupTime] = useState<string | null>(null);
+
+  const { status: backupStatus, lastBackupTime, setStatus: setBackupStatus, setLastBackupTime } = useBackupStore();
 
   useEffect(() => {
     setUserNameInput(userName);
@@ -103,13 +105,6 @@ const Settings: React.FC = () => {
     void BackupService.getAutoBackupHandle().then((handle) => {
       setAutoBackupEnabled(!!handle);
     });
-    setLastBackupTime(BackupService.getLastBackupTime());
-
-    const interval = setInterval(() => {
-      setLastBackupTime(BackupService.getLastBackupTime());
-    }, 10000);
-
-    return () => clearInterval(interval);
   }, []);
 
   function handleSave(): void {
@@ -175,7 +170,6 @@ const Settings: React.FC = () => {
         const success = await BackupService.selectAutoBackupFile();
         if (success) {
           setAutoBackupEnabled(true);
-          setLastBackupTime(BackupService.getLastBackupTime());
         }
       } catch (error) {
         console.error(error);
@@ -185,6 +179,7 @@ const Settings: React.FC = () => {
       if (window.confirm("Disable automatic backups? Your stored file location will be cleared.")) {
         await BackupService.clearAutoBackupHandle();
         setAutoBackupEnabled(false);
+        setBackupStatus("no_handle");
         setLastBackupTime(null);
       }
     }
@@ -194,7 +189,7 @@ const Settings: React.FC = () => {
     try {
       const success = await BackupService.selectAutoBackupFile();
       if (success) {
-        setLastBackupTime(BackupService.getLastBackupTime());
+        // Updated via store
       }
     } catch (error) {
       console.error(error);
@@ -285,11 +280,16 @@ const Settings: React.FC = () => {
 
   return (
     <Box
-      display="flex"
-      flexDirection="column"
-      alignItems="center"
-      mt={4}
-      px={2}>
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        mt: 4,
+        px: 2,
+        height: "100%",
+        overflowY: "auto",
+        pb: 8,
+      }}>
       <Paper
         elevation={3}
         sx={{
@@ -632,11 +632,42 @@ const Settings: React.FC = () => {
 
                   {autoBackupEnabled && (
                     <Box sx={{ ml: 1, mt: -0.5 }}>
-                      <Typography
-                        variant="body2"
-                        color="success.main">
-                        ✓ Active. Database saves automatically.
-                      </Typography>
+                      {backupStatus === "permission_required" ? (
+                        <Box
+                          display="flex"
+                          alignItems="center"
+                          gap={1}>
+                          <Typography
+                            variant="body2"
+                            color="error">
+                            ⚠ Action Required: Permission expired.
+                          </Typography>
+                          <Button
+                            size="small"
+                            color="error"
+                            onClick={(): void => {
+                              void BackupService.performAutoBackup(true);
+                            }}
+                            sx={{ textTransform: "none", py: 0 }}>
+                            Authorize Now
+                          </Button>
+                        </Box>
+                      ) : backupStatus === "error" ? (
+                        <Typography
+                          variant="body2"
+                          color="error">
+                          ✕ Backup failed. Check console.
+                        </Typography>
+                      ) : (
+                        <Typography
+                          variant="body2"
+                          color="success.main">
+                          {backupStatus === "in-progress"
+                            ? "… Backing up..."
+                            : "✓ Active. Database saves automatically."}
+                        </Typography>
+                      )}
+
                       {lastBackupTime && (
                         <Typography
                           variant="caption"
