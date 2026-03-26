@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import { useNavigate, useParams } from "react-router-dom";
 import { useUiStore } from "../store/UiStore";
+import { useAuthStore } from "../store/AuthStore";
 import { JSX, useState, useEffect, useRef } from "react";
 import { useTopicStore } from "../store/TopicStore";
 import EditIcon from "@mui/icons-material/Edit";
@@ -34,6 +35,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
   const { topicId } = useParams();
   const navigate = useNavigate();
   const { isMobile, closeDrawer } = useUiStore();
+  const { chatFontSize } = useAuthStore();
   const { renameTopic, deleteTopic } = useTopicStore();
   const [showContextDialog, setShowContextDialog] = useState(false);
 
@@ -202,7 +204,11 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                           />
                           <Typography
                             variant="caption"
-                            sx={{ fontSize: "0.75rem", fontWeight: "bold", lineHeight: 1 }}>
+                            sx={{
+                              fontSize: `${Math.max(11, chatFontSize * 0.7)}px`,
+                              fontWeight: "bold",
+                              lineHeight: 1,
+                            }}>
                             {(topic.forks?.length ?? 1) - 1}
                           </Typography>
                         </Box>
@@ -212,7 +218,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                   slotProps={{
                     primary: {
                       noWrap: false, // Changed to false because we wrap the name in a box with ellipsis
-                      fontSize: "0.8rem",
+                      fontSize: `${Math.max(12, chatFontSize * 0.8)}px`,
                     },
                   }}
                 />

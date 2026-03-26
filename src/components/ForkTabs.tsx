@@ -16,6 +16,7 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import { useTopicStore } from "../store/TopicStore";
 import { useChatStore } from "../store/ChatStore";
+import { useAuthStore } from "../store/AuthStore";
 
 interface ForkTabsProps {
   topicId: string;
@@ -24,6 +25,7 @@ interface ForkTabsProps {
 const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
   const { topics, switchFork, deleteFork } = useTopicStore();
   const { fetchMessages } = useChatStore();
+  const { chatFontSize } = useAuthStore();
   const [forkToDelete, setForkToDelete] = useState<string | null>(null);
 
   const topic = topics.find((t) => t.id === topicId);
@@ -82,7 +84,7 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
             "& .MuiTab-root": {
               textTransform: "none",
               fontWeight: 500,
-              fontSize: "0.875rem",
+              fontSize: `${Math.max(13, chatFontSize * 0.9)}px`,
               minWidth: 100,
             },
           }}>

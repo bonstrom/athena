@@ -44,7 +44,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
     useChatStore();
   const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
-  const { userName } = useAuthStore();
+  const { userName, chatFontSize } = useAuthStore();
   const { isMobile } = useUiStore();
 
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
@@ -490,16 +490,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           </Box>
         </Box>
 
-        <Box sx={{ overflowX: "auto" }}>
+        <Box sx={{ overflowX: "auto", fontSize: `${chatFontSize}px` }}>
           {message.type === "aiNote" ? (
             <Typography
               variant="body2"
               fontStyle="italic"
-              color="text.secondary">
+              color="text.secondary"
+              sx={{ fontSize: "inherit" }}>
               {getModelLabel(message.model)} stored a hidden note here.
             </Typography>
           ) : (
-            <MarkdownWithCode>{message.content}</MarkdownWithCode>
+            <MarkdownWithCode fontSize={chatFontSize}>{message.content}</MarkdownWithCode>
           )}
         </Box>
 
@@ -522,7 +523,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             <Typography
               variant="body2"
               color="text.secondary"
-              sx={{ whiteSpace: "pre-wrap", fontStyle: "italic", fontSize: "0.85rem" }}>
+              sx={{ whiteSpace: "pre-wrap", fontStyle: "italic", fontSize: `${Math.max(12, chatFontSize - 2)}px` }}>
               {message.reasoning}
             </Typography>
           </Box>

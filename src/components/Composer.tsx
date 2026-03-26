@@ -56,7 +56,16 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const questionRef = useRef("");
   const topicStore = useTopicStore();
   const { selectedModel, setSelectedModel, temperature, setTemperature, currentTopicId, stopSending } = useChatStore();
-  const { chatWidth, setChatWidth, openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore();
+  const {
+    chatWidth,
+    setChatWidth,
+    chatFontSize,
+    setChatFontSize,
+    openAiKey,
+    deepSeekKey,
+    googleApiKey,
+    moonshotApiKey,
+  } = useAuthStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
@@ -453,6 +462,60 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     <span>Full</span>
                   </Tooltip>
                 </MuiToggleButton>
+              </MuiToggleButtonGroup>
+            </Box>
+
+            <Divider sx={{ my: 1, opacity: 0.6 }} />
+
+            <ListSubheader
+              sx={{
+                lineHeight: "36px",
+                fontWeight: "bold",
+                fontSize: "0.75rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                bgcolor: "transparent",
+              }}>
+              Font Size
+            </ListSubheader>
+
+            <Box sx={{ px: 2, pb: 1, display: "flex", justifyContent: "center" }}>
+              <MuiToggleButtonGroup
+                value={chatFontSize}
+                exclusive
+                onChange={(_, value: number | null): void => {
+                  if (value) setChatFontSize(value);
+                }}
+                size="small"
+                fullWidth
+                sx={{
+                  bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"),
+                  p: 0.5,
+                  "& .MuiToggleButton-root": {
+                    border: "none",
+                    borderRadius: "8px !important",
+                    mx: 0.25,
+                    px: 1,
+                    py: 0.5,
+                    fontSize: "0.75rem",
+                    fontWeight: "bold",
+                    color: "text.secondary",
+                    "&.Mui-selected": {
+                      bgcolor: "primary.main",
+                      color: "primary.contrastText",
+                      "&:hover": {
+                        bgcolor: "primary.dark",
+                      },
+                    },
+                  },
+                }}>
+                {[12, 14, 16, 18, 20, 24].map((size) => (
+                  <MuiToggleButton
+                    key={size}
+                    value={size}>
+                    {size}
+                  </MuiToggleButton>
+                ))}
               </MuiToggleButtonGroup>
             </Box>
 

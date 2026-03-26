@@ -31,6 +31,7 @@ const Settings: React.FC = () => {
     backupInterval,
     customInstructions,
     chatWidth,
+    chatFontSize,
     setOpenAiKey,
     setDeepSeekKey,
     setGoogleApiKey,
@@ -39,6 +40,7 @@ const Settings: React.FC = () => {
     setBackupInterval,
     setCustomInstructions,
     setChatWidth,
+    setChatFontSize,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState("");
@@ -332,6 +334,32 @@ const Settings: React.FC = () => {
               <MenuItem value="lg">Wide (1200px)</MenuItem>
               <MenuItem value="md">Standard (900px)</MenuItem>
               <MenuItem value="sm">Compact (600px)</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+
+        <Box sx={{ mb: 4 }}>
+          <Typography
+            variant="subtitle2"
+            color="text.secondary"
+            gutterBottom
+            sx={{ fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.7rem" }}>
+            Typography
+          </Typography>
+          <FormControl
+            fullWidth
+            size="small">
+            <InputLabel>Chat Font Size</InputLabel>
+            <Select
+              value={chatFontSize}
+              label="Chat Font Size"
+              onChange={(e): void => setChatFontSize(e.target.value as number)}>
+              <MenuItem value={12}>Small (12px)</MenuItem>
+              <MenuItem value={14}>Compact (14px)</MenuItem>
+              <MenuItem value={16}>Standard (16px)</MenuItem>
+              <MenuItem value={18}>Large (18px)</MenuItem>
+              <MenuItem value={20}>Extra Large (20px)</MenuItem>
+              <MenuItem value={24}>Huge (24px)</MenuItem>
             </Select>
           </FormControl>
         </Box>

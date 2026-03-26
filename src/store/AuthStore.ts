@@ -11,6 +11,7 @@ interface AuthState {
   backupInterval: number;
   customInstructions: string;
   chatWidth: "sm" | "md" | "lg" | "full";
+  chatFontSize: number;
   clearAuth: () => void;
   setOpenAiKey: (key: string) => void;
   setDeepSeekKey: (key: string) => void;
@@ -20,6 +21,7 @@ interface AuthState {
   setBackupInterval: (minutes: number) => void;
   setCustomInstructions: (instructions: string) => void;
   setChatWidth: (width: "sm" | "md" | "lg" | "full") => void;
+  setChatFontSize: (size: number) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => {
@@ -31,6 +33,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedBackupInterval = Number(localStorage.getItem("backupInterval") ?? "30");
   const storedCustomInstructions = localStorage.getItem("customInstructions") ?? "";
   const storedChatWidth = (localStorage.getItem("chatWidth") as "sm" | "md" | "lg" | "full" | null) ?? "lg";
+  const storedChatFontSize = Number(localStorage.getItem("chatFontSize") ?? "16");
 
   return {
     openAiKey: storedOpenAiKey,
@@ -41,6 +44,7 @@ export const useAuthStore = create<AuthState>((set) => {
     backupInterval: storedBackupInterval,
     customInstructions: storedCustomInstructions,
     chatWidth: storedChatWidth,
+    chatFontSize: storedChatFontSize,
     clearAuth: (): void => {
       localStorage.removeItem("openAiKey");
       localStorage.removeItem("deepSeekKey");
@@ -49,6 +53,7 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem("userName");
       localStorage.removeItem("customInstructions");
       localStorage.removeItem("chatWidth");
+      localStorage.removeItem("chatFontSize");
       set({
         openAiKey: "",
         deepSeekKey: "",
@@ -57,6 +62,7 @@ export const useAuthStore = create<AuthState>((set) => {
         userName: undefined,
         customInstructions: "",
         chatWidth: "lg",
+        chatFontSize: 16,
       });
     },
     setOpenAiKey: (key: string): void => {
@@ -90,6 +96,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setChatWidth: (width: "sm" | "md" | "lg" | "full"): void => {
       localStorage.setItem("chatWidth", width);
       set({ chatWidth: width });
+    },
+    setChatFontSize: (size: number): void => {
+      localStorage.setItem("chatFontSize", String(size));
+      set({ chatFontSize: size });
     },
   };
 });
