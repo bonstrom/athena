@@ -638,7 +638,9 @@ export async function getDeepSeekBalance(): Promise<{ balance: number; currency:
     }
     return null;
   } catch (e) {
-    console.error("Failed to fetch DeepSeek balance:", e);
+    if (process.env.NODE_ENV === "development") {
+      console.error("Failed to fetch DeepSeek balance:", e);
+    }
     return null;
   }
 }

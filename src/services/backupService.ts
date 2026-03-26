@@ -42,7 +42,9 @@ export const BackupService = {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
-      console.error("Failed to export database", error);
+      if (process.env.NODE_ENV === "development") {
+        console.error("Failed to export database", error);
+      }
       throw error;
     }
   },
@@ -56,7 +58,9 @@ export const BackupService = {
       await athenaDb.open();
       await importDB(file);
     } catch (error) {
-      console.error("Failed to restore database", error);
+      if (process.env.NODE_ENV === "development") {
+        console.error("Failed to restore database", error);
+      }
       throw error;
     }
   },
@@ -126,7 +130,9 @@ export const BackupService = {
       localStorage.setItem(LAST_BACKUP_TIME_KEY, new Date().toISOString());
       console.debug("Auto-backup completed successfully at", new Date().toISOString());
     } catch (error) {
-      console.error("Failed silent auto-backup:", error);
+      if (process.env.NODE_ENV === "development") {
+        console.error("Failed silent auto-backup:", error);
+      }
       throw error;
     }
   },

@@ -520,15 +520,36 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
         )}
 
         {message.failed && (
-          <Tooltip title="Retry">
-            <IconButton
+          <Box
+            sx={{
+              mt: 2,
+              p: 2,
+              borderRadius: 2,
+              bgcolor: (theme) => alpha(theme.palette.error.main, 0.05),
+              border: (theme) => `1px dashed ${alpha(theme.palette.error.main, 0.3)}`,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 1,
+            }}>
+            <Typography
+              variant="body2"
+              color="error"
+              sx={{ fontWeight: "bold" }}>
+              Message delivery failed
+            </Typography>
+            <Button
+              variant="contained"
+              color="error"
+              size="small"
+              startIcon={<RefreshIcon />}
               onClick={(): void => {
                 void sendMessageStream(message.content, message.topicId, message.id);
               }}
-              color="inherit">
-              <RefreshIcon />
-            </IconButton>
-          </Tooltip>
+              sx={{ textTransform: "none" }}>
+              Retry Sending
+            </Button>
+          </Box>
         )}
       </Box>
 

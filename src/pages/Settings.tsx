@@ -200,6 +200,18 @@ const Settings: React.FC = () => {
     }
   };
 
+  const validateKey = (key: string, type: "openai" | "deepseek" | "google"): boolean => {
+    if (!key) return true;
+    const trimmed = key.trim();
+    if (type === "openai" || type === "deepseek") {
+      return trimmed.startsWith("sk-") && trimmed.length > 20;
+    }
+    if (type === "google") {
+      return trimmed.length >= 30; // Gemini keys are typically long
+    }
+    return true;
+  };
+
   const KeyConfirmation = ({
     label,
     isStored,
@@ -311,6 +323,12 @@ const Settings: React.FC = () => {
             onChange={(e): void => setOpenAiInput(e.target.value)}
             placeholder="Paste new key here"
             sx={{ mb: 2 }}
+            error={openAiInput !== "" && !validateKey(openAiInput, "openai")}
+            helperText={
+              openAiInput !== "" && !validateKey(openAiInput, "openai")
+                ? "Invalid OpenAI key format (should start with sk-)"
+                : ""
+            }
             InputProps={{
               endAdornment: openAiKey && (
                 <InputAdornment position="end">
@@ -341,6 +359,12 @@ const Settings: React.FC = () => {
             onChange={(e): void => setDeepSeekInput(e.target.value)}
             placeholder="Paste new key here"
             sx={{ mb: 2 }}
+            error={deepSeekInput !== "" && !validateKey(deepSeekInput, "deepseek")}
+            helperText={
+              deepSeekInput !== "" && !validateKey(deepSeekInput, "deepseek")
+                ? "Invalid DeepSeek key format (should start with sk-)"
+                : ""
+            }
             InputProps={{
               endAdornment: deepSeekKey && (
                 <InputAdornment position="end">
@@ -383,6 +407,10 @@ const Settings: React.FC = () => {
             onChange={(e): void => setGoogleInput(e.target.value)}
             placeholder="Paste new key here"
             sx={{ mb: 2 }}
+            error={googleInput !== "" && !validateKey(googleInput, "google")}
+            helperText={
+              googleInput !== "" && !validateKey(googleInput, "google") ? "Invalid Google API key format" : ""
+            }
             InputProps={{
               endAdornment: googleApiKey && (
                 <InputAdornment position="end">
@@ -413,6 +441,10 @@ const Settings: React.FC = () => {
             onChange={(e): void => setMoonshotInput(e.target.value)}
             placeholder="Paste new key here"
             sx={{ mb: 2 }}
+            error={moonshotInput !== "" && !validateKey(moonshotInput, "openai")}
+            helperText={
+              moonshotInput !== "" && !validateKey(moonshotInput, "openai") ? "Invalid Moonshot key format" : ""
+            }
             InputProps={{
               endAdornment: moonshotApiKey && (
                 <InputAdornment position="end">
@@ -462,7 +494,13 @@ const Settings: React.FC = () => {
           <Button
             variant="contained"
             color="assistant"
-            onClick={handleSave}>
+            onClick={handleSave}
+            disabled={
+              (openAiInput !== "" && !validateKey(openAiInput, "openai")) ||
+              (deepSeekInput !== "" && !validateKey(deepSeekInput, "deepseek")) ||
+              (googleInput !== "" && !validateKey(googleInput, "google")) ||
+              (moonshotInput !== "" && !validateKey(moonshotInput, "openai"))
+            }>
             Save
           </Button>
         </Box>

@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import { useNotificationStore } from "./NotificationStore";
 import { encode } from "gpt-tokenizer";
-import { v4 as uuidv4 } from "uuid";
 import { athenaDb, Message, Topic } from "../database/AthenaDb";
 import { useAuthStore } from "./AuthStore";
 import { sendOpenAiChat } from "../services/openAi";
@@ -72,7 +71,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
   createTopic: async (): Promise<Topic | null> => {
     try {
       const newTopic: Topic = {
-        id: uuidv4(),
+        id: crypto.randomUUID(),
         name: "New Topic",
         createdOn: new Date().toISOString(),
         isDeleted: false,
@@ -237,7 +236,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       if (!originalTopic) return;
 
       const currentForkId = originalTopic.activeForkId ?? "main";
-      const newForkId = uuidv4();
+      const newForkId = crypto.randomUUID();
       const newForkName = `Fork ${originalTopic.forks?.length ?? 1}`;
 
       const newFork = {
@@ -275,7 +274,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
       const newMessages: Message[] = messagesToCopy.map((m) => ({
         ...m,
-        id: uuidv4(),
+        id: crypto.randomUUID(),
         forkId: newForkId,
       }));
 

@@ -27,7 +27,6 @@ const ChatLayout: React.FC = () => {
         variant={isMobile ? "temporary" : "persistent"}
         open={drawerOpen}
         onClose={closeDrawer}
-        ModalProps={{ keepMounted: true }}
         sx={{
           [`& .MuiDrawer-paper`]: {
             width: drawerWidth,

@@ -16,10 +16,14 @@ export const useAutoBackup = (intervalMinutes = 2): void => {
         const err = error as Error;
         // Only notify user of actual failures, silence common permission issues if they are expected
         if (err.name !== "NotAllowedError" && err.name !== "AbortError") {
-          console.error("AutoBackup failed:", err);
+          if (process.env.NODE_ENV === "development") {
+            console.error("AutoBackup failed:", err);
+          }
           addNotification("Auto-backup failed", err.message || "Unknown error");
         } else {
-          console.debug("AutoBackup skipped due to permissions.");
+          if (process.env.NODE_ENV === "development") {
+            console.debug("AutoBackup skipped due to permissions.");
+          }
         }
       }
     };
