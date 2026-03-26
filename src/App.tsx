@@ -6,37 +6,40 @@ import Home from "./pages/Home";
 import Settings from "./pages/Settings";
 import { useAutoBackup } from "./hooks/useAutoBackup";
 import { useAuthStore } from "./store/AuthStore";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const App: React.FC = () => {
   const { backupInterval } = useAuthStore();
   useAutoBackup(backupInterval); // Run auto-backup based on user preference
 
   return (
-    <HashRouter>
-      <Routes>
-        <Route
-          path="/"
-          element={<ChatLayout />}>
+    <ErrorBoundary>
+      <HashRouter>
+        <Routes>
           <Route
-            path="home"
-            index
-            element={<Home />}
-          />
+            path="/"
+            element={<ChatLayout />}>
+            <Route
+              path="home"
+              index
+              element={<Home />}
+            />
 
-          <Route
-            path="settings"
-            element={<Settings />}
-          />
+            <Route
+              path="settings"
+              element={<Settings />}
+            />
 
-          <Route
-            path="chat/:topicId"
-            element={<ChatView />}
-          />
-        </Route>
-      </Routes>
+            <Route
+              path="chat/:topicId"
+              element={<ChatView />}
+            />
+          </Route>
+        </Routes>
 
-      <GlobalErrorSnackbar />
-    </HashRouter>
+        <GlobalErrorSnackbar />
+      </HashRouter>
+    </ErrorBoundary>
   );
 };
 

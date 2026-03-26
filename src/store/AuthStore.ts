@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { useNavigate } from "react-router-dom";
+import { SecurityUtils } from "../utils/security";
 
 interface AuthState {
   openAiKey: string;
@@ -20,10 +21,10 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => {
-  const storedOpenAiKey = localStorage.getItem("openAiKey") ?? "";
-  const storedDeepSeekKey = localStorage.getItem("deepSeekKey") ?? "";
-  const storedGoogleApiKey = localStorage.getItem("googleApiKey") ?? "";
-  const storedMoonshotApiKey = localStorage.getItem("moonshotApiKey") ?? "";
+  const storedOpenAiKey = SecurityUtils.decode(localStorage.getItem("openAiKey") ?? "");
+  const storedDeepSeekKey = SecurityUtils.decode(localStorage.getItem("deepSeekKey") ?? "");
+  const storedGoogleApiKey = SecurityUtils.decode(localStorage.getItem("googleApiKey") ?? "");
+  const storedMoonshotApiKey = SecurityUtils.decode(localStorage.getItem("moonshotApiKey") ?? "");
   const userName = localStorage.getItem("userName") ?? "";
   const storedBackupInterval = Number(localStorage.getItem("backupInterval") ?? "1");
   const storedCustomInstructions = localStorage.getItem("customInstructions") ?? "";
@@ -53,19 +54,19 @@ export const useAuthStore = create<AuthState>((set) => {
       });
     },
     setOpenAiKey: (key: string): void => {
-      localStorage.setItem("openAiKey", key);
+      localStorage.setItem("openAiKey", SecurityUtils.encode(key));
       set({ openAiKey: key });
     },
     setDeepSeekKey: (key: string): void => {
-      localStorage.setItem("deepSeekKey", key);
+      localStorage.setItem("deepSeekKey", SecurityUtils.encode(key));
       set({ deepSeekKey: key });
     },
     setGoogleApiKey: (key: string): void => {
-      localStorage.setItem("googleApiKey", key);
+      localStorage.setItem("googleApiKey", SecurityUtils.encode(key));
       set({ googleApiKey: key });
     },
     setMoonshotApiKey: (key: string): void => {
-      localStorage.setItem("moonshotApiKey", key);
+      localStorage.setItem("moonshotApiKey", SecurityUtils.encode(key));
       set({ moonshotApiKey: key });
     },
     setUserName: (userName: string): void => {

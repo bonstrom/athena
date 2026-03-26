@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Box,
   TextField,
   Button,
   Typography,
   Paper,
-  IconButton,
   InputAdornment,
   FormControl,
   InputLabel,
@@ -13,9 +12,9 @@ import {
   MenuItem,
   Switch,
   FormControlLabel,
-  CircularProgress,
+  Chip,
 } from "@mui/material";
-import { Visibility, VisibilityOff } from "@mui/icons-material";
+import { CheckCircle as CheckCircleIcon } from "@mui/icons-material";
 import { useAuthStore } from "../store/AuthStore";
 import { BackupService } from "../services/backupService";
 import { getMoonshotBalance, getDeepSeekBalance } from "../services/llmService";
@@ -39,30 +38,44 @@ const Settings: React.FC = () => {
     setCustomInstructions,
   } = useAuthStore();
 
-  const [openAiInput, setOpenAiInput] = useState(openAiKey);
-  const [deepSeekInput, setDeepSeekInput] = useState(deepSeekKey);
-  const [googleInput, setGoogleInput] = useState(googleApiKey);
-  const [moonshotInput, setMoonshotInput] = useState(moonshotApiKey);
+  const [openAiInput, setOpenAiInput] = useState("");
+  const [deepSeekInput, setDeepSeekInput] = useState("");
+  const [googleInput, setGoogleInput] = useState("");
+  const [moonshotInput, setMoonshotInput] = useState("");
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
+
+  const [isUpdatingOpenAi, setIsUpdatingOpenAi] = useState(!openAiKey);
+  const [isUpdatingDeepSeek, setIsUpdatingDeepSeek] = useState(!deepSeekKey);
+  const [isUpdatingGoogle, setIsUpdatingGoogle] = useState(!googleApiKey);
+  const [isUpdatingMoonshot, setIsUpdatingMoonshot] = useState(!moonshotApiKey);
+
   const [saved, setSaved] = useState(false);
-  const [showOpenAiKey, setShowOpenAiKey] = useState(false);
-  const [showDeepSeekKey, setShowDeepSeekKey] = useState(false);
-  const [showGoogleKey, setShowGoogleKey] = useState(false);
-  const [showMoonshotKey, setShowMoonshotKey] = useState(false);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [moonshotBalance, setMoonshotBalance] = useState<number | null>(null);
   const [deepSeekBalance, setDeepSeekBalance] = useState<{ balance: number; currency: string } | null>(null);
   const [lastBackupTime, setLastBackupTime] = useState<string | null>(null);
 
   useEffect(() => {
-    setOpenAiInput(openAiKey);
-    setDeepSeekInput(deepSeekKey);
-    setGoogleInput(googleApiKey);
-    setMoonshotInput(moonshotApiKey);
     setUserNameInput(userName);
     setCustomInstructionsInput(customInstructions);
-  }, [openAiKey, deepSeekKey, googleApiKey, moonshotApiKey, userName, customInstructions]);
+  }, [userName, customInstructions]);
+
+  useEffect(() => {
+    setIsUpdatingOpenAi(!openAiKey);
+  }, [openAiKey]);
+
+  useEffect(() => {
+    setIsUpdatingDeepSeek(!deepSeekKey);
+  }, [deepSeekKey]);
+
+  useEffect(() => {
+    setIsUpdatingGoogle(!googleApiKey);
+  }, [googleApiKey]);
+
+  useEffect(() => {
+    setIsUpdatingMoonshot(!moonshotApiKey);
+  }, [moonshotApiKey]);
 
   useEffect(() => {
     if (moonshotApiKey) {
@@ -90,7 +103,6 @@ const Settings: React.FC = () => {
     });
     setLastBackupTime(BackupService.getLastBackupTime());
 
-    // Refresh last backup time every 10 seconds while settings is open
     const interval = setInterval(() => {
       setLastBackupTime(BackupService.getLastBackupTime());
     }, 10000);
@@ -99,10 +111,26 @@ const Settings: React.FC = () => {
   }, []);
 
   function handleSave(): void {
-    setOpenAiKey(openAiInput.trim());
-    setDeepSeekKey(deepSeekInput.trim());
-    setGoogleApiKey(googleInput.trim());
-    setMoonshotApiKey(moonshotInput.trim());
+    if (isUpdatingOpenAi && openAiInput) {
+      setOpenAiKey(openAiInput.trim());
+      setOpenAiInput("");
+      setIsUpdatingOpenAi(false);
+    }
+    if (isUpdatingDeepSeek && deepSeekInput) {
+      setDeepSeekKey(deepSeekInput.trim());
+      setDeepSeekInput("");
+      setIsUpdatingDeepSeek(false);
+    }
+    if (isUpdatingGoogle && googleInput) {
+      setGoogleApiKey(googleInput.trim());
+      setGoogleInput("");
+      setIsUpdatingGoogle(false);
+    }
+    if (isUpdatingMoonshot && moonshotInput) {
+      setMoonshotApiKey(moonshotInput.trim());
+      setMoonshotInput("");
+      setIsUpdatingMoonshot(false);
+    }
     setUserName(userNameInput.trim());
     setCustomInstructions(customInstructionsInput.trim());
     setSaved(true);
@@ -134,7 +162,6 @@ const Settings: React.FC = () => {
       }
     }
 
-    // reset input
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -173,6 +200,78 @@ const Settings: React.FC = () => {
     }
   };
 
+  const KeyConfirmation = ({
+    label,
+    isStored,
+    onUpdate,
+    extraInfo,
+  }: {
+    label: string;
+    isStored: boolean;
+    onUpdate: () => void;
+    extraInfo?: React.ReactNode;
+  }): React.ReactElement => (
+    <Box
+      sx={{
+        mb: 2,
+        p: 1.5,
+        border: "1px solid",
+        borderColor: "divider",
+        borderRadius: 1,
+        display: "flex",
+        flexDirection: { xs: "column", sm: "row" },
+        alignItems: { xs: "flex-start", sm: "center" },
+        justifyContent: "space-between",
+        gap: { xs: 1.5, sm: 2 },
+        bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.01)"),
+      }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 1.5,
+        }}>
+        <Typography
+          variant="body2"
+          sx={{
+            fontWeight: "bold",
+            color: "text.secondary",
+            minWidth: { xs: "auto", sm: 100 },
+          }}>
+          {label}
+        </Typography>
+        {isStored ? (
+          <Chip
+            icon={<CheckCircleIcon sx={{ color: "success.main !important" }} />}
+            label="Key Configured"
+            color="success"
+            variant="outlined"
+            size="small"
+          />
+        ) : (
+          <Chip
+            label="Not Configured"
+            color="warning"
+            variant="outlined"
+            size="small"
+          />
+        )}
+        {extraInfo}
+      </Box>
+      <Button
+        size="small"
+        variant="text"
+        onClick={onUpdate}
+        sx={{
+          textTransform: "none",
+          alignSelf: { xs: "flex-end", sm: "center" },
+        }}>
+        {isStored ? "Update Key" : "Add Key"}
+      </Button>
+    </Box>
+  );
+
   return (
     <Box
       display="flex"
@@ -202,125 +301,147 @@ const Settings: React.FC = () => {
           sx={{ mb: 2 }}
         />
 
-        <TextField
-          label="OpenAI API Key"
-          type={showOpenAiKey ? "text" : "password"}
-          fullWidth
-          value={openAiInput}
-          onChange={(e): void => setOpenAiInput(e.target.value)}
-          sx={{ mb: 2 }}
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                <IconButton onClick={(): void => setShowOpenAiKey((prev) => !prev)}>
-                  {showOpenAiKey ? <VisibilityOff /> : <Visibility />}
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-        />
+        {/* OpenAI Section */}
+        {isUpdatingOpenAi ? (
+          <TextField
+            label="OpenAI API Key"
+            type="password"
+            fullWidth
+            value={openAiInput}
+            onChange={(e): void => setOpenAiInput(e.target.value)}
+            placeholder="Paste new key here"
+            sx={{ mb: 2 }}
+            InputProps={{
+              endAdornment: openAiKey && (
+                <InputAdornment position="end">
+                  <Button
+                    size="small"
+                    onClick={(): void => setIsUpdatingOpenAi(false)}>
+                    Cancel
+                  </Button>
+                </InputAdornment>
+              ),
+            }}
+          />
+        ) : (
+          <KeyConfirmation
+            label="OpenAI"
+            isStored={!!openAiKey}
+            onUpdate={(): void => setIsUpdatingOpenAi(true)}
+          />
+        )}
 
-        <TextField
-          label="DeepSeek API Key"
-          type={showDeepSeekKey ? "text" : "password"}
-          fullWidth
-          value={deepSeekInput}
-          onChange={(e): void => {
-            setDeepSeekInput(e.target.value);
-            if (!e.target.value) setDeepSeekBalance(null);
-          }}
-          sx={{ mb: 2 }}
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                {deepSeekBalance !== null && (
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ mr: 1, fontWeight: "bold" }}>
-                    Balance:{" "}
-                    {(deepSeekBalance.balance * (deepSeekBalance.currency === "CNY" ? 1.5 : USD_TO_SEK)).toFixed(2)}
-                    kr
-                  </Typography>
-                )}
-                <IconButton onClick={(): void => setShowDeepSeekKey((prev) => !prev)}>
-                  {showDeepSeekKey ? <VisibilityOff /> : <Visibility />}
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-          FormHelperTextProps={{ component: "div" }}
-          helperText={
-            deepSeekKey && deepSeekBalance === null ? (
-              <Box
-                display="flex"
-                alignItems="center"
-                gap={1}>
-                <CircularProgress size={12} />
-                <Typography variant="caption">Fetching balance...</Typography>
-              </Box>
-            ) : null
-          }
-        />
+        {/* DeepSeek Section */}
+        {isUpdatingDeepSeek ? (
+          <TextField
+            label="DeepSeek API Key"
+            type="password"
+            fullWidth
+            value={deepSeekInput}
+            onChange={(e): void => setDeepSeekInput(e.target.value)}
+            placeholder="Paste new key here"
+            sx={{ mb: 2 }}
+            InputProps={{
+              endAdornment: deepSeekKey && (
+                <InputAdornment position="end">
+                  <Button
+                    size="small"
+                    onClick={(): void => setIsUpdatingDeepSeek(false)}>
+                    Cancel
+                  </Button>
+                </InputAdornment>
+              ),
+            }}
+          />
+        ) : (
+          <KeyConfirmation
+            label="DeepSeek"
+            isStored={!!deepSeekKey}
+            onUpdate={(): void => setIsUpdatingDeepSeek(true)}
+            extraInfo={
+              deepSeekBalance !== null && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontWeight: "bold" }}>
+                  Balance:{" "}
+                  {(deepSeekBalance.balance * (deepSeekBalance.currency === "CNY" ? 1.5 : USD_TO_SEK)).toFixed(2)}
+                  kr
+                </Typography>
+              )
+            }
+          />
+        )}
 
-        <TextField
-          label="Google API Key"
-          type={showGoogleKey ? "text" : "password"}
-          fullWidth
-          value={googleInput}
-          onChange={(e): void => setGoogleInput(e.target.value)}
-          sx={{ mb: 2 }}
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                <IconButton onClick={(): void => setShowGoogleKey((prev) => !prev)}>
-                  {showGoogleKey ? <VisibilityOff /> : <Visibility />}
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-        />
+        {/* Google Section */}
+        {isUpdatingGoogle ? (
+          <TextField
+            label="Google API Key"
+            type="password"
+            fullWidth
+            value={googleInput}
+            onChange={(e): void => setGoogleInput(e.target.value)}
+            placeholder="Paste new key here"
+            sx={{ mb: 2 }}
+            InputProps={{
+              endAdornment: googleApiKey && (
+                <InputAdornment position="end">
+                  <Button
+                    size="small"
+                    onClick={(): void => setIsUpdatingGoogle(false)}>
+                    Cancel
+                  </Button>
+                </InputAdornment>
+              ),
+            }}
+          />
+        ) : (
+          <KeyConfirmation
+            label="Google (Gemini)"
+            isStored={!!googleApiKey}
+            onUpdate={(): void => setIsUpdatingGoogle(true)}
+          />
+        )}
 
-        <TextField
-          label="Moonshot API Key (Kimi)"
-          type={showMoonshotKey ? "text" : "password"}
-          fullWidth
-          value={moonshotInput}
-          onChange={(e): void => {
-            setMoonshotInput(e.target.value);
-            if (!e.target.value) setMoonshotBalance(null);
-          }}
-          sx={{ mb: 2 }}
-          InputProps={{
-            endAdornment: (
-              <InputAdornment position="end">
-                {moonshotBalance !== null && (
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ mr: 1, fontWeight: "bold" }}>
-                    Balance: {(moonshotBalance * USD_TO_SEK).toFixed(2)}kr
-                  </Typography>
-                )}
-                <IconButton onClick={(): void => setShowMoonshotKey((prev) => !prev)}>
-                  {showMoonshotKey ? <VisibilityOff /> : <Visibility />}
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-          FormHelperTextProps={{ component: "div" }}
-          helperText={
-            moonshotApiKey && moonshotBalance === null ? (
-              <Box
-                display="flex"
-                alignItems="center"
-                gap={1}>
-                <CircularProgress size={12} />
-                <Typography variant="caption">Fetching balance...</Typography>
-              </Box>
-            ) : null
-          }
-        />
+        {/* Moonshot Section */}
+        {isUpdatingMoonshot ? (
+          <TextField
+            label="Moonshot API Key (Kimi)"
+            type="password"
+            fullWidth
+            value={moonshotInput}
+            onChange={(e): void => setMoonshotInput(e.target.value)}
+            placeholder="Paste new key here"
+            sx={{ mb: 2 }}
+            InputProps={{
+              endAdornment: moonshotApiKey && (
+                <InputAdornment position="end">
+                  <Button
+                    size="small"
+                    onClick={(): void => setIsUpdatingMoonshot(false)}>
+                    Cancel
+                  </Button>
+                </InputAdornment>
+              ),
+            }}
+          />
+        ) : (
+          <KeyConfirmation
+            label="Moonshot"
+            isStored={!!moonshotApiKey}
+            onUpdate={(): void => setIsUpdatingMoonshot(true)}
+            extraInfo={
+              moonshotBalance !== null && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontWeight: "bold" }}>
+                  Balance: {(moonshotBalance * USD_TO_SEK).toFixed(2)}kr
+                </Typography>
+              )
+            }
+          />
+        )}
 
         <TextField
           label="Custom Instructions (System Prompt)"
