@@ -1,11 +1,11 @@
-import { create } from 'zustand';
-import { useNotificationStore } from './NotificationStore';
-import { encode } from 'gpt-tokenizer';
-import { athenaDb, Message, Topic } from '../database/AthenaDb';
-import { useAuthStore } from './AuthStore';
-import { sendOpenAiChat } from '../services/openAi';
-import { getDefaultTopicNameModel } from '../components/ModelSelector';
-import { SCRATCHPAD_LIMIT } from '../constants';
+import { create } from "zustand";
+import { useNotificationStore } from "./NotificationStore";
+import { encode } from "gpt-tokenizer";
+import { athenaDb, Message, Topic } from "../database/AthenaDb";
+import { useAuthStore } from "./AuthStore";
+import { sendOpenAiChat } from "../services/openAi";
+import { getDefaultTopicNameModel } from "../components/ModelSelector";
+import { SCRATCHPAD_LIMIT } from "../constants";
 
 interface TopicState {
   topics: Topic[];
@@ -56,14 +56,14 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     set({ loading: true, error: null });
 
     try {
-      const topics = await athenaDb.topics.orderBy('updatedOn').reverse().toArray();
+      const topics = await athenaDb.topics.orderBy("updatedOn").reverse().toArray();
 
       set({ topics });
     } catch (err) {
-      console.error('Failed to load topics from DB', err);
+      console.error("Failed to load topics from DB", err);
       const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('Failed to load topics', message);
-      set({ error: 'Failed to load topics' });
+      useNotificationStore.getState().addNotification("Failed to load topics", message);
+      set({ error: "Failed to load topics" });
     } finally {
       set({ loading: false });
     }
@@ -73,7 +73,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     try {
       const newTopic: Topic = {
         id: crypto.randomUUID(),
-        name: 'New Topic',
+        name: "New Topic",
         createdOn: new Date().toISOString(),
         isDeleted: false,
         updatedOn: new Date().toISOString(),
@@ -84,9 +84,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
       return newTopic;
     } catch (err) {
-      console.error('Failed to create topic', err);
+      console.error("Failed to create topic", err);
       const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('Failed to create topic', message);
+      useNotificationStore.getState().addNotification("Failed to create topic", message);
       return null;
     }
   },
@@ -96,9 +96,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       await athenaDb.topics.update(id, { name });
       get().updateTopicName(id, name);
     } catch (err) {
-      console.error('Failed to rename topic', err);
+      console.error("Failed to rename topic", err);
       const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('Failed to rename topic', message);
+      useNotificationStore.getState().addNotification("Failed to rename topic", message);
     }
   },
 
@@ -109,9 +109,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         topics: state.topics.map((t) => (t.id === id ? { ...t, scratchpad } : t)),
       }));
     } catch (err) {
-      console.error('Failed to update topic scratchpad', err);
+      console.error("Failed to update topic scratchpad", err);
       const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('Failed to update scratchpad', message);
+      useNotificationStore.getState().addNotification("Failed to update scratchpad", message);
     }
   },
 
@@ -119,10 +119,10 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     const topic = get().topics.find((t) => t.id === topicId);
     if (!topic) return [];
 
-    const activeForkId = topic.activeForkId ?? 'main';
+    const activeForkId = topic.activeForkId ?? "main";
 
     const allMessages = await athenaDb.messages
-      .where('topicId')
+      .where("topicId")
       .equals(topicId)
       .and((m) => m.forkId === activeForkId)
       .toArray();
@@ -137,10 +137,10 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     for (const m of sorted) {
       if (m.isDeleted) continue;
 
-      if (m.type === 'user') {
+      if (m.type === "user") {
         userMessageMap.set(m.id, m);
         activeSequence.push(m);
-      } else if (m.type === 'assistant') {
+      } else if (m.type === "assistant") {
         if (m.parentMessageId) {
           const parent = userMessageMap.get(m.parentMessageId);
           // Only include if it's the active response for its parent
@@ -154,10 +154,12 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       }
     }
 
-    const recent = activeSequence.filter((m) => m.type === 'user' || m.type === 'assistant').slice(-(topic.maxContextMessages ?? 10));
+    const recent = activeSequence
+      .filter((m) => m.type === "user" || m.type === "assistant")
+      .slice(-(topic.maxContextMessages ?? 10));
 
     const pinned = allMessages.filter((m) => m.includeInContext);
-    const aiNotes = allMessages.filter((m) => m.type === 'aiNote');
+    const aiNotes = allMessages.filter((m) => m.type === "aiNote");
 
     const combined = [...pinned, ...recent, ...aiNotes];
     const unique = Array.from(new Map(combined.map((m) => [m.id, m])).values());
@@ -170,9 +172,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     const topic = topics.find((t) => t.id === topicId);
     const { openAiKey } = useAuthStore.getState();
 
-    if (!topic || topic.name !== 'New Topic') return;
+    if (!topic || topic.name !== "New Topic") return;
     if (!openAiKey) {
-      useNotificationStore.getState().addNotification('Missing OpenAI key', 'Cannot generate topic name');
+      useNotificationStore.getState().addNotification("Missing OpenAI key", "Cannot generate topic name");
       return;
     }
 
@@ -180,11 +182,11 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       const result = await sendOpenAiChat(
         [
           {
-            role: 'system',
-            content: 'Reply with a short and descriptive title for the message. No explanation. Just the title.',
+            role: "system",
+            content: "Reply with a short and descriptive title for the message. No explanation. Just the title.",
           },
           {
-            role: 'user',
+            role: "user",
             content: `Suggest a short title for this message:\n\n"${userMessage}"`,
           },
         ],
@@ -197,9 +199,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         await renameTopic(topicId, name);
       }
     } catch (err) {
-      console.error('Failed to generate topic name', err);
+      console.error("Failed to generate topic name", err);
       const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('Failed to generate topic name', message);
+      useNotificationStore.getState().addNotification("Failed to generate topic name", message);
     }
   },
 
@@ -210,9 +212,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         topics: state.topics.filter((t) => t.id !== id),
       }));
     } catch (err) {
-      console.error('Failed to delete topic', err);
+      console.error("Failed to delete topic", err);
       const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('Failed to delete topic', message);
+      useNotificationStore.getState().addNotification("Failed to delete topic", message);
     }
   },
 
@@ -223,9 +225,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         topics: state.topics.map((t) => (t.id === topicId ? { ...t, activeForkId: forkId } : t)),
       }));
     } catch (err) {
-      console.error('Failed to switch fork', err);
+      console.error("Failed to switch fork", err);
       const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('Failed to switch tab', message);
+      useNotificationStore.getState().addNotification("Failed to switch tab", message);
     }
   },
 
@@ -234,9 +236,16 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       const originalTopic = get().topics.find((t) => t.id === topicId);
       if (!originalTopic) return;
 
-      const currentForkId = originalTopic.activeForkId ?? 'main';
+      const currentForkId = originalTopic.activeForkId ?? "main";
       const newForkId = crypto.randomUUID();
-      const newForkName = `Fork ${originalTopic.forks?.length ?? 1}`;
+      const existingForks = originalTopic.forks ?? [];
+
+      // If this topic has never been forked, bootstrap the implicit "main" fork
+      // so the ForkTabs component (which requires length > 1) will render.
+      const baseForks =
+        existingForks.length === 0 ? [{ id: "main", name: "Main", createdOn: originalTopic.createdOn }] : existingForks;
+
+      const newForkName = `Fork ${baseForks.length}`;
 
       const newFork = {
         id: newForkId,
@@ -244,12 +253,12 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         createdOn: new Date().toISOString(),
       };
 
-      const updatedForks = [...(originalTopic.forks ?? []), newFork];
+      const updatedForks = [...baseForks, newFork];
 
       // 1. Query and prepare messages BEFORE touching state, so the reactive
       //    fetchMessages in ChatView always finds the copied messages in the DB.
       const allMessages = await athenaDb.messages
-        .where('topicId')
+        .where("topicId")
         .equals(topicId)
         .and((m) => m.forkId === currentForkId)
         .toArray();
@@ -278,7 +287,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       // 2. Write messages + topic update atomically, THEN update React state.
       //    This prevents the reactive fetchMessages (triggered by activeForkId
       //    changing in state) from running before the messages are in the DB.
-      await athenaDb.transaction('rw', [athenaDb.topics, athenaDb.messages], async () => {
+      await athenaDb.transaction("rw", [athenaDb.topics, athenaDb.messages], async () => {
         if (newMessages.length > 0) {
           await athenaDb.messages.bulkAdd(newMessages);
         }
@@ -292,12 +301,14 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       // 3. Update Zustand state — this triggers ChatView's useEffect which now
       //    safely calls fetchMessages with data already present in the DB.
       set((state) => ({
-        topics: state.topics.map((t) => (t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newForkId } : t)),
+        topics: state.topics.map((t) =>
+          t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newForkId } : t,
+        ),
       }));
     } catch (err) {
-      console.error('Failed to fork topic', err);
+      console.error("Failed to fork topic", err);
       const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('Failed to fork topic', message);
+      useNotificationStore.getState().addNotification("Failed to fork topic", message);
     }
   },
 
@@ -321,19 +332,21 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       });
 
       set((state) => ({
-        topics: state.topics.map((t) => (t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newActiveForkId } : t)),
+        topics: state.topics.map((t) =>
+          t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newActiveForkId } : t,
+        ),
       }));
 
       // Delete messages unique to this fork
       await athenaDb.messages
-        .where('topicId')
+        .where("topicId")
         .equals(topicId)
         .and((m) => m.forkId === forkId)
         .delete();
     } catch (err) {
-      console.error('Failed to delete fork', err);
+      console.error("Failed to delete fork", err);
       const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('Failed to delete branch', message);
+      useNotificationStore.getState().addNotification("Failed to delete branch", message);
     }
   },
   getTopicTokenCount: async (topicId: string): Promise<number> => {
@@ -352,7 +365,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     // 2. Scratchpad System Message
     let scratchpadSystemMsg = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). To append a note to it, include \`<!-- persist: your note here -->\` in your response. To replace the entire scratchpad, use \`<!-- replace: your new content here -->\`. Use the scratchpad to remember key facts, character details, or state during games.`;
     if (topic?.scratchpad) {
-      scratchpadSystemMsg += '\n\n[Current Scratchpad Content]:\n' + topic.scratchpad;
+      scratchpadSystemMsg += "\n\n[Current Scratchpad Content]:\n" + topic.scratchpad;
     }
     totalTokens += encode(`system: ${scratchpadSystemMsg}`).length;
 
@@ -368,7 +381,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     return totalTokens;
   },
   getTopicTotalCost: async (topicId: string): Promise<number> => {
-    const allMessages = await athenaDb.messages.where('topicId').equals(topicId).toArray();
+    const allMessages = await athenaDb.messages.where("topicId").equals(topicId).toArray();
     return allMessages.reduce((sum, msg) => sum + (msg.totalCost || 0), 0);
   },
   updateTopicMaxContextMessages: async (id, maxContextMessages): Promise<void> => {
@@ -378,9 +391,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         topics: state.topics.map((t) => (t.id === id ? { ...t, maxContextMessages } : t)),
       }));
     } catch (err) {
-      console.error('Failed to update topic max context messages', err);
+      console.error("Failed to update topic max context messages", err);
       const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('Failed to update context limit', message);
+      useNotificationStore.getState().addNotification("Failed to update context limit", message);
     }
   },
   updateTopicChaining: async (id, isChaining, secondModelId): Promise<void> => {
@@ -390,9 +403,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         topics: state.topics.map((t) => (t.id === id ? { ...t, isChaining, secondModelId } : t)),
       }));
     } catch (err) {
-      console.error('Failed to update topic chaining settings', err);
+      console.error("Failed to update topic chaining settings", err);
       const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('Failed to update chaining settings', message);
+      useNotificationStore.getState().addNotification("Failed to update chaining settings", message);
     }
   },
 }));

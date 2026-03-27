@@ -1,13 +1,13 @@
-import { create } from 'zustand';
-import { calculateCostSEK, ChatModel, getDefaultModel, chatModels } from '../components/ModelSelector';
-import { useTopicStore } from './TopicStore';
-import { orchestrateLlmLoop, LlmMessage } from '../services/llmService';
-import { Message } from '../database/AthenaDb';
-import { athenaDb } from '../database/AthenaDb';
-import { useNotificationStore } from './NotificationStore';
-import { BackupService } from '../services/backupService';
+import { create } from "zustand";
+import { calculateCostSEK, ChatModel, getDefaultModel, chatModels } from "../components/ModelSelector";
+import { useTopicStore } from "./TopicStore";
+import { orchestrateLlmLoop, LlmMessage } from "../services/llmService";
+import { Message } from "../database/AthenaDb";
+import { athenaDb } from "../database/AthenaDb";
+import { useNotificationStore } from "./NotificationStore";
+import { BackupService } from "../services/backupService";
 
-import { SCRATCHPAD_LIMIT } from '../constants';
+import { SCRATCHPAD_LIMIT } from "../constants";
 
 interface ChatStore {
   messagesByTopic: Record<string, Message[] | undefined>;
@@ -69,7 +69,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setInitialLoad: (value: boolean): void => set({ isInitialLoad: value }),
 
   setSelectedModel: (model: ChatModel): void => {
-    localStorage.setItem('athena_selected_model', model.id);
+    localStorage.setItem("athena_selected_model", model.id);
     set({ selectedModel: model });
   },
 
@@ -82,7 +82,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
-  secondModel: chatModels.find((m) => m.id.includes('mini') || m.id.includes('flash')) ?? chatModels[0],
+  secondModel: chatModels.find((m) => m.id.includes("mini") || m.id.includes("flash")) ?? chatModels[0],
   setSecondModel: (model: ChatModel): void => {
     const { currentTopicId, isChaining } = get();
     set({ secondModel: model });
@@ -105,13 +105,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   fetchMessages: async (topicId: string, forkId?: string): Promise<void> => {
     const topic = useTopicStore.getState().topics.find((t) => t.id === topicId);
-    const activeForkId = forkId ?? topic?.activeForkId ?? 'main';
+    const activeForkId = forkId ?? topic?.activeForkId ?? "main";
 
     const all = await athenaDb.messages
-      .where('topicId')
+      .where("topicId")
       .equals(topicId)
       .and((m) => m.forkId === activeForkId)
-      .sortBy('created');
+      .sortBy("created");
 
     set((state) => ({
       messagesByTopic: { ...state.messagesByTopic, [topicId]: all },
@@ -129,7 +129,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { currentTopicId, messagesByTopic } = get();
     if (!currentTopicId) return;
 
-    const updated = (messagesByTopic[currentTopicId] ?? []).map((m) => (m.id === id ? { ...m, includeInContext: include } : m));
+    const updated = (messagesByTopic[currentTopicId] ?? []).map((m) =>
+      m.id === id ? { ...m, includeInContext: include } : m,
+    );
 
     set({ messagesByTopic: { ...messagesByTopic, [currentTopicId]: updated } });
   },
@@ -236,19 +238,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     let userMessage: Message;
     const topic = topicStoreState.topics.find((t) => t.id === topicId);
-    const activeForkId = topic?.activeForkId ?? 'main';
+    const activeForkId = topic?.activeForkId ?? "main";
 
     // 1. Handle User Message
     if (isRetry) {
       const existing = await athenaDb.messages.get(messageId);
-      if (!existing) throw new Error('Original message not found for retry.');
+      if (!existing) throw new Error("Original message not found for retry.");
       userMessage = existing;
     } else {
       userMessage = {
         id: crypto.randomUUID(),
         topicId,
         forkId: activeForkId,
-        type: 'user',
+        type: "user",
         content: content.trim(),
         created: now,
         model: undefined,
@@ -265,7 +267,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const existingContext = await topicStoreState.getTopicContext(topicId);
 
     const llmContext: LlmMessage[] = existingContext.map((m) => ({
-      role: m.type === 'user' ? 'user' : m.type === 'assistant' ? 'assistant' : 'system',
+      role: m.type === "user" ? "user" : m.type === "assistant" ? "assistant" : "system",
       content: m.content,
       reasoning_content: m.reasoning,
     }));
@@ -279,13 +281,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 * **Managing space:** If the scratchpad is getting full or contains outdated facts (e.g., a goal was completed, or a preference changed), use the \`replace\` action to rewrite the entire scratchpad, keeping only the currently relevant facts and discarding the dead ones.
 
 [Current Scratchpad Content]:
-${topic?.scratchpad ?? '(Empty)'}`;
+${topic?.scratchpad ?? "(Empty)"}`;
 
     if (selectedModel.supportsTools) {
-      systems.push({ role: 'system', content: scratchpadRules });
+      systems.push({ role: "system", content: scratchpadRules });
     } else {
       systems.push({
-        role: 'system',
+        role: "system",
         content: `${scratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`,
       });
     }
@@ -293,7 +295,7 @@ ${topic?.scratchpad ?? '(Empty)'}`;
     llmContext.unshift(...systems);
 
     // Add current user message to context before calling loop
-    llmContext.push({ role: 'user', content: userMessage.content });
+    llmContext.push({ role: "user", content: userMessage.content });
 
     // 3. Prepare Assistant Message
     const assistantId = crypto.randomUUID();
@@ -301,8 +303,8 @@ ${topic?.scratchpad ?? '(Empty)'}`;
       id: assistantId,
       topicId,
       forkId: activeForkId,
-      type: 'assistant',
-      content: '',
+      type: "assistant",
+      content: "",
       created: new Date().toISOString(),
       model: selectedModel.id,
       isDeleted: false,
@@ -316,7 +318,7 @@ ${topic?.scratchpad ?? '(Empty)'}`;
 
     try {
       // Create initial DB state in a single transaction
-      await athenaDb.transaction('rw', athenaDb.messages, async () => {
+      await athenaDb.transaction("rw", athenaDb.messages, async () => {
         if (isRetry) {
           await athenaDb.messages.update(userMessage.id, { failed: false });
         } else {
@@ -332,7 +334,9 @@ ${topic?.scratchpad ?? '(Empty)'}`;
         let updated = [...existingMessages];
 
         if (isRetry) {
-          updated = updated.map((m) => (m.id === userMessage.id ? { ...m, failed: false, activeResponseId: assistantId } : m));
+          updated = updated.map((m) =>
+            m.id === userMessage.id ? { ...m, failed: false, activeResponseId: assistantId } : m,
+          );
         } else {
           updated.push(userMessage);
         }
@@ -348,18 +352,18 @@ ${topic?.scratchpad ?? '(Empty)'}`;
       });
 
       const loopStartTime = Date.now();
-      let streamedContent = '';
+      let streamedContent = "";
       let lastRenderTime = 0;
       const RENDER_THROTTLE_MS = 64; // ~15fps for smooth but efficient UI
 
-      let streamedReasoning = '';
+      let streamedReasoning = "";
       const onTokenCallback = (chunk: string): void => {
         streamedContent += chunk;
         const now = Date.now();
         if (now - lastRenderTime > RENDER_THROTTLE_MS) {
           const displayContent = streamedContent
-            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
-            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '');
+            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
           get().updateMessageStateOnly(assistantId, { content: displayContent });
           lastRenderTime = now;
         }
@@ -381,10 +385,10 @@ ${topic?.scratchpad ?? '(Empty)'}`;
         llmContext,
         onTokenCallback,
         onReasoningCallback,
-        async (aiNote: string, action: 'append' | 'replace') => {
-          const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? '';
-          let updatedScratchpad = '';
-          if (action === 'replace') {
+        async (aiNote: string, action: "append" | "replace") => {
+          const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
+          let updatedScratchpad = "";
+          if (action === "replace") {
             updatedScratchpad = aiNote;
           } else {
             updatedScratchpad = currentScratchpad ? `${currentScratchpad}\n${aiNote}` : aiNote;
@@ -397,24 +401,34 @@ ${topic?.scratchpad ?? '(Empty)'}`;
         controller.signal,
       );
 
-      let finalContent = primaryResult.finalContent;
-      let finalReasoning = primaryResult.lastResult.reasoning ?? '';
-      let totalPromptTokens = primaryResult.totalPromptTokens;
-      let totalCompletionTokens = primaryResult.totalCompletionTokens;
+      const finalContent = primaryResult.finalContent;
+      const finalReasoning = primaryResult.lastResult.reasoning ?? "";
+      const totalPromptTokens = primaryResult.totalPromptTokens;
+      const totalCompletionTokens = primaryResult.totalCompletionTokens;
       const lastResult = primaryResult.lastResult;
-      let finalTotalCost = calculateCostSEK(selectedModel, totalPromptTokens, totalCompletionTokens, lastResult.promptTokensDetails);
+      const finalTotalCost = calculateCostSEK(
+        selectedModel,
+        totalPromptTokens,
+        totalCompletionTokens,
+        lastResult.promptTokensDetails,
+      );
 
       // 5. If Chaining is enabled, stream the second model as a separate response version
       if (get().isChaining && !controller.signal.aborted) {
         const secondModel = get().secondModel;
-        const firstCost = calculateCostSEK(selectedModel, totalPromptTokens, totalCompletionTokens, lastResult.promptTokensDetails);
+        const firstCost = calculateCostSEK(
+          selectedModel,
+          totalPromptTokens,
+          totalCompletionTokens,
+          lastResult.promptTokensDetails,
+        );
         const firstLatencyMs = Date.now() - loopStartTime;
 
         // 5a. Finalize the first assistant message immediately with the primary result
         const firstAssistantPatch = {
           content: finalContent
-            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
-            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
+            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
             .trim(),
           reasoning: finalReasoning.trim(),
           completionTokens: totalCompletionTokens,
@@ -432,8 +446,8 @@ ${topic?.scratchpad ?? '(Empty)'}`;
           id: secondAssistantId,
           topicId,
           forkId: activeForkId,
-          type: 'assistant',
-          content: '',
+          type: "assistant",
+          content: "",
           created: new Date().toISOString(),
           model: secondModel.id,
           isDeleted: false,
@@ -445,7 +459,7 @@ ${topic?.scratchpad ?? '(Empty)'}`;
           parentMessageId: userMessage.id,
         };
 
-        await athenaDb.transaction('rw', athenaDb.messages, async () => {
+        await athenaDb.transaction("rw", athenaDb.messages, async () => {
           await athenaDb.messages.add(secondAssistantMessage);
           await athenaDb.messages.update(userMessage.id, { activeResponseId: secondAssistantId });
         });
@@ -468,19 +482,19 @@ ${topic?.scratchpad ?? '(Empty)'}`;
           "You are an expert quality-assurance AI. Your task is to review a drafted response to a user's prompt and improve it. Correct any factual, logical, or grammatical errors. Ensure the formatting is clean and the tone matches the user's original intent. If the draft contains code, ensure it is syntactically correct and complete. Do not unnecessarily rewrite accurate content. Provide ONLY the final, polished response without any introductory or concluding meta-text.";
 
         const reviewMessages: LlmMessage[] = [
-          { role: 'system', content: reviewerPrompt },
+          { role: "system", content: reviewerPrompt },
           ...llmContext.map((m) => ({
             role: m.role,
             content: m.content,
           })),
           {
-            role: 'user',
+            role: "user",
             content: `Draft response to review and polish:\n${primaryResult.finalContent}`,
           },
         ];
 
-        let reviewerStreamedContent = '';
-        let reviewerStreamedReasoning = '';
+        let reviewerStreamedContent = "";
+        let reviewerStreamedReasoning = "";
         const onReviewerTokenCallback = (chunk: string): void => {
           reviewerStreamedContent += chunk;
           const now = Date.now();
@@ -518,11 +532,16 @@ ${topic?.scratchpad ?? '(Empty)'}`;
           reviewerFinalContent = reviewerResult.finalContent;
           reviewerPromptTokens = reviewerResult.totalPromptTokens;
           reviewerCompletionTokens = reviewerResult.totalCompletionTokens;
-          reviewerCost = calculateCostSEK(secondModel, reviewerPromptTokens, reviewerCompletionTokens, reviewerResult.lastResult.promptTokensDetails);
+          reviewerCost = calculateCostSEK(
+            secondModel,
+            reviewerPromptTokens,
+            reviewerCompletionTokens,
+            reviewerResult.lastResult.promptTokensDetails,
+          );
         } catch (err) {
-          console.error('Reviewer model failed:', err);
+          console.error("Reviewer model failed:", err);
           const errMsg = err instanceof Error ? err.message : String(err);
-          useNotificationStore.getState().addNotification('Reviewer failed', errMsg);
+          useNotificationStore.getState().addNotification("Reviewer failed", errMsg);
         }
 
         // 5d. Finalize both messages
@@ -533,18 +552,18 @@ ${topic?.scratchpad ?? '(Empty)'}`;
         };
         const secondAssistantPatch = {
           content: reviewerFinalContent
-            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
-            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
+            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
             .trim(),
           reasoning: reviewerStreamedReasoning.trim(),
           completionTokens: reviewerCompletionTokens,
           totalCost: reviewerCost,
-          failed: reviewerFinalContent === '',
+          failed: reviewerFinalContent === "",
           latencyMs: Date.now() - loopStartTime - firstLatencyMs,
           model: secondModel.id,
         };
 
-        await athenaDb.transaction('rw', athenaDb.messages, async () => {
+        await athenaDb.transaction("rw", athenaDb.messages, async () => {
           await athenaDb.messages.update(userMessage.id, chainedUserPatch);
           await athenaDb.messages.update(secondAssistantId, secondAssistantPatch);
         });
@@ -574,8 +593,8 @@ ${topic?.scratchpad ?? '(Empty)'}`;
       };
       const assistantPatch = {
         content: finalContent
-          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
-          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
+          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
+          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
           .trim(),
         reasoning: finalReasoning.trim(),
         completionTokens: totalCompletionTokens,
@@ -585,7 +604,7 @@ ${topic?.scratchpad ?? '(Empty)'}`;
         model: selectedModel.id,
       };
 
-      await athenaDb.transaction('rw', athenaDb.messages, async () => {
+      await athenaDb.transaction("rw", athenaDb.messages, async () => {
         await athenaDb.messages.update(userMessage.id, userPatch);
         await athenaDb.messages.update(assistantId, assistantPatch);
       });
@@ -604,12 +623,12 @@ ${topic?.scratchpad ?? '(Empty)'}`;
 
       void topicStoreState.generateTopicName(topicId, content);
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (err instanceof Error && err.name === "AbortError") {
         return;
       }
-      console.error('LLM request failed', err);
+      console.error("LLM request failed", err);
       const msg = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification('LLM request failed', msg);
+      useNotificationStore.getState().addNotification("LLM request failed", msg);
 
       await get().updateMessage(userMessage.id, { failed: true });
       await get().updateMessage(assistantId, { isDeleted: true });
@@ -644,7 +663,7 @@ ${topic?.scratchpad ?? '(Empty)'}`;
     const userMsg = messages
       .slice(0, assistantMsgIndex)
       .reverse()
-      .find((m) => m.type === 'user');
+      .find((m) => m.type === "user");
 
     if (!userMsg) return;
 
@@ -674,7 +693,9 @@ ${topic?.scratchpad ?? '(Empty)'}`;
         currentRequestMessageIds: null,
         messagesByTopic: {
           ...state.messagesByTopic,
-          [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? []).filter((m) => m.id !== userMessageId && m.id !== assistantMessageId),
+          [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? []).filter(
+            (m) => m.id !== userMessageId && m.id !== assistantMessageId,
+          ),
         },
       }));
 
