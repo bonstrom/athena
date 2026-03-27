@@ -1,10 +1,17 @@
 import { create } from "zustand";
-import { calculateCostSEK, ChatModel, getDefaultModel, chatModels } from "../components/ModelSelector";
+import {
+  calculateCostSEK,
+  ChatModel,
+  getDefaultModel,
+  getDefaultSecondModel,
+  chatModels,
+} from "../components/ModelSelector";
 import { useTopicStore } from "./TopicStore";
 import { orchestrateLlmLoop, LlmMessage } from "../services/llmService";
 import { Message } from "../database/AthenaDb";
 import { athenaDb } from "../database/AthenaDb";
 import { useNotificationStore } from "./NotificationStore";
+import { useAuthStore } from "./AuthStore";
 import { BackupService } from "../services/backupService";
 
 import { SCRATCHPAD_LIMIT } from "../constants";
@@ -82,7 +89,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
-  secondModel: chatModels.find((m) => m.id.includes("mini") || m.id.includes("flash")) ?? chatModels[0],
+  secondModel: getDefaultSecondModel(),
   setSecondModel: (model: ChatModel): void => {
     const { currentTopicId, isChaining } = get();
     set({ secondModel: model });
@@ -353,28 +360,29 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
       const loopStartTime = Date.now();
       let streamedContent = "";
-      let lastRenderTime = 0;
+      let lastContentRenderTime = 0;
+      let lastReasoningRenderTime = 0;
       const RENDER_THROTTLE_MS = 64; // ~15fps for smooth but efficient UI
 
       let streamedReasoning = "";
       const onTokenCallback = (chunk: string): void => {
         streamedContent += chunk;
         const now = Date.now();
-        if (now - lastRenderTime > RENDER_THROTTLE_MS) {
+        if (now - lastContentRenderTime > RENDER_THROTTLE_MS) {
           const displayContent = streamedContent
             .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
             .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
           get().updateMessageStateOnly(assistantId, { content: displayContent });
-          lastRenderTime = now;
+          lastContentRenderTime = now;
         }
       };
 
       const onReasoningCallback = (token: string): void => {
         streamedReasoning += token;
         const now = Date.now();
-        if (now - lastRenderTime > RENDER_THROTTLE_MS) {
+        if (now - lastReasoningRenderTime > RENDER_THROTTLE_MS) {
           get().updateMessageStateOnly(assistantId, { reasoning: streamedReasoning.trim() });
-          lastRenderTime = now;
+          lastReasoningRenderTime = now;
         }
       };
 
@@ -440,7 +448,8 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         await athenaDb.messages.update(assistantId, firstAssistantPatch);
         get().updateMessageStateOnly(assistantId, firstAssistantPatch);
 
-        // 5b. Create the second assistant message and make it the active response
+        // 5b. Create the second assistant message, seeding it with the primary's
+        //     reasoning so it's visible immediately in the active bubble.
         const secondAssistantId = crypto.randomUUID();
         const secondAssistantMessage: Message = {
           id: secondAssistantId,
@@ -448,6 +457,8 @@ ${topic?.scratchpad ?? "(Empty)"}`;
           forkId: activeForkId,
           type: "assistant",
           content: "",
+          // Pre-populate with primary reasoning so user sees it while reviewer streams
+          reasoning: finalReasoning.trim() || undefined,
           created: new Date().toISOString(),
           model: secondModel.id,
           isDeleted: false,
@@ -495,21 +506,25 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
         let reviewerStreamedContent = "";
         let reviewerStreamedReasoning = "";
+        // Use independent render timers for the reviewer so content and reasoning
+        // don't starve each other during fast streaming.
+        let reviewerLastContentRenderTime = 0;
+        let reviewerLastReasoningRenderTime = 0;
         const onReviewerTokenCallback = (chunk: string): void => {
           reviewerStreamedContent += chunk;
           const now = Date.now();
-          if (now - lastRenderTime > RENDER_THROTTLE_MS) {
+          if (now - reviewerLastContentRenderTime > RENDER_THROTTLE_MS) {
             get().updateMessageStateOnly(secondAssistantId, { content: reviewerStreamedContent.trim() });
-            lastRenderTime = now;
+            reviewerLastContentRenderTime = now;
           }
         };
 
         const onReviewerReasoningCallback = (chunk: string): void => {
           reviewerStreamedReasoning += chunk;
           const now = Date.now();
-          if (now - lastRenderTime > RENDER_THROTTLE_MS) {
+          if (now - reviewerLastReasoningRenderTime > RENDER_THROTTLE_MS) {
             get().updateMessageStateOnly(secondAssistantId, { reasoning: reviewerStreamedReasoning.trim() });
-            lastRenderTime = now;
+            reviewerLastReasoningRenderTime = now;
           }
         };
 
@@ -519,6 +534,24 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         let reviewerCost = 0;
 
         try {
+          // Preflight: ensure the reviewer model's provider has a configured API key.
+          // If not, skip the reviewer rather than crashing with "Failed to fetch".
+          const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore.getState();
+          const hasKey =
+            (secondModel.provider === "openai" && !!openAiKey) ||
+            (secondModel.provider === "deepseek" && !!deepSeekKey) ||
+            (secondModel.provider === "google" && !!googleApiKey) ||
+            (secondModel.provider === "moonshot" && !!moonshotApiKey);
+          if (!hasKey) {
+            useNotificationStore
+              .getState()
+              .addNotification(
+                "Reviewer skipped",
+                `No API key configured for reviewer model "${secondModel.label}". Please select a different reviewer model.`,
+              );
+            throw new Error(`No API key for reviewer model provider: ${secondModel.provider}`);
+          }
+
           const reviewerResult = await orchestrateLlmLoop(
             secondModel,
             get().temperature,
@@ -555,7 +588,9 @@ ${topic?.scratchpad ?? "(Empty)"}`;
             .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
             .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
             .trim(),
-          reasoning: reviewerStreamedReasoning.trim(),
+          // If the reviewer emits no reasoning, preserve the primary model's reasoning
+          // that was seeded into the bubble so the user still sees the thinking output.
+          reasoning: reviewerStreamedReasoning.trim() || finalReasoning.trim() || undefined,
           completionTokens: reviewerCompletionTokens,
           totalCost: reviewerCost,
           failed: reviewerFinalContent === "",
