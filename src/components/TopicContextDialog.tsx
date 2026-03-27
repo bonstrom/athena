@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -19,15 +19,15 @@ import {
   Pagination,
   Stack,
   Chip,
-} from "@mui/material";
-import SearchIcon from "@mui/icons-material/Search";
-import PushPinIcon from "@mui/icons-material/PushPin";
-import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
+} from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
+import PushPinIcon from '@mui/icons-material/PushPin';
+import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 
-import { useChatStore } from "../store/ChatStore";
-import { Message } from "../database/AthenaDb";
-import { useNotificationStore } from "../store/NotificationStore";
-import { useTopicStore } from "../store/TopicStore";
+import { useChatStore } from '../store/ChatStore';
+import { Message } from '../database/AthenaDb';
+import { useNotificationStore } from '../store/NotificationStore';
+import { useTopicStore } from '../store/TopicStore';
 
 interface TopicContextDialogProps {
   open: boolean;
@@ -43,7 +43,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
   const [loading, setLoading] = useState(false);
 
   // New State for search and pagination
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState('');
   const [showOnlyPinned, setShowOnlyPinned] = useState(false);
   const [page, setPage] = useState(1);
 
@@ -65,9 +65,9 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
         setSelectedIds(new Set(pinned));
       })
       .catch((err) => {
-        console.error("Failed to load context", err);
+        console.error('Failed to load context', err);
         const message = err instanceof Error ? err.message : String(err);
-        addNotification("Failed to load context", message);
+        addNotification('Failed to load context', message);
       })
       .finally(() => setLoading(false));
   }, [addNotification, open, topicId]);
@@ -77,12 +77,12 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
     setPage(1);
   }, [searchQuery, showOnlyPinned]);
 
-  const toggleMessage = (id: string): void => {
+  const toggleMessage = async (id: string): Promise<void> => {
     const isSelected = selectedIds.has(id);
     const newValue = !isSelected;
 
     try {
-      void updateMessageContext(id, newValue);
+      await updateMessageContext(id, newValue);
       setSelectedIds((prev) => {
         const next = new Set(prev);
         if (newValue) {
@@ -93,9 +93,9 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
         return next;
       });
     } catch (err) {
-      console.error("Failed to update context pin:", err);
+      console.error('Failed to update context pin:', err);
       const message = err instanceof Error ? err.message : String(err);
-      addNotification("Failed to update context pin", message);
+      addNotification('Failed to update context pin', message);
     }
   };
 
@@ -116,29 +116,29 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
 
   const formatTime = (dateString: string): string => {
     try {
-      return new Intl.DateTimeFormat("en-US", {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
+      return new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
       }).format(new Date(dateString));
     } catch {
-      return "";
+      return '';
     }
   };
 
   const getRoleLabel = (type: string): string => {
     switch (type) {
-      case "user":
-        return "User";
-      case "assistant":
-        return "Assistant";
-      case "aiNote":
-        return "AI Note";
-      case "system":
-        return "System";
+      case 'user':
+        return 'User';
+      case 'assistant':
+        return 'Assistant';
+      case 'aiNote':
+        return 'AI Note';
+      case 'system':
+        return 'System';
       default:
-        return "Unknown";
+        return 'Unknown';
     }
   };
 
@@ -152,19 +152,14 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
       PaperProps={{
         sx: {
           borderRadius: 3,
-          bgcolor: "background.paper",
-          backgroundImage: "none",
+          bgcolor: 'background.paper',
+          backgroundImage: 'none',
         },
-      }}>
-      <DialogTitle sx={{ pb: 1, fontWeight: "bold" }}>Edit Topic Context</DialogTitle>
+      }}
+    >
+      <DialogTitle sx={{ pb: 1, fontWeight: 'bold' }}>Edit Topic Context</DialogTitle>
 
-      <Box
-        px={3}
-        pb={2}
-        display="flex"
-        gap={2}
-        alignItems="center"
-        flexWrap="wrap">
+      <Box px={3} pb={2} display="flex" gap={2} alignItems="center" flexWrap="wrap">
         <TextField
           size="small"
           placeholder="Search items..."
@@ -180,94 +175,55 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
           sx={{ flexGrow: 1, minWidth: 200 }}
         />
         <FormControlLabel
-          control={
-            <Switch
-              checked={showOnlyPinned}
-              onChange={(e): void => setShowOnlyPinned(e.target.checked)}
-              color="primary"
-            />
-          }
+          control={<Switch checked={showOnlyPinned} onChange={(e): void => setShowOnlyPinned(e.target.checked)} color="primary" />}
           label="Show Pinned Only"
-          sx={{ whiteSpace: "nowrap" }}
+          sx={{ whiteSpace: 'nowrap' }}
         />
       </Box>
 
-      <DialogContent
-        dividers
-        sx={{ minHeight: 400, px: { xs: 2, sm: 3 } }}>
+      <DialogContent dividers sx={{ minHeight: 400, px: { xs: 2, sm: 3 } }}>
         {loading ? (
-          <Box
-            display="flex"
-            justifyContent="center"
-            alignItems="center"
-            height="100%">
+          <Box display="flex" justifyContent="center" alignItems="center" height="100%">
             <CircularProgress />
           </Box>
         ) : filteredMessages.length === 0 ? (
-          <Box
-            display="flex"
-            justifyContent="center"
-            alignItems="center"
-            height="100%"
-            color="text.secondary">
+          <Box display="flex" justifyContent="center" alignItems="center" height="100%" color="text.secondary">
             <Typography>No messages match your criteria.</Typography>
           </Box>
         ) : (
           <List disablePadding>
             {paginatedMessages.map((msg) => (
-              <ListItem
-                key={msg.id}
-                disableGutters
-                sx={{ mb: 2 }}>
+              <ListItem key={msg.id} disableGutters sx={{ mb: 2 }}>
                 <Paper
                   elevation={0}
                   sx={{
-                    position: "relative",
-                    width: "100%",
+                    position: 'relative',
+                    width: '100%',
                     p: 2,
                     borderRadius: 3,
                     border: (theme): string => `1px solid ${theme.palette.divider}`,
                     bgcolor: (theme): string => {
-                      if (msg.type === "assistant")
-                        return theme.palette.mode === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)";
-                      if (msg.type === "aiNote")
-                        return theme.palette.mode === "dark" ? "rgba(255, 167, 38, 0.05)" : "rgba(255, 167, 38, 0.05)";
-                      if (msg.type === "system")
-                        return theme.palette.mode === "dark" ? "rgba(244, 67, 54, 0.05)" : "rgba(244, 67, 54, 0.05)";
-                      return "transparent";
+                      if (msg.type === 'assistant') return theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)';
+                      if (msg.type === 'aiNote') return theme.palette.mode === 'dark' ? 'rgba(255, 167, 38, 0.05)' : 'rgba(255, 167, 38, 0.05)';
+                      if (msg.type === 'system') return theme.palette.mode === 'dark' ? 'rgba(244, 67, 54, 0.05)' : 'rgba(244, 67, 54, 0.05)';
+                      return 'transparent';
                     },
-                    transition: "border-color 0.2s, box-shadow 0.2s",
+                    transition: 'border-color 0.2s, box-shadow 0.2s',
                     ...(selectedIds.has(msg.id) && {
-                      borderColor: "primary.main",
+                      borderColor: 'primary.main',
                       boxShadow: (theme): string => `0 0 0 1px ${theme.palette.primary.main}`,
                     }),
-                  }}>
-                  <Box
-                    display="flex"
-                    justifyContent="space-between"
-                    alignItems="center"
-                    mb={1}>
-                    <Stack
-                      direction="row"
-                      spacing={1}
-                      alignItems="center">
+                  }}
+                >
+                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                    <Stack direction="row" spacing={1} alignItems="center">
                       <Chip
                         label={getRoleLabel(msg.type)}
                         size="small"
-                        color={
-                          msg.type === "user"
-                            ? "primary"
-                            : msg.type === "assistant"
-                              ? "default"
-                              : msg.type === "aiNote"
-                                ? "warning"
-                                : "error"
-                        }
-                        sx={{ height: 20, fontSize: "0.7rem", fontWeight: "bold" }}
+                        color={msg.type === 'user' ? 'primary' : msg.type === 'assistant' ? 'default' : msg.type === 'aiNote' ? 'warning' : 'error'}
+                        sx={{ height: 20, fontSize: '0.7rem', fontWeight: 'bold' }}
                       />
-                      <Typography
-                        variant="caption"
-                        color="text.secondary">
+                      <Typography variant="caption" color="text.secondary">
                         {formatTime(msg.created)}
                       </Typography>
                     </Stack>
@@ -277,7 +233,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
                       checkedIcon={<PushPinIcon />}
                       checked={selectedIds.has(msg.id)}
                       onChange={(): void => {
-                        toggleMessage(msg.id);
+                        void toggleMessage(msg.id);
                       }}
                       tabIndex={-1}
                       color="primary"
@@ -288,12 +244,13 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
                     variant="body2"
                     color="text.primary"
                     sx={{
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                      overflowWrap: "anywhere",
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      overflowWrap: 'anywhere',
                       lineHeight: 1.5,
-                    }}>
-                    {msg.content.length > 300 ? msg.content.slice(0, 300) + "..." : msg.content}
+                    }}
+                  >
+                    {msg.content.length > 300 ? msg.content.slice(0, 300) + '...' : msg.content}
                   </Typography>
                 </Paper>
               </ListItem>
@@ -302,22 +259,13 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
         )}
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, py: 2, justifyContent: "space-between" }}>
+      <DialogActions sx={{ px: 3, py: 2, justifyContent: 'space-between' }}>
         <Box>
           {!loading && pageCount > 1 && (
-            <Pagination
-              count={pageCount}
-              page={page}
-              onChange={(_, val): void => setPage(val)}
-              color="primary"
-              size="small"
-            />
+            <Pagination count={pageCount} page={page} onChange={(_, val): void => setPage(val)} color="primary" size="small" />
           )}
         </Box>
-        <Button
-          onClick={onClose}
-          variant="outlined"
-          color="inherit">
+        <Button onClick={onClose} variant="outlined" color="inherit">
           Done
         </Button>
       </DialogActions>
