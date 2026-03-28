@@ -799,7 +799,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             }}
             onChange={(e): string => (questionRef.current = e.target.value)}
             onKeyDown={(e): void => {
-              if (!isMobile && e.key === "Enter" && e.ctrlKey) {
+              if (!isMobile && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 handleSend();
                 e.preventDefault();
               }
@@ -809,7 +809,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         </Box>
 
         <Tooltip
-          title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Ctrl + Enter)"}
+          title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Enter)"}
           disableTouchListener={isMobile}>
           <span>
             <IconButton

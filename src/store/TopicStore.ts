@@ -3,7 +3,7 @@ import { useNotificationStore } from "./NotificationStore";
 import { encode } from "gpt-tokenizer";
 import { athenaDb, Message, Topic } from "../database/AthenaDb";
 import { useAuthStore } from "./AuthStore";
-import { sendOpenAiChat } from "../services/openAi";
+import { askLlm } from "../services/llmService";
 import { getDefaultTopicNameModel } from "../components/ModelSelector";
 import { SCRATCHPAD_LIMIT } from "../constants";
 
@@ -170,38 +170,45 @@ export const useTopicStore = create<TopicState>((set, get) => ({
   generateTopicName: async (topicId: string, userMessage: string): Promise<void> => {
     const { topics, renameTopic } = get();
     const topic = topics.find((t) => t.id === topicId);
-    const { openAiKey } = useAuthStore.getState();
-
     if (!topic || topic.name !== "New Topic") return;
-    if (!openAiKey) {
-      useNotificationStore.getState().addNotification("Missing OpenAI key", "Cannot generate topic name");
+
+    const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore.getState();
+    const hasAnyKey = !!(openAiKey || deepSeekKey || googleApiKey || moonshotApiKey);
+
+    if (!hasAnyKey) {
+      const fallback = userMessage.trim().split(/\s+/).slice(0, 6).join(" ");
+      const name = fallback.length > 40 ? fallback.slice(0, 37) + "..." : fallback;
+      if (name) {
+        await renameTopic(topicId, name);
+      }
       return;
     }
 
     try {
-      const result = await sendOpenAiChat(
-        [
-          {
-            role: "system",
-            content: "Reply with a short and descriptive title for the message. No explanation. Just the title.",
-          },
-          {
-            role: "user",
-            content: `Suggest a short title for this message:\n\n"${userMessage}"`,
-          },
-        ],
-        getDefaultTopicNameModel().id,
-        openAiKey,
-      );
+      const model = getDefaultTopicNameModel();
+      const result = await askLlm(model, 1.0, [
+        {
+          role: "system",
+          content: "Reply with a short and descriptive title for the message. No explanation. Just the title. Max 5 words.",
+        },
+        {
+          role: "user",
+          content: `Suggest a short title for this message:\n\n"${userMessage}"`,
+        },
+      ]);
 
-      const name = result.content.trim();
+      const name = result.content.trim().replace(/^"|"$/g, "");
       if (name) {
         await renameTopic(topicId, name);
       }
     } catch (err) {
       console.error("Failed to generate topic name", err);
-      const message = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification("Failed to generate topic name", message);
+      // Fallback if LLM fail
+      const fallback = userMessage.trim().split(/\s+/).slice(0, 6).join(" ");
+      const name = fallback.length > 40 ? fallback.slice(0, 37) + "..." : fallback;
+      if (name) {
+        await renameTopic(topicId, name);
+      }
     }
   },
 
