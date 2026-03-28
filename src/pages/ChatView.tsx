@@ -25,27 +25,21 @@ const ChatView: React.FC = () => {
   const messages = displayTopicId ? (messagesByTopic[displayTopicId] ?? []) : [];
 
   useEffect(() => {
-    // Reset visibility to trigger fade-in animation
-    setIsVisible(false);
     setError(null);
 
     const fetchPromise = topicId ? fetchMessages(topicId) : Promise.resolve();
 
-    const timer = setTimeout(() => {
-      void fetchPromise.then(() => {
-        const topicStoreState = useTopicStore.getState();
-        const exists = topicId ? topicStoreState.topics.some((t) => t.id === topicId) : true;
+    void fetchPromise.then(() => {
+      const topicStoreState = useTopicStore.getState();
+      const exists = topicId ? topicStoreState.topics.some((t) => t.id === topicId) : true;
 
-        if (!exists && topicStoreState.topics.length > 0) {
-          setError("Topic not found");
-        } else {
-          setDisplayTopicId(topicId);
-          setIsVisible(true);
-        }
-      });
-    }, 200);
-
-    return () => clearTimeout(timer);
+      if (!exists && topicStoreState.topics.length > 0) {
+        setError("Topic not found");
+      } else {
+        setDisplayTopicId(topicId);
+        setIsVisible(true);
+      }
+    });
   }, [fetchMessages, topicId]);
 
   return (
@@ -79,8 +73,9 @@ const ChatView: React.FC = () => {
             </Box>
           ) : (
             <Fade
+              key={displayTopicId}
               in={isVisible}
-              timeout={{ enter: 300, exit: 200 }}>
+              timeout={{ enter: 150, exit: 0 }}>
               <Box width="100%">
                 {displayTopicId && <ForkTabs topicId={displayTopicId} />}
                 <MessageList
