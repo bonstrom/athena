@@ -25,35 +25,28 @@ const ChatView: React.FC = () => {
   const messages = displayTopicId ? (messagesByTopic[displayTopicId] ?? []) : [];
 
   useEffect(() => {
-    if (topicId !== displayTopicId) {
-      setIsVisible(false);
-      const fetchPromise = topicId ? fetchMessages(topicId) : Promise.resolve();
+    // Reset visibility to trigger fade-in animation
+    setIsVisible(false);
+    setError(null);
 
-      const timer = setTimeout(() => {
-        void fetchPromise.then(() => {
-          const exists = topicId ? useTopicStore.getState().topics.some((t) => t.id === topicId) : true;
-          if (!exists) {
-            setError("Topic not found");
-          } else {
-            setError(null);
-            setDisplayTopicId(topicId);
-            setIsVisible(true);
-          }
-        });
-      }, 200);
+    const fetchPromise = topicId ? fetchMessages(topicId) : Promise.resolve();
 
-      return () => clearTimeout(timer);
-    }
-  }, [fetchMessages, topicId, displayTopicId]);
+    const timer = setTimeout(() => {
+      void fetchPromise.then(() => {
+        const topicStoreState = useTopicStore.getState();
+        const exists = topicId ? topicStoreState.topics.some((t) => t.id === topicId) : true;
 
-  useEffect(() => {
-    if (topicId && topicId === displayTopicId && topic?.activeForkId) {
-      void fetchMessages(topicId, topic.activeForkId).then(() => {
-        setIsVisible(true);
-        setError(null);
+        if (!exists && topicStoreState.topics.length > 0) {
+          setError("Topic not found");
+        } else {
+          setDisplayTopicId(topicId);
+          setIsVisible(true);
+        }
       });
-    }
-  }, [fetchMessages, topicId, displayTopicId, topic?.activeForkId]);
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [fetchMessages, topicId]);
 
   return (
     <Box
