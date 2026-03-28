@@ -1,13 +1,50 @@
-import { Box, Typography } from "@mui/material";
+import { Box, Typography, IconButton } from "@mui/material";
+import { ContentCopy, Check } from "@mui/icons-material";
 import ReactMarkdown, { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useState } from "react";
 
 interface MarkdownProps {
   children: string;
   fontSize?: number;
 }
+
+const CopyButton: React.FC<{ text: string }> = ({ text }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy!", err);
+    }
+  };
+
+  return (
+    <IconButton
+      onClick={(): void => {
+        void handleCopy();
+      }}
+      size="small"
+      className="copy-button"
+      sx={{
+        position: "absolute",
+        top: 8,
+        right: 8,
+        opacity: 0,
+        transition: "opacity 0.2s",
+        color: "rgba(255, 255, 255, 0.6)",
+        "&:hover": { color: "white", backgroundColor: "rgba(255, 255, 255, 0.1)" },
+        zIndex: 1,
+      }}>
+      {copied ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+    </IconButton>
+  );
+};
 
 const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) => {
   const markdownComponents: Components = {
@@ -58,8 +95,18 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) 
       ...props
     }: React.ComponentPropsWithoutRef<"code"> & { inline?: boolean }): React.ReactElement {
       const match = /language-(\w+)/.exec(className ?? "");
+      const codeString = String(children).replace(/\n$/, "");
       return !inline && match ? (
-        <Box sx={{ overflowX: "auto", my: 1, fontSize: `${Math.max(12, fontSize - 2)}px` }}>
+        <Box
+          sx={{
+            position: "relative",
+            overflowX: "auto",
+            my: 1,
+            fontSize: `${Math.max(12, fontSize - 2)}px`,
+            borderRadius: 1,
+            "&:hover .copy-button": { opacity: 1 },
+          }}>
+          <CopyButton text={codeString} />
           <SyntaxHighlighter
             language={match[1]}
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
@@ -73,7 +120,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) 
             }}
             wrapLongLines={false}
             {...props}>
-            {String(children).replace(/\n$/, "")}
+            {codeString}
           </SyntaxHighlighter>
         </Box>
       ) : (
