@@ -76,7 +76,7 @@ const ChatView: React.FC = () => {
               key={displayTopicId}
               in={isVisible}
               timeout={{ enter: 150, exit: 0 }}>
-              <Box width="100%">
+              <Box width="100%" height="100%" display="flex" flexDirection="column">
                 {displayTopicId && <ForkTabs topicId={displayTopicId} />}
                 <MessageList
                   messages={messages}

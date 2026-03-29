@@ -118,7 +118,7 @@ interface Props {
   maxContextMessages: number;
 }
 
-const ROOT_CLASS = css({ height: "100%" });
+const ROOT_CLASS = css({ height: "100%", flex: 1 });
 const FOLLOW_BUTTON_CLASS = css({ display: "none" });
 
 const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
@@ -178,12 +178,14 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
   if (processedGroups.length === 0) {
     return (
       <Box
+        className={ROOT_CLASS}
         sx={{
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
+          justifyContent: "flex-end",
+          flex: 1,
+          paddingBottom: 8,
           opacity: 0.8,
           animation: "fadeIn 1.2s ease-out",
           pointerEvents: "none",
