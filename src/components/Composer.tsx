@@ -33,6 +33,7 @@ import EditNoteIcon from "@mui/icons-material/EditNote";
 import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import TopicContextDialog from "./TopicContextDialog";
 import ScratchpadDialog from "./ScratchpadDialog";
 import { useAuthStore } from "../store/AuthStore";
@@ -59,6 +60,7 @@ interface Page {
 const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const questionRef = useRef("");
   const topicStore = useTopicStore();
   const { selectedModel, setSelectedModel, temperature, setTemperature, currentTopicId, stopSending } = useChatStore();
@@ -197,6 +199,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     fileInputRef.current?.click();
   };
 
+  const handleCameraButtonClick = (): void => {
+    cameraInputRef.current?.click();
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const files = e.target.files;
     if (!files) return;
@@ -233,6 +239,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
     setAttachments((prev) => [...prev, ...newAttachments]);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
 
   const removeAttachment = (id: string): void => {
@@ -296,12 +303,36 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </IconButton>
             </span>
           </Tooltip>
+          {isMobile && (
+            <Tooltip
+              title="Take Photo"
+              disableTouchListener={isMobile}>
+              <span>
+                <IconButton
+                  onClick={handleCameraButtonClick}
+                  disabled={sending || !selectedModel.supportsVision}
+                  aria-label="Take Photo">
+                  <PhotoCameraIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
           <input
             type="file"
             ref={fileInputRef}
             style={{ display: "none" }}
             multiple
             accept="image/*"
+            onChange={(e): void => {
+              void handleFileSelect(e);
+            }}
+          />
+          <input
+            type="file"
+            ref={cameraInputRef}
+            style={{ display: "none" }}
+            accept="image/*"
+            capture="environment"
             onChange={(e): void => {
               void handleFileSelect(e);
             }}
