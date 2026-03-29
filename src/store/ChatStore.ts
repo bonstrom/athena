@@ -493,14 +493,18 @@ ${topic?.scratchpad ?? "(Empty)"}`;
           "You are an expert quality-assurance AI. Your task is to review a drafted response to a user's prompt and improve it. Correct any factual, logical, or grammatical errors. Ensure the formatting is clean and the tone matches the user's original intent. If the draft contains code, ensure it is syntactically correct and complete. Do not unnecessarily rewrite accurate content. Provide ONLY the final, polished response without any introductory or concluding meta-text.";
 
         const reviewMessages: LlmMessage[] = [
-          { role: "system", content: reviewerPrompt },
-          ...llmContext.map((m) => ({
-            role: m.role,
+          { role: "system" as const, content: reviewerPrompt },
+          ...existingContext.map((m) => ({
+            role: (m.type === "user" ? "user" : m.type === "assistant" ? "assistant" : "system") as "user" | "assistant" | "system",
             content: m.content,
+            reasoning_content: m.reasoning,
           })),
+          { role: "user" as const, content: userMessage.content },
+          { role: "assistant" as const, content: primaryResult.finalContent },
           {
-            role: "user",
-            content: `Draft response to review and polish:\n${primaryResult.finalContent}`,
+            role: "user" as const,
+            content:
+              "Please review and polish your drafted response above. Correct any factual, logical, or grammatical errors. Ensure the formatting is clean and the tone matches the user's original intent. If the draft contains code, ensure it is syntactically correct and complete. Do not unnecessarily rewrite accurate content. Provide ONLY the final, polished response without any introductory or concluding meta-text.",
           },
         ];
 
