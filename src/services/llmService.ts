@@ -10,8 +10,9 @@ export interface LlmMessage {
   role: "user" | "assistant" | "system" | "tool";
   content: string | LlmContentPart[] | null;
   reasoning_content?: string;
-  tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[];
+  tool_calls?: { id: string; type: "function" | "builtin_function"; function: { name: string; arguments: string } }[];
   tool_call_id?: string;
+  name?: string;
 }
 
 export interface LlmResult {
@@ -22,7 +23,7 @@ export interface LlmResult {
   aiNoteAction?: "append" | "replace";
   promptTokensDetails?: { cached_tokens?: number };
   completionTokensDetails?: { reasoning_tokens?: number };
-  toolCalls?: { id: string; function: { name: string; arguments: string } }[];
+  toolCalls?: { id: string; type: "function" | "builtin_function"; function: { name: string; arguments: string } }[];
   finishReason?: string;
   reasoning?: string;
 }
@@ -48,11 +49,11 @@ export const SCRATCHPAD_TOOL: LlmTool = {
 };
 
 export interface LlmTool {
-  type: "function";
+  type: "function" | "builtin_function";
   function: {
     name: string;
-    description: string;
-    parameters: Record<string, unknown>;
+    description?: string;
+    parameters?: Record<string, unknown>;
   };
 }
 
@@ -63,6 +64,7 @@ interface LlmPayload {
   stream: boolean;
   stream_options?: { include_usage: boolean };
   tools?: LlmTool[];
+  thinking?: { type: "enabled" | "disabled" };
 }
 
 const PROVIDER_URLS: Record<string, string> = {
@@ -78,6 +80,7 @@ function buildPayload(
   stream: boolean,
   temperature: number,
   tools?: LlmTool[],
+  webSearch?: boolean,
 ): LlmPayload {
   const filtered = filterMessagesForModel(model, messages);
   const auth = useAuthStore.getState();
@@ -85,11 +88,6 @@ function buildPayload(
 
   const finalMessages = filtered.map((msg) => {
     const m = { ...msg };
-    if (m.role === "assistant" && !m.reasoning_content) {
-      // Ensure we don't send empty reasoning_content if not needed,
-      // but some APIs might require it if it's a reasoning model.
-      // For now, only include if present.
-    }
     return m;
   });
 
@@ -104,19 +102,34 @@ function buildPayload(
     }
   }
 
+  const finalTools = [...(tools ?? [])];
+  if (webSearch && model.provider === "moonshot") {
+    finalTools.push({
+      type: "builtin_function",
+      function: {
+        name: "$web_search",
+        description: "Search the internet for real-time information with Moonshot AI's built-in search.",
+      },
+    });
+  }
+
   return {
     model: model.id,
     messages: finalMessages.map((m) => ({
       role: m.role,
       content: m.content as string | (LlmContentPart & { type: "text" | "image_url" })[] | null,
-      ...(typeof m.reasoning_content === "string" && { reasoning_content: m.reasoning_content }),
+      ...(m.reasoning_content && { reasoning_content: m.reasoning_content }),
       ...(m.tool_calls && { tool_calls: m.tool_calls }),
       ...(m.tool_call_id && { tool_call_id: m.tool_call_id }),
+      ...(m.name && { name: m.name }),
     })),
     stream,
-    ...(model.supportsTemperature && { temperature }),
+    ...(model.supportsTemperature && {
+      temperature: webSearch && model.id === "kimi-k2.5" ? 0.6 : temperature,
+    }),
     ...(stream && { stream_options: { include_usage: true } }),
-    ...(model.supportsTools && tools && tools.length > 0 && { tools }),
+    ...(model.supportsTools && finalTools.length > 0 && { tools: finalTools }),
+    ...(webSearch && model.provider === "moonshot" && { thinking: { type: "disabled" } }),
   };
 }
 
@@ -158,12 +171,13 @@ export async function askLlm(
   temperature: number,
   messages: LlmMessage[],
   tools?: LlmTool[],
+  webSearch?: boolean,
   signal?: AbortSignal,
 ): Promise<LlmResult> {
   const url = PROVIDER_URLS[model.provider];
   const key = getApiKey(model);
 
-  const payload = buildPayload(model, messages, false, temperature, tools);
+  const payload = buildPayload(model, messages, false, temperature, tools, webSearch);
 
   const res = await fetch(url, {
     method: "POST",
@@ -186,7 +200,7 @@ export async function askLlm(
         content: string;
         reasoning_content?: string;
         reasoning?: string;
-        tool_calls?: { id?: string; function: { name: string; arguments: string } }[];
+        tool_calls?: { id?: string; type?: "function" | "builtin_function"; function: { name: string; arguments: string } }[];
       };
     }[];
     usage: { prompt_tokens: number; completion_tokens: number };
@@ -196,6 +210,7 @@ export async function askLlm(
   const toolCallsData = message.tool_calls;
   const toolCalls = toolCallsData?.map((tc, index) => ({
     id: tc.id ?? `call_${index}`,
+    type: tc.type ?? "function",
     function: tc.function,
   }));
   const content = (toolCalls && toolCalls.length > 0 ? message.content : message.content.trim()) || "";
@@ -263,12 +278,13 @@ export async function askLlmStream(
   onToken?: (token: string) => void,
   onReasoning?: (token: string) => void,
   tools?: LlmTool[],
+  webSearch?: boolean,
   signal?: AbortSignal,
 ): Promise<LlmResult> {
   const url = PROVIDER_URLS[model.provider];
   const key = getApiKey(model);
 
-  const payload = buildPayload(model, messages, true, temperature, tools);
+  const payload = buildPayload(model, messages, true, temperature, tools, webSearch);
 
   const res = await fetch(url, {
     method: "POST",
@@ -294,7 +310,7 @@ export async function askLlmStream(
   let completionTokensDetails: { reasoning_tokens?: number } | undefined;
   let accumulated = "";
   let toolCallStarted = false;
-  let toolCalls: { id: string; function: { name: string; arguments: string } }[] | undefined;
+  let toolCalls: { id: string; type: "function" | "builtin_function"; function: { name: string; arguments: string } }[] | undefined;
   let finishReason: string | undefined;
   let reasoning = "";
   let done = false;
@@ -341,6 +357,7 @@ export async function askLlmStream(
                 tool_calls?: {
                   id: string; // id only appears in the first chunk for a tool call usually
                   index: number;
+                  type?: "function" | "builtin_function";
                   function?: { name?: string; arguments?: string };
                 }[];
               };
@@ -389,14 +406,21 @@ export async function askLlmStream(
               // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
               const idx = tc.index ?? 0;
               if (!toolCalls) toolCalls = [];
-              let existing: { id: string; function: { name: string; arguments: string } } | undefined = toolCalls[idx];
+              let existing: {
+                id: string;
+                type: "function" | "builtin_function";
+                function: { name: string; arguments: string };
+              } | undefined = toolCalls[idx];
               // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
               if (!existing) {
-                existing = { id: tc.id || "", function: { name: "", arguments: "" } };
+                existing = { id: tc.id || "", type: tc.type || "function", function: { name: "", arguments: "" } };
                 toolCalls[idx] = existing;
               }
               if (tc.id) {
                 existing.id = tc.id;
+              }
+              if (tc.type) {
+                existing.type = tc.type;
               }
               if (tc.function?.name) existing.function.name += tc.function.name;
               if (tc.function?.arguments) {
@@ -488,6 +512,7 @@ export async function orchestrateLlmLoop(
   onToken?: (token: string) => void,
   onReasoning?: (token: string) => void,
   onScratchpadUpdate?: (content: string, action: "append" | "replace") => Promise<void>,
+  webSearch?: boolean,
   signal?: AbortSignal,
 ): Promise<OrchestrateResult> {
   const llmContext = [...messages];
@@ -500,8 +525,8 @@ export async function orchestrateLlmLoop(
   while (loopCount < 5) {
     loopCount++;
     const result = model.streaming
-      ? await askLlmStream(model, temperature, llmContext, onToken, onReasoning, [SCRATCHPAD_TOOL], signal)
-      : await askLlm(model, temperature, llmContext, [SCRATCHPAD_TOOL], signal);
+      ? await askLlmStream(model, temperature, llmContext, onToken, onReasoning, [SCRATCHPAD_TOOL], webSearch, signal)
+      : await askLlm(model, temperature, llmContext, [SCRATCHPAD_TOOL], webSearch, signal);
 
     lastResult = result;
     totalPromptTokens += result.promptTokens;
@@ -522,20 +547,22 @@ export async function orchestrateLlmLoop(
       llmContext.push({
         role: "assistant",
         content: result.content || null,
-        reasoning_content: result.reasoning ?? "",
+        ...(result.reasoning && { reasoning_content: result.reasoning }),
         tool_calls: result.toolCalls.map((tc) => ({
           id: tc.id,
-          type: "function",
+          type: tc.type,
           function: tc.function,
         })),
       });
 
       // Add tool results to context
       for (const tc of result.toolCalls) {
+        const isWebSearch = tc.function.name === "$web_search";
         llmContext.push({
           role: "tool",
           tool_call_id: tc.id,
-          content: "Updated.",
+          name: tc.function.name,
+          content: isWebSearch ? tc.function.arguments : "Updated.",
         });
       }
       continue;

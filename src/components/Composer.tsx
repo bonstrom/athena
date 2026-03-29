@@ -34,6 +34,7 @@ import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
+import LanguageIcon from "@mui/icons-material/Language";
 import TopicContextDialog from "./TopicContextDialog";
 import ScratchpadDialog from "./ScratchpadDialog";
 import { useAuthStore } from "../store/AuthStore";
@@ -75,6 +76,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     googleApiKey,
     moonshotApiKey,
   } = useAuthStore();
+  const { webSearchEnabled, setWebSearchEnabled } = useChatStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
@@ -885,6 +887,21 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 </IconButton>
               </span>
             </Tooltip>
+            {selectedModel.provider === "moonshot" && (
+              <Tooltip
+                title={`Web Search (${webSearchEnabled ? "Enabled" : "Disabled"})`}
+                disableTouchListener={isMobile}>
+                <span>
+                  <IconButton
+                    onClick={(): void => setWebSearchEnabled(!webSearchEnabled)}
+                    disabled={sending}
+                    color={webSearchEnabled ? "primary" : "default"}
+                    aria-label="Toggle Web Search">
+                    <LanguageIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
           </Box>
           <Tooltip
             title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Enter)"}

@@ -21,6 +21,8 @@ interface ChatStore {
   sending: boolean;
   selectedModel: ChatModel;
   visibleMessageCount: number;
+  webSearchEnabled: boolean;
+  setWebSearchEnabled: (value: boolean) => void;
   setSending: (value: boolean) => void;
   fetchMessages: (topicId: string, forkId?: string) => Promise<void>;
   increaseVisibleMessageCount: () => void;
@@ -54,8 +56,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   sending: false,
   selectedModel: getDefaultModel(),
   temperature: 1.0,
+  webSearchEnabled: false,
   abortController: null,
   currentRequestMessageIds: null,
+
+  setWebSearchEnabled: (value: boolean): void => set({ webSearchEnabled: value }),
 
   setTemperature: (temp): void => set({ temperature: temp }),
   setSending: (value): void => set({ sending: value }),
@@ -285,6 +290,14 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       });
     }
 
+    if (get().webSearchEnabled && selectedModel.provider === "moonshot") {
+      systems.push({
+        role: "system",
+        content:
+          "You have access to real-time internet search via the $web_search tool. Use it whenever you need up-to-date information or are unsure about recent events (like 'Vem vann Melodifestivalen 2024?').",
+      });
+    }
+
     llmContext.unshift(...systems);
 
     // Add current user message to context before calling loop
@@ -406,6 +419,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
           }
           await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
         },
+        get().webSearchEnabled,
         controller.signal,
       );
 
