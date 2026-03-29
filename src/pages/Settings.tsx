@@ -20,6 +20,7 @@ import { BackupService } from "../services/backupService";
 import { useBackupStore } from "../store/BackupStore";
 import { getMoonshotBalance, getDeepSeekBalance } from "../services/llmService";
 import { USD_TO_SEK } from "../constants";
+import ThemeSelector from "../components/ThemeSelector";
 
 const Settings: React.FC = () => {
   const {
@@ -313,6 +314,16 @@ const Settings: React.FC = () => {
           onChange={(e): void => setUserNameInput(e.target.value)}
           sx={{ mb: 3 }}
         />
+
+        <Box sx={{ mb: 4 }}>
+          <Typography
+            variant="h6"
+            gutterBottom
+            sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1, mb: 2 }}>
+            Appearance
+          </Typography>
+          <ThemeSelector />
+        </Box>
 
         <Box sx={{ mb: 4 }}>
           <Typography

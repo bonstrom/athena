@@ -3,8 +3,9 @@ import { ContentCopy, Check } from "@mui/icons-material";
 import ReactMarkdown, { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useState } from "react";
+import { useTheme, alpha } from "@mui/material/styles";
 
 interface MarkdownProps {
   children: string;
@@ -37,8 +38,12 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
         right: 8,
         opacity: 0,
         transition: "opacity 0.2s",
-        color: "rgba(255, 255, 255, 0.6)",
-        "&:hover": { color: "white", backgroundColor: "rgba(255, 255, 255, 0.1)" },
+        color: (theme) => (theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.6)" : "rgba(0, 0, 0, 0.5)"),
+        "&:hover": {
+          color: (theme) => (theme.palette.mode === "dark" ? "white" : "black"),
+          backgroundColor: (theme) =>
+            theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+        },
         zIndex: 1,
       }}>
       {copied ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
@@ -47,6 +52,7 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
 };
 
 const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) => {
+  const theme = useTheme();
   const markdownComponents: Components = {
     p: ({ children }) => (
       <Typography
@@ -110,7 +116,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) 
           <SyntaxHighlighter
             language={match[1]}
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-            style={oneDark as any}
+            style={(theme.palette.mode === "dark" ? oneDark : oneLight) as any}
             PreTag="div"
             customStyle={{
               whiteSpace: "pre",
@@ -127,7 +133,8 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) 
         <code
           className={className}
           style={{
-            backgroundColor: "#333",
+            backgroundColor: theme.palette.mode === "dark" ? "#333" : alpha(theme.palette.primary.main, 0.08),
+            color: theme.palette.mode === "dark" ? "#e0e0e0" : theme.palette.primary.main,
             padding: "0.2em 0.4em",
             borderRadius: 4,
             fontSize: `${Math.max(12, fontSize - 2)}px`,

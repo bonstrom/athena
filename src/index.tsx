@@ -1,10 +1,24 @@
-import React from "react";
+import React, { useMemo } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
 import reportWebVitals from "./reportWebVitals";
 import { CssBaseline, ThemeProvider } from "@mui/material";
-import theme from "./theme";
+import { getAppTheme } from "./theme";
+import { useAuthStore } from "./store/AuthStore";
+
+const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { themeMode, colorTheme } = useAuthStore();
+
+  const theme = useMemo(() => getAppTheme(themeMode, colorTheme), [themeMode, colorTheme]);
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      {children}
+    </ThemeProvider>
+  );
+};
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -14,11 +28,9 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-
+    <AppThemeProvider>
       <App />
-    </ThemeProvider>
+    </AppThemeProvider>
   </React.StrictMode>,
 );
 

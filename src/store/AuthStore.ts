@@ -12,6 +12,8 @@ interface AuthState {
   customInstructions: string;
   chatWidth: "sm" | "md" | "lg" | "full";
   chatFontSize: number;
+  themeMode: "light" | "dark";
+  colorTheme: string;
   clearAuth: () => void;
   setOpenAiKey: (key: string) => void;
   setDeepSeekKey: (key: string) => void;
@@ -22,6 +24,8 @@ interface AuthState {
   setCustomInstructions: (instructions: string) => void;
   setChatWidth: (width: "sm" | "md" | "lg" | "full") => void;
   setChatFontSize: (size: number) => void;
+  setThemeMode: (mode: "light" | "dark") => void;
+  setColorTheme: (theme: string) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => {
@@ -34,6 +38,8 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedCustomInstructions = localStorage.getItem("customInstructions") ?? "";
   const storedChatWidth = (localStorage.getItem("chatWidth") as "sm" | "md" | "lg" | "full" | null) ?? "lg";
   const storedChatFontSize = Number(localStorage.getItem("chatFontSize") ?? "16");
+  const storedThemeMode = (localStorage.getItem("themeMode") as "light" | "dark" | null) ?? "dark";
+  const storedColorTheme = localStorage.getItem("colorTheme") ?? "default";
 
   return {
     openAiKey: storedOpenAiKey,
@@ -45,6 +51,8 @@ export const useAuthStore = create<AuthState>((set) => {
     customInstructions: storedCustomInstructions,
     chatWidth: storedChatWidth,
     chatFontSize: storedChatFontSize,
+    themeMode: storedThemeMode,
+    colorTheme: storedColorTheme,
     clearAuth: (): void => {
       localStorage.removeItem("openAiKey");
       localStorage.removeItem("deepSeekKey");
@@ -63,6 +71,8 @@ export const useAuthStore = create<AuthState>((set) => {
         customInstructions: "",
         chatWidth: "lg",
         chatFontSize: 16,
+        themeMode: "dark",
+        colorTheme: "default",
       });
     },
     setOpenAiKey: (key: string): void => {
@@ -100,6 +110,14 @@ export const useAuthStore = create<AuthState>((set) => {
     setChatFontSize: (size: number): void => {
       localStorage.setItem("chatFontSize", String(size));
       set({ chatFontSize: size });
+    },
+    setThemeMode: (mode: "light" | "dark"): void => {
+      localStorage.setItem("themeMode", mode);
+      set({ themeMode: mode });
+    },
+    setColorTheme: (theme: string): void => {
+      localStorage.setItem("colorTheme", theme);
+      set({ colorTheme: theme });
     },
   };
 });
