@@ -18,6 +18,8 @@ import {
   ListItemText,
 } from "@mui/material";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import AttachFileIcon from "@mui/icons-material/AttachFile";
+import DownloadIcon from "@mui/icons-material/Download";
 import { useState, useRef, memo } from "react";
 import { useAuthStore } from "../store/AuthStore";
 import MarkdownWithCode from "./MarkdownWithCode";
@@ -487,6 +489,70 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             <MarkdownWithCode fontSize={chatFontSize}>{message.content}</MarkdownWithCode>
           )}
         </Box>
+
+        {message.attachments && message.attachments.length > 0 && (
+          <Box
+            display="flex"
+            flexWrap="wrap"
+            gap={1}
+            mt={2}
+            mb={1}>
+            {message.attachments.map((att) => (
+              <Box
+                key={att.id}
+                sx={{
+                  borderRadius: 2,
+                  overflow: "hidden",
+                  border: (theme) => `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+                  bgcolor: (theme) => alpha(theme.palette.action.hover, 0.05),
+                }}>
+                {att.previewUrl ? (
+                  <Box
+                    component="img"
+                    src={att.previewUrl}
+                    alt={att.name}
+                    sx={{
+                      maxWidth: "100%",
+                      maxHeight: 300,
+                      display: "block",
+                      cursor: "pointer",
+                      transition: "opacity 0.2s",
+                      "&:hover": { opacity: 0.9 },
+                    }}
+                    onClick={(): void => {
+                      const link = document.createElement("a");
+                      link.href = att.data;
+                      link.download = att.name;
+                      link.click();
+                    }}
+                  />
+                ) : (
+                  <Button
+                    startIcon={<AttachFileIcon />}
+                    endIcon={<DownloadIcon />}
+                    size="small"
+                    variant="outlined"
+                    component="a"
+                    href={att.data}
+                    download={att.name}
+                    sx={{
+                      textTransform: "none",
+                      color: "text.primary",
+                      borderColor: "divider",
+                      "&:hover": {
+                        borderColor: "primary.main",
+                        bgcolor: "action.hover",
+                      },
+                    }}>
+                    <Typography variant="caption" noWrap sx={{ maxWidth: 150 }}>
+                      {att.name}
+                    </Typography>
+                  </Button>
+                )}
+              </Box>
+            ))}
+          </Box>
+        )}
 
         {isAssistant && message.content === "" && !message.failed && (
           <Box

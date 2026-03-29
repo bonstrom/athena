@@ -2,9 +2,13 @@ import { calculateCostSEK, ChatModel } from "../components/ModelSelector";
 import { useAuthStore } from "../store/AuthStore";
 import { estimateTokens } from "./estimateTokens";
 
+export type LlmContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export interface LlmMessage {
   role: "user" | "assistant" | "system" | "tool";
-  content: string | null;
+  content: string | LlmContentPart[] | null;
   reasoning_content?: string;
   tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[];
   tool_call_id?: string;
@@ -93,7 +97,7 @@ function buildPayload(
     if (finalMessages.length > 0 && finalMessages[0].role === "system") {
       finalMessages[0] = {
         ...finalMessages[0],
-        content: `${customInstructions}\n\n${finalMessages[0].content ?? ""}`,
+        content: `${customInstructions}\n\n${typeof finalMessages[0].content === "string" ? finalMessages[0].content : ""}`,
       };
     } else {
       finalMessages.unshift({ role: "system", content: customInstructions });
@@ -104,7 +108,7 @@ function buildPayload(
     model: model.id,
     messages: finalMessages.map((m) => ({
       role: m.role,
-      content: m.content,
+      content: m.content as string | (LlmContentPart & { type: "text" | "image_url" })[] | null,
       ...(typeof m.reasoning_content === "string" && { reasoning_content: m.reasoning_content }),
       ...(m.tool_calls && { tool_calls: m.tool_calls }),
       ...(m.tool_call_id && { tool_call_id: m.tool_call_id }),

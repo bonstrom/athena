@@ -90,9 +90,9 @@ const ChatView: React.FC = () => {
 
       <Composer
         sending={sending}
-        onSend={(content): void => {
+        onSend={(content, attachments): void => {
           if (!topicId) return;
-          void sendMessageStream(content, topicId);
+          void sendMessageStream(content, topicId, undefined, attachments);
         }}
         isMobile={isMobile}
       />

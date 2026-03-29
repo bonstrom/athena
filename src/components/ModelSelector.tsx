@@ -13,6 +13,8 @@ export interface ChatModel {
   streaming: boolean;
   supportsTemperature: boolean;
   supportsTools: boolean;
+  supportsVision: boolean;
+  supportsFiles: boolean;
 }
 
 export const chatModels: ChatModel[] = [
@@ -26,6 +28,8 @@ export const chatModels: ChatModel[] = [
     streaming: true,
     supportsTemperature: false,
     supportsTools: true,
+    supportsVision: true,
+    supportsFiles: true,
   },
   {
     id: "gpt-5.4-mini",
@@ -37,6 +41,8 @@ export const chatModels: ChatModel[] = [
     streaming: true,
     supportsTemperature: false,
     supportsTools: true,
+    supportsVision: true,
+    supportsFiles: true,
   },
   {
     id: "gpt-5.4-nano",
@@ -48,6 +54,8 @@ export const chatModels: ChatModel[] = [
     streaming: true,
     supportsTemperature: false,
     supportsTools: true,
+    supportsVision: true,
+    supportsFiles: true,
   },
   {
     id: "deepseek-chat",
@@ -59,6 +67,8 @@ export const chatModels: ChatModel[] = [
     streaming: true,
     supportsTemperature: true,
     supportsTools: true,
+    supportsVision: false,
+    supportsFiles: false,
   },
   {
     id: "deepseek-reasoner",
@@ -70,6 +80,8 @@ export const chatModels: ChatModel[] = [
     streaming: true,
     supportsTemperature: true,
     supportsTools: false,
+    supportsVision: false,
+    supportsFiles: false,
   },
   {
     id: "gemini-3-flash-preview",
@@ -81,6 +93,8 @@ export const chatModels: ChatModel[] = [
     streaming: true,
     supportsTemperature: true,
     supportsTools: true,
+    supportsVision: true,
+    supportsFiles: true,
   },
   {
     id: "kimi-k2.5",
@@ -92,6 +106,8 @@ export const chatModels: ChatModel[] = [
     streaming: true,
     supportsTemperature: true,
     supportsTools: true,
+    supportsVision: true,
+    supportsFiles: true,
   },
   {
     id: "kimi-k2-turbo-preview",
@@ -103,6 +119,8 @@ export const chatModels: ChatModel[] = [
     streaming: true,
     supportsTemperature: true,
     supportsTools: true,
+    supportsVision: true,
+    supportsFiles: true,
   },
 ];
 

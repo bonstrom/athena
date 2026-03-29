@@ -7,8 +7,8 @@ import {
   chatModels,
 } from "../components/ModelSelector";
 import { useTopicStore } from "./TopicStore";
-import { orchestrateLlmLoop, LlmMessage } from "../services/llmService";
-import { Message } from "../database/AthenaDb";
+import { orchestrateLlmLoop, LlmMessage, LlmContentPart } from "../services/llmService";
+import { Message, Attachment } from "../database/AthenaDb";
 import { athenaDb } from "../database/AthenaDb";
 import { useNotificationStore } from "./NotificationStore";
 import { useAuthStore } from "./AuthStore";
@@ -35,7 +35,7 @@ interface ChatStore {
   updateMessage: (id: string, patch: Partial<Message>) => Promise<void>;
   updateMessages: (updates: { id: string; patch: Partial<Message> }[]) => Promise<void>;
   updateMessageStateOnly: (id: string, patch: Partial<Message>) => void;
-  sendMessageStream: (content: string, topicId: string, messageId?: string) => Promise<void>;
+  sendMessageStream: (content: string, topicId: string, messageId?: string, attachments?: Attachment[]) => Promise<void>;
   setSelectedModel: (model: ChatModel) => void;
   isChaining: boolean;
   setIsChaining: (value: boolean) => void;
@@ -229,7 +229,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  sendMessageStream: async (content: string, topicId: string, messageId?: string): Promise<void> => {
+  sendMessageStream: async (content: string, topicId: string, messageId?: string, attachments?: Attachment[]): Promise<void> => {
     // Trigger auto-backup on user gesture to ensure permissions are refreshed
     void BackupService.performAutoBackup(true);
 
@@ -267,17 +267,30 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         promptTokens: 0,
         completionTokens: 0,
         totalCost: 0,
+        attachments: attachments,
       };
     }
 
     // 2. Build Context
     const existingContext = await topicStoreState.getTopicContext(topicId);
 
-    const llmContext: LlmMessage[] = existingContext.map((m) => ({
-      role: m.type === "user" ? "user" : m.type === "assistant" ? "assistant" : "system",
-      content: m.content,
-      reasoning_content: m.reasoning,
-    }));
+    const llmContext: LlmMessage[] = existingContext.map((m) => {
+      const role = m.type === "user" ? "user" : m.type === "assistant" ? "assistant" : "system";
+      if (m.attachments && m.attachments.length > 0 && (selectedModel.supportsVision || selectedModel.supportsFiles)) {
+        const parts: LlmContentPart[] = [{ type: "text", text: m.content }];
+        for (const att of m.attachments) {
+          if (att.type.startsWith("image/") && selectedModel.supportsVision) {
+            parts.push({ type: "image_url", image_url: { url: att.data } });
+          }
+        }
+        return { role, content: parts, reasoning_content: m.reasoning };
+      }
+      return {
+        role,
+        content: m.content,
+        reasoning_content: m.reasoning,
+      };
+    });
 
     const systems: LlmMessage[] = [];
     const scratchpadRules = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). 
@@ -302,7 +315,21 @@ ${topic?.scratchpad ?? "(Empty)"}`;
     llmContext.unshift(...systems);
 
     // Add current user message to context before calling loop
-    llmContext.push({ role: "user", content: userMessage.content });
+    if (
+      userMessage.attachments &&
+      userMessage.attachments.length > 0 &&
+      (selectedModel.supportsVision || selectedModel.supportsFiles)
+    ) {
+      const parts: LlmContentPart[] = [{ type: "text", text: userMessage.content }];
+      for (const att of userMessage.attachments) {
+        if (att.type.startsWith("image/") && selectedModel.supportsVision) {
+          parts.push({ type: "image_url", image_url: { url: att.data } });
+        }
+      }
+      llmContext.push({ role: "user", content: parts });
+    } else {
+      llmContext.push({ role: "user", content: userMessage.content });
+    }
 
     // 3. Prepare Assistant Message
     const assistantId = crypto.randomUUID();

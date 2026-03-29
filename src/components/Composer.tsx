@@ -32,6 +32,7 @@ import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
+import AttachFileIcon from "@mui/icons-material/AttachFile";
 import TopicContextDialog from "./TopicContextDialog";
 import ScratchpadDialog from "./ScratchpadDialog";
 import { useAuthStore } from "../store/AuthStore";
@@ -39,10 +40,14 @@ import { useChatStore } from "../store/ChatStore";
 import { useTopicStore } from "../store/TopicStore";
 import { chatModels } from "./ModelSelector";
 import { SCRATCHPAD_LIMIT, USD_TO_SEK } from "../constants";
+import { Attachment } from "../database/AthenaDb";
+import { useNotificationStore } from "../store/NotificationStore";
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 interface ComposerProps {
   sending: boolean;
-  onSend: (content: string) => void;
+  onSend: (content: string, attachments?: Attachment[]) => void;
   isMobile: boolean;
 }
 interface Page {
@@ -53,9 +58,11 @@ interface Page {
 
 const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const questionRef = useRef("");
   const topicStore = useTopicStore();
   const { selectedModel, setSelectedModel, temperature, setTemperature, currentTopicId, stopSending } = useChatStore();
+  const { addNotification } = useNotificationStore();
   const {
     chatWidth,
     setChatWidth,
@@ -74,6 +81,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const [pages, setPages] = useState<Page[]>([{ id: crypto.randomUUID(), title: "Page 1", content: "" }]);
   const [activePageIndex, setActivePageIndex] = useState(0);
   const [localMaxContext, setLocalMaxContext] = useState<number | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   const availableModels = chatModels.filter(
     (model) =>
@@ -104,13 +112,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       .map((p) => p.content.trim())
       .join("\n\n---\n\n");
 
-    if (!combinedContent) return;
+    if (!combinedContent && attachments.length === 0) return;
 
-    onSend(combinedContent);
+    onSend(combinedContent, attachments);
     questionRef.current = "";
     if (textFieldRef.current) textFieldRef.current.value = "";
     setPages([{ id: crypto.randomUUID(), title: "Page 1", content: "" }]);
     setActivePageIndex(0);
+    setAttachments([]);
   };
 
   const handleTabChange = (_: React.SyntheticEvent, newValue: number): void => {
@@ -184,6 +193,52 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     }
   };
 
+  const handleFileButtonClick = (): void => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newAttachments: Attachment[] = [];
+
+    for (const file of Array.from(files)) {
+      if (file.size > MAX_FILE_SIZE) {
+        addNotification("File too large", `${file.name} exceeds the 10MB limit.`);
+        continue;
+      }
+
+      try {
+        const data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (): void => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        newAttachments.push({
+          id: crypto.randomUUID(),
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          data: data,
+          previewUrl: file.type.startsWith("image/") ? data : undefined,
+        });
+      } catch (err) {
+        console.error("Failed to read file:", err);
+        addNotification("Upload failed", `Could not read ${file.name}`);
+      }
+    }
+
+    setAttachments((prev) => [...prev, ...newAttachments]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeAttachment = (id: string): void => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  };
+
   useEffect(() => {
     if (!sending && textFieldRef.current) {
       textFieldRef.current.focus();
@@ -229,6 +284,28 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </IconButton>
             </span>
           </Tooltip>
+          <Tooltip
+            title="Attach File (Images only for most models)"
+            disableTouchListener={isMobile}>
+            <span>
+              <IconButton
+                onClick={handleFileButtonClick}
+                disabled={sending || !(selectedModel.supportsVision || selectedModel.supportsFiles)}
+                aria-label="Attach File">
+                <AttachFileIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <input
+            type="file"
+            ref={fileInputRef}
+            style={{ display: "none" }}
+            multiple
+            accept="image/*"
+            onChange={(e): void => {
+              void handleFileSelect(e);
+            }}
+          />
           <Tooltip
             title={isExpanded ? "Collapse" : "Expand"}
             disableTouchListener={isMobile}>
@@ -773,6 +850,59 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 sx={{ ml: 1 }}>
                 <AddIcon fontSize="small" />
               </IconButton>
+            </Box>
+          )}
+
+          {attachments.length > 0 && (
+            <Box
+              display="flex"
+              flexWrap="wrap"
+              gap={1}
+              mb={1}
+              px={1}>
+              {attachments.map((att) => (
+                <Box
+                  key={att.id}
+                  sx={{
+                    position: "relative",
+                    width: 60,
+                    height: 60,
+                    borderRadius: 1,
+                    overflow: "hidden",
+                    border: (theme) => `1px solid ${theme.palette.divider}`,
+                    bgcolor: "background.paper",
+                  }}>
+                  {att.previewUrl ? (
+                    <img
+                      src={att.previewUrl}
+                      alt={att.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <Box
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      height="100%">
+                      <AttachFileIcon fontSize="small" />
+                    </Box>
+                  )}
+                  <IconButton
+                    size="small"
+                    onClick={(): void => removeAttachment(att.id)}
+                    sx={{
+                      position: "absolute",
+                      top: 0,
+                      right: 0,
+                      p: 0.2,
+                      bgcolor: "rgba(0,0,0,0.5)",
+                      color: "white",
+                      "&:hover": { bgcolor: "rgba(0,0,0,0.7)" },
+                    }}>
+                    <CloseIcon sx={{ fontSize: 12 }} />
+                  </IconButton>
+                </Box>
+              ))}
             </Box>
           )}
 

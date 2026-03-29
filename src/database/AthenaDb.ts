@@ -90,6 +90,15 @@ class AthenaDatabase extends Dexie {
 
 export type MessageType = "user" | "assistant" | "system" | "aiNote";
 
+export interface Attachment {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  data: string; // base64
+  previewUrl?: string; // for images
+}
+
 export interface Fork {
   id: string;
   name: string;
@@ -114,6 +123,7 @@ export interface Message {
   reasoning?: string;
   parentMessageId?: string;
   activeResponseId?: string;
+  attachments?: Attachment[];
 }
 
 export interface Topic {
