@@ -119,6 +119,7 @@ export interface Message {
   promptTokens: number;
   completionTokens: number;
   totalCost: number;
+  searchCount?: number;
   latencyMs?: number;
   reasoning?: string;
   parentMessageId?: string;

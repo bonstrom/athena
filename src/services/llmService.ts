@@ -24,6 +24,7 @@ export interface LlmResult {
   promptTokensDetails?: { cached_tokens?: number };
   completionTokensDetails?: { reasoning_tokens?: number };
   toolCalls?: { id: string; type: "function" | "builtin_function"; function: { name: string; arguments: string } }[];
+  searchCount: number;
   finishReason?: string;
   reasoning?: string;
 }
@@ -260,6 +261,7 @@ export async function askLlm(
     aiNote,
     aiNoteAction,
     toolCalls,
+    searchCount: toolCalls?.filter((tc) => tc.function.name === "$web_search").length ?? 0,
     finishReason,
     reasoning: reasoning.trim(),
   };
@@ -487,6 +489,7 @@ export async function askLlmStream(
     aiNote,
     aiNoteAction,
     toolCalls,
+    searchCount: toolCalls?.filter((tc) => tc.function.name === "$web_search").length ?? 0,
     finishReason,
     reasoning: reasoning.trim(),
   };
@@ -502,6 +505,7 @@ export interface OrchestrateResult {
   finalContent: string;
   totalPromptTokens: number;
   totalCompletionTokens: number;
+  totalSearchCount: number;
   lastResult: LlmResult;
 }
 
@@ -519,6 +523,7 @@ export async function orchestrateLlmLoop(
   let loopCount = 0;
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
+  let totalSearchCount = 0;
   let finalContent = "";
   let lastResult: LlmResult | null = null;
 
@@ -531,6 +536,7 @@ export async function orchestrateLlmLoop(
     lastResult = result;
     totalPromptTokens += result.promptTokens;
     totalCompletionTokens += result.completionTokens;
+    totalSearchCount += result.searchCount;
 
     if (loopCount === 1) {
       finalContent = result.content;
@@ -576,6 +582,7 @@ export async function orchestrateLlmLoop(
     finalContent,
     totalPromptTokens,
     totalCompletionTokens,
+    totalSearchCount,
     lastResult,
   };
 }
