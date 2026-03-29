@@ -3,15 +3,12 @@ import {
   calculateCostSEK,
   ChatModel,
   getDefaultModel,
-  getDefaultSecondModel,
-  chatModels,
 } from "../components/ModelSelector";
 import { useTopicStore } from "./TopicStore";
 import { orchestrateLlmLoop, LlmMessage, LlmContentPart } from "../services/llmService";
 import { Message, Attachment } from "../database/AthenaDb";
 import { athenaDb } from "../database/AthenaDb";
 import { useNotificationStore } from "./NotificationStore";
-import { useAuthStore } from "./AuthStore";
 import { BackupService } from "../services/backupService";
 
 import { SCRATCHPAD_LIMIT } from "../constants";
@@ -37,10 +34,6 @@ interface ChatStore {
   updateMessageStateOnly: (id: string, patch: Partial<Message>) => void;
   sendMessageStream: (content: string, topicId: string, messageId?: string, attachments?: Attachment[]) => Promise<void>;
   setSelectedModel: (model: ChatModel) => void;
-  isChaining: boolean;
-  setIsChaining: (value: boolean) => void;
-  secondModel: ChatModel;
-  setSecondModel: (model: ChatModel) => void;
   updateMessageContext: (messageId: string, include: boolean) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   regenerateResponse: (assistantMessageId: string) => Promise<void>;
@@ -80,24 +73,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({ selectedModel: model });
   },
 
-  isChaining: false,
-  setIsChaining: (value: boolean): void => {
-    const { currentTopicId, secondModel } = get();
-    set({ isChaining: value });
-    if (currentTopicId) {
-      void useTopicStore.getState().updateTopicChaining(currentTopicId, value, secondModel.id);
-    }
-  },
-
-  secondModel: getDefaultSecondModel(),
-  setSecondModel: (model: ChatModel): void => {
-    const { currentTopicId, isChaining } = get();
-    set({ secondModel: model });
-    if (currentTopicId) {
-      void useTopicStore.getState().updateTopicChaining(currentTopicId, isChaining, model.id);
-    }
-  },
-
   deleteMessage: async (id): Promise<void> => {
     const { currentTopicId } = get();
     if (!currentTopicId) return;
@@ -125,8 +100,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       currentTopicId: topicId,
       isInitialLoad: true,
       visibleMessageCount: 10,
-      isChaining: topic?.isChaining ?? false,
-      secondModel: chatModels.find((m) => m.id === topic?.secondModelId) ?? state.secondModel,
     }));
   },
 
@@ -448,210 +421,8 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         lastResult.promptTokensDetails,
       );
 
-      // 5. If Chaining is enabled, stream the second model as a separate response version
-      if (get().isChaining && !controller.signal.aborted) {
-        const secondModel = get().secondModel;
-        const firstCost = calculateCostSEK(
-          selectedModel,
-          totalPromptTokens,
-          totalCompletionTokens,
-          lastResult.promptTokensDetails,
-        );
-        const firstLatencyMs = Date.now() - loopStartTime;
-
-        // 5a. Finalize the first assistant message immediately with the primary result
-        const firstAssistantPatch = {
-          content: finalContent
-            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
-            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
-            .trim(),
-          reasoning: finalReasoning.trim(),
-          completionTokens: totalCompletionTokens,
-          totalCost: firstCost,
-          failed: false,
-          latencyMs: firstLatencyMs,
-          model: selectedModel.id,
-        };
-        await athenaDb.messages.update(assistantId, firstAssistantPatch);
-        get().updateMessageStateOnly(assistantId, firstAssistantPatch);
-
-        // 5b. Create the second assistant message, seeding it with the primary's
-        //     reasoning so it's visible immediately in the active bubble.
-        const secondAssistantId = crypto.randomUUID();
-        const secondAssistantMessage: Message = {
-          id: secondAssistantId,
-          topicId,
-          forkId: activeForkId,
-          type: "assistant",
-          content: "",
-          // Pre-populate with primary reasoning so user sees it while reviewer streams
-          reasoning: finalReasoning.trim() || undefined,
-          created: new Date().toISOString(),
-          model: secondModel.id,
-          isDeleted: false,
-          includeInContext: false,
-          failed: false,
-          promptTokens: 0,
-          completionTokens: 0,
-          totalCost: 0,
-          parentMessageId: userMessage.id,
-        };
-
-        await athenaDb.transaction("rw", athenaDb.messages, async () => {
-          await athenaDb.messages.add(secondAssistantMessage);
-          await athenaDb.messages.update(userMessage.id, { activeResponseId: secondAssistantId });
-        });
-
-        set((state) => {
-          const existing = state.messagesByTopic[topicId] ?? [];
-          return {
-            messagesByTopic: {
-              ...state.messagesByTopic,
-              [topicId]: sortMessages([
-                ...existing.map((m) => (m.id === userMessage.id ? { ...m, activeResponseId: secondAssistantId } : m)),
-                secondAssistantMessage,
-              ]),
-            },
-          };
-        });
-
-        // 5c. Stream the second model into the new message
-        const reviewerPrompt =
-          "You are an expert quality-assurance AI. Your task is to review a drafted response to a user's prompt and improve it. Correct any factual, logical, or grammatical errors. Ensure the formatting is clean and the tone matches the user's original intent. If the draft contains code, ensure it is syntactically correct and complete. Do not unnecessarily rewrite accurate content. Provide ONLY the final, polished response without any introductory or concluding meta-text.";
-
-        const reviewMessages: LlmMessage[] = [
-          { role: "system", content: reviewerPrompt },
-          ...existingContext.map((m): LlmMessage => ({
-            role: m.type === "user" ? "user" : m.type === "assistant" ? "assistant" : "system",
-            content: m.content,
-            reasoning_content: m.reasoning,
-          })),
-          { role: "user", content: userMessage.content },
-          { role: "assistant", content: primaryResult.finalContent },
-          {
-            role: "user",
-            content:
-              "Please review and polish your drafted response above. Correct any factual, logical, or grammatical errors. Ensure the formatting is clean and the tone matches the user's original intent. If the draft contains code, ensure it is syntactically correct and complete. Do not unnecessarily rewrite accurate content. Provide ONLY the final, polished response without any introductory or concluding meta-text.",
-          },
-        ];
-
-        let reviewerStreamedContent = "";
-        let reviewerStreamedReasoning = "";
-        // Use independent render timers for the reviewer so content and reasoning
-        // don't starve each other during fast streaming.
-        let reviewerLastContentRenderTime = 0;
-        let reviewerLastReasoningRenderTime = 0;
-        const onReviewerTokenCallback = (chunk: string): void => {
-          reviewerStreamedContent += chunk;
-          const now = Date.now();
-          if (now - reviewerLastContentRenderTime > RENDER_THROTTLE_MS) {
-            get().updateMessageStateOnly(secondAssistantId, { content: reviewerStreamedContent.trim() });
-            reviewerLastContentRenderTime = now;
-          }
-        };
-
-        const onReviewerReasoningCallback = (chunk: string): void => {
-          reviewerStreamedReasoning += chunk;
-          const now = Date.now();
-          if (now - reviewerLastReasoningRenderTime > RENDER_THROTTLE_MS) {
-            get().updateMessageStateOnly(secondAssistantId, { reasoning: reviewerStreamedReasoning.trim() });
-            reviewerLastReasoningRenderTime = now;
-          }
-        };
-
-        let reviewerFinalContent = finalContent; // fallback to primary if reviewer fails
-        let reviewerPromptTokens = 0;
-        let reviewerCompletionTokens = 0;
-        let reviewerCost = 0;
-
-        try {
-          // Preflight: ensure the reviewer model's provider has a configured API key.
-          // If not, skip the reviewer rather than crashing with "Failed to fetch".
-          const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore.getState();
-          const hasKey =
-            (secondModel.provider === "openai" && !!openAiKey) ||
-            (secondModel.provider === "deepseek" && !!deepSeekKey) ||
-            (secondModel.provider === "google" && !!googleApiKey) ||
-            (secondModel.provider === "moonshot" && !!moonshotApiKey);
-          if (!hasKey) {
-            useNotificationStore
-              .getState()
-              .addNotification(
-                "Reviewer skipped",
-                `No API key configured for reviewer model "${secondModel.label}". Please select a different reviewer model.`,
-              );
-            throw new Error(`No API key for reviewer model provider: ${secondModel.provider}`);
-          }
-
-          const reviewerResult = await orchestrateLlmLoop(
-            secondModel,
-            get().temperature,
-            reviewMessages,
-            onReviewerTokenCallback,
-            onReviewerReasoningCallback,
-            undefined, // Reviewer doesn't update scratchpad
-            controller.signal,
-          );
-
-          reviewerFinalContent = reviewerResult.finalContent;
-          reviewerPromptTokens = reviewerResult.totalPromptTokens;
-          reviewerCompletionTokens = reviewerResult.totalCompletionTokens;
-          reviewerCost = calculateCostSEK(
-            secondModel,
-            reviewerPromptTokens,
-            reviewerCompletionTokens,
-            reviewerResult.lastResult.promptTokensDetails,
-          );
-        } catch (err) {
-          console.error("Reviewer model failed:", err);
-          const errMsg = err instanceof Error ? err.message : String(err);
-          useNotificationStore.getState().addNotification("Reviewer failed", errMsg);
-        }
-
-        // 5d. Finalize both messages
-        const chainedUserPatch = {
-          promptTokens: totalPromptTokens + reviewerPromptTokens,
-          totalCost: firstCost + reviewerCost,
-          failed: false,
-        };
-        const secondAssistantPatch = {
-          content: reviewerFinalContent
-            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
-            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
-            .trim(),
-          // If the reviewer emits no reasoning, preserve the primary model's reasoning
-          // that was seeded into the bubble so the user still sees the thinking output.
-          reasoning: reviewerStreamedReasoning.trim() || finalReasoning.trim() || undefined,
-          completionTokens: reviewerCompletionTokens,
-          totalCost: reviewerCost,
-          failed: reviewerFinalContent === "",
-          latencyMs: Date.now() - loopStartTime - firstLatencyMs,
-          model: secondModel.id,
-        };
-
-        await athenaDb.transaction("rw", athenaDb.messages, async () => {
-          await athenaDb.messages.update(userMessage.id, chainedUserPatch);
-          await athenaDb.messages.update(secondAssistantId, secondAssistantPatch);
-        });
-
-        set((state) => ({
-          messagesByTopic: {
-            ...state.messagesByTopic,
-            [topicId]: (state.messagesByTopic[topicId] ?? []).map((m) => {
-              if (m.id === userMessage.id) return { ...m, ...chainedUserPatch };
-              if (m.id === secondAssistantId) return { ...m, ...secondAssistantPatch };
-              return m;
-            }),
-          },
-        }));
-
-        void topicStoreState.generateTopicName(topicId, content);
-        return;
-      }
-
+      // 5. Finalize DB Updates in atomic transaction
       const latencyMs = Date.now() - loopStartTime;
-
-      // 6. Finalize DB Updates in atomic transaction
       const userPatch = {
         promptTokens: totalPromptTokens,
         totalCost: finalTotalCost,

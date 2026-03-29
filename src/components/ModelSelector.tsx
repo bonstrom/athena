@@ -251,19 +251,3 @@ export function getDefaultTopicNameModel(): ChatModel {
   return bestModel ?? (available.length > 0 ? available[0] : chatModels[0]);
 }
 
-/** Returns a sensible default for the chaining reviewer model, always within the
- *  set of providers that have a configured API key. */
-export function getDefaultSecondModel(): ChatModel {
-  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore.getState();
-  const available = chatModels.filter(
-    (m) =>
-      (m.provider === "openai" && openAiKey) ||
-      (m.provider === "deepseek" && deepSeekKey) ||
-      (m.provider === "google" && googleApiKey) ||
-      (m.provider === "moonshot" && moonshotApiKey),
-  );
-  // Prefer a fast/light model as reviewer — but only if it has a key
-  return (
-    available.find((m) => m.id.includes("mini") || m.id.includes("flash") || m.id.includes("nano")) ?? available[0]
-  );
-}
