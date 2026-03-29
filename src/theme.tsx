@@ -1,4 +1,4 @@
-import { createTheme, Theme, alpha } from "@mui/material/styles";
+import { createTheme, Theme } from "@mui/material/styles";
 
 declare module "@mui/material/styles" {
   interface Palette {
@@ -27,69 +27,117 @@ declare module "@mui/material/Button" {
 
 export type ThemeMode = "light" | "dark";
 
-export interface ColorPreset {
-  id: string;
-  label: string;
+export interface ThemePalette {
   primary: string;
   secondary: string;
   assistant: string;
   aiNote: string;
 }
 
+export interface ColorPreset {
+  id: string;
+  label: string;
+  light: ThemePalette;
+  dark: ThemePalette;
+}
+
 export const colorPresets: ColorPreset[] = [
   {
     id: "default",
     label: "Default Blue",
-    primary: "#3f51b5",
-    secondary: "#f50057",
-    assistant: "#2c3e50",
-    aiNote: "#39346e",
+    light: {
+      primary: "#1a73e8",
+      secondary: "#d81b60",
+      assistant: "#f8f9fa",
+      aiNote: "#edf2f7",
+    },
+    dark: {
+      primary: "#1a73e8",
+      secondary: "#ff4081",
+      assistant: "#1e2433",
+      aiNote: "#242a3d",
+    },
   },
   {
     id: "midnight",
     label: "Midnight Purple",
-    primary: "#7e57c2",
-    secondary: "#ff4081",
-    assistant: "#311b92",
-    aiNote: "#4a148c",
+    light: {
+      primary: "#7e57c2",
+      secondary: "#f06292",
+      assistant: "#faf5ff",
+      aiNote: "#f3e8ff",
+    },
+    dark: {
+      primary: "#7e57c2",
+      secondary: "#ff4081",
+      assistant: "#281e3d",
+      aiNote: "#2d2445",
+    },
   },
   {
     id: "forest",
     label: "Forest Green",
-    primary: "#2e7d32",
-    secondary: "#ffa000",
-    assistant: "#1b5e20",
-    aiNote: "#33691e",
+    light: {
+      primary: "#2e7d32",
+      secondary: "#f9a825",
+      assistant: "#f0fdf4",
+      aiNote: "#ecfdf5",
+    },
+    dark: {
+      primary: "#2e7d32",
+      secondary: "#ffa000",
+      assistant: "#1b281b",
+      aiNote: "#1e301e",
+    },
   },
   {
     id: "rose",
     label: "Rose Pink",
-    primary: "#ec407a",
-    secondary: "#00bcd4",
-    assistant: "#880e4f",
-    aiNote: "#ad1457",
+    light: {
+      primary: "#d81b60",
+      secondary: "#00acc1",
+      assistant: "#fff1f2",
+      aiNote: "#fff5f7",
+    },
+    dark: {
+      primary: "#ec407a",
+      secondary: "#00bcd4",
+      assistant: "#331821",
+      aiNote: "#401d2a",
+    },
   },
   {
     id: "gold",
     label: "Golden Amber",
-    primary: "#ffa000",
-    secondary: "#7c4dff",
-    assistant: "#4e342e",
-    aiNote: "#5d4037",
+    light: {
+      primary: "#ef6c00",
+      secondary: "#6200ea",
+      assistant: "#fffaf0",
+      aiNote: "#fff7ed",
+    },
+    dark: {
+      primary: "#ff8f00",
+      secondary: "#7c4dff",
+      assistant: "#332314",
+      aiNote: "#4d351d",
+    },
   },
 ];
 
 export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
   const preset = colorPresets.find((p) => p.id === presetId) || colorPresets[0];
+  const palette = mode === "light" ? preset.light : preset.dark;
 
   return createTheme({
     palette: {
       mode,
       primary: {
-        main: preset.primary,
+        main: palette.primary,
+        contrastText: mode === "dark" ? "#ffffff" : "rgba(0, 0, 0, 0.87)",
       },
       secondary: {
-        main: preset.secondary,
+        main: palette.secondary,
+        contrastText: mode === "dark" ? "#ffffff" : "rgba(0, 0, 0, 0.87)",
       },
       background: {
         default: mode === "dark" ? "#121212" : "#f5f5f5",
@@ -100,11 +148,11 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
         secondary: mode === "dark" ? "rgba(255, 255, 255, 0.7)" : "rgba(0, 0, 0, 0.6)",
       },
       assistant: {
-        main: mode === "dark" ? preset.assistant : alpha(preset.assistant, 0.1),
+        main: palette.assistant,
         contrastText: mode === "dark" ? "#ffffff" : "rgba(0, 0, 0, 0.87)",
       },
       aiNote: {
-        main: mode === "dark" ? preset.aiNote : alpha(preset.aiNote, 0.1),
+        main: palette.aiNote,
         contrastText: mode === "dark" ? "#ffffff" : "rgba(0, 0, 0, 0.87)",
       },
     },
@@ -112,14 +160,44 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
       MuiCssBaseline: {
         styleOverrides: {
           a: {
-            color: mode === "dark" ? preset.primary : preset.primary,
+            color: palette.primary,
             textDecoration: "underline",
             "&:hover": {
               textDecoration: "none",
             },
             "&:visited": {
-              color: mode === "dark" ? preset.secondary : preset.secondary,
+              color: palette.secondary,
             },
+          },
+        },
+      },
+      MuiButton: {
+        styleOverrides: {
+          root: {
+            textTransform: "none",
+            borderRadius: 12,
+            fontWeight: "bold",
+            textShadow: mode === "dark" ? "0px 0px 2px rgba(0, 0, 0, 0.8)" : "none",
+          },
+          contained: {
+            boxShadow: "none",
+            "&:hover": {
+              boxShadow: "none",
+            },
+          },
+        },
+      },
+      MuiIconButton: {
+        styleOverrides: {
+          root: {
+            borderRadius: 12,
+          },
+        },
+      },
+      MuiPaper: {
+        styleOverrides: {
+          root: {
+            borderRadius: 16,
           },
         },
       },

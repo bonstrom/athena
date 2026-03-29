@@ -69,7 +69,7 @@ export const Sidebar = (): JSX.Element => {
         px={2}
         pb={2}>
         <Button
-          variant="outlined"
+          variant="contained"
           fullWidth
           onClick={(): void => {
             if (isMobile) closeDrawer();
@@ -80,7 +80,7 @@ export const Sidebar = (): JSX.Element => {
         </Button>
 
         <Button
-          variant="outlined"
+          variant="contained"
           fullWidth
           onClick={(): void => {
             setConfirmLogoutOpen(true);

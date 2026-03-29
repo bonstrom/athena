@@ -270,10 +270,9 @@ const Settings: React.FC = () => {
       </Box>
       <Button
         size="small"
-        variant="text"
+        variant="contained"
         onClick={onUpdate}
         sx={{
-          textTransform: "none",
           alignSelf: { xs: "flex-end", sm: "center" },
         }}>
         {isStored ? "Update Key" : "Add Key"}
@@ -555,7 +554,7 @@ const Settings: React.FC = () => {
           justifyContent="flex-end">
           <Button
             variant="contained"
-            color="assistant"
+            color="primary"
             onClick={handleSave}
             disabled={
               (openAiInput !== "" && !validateKey(openAiInput, "openai")) ||
@@ -614,7 +613,7 @@ const Settings: React.FC = () => {
             </Button>
 
             <Button
-              variant="outlined"
+              variant="contained"
               color="secondary"
               onClick={(): void => fileInputRef.current?.click()}>
               Import Database
@@ -660,10 +659,11 @@ const Settings: React.FC = () => {
                     {autoBackupEnabled && (
                       <Button
                         size="small"
+                        variant="contained"
                         onClick={(): void => {
                           handleChangeLocation().catch(console.error);
                         }}
-                        sx={{ textTransform: "none" }}>
+                        sx={{ }}>
                         Change Location
                       </Button>
                     )}
@@ -687,7 +687,7 @@ const Settings: React.FC = () => {
                             onClick={(): void => {
                               void BackupService.performAutoBackup(true);
                             }}
-                            sx={{ textTransform: "none", py: 0 }}>
+                            sx={{ py: 0 }}>
                             Authorize Now
                           </Button>
                         </Box>

@@ -74,17 +74,24 @@ const ThemeSelector: React.FC = () => {
               sx={{
                 p: 1.5,
                 cursor: "pointer",
-                borderRadius: 2,
                 border: "2px solid",
-                borderColor: colorTheme === preset.id ? preset.primary : "divider",
+                borderColor:
+                  colorTheme === preset.id
+                    ? preset[themeMode].primary
+                    : "divider",
                 bgcolor: (theme) =>
                   colorTheme === preset.id
-                    ? alpha(preset.primary, theme.palette.mode === "dark" ? 0.2 : 0.1)
+                    ? alpha(
+                        preset[themeMode].primary,
+                        theme.palette.mode === "dark" ? 0.2 : 0.1,
+                      )
                     : "background.paper",
                 transition: "all 0.2s",
                 "&:hover": {
                   borderColor: (theme) =>
-                    colorTheme === preset.id ? preset.primary : theme.palette.text.disabled,
+                    colorTheme === preset.id
+                      ? preset[themeMode].primary
+                      : theme.palette.text.disabled,
                   transform: "translateY(-2px)",
                 },
                 display: "flex",
@@ -97,10 +104,12 @@ const ThemeSelector: React.FC = () => {
                   width: 24,
                   height: 24,
                   borderRadius: "50%",
-                  bgcolor: preset.primary,
+                  bgcolor: preset[themeMode].primary,
                   mb: 1,
                   boxShadow: (theme) =>
-                    colorTheme === preset.id ? `0 0 8px ${preset.primary}` : "none",
+                    colorTheme === preset.id
+                      ? `0 0 8px ${preset[themeMode].primary}`
+                      : "none",
                 }}
               />
               <Typography

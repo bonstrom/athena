@@ -239,8 +239,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   "&:hover": message.reasoning
                     ? {
                         "& .MuiTypography-root, & .reasoning-icon": {
-                          color: (theme): string =>
-                            theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.9)" : "rgba(0, 0, 0, 0.8)",
+                          color: "text.primary",
                         },
                       }
                     : {},
@@ -342,8 +341,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     void handleCopy();
                   }}
                   sx={{
-                    color: (theme): string =>
-                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                    color: "text.secondary",
                     "&:hover": {
                       bgcolor: (theme): string =>
                         theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
@@ -387,8 +385,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     void togglePin();
                   }}
                   sx={{
-                    color: (theme): string =>
-                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                    color: "text.secondary",
                     "&:hover": {
                       bgcolor: (theme): string =>
                         theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
@@ -432,8 +429,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   size="small"
                   onClick={handleMenuOpen}
                   sx={{
-                    color: (theme): string =>
-                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                    color: "text.secondary",
                     "&:hover": {
                       bgcolor: (theme): string =>
                         theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
