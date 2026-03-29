@@ -274,81 +274,51 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         width="100%"
         maxWidth={chatWidth === "full" ? "100%" : chatWidth}
         display="flex"
-        alignItems="flex-end"
+        flexDirection={isMobile ? "column" : "row"}
+        alignItems={isMobile ? "stretch" : "flex-end"}
         gap={1}>
-        <Box
-          display="flex"
-          alignItems="center">
-          <Tooltip
-            title="Topic Settings"
-            disableTouchListener={isMobile}>
-            <span>
-              <IconButton
-                onClick={handleTempClick}
-                disabled={sending}
-                aria-label="Topic Settings">
-                <TuneIcon />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip
-            title="Attach File (Images only for most models)"
-            disableTouchListener={isMobile}>
-            <span>
-              <IconButton
-                onClick={handleFileButtonClick}
-                disabled={sending || !(selectedModel.supportsVision || selectedModel.supportsFiles)}
-                aria-label="Attach File">
-                <AttachFileIcon />
-              </IconButton>
-            </span>
-          </Tooltip>
-          {isMobile && (
+        {!isMobile && (
+          <Box
+            display="flex"
+            alignItems="center">
             <Tooltip
-              title="Take Photo"
+              title="Topic Settings"
               disableTouchListener={isMobile}>
               <span>
                 <IconButton
-                  onClick={handleCameraButtonClick}
-                  disabled={sending || !selectedModel.supportsVision}
-                  aria-label="Take Photo">
-                  <PhotoCameraIcon />
+                  onClick={handleTempClick}
+                  disabled={sending}
+                  aria-label="Topic Settings">
+                  <TuneIcon />
                 </IconButton>
               </span>
             </Tooltip>
-          )}
-          <input
-            type="file"
-            ref={fileInputRef}
-            style={{ display: "none" }}
-            multiple
-            accept="image/*"
-            onChange={(e): void => {
-              void handleFileSelect(e);
-            }}
-          />
-          <input
-            type="file"
-            ref={cameraInputRef}
-            style={{ display: "none" }}
-            accept="image/*"
-            capture="environment"
-            onChange={(e): void => {
-              void handleFileSelect(e);
-            }}
-          />
-          <Tooltip
-            title={isExpanded ? "Collapse" : "Expand"}
-            disableTouchListener={isMobile}>
-            <span>
-              <IconButton
-                onClick={(): void => setIsExpanded(!isExpanded)}
-                disabled={sending}
-                aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}>
-                {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
-              </IconButton>
-            </span>
-          </Tooltip>
+            <Tooltip
+              title="Attach File (Images only for most models)"
+              disableTouchListener={isMobile}>
+              <span>
+                <IconButton
+                  onClick={handleFileButtonClick}
+                  disabled={sending || !(selectedModel.supportsVision || selectedModel.supportsFiles)}
+                  aria-label="Attach File">
+                  <AttachFileIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip
+              title={isExpanded ? "Collapse" : "Expand"}
+              disableTouchListener={isMobile}>
+              <span>
+                <IconButton
+                  onClick={(): void => setIsExpanded(!isExpanded)}
+                  disabled={sending}
+                  aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}>
+                  {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
+        )}
           <Menu
             anchorEl={anchorEl}
             open={openTempMenu}
@@ -817,7 +787,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               />
             </MenuItem>
           </Menu>
-        </Box>
 
         {currentTopicId && showContextDialog && (
           <TopicContextDialog
@@ -833,6 +802,27 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             onClose={(): void => setShowScratchpadDialog(false)}
           />
         )}
+
+        <input
+          type="file"
+          ref={fileInputRef}
+          style={{ display: "none" }}
+          multiple
+          accept="image/*"
+          onChange={(e): void => {
+            void handleFileSelect(e);
+          }}
+        />
+        <input
+          type="file"
+          ref={cameraInputRef}
+          style={{ display: "none" }}
+          accept="image/*"
+          capture="environment"
+          onChange={(e): void => {
+            void handleFileSelect(e);
+          }}
+        />
 
         <Box
           display="flex"
@@ -969,10 +959,40 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           />
         </Box>
 
-        <Tooltip
-          title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Enter)"}
-          disableTouchListener={isMobile}>
-          <span>
+        {isMobile ? (
+          <Box
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+            width="100%">
+            <Box
+              display="flex"
+              alignItems="center">
+              <IconButton
+                onClick={handleTempClick}
+                disabled={sending}
+                aria-label="Topic Settings">
+                <TuneIcon />
+              </IconButton>
+              <IconButton
+                onClick={handleFileButtonClick}
+                disabled={sending || !(selectedModel.supportsVision || selectedModel.supportsFiles)}
+                aria-label="Attach File">
+                <AttachFileIcon />
+              </IconButton>
+              <IconButton
+                onClick={handleCameraButtonClick}
+                disabled={sending || !selectedModel.supportsVision}
+                aria-label="Take Photo">
+                <PhotoCameraIcon />
+              </IconButton>
+              <IconButton
+                onClick={(): void => setIsExpanded(!isExpanded)}
+                disabled={sending}
+                aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}>
+                {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
+              </IconButton>
+            </Box>
             <IconButton
               onClick={sending ? handleStop : handleSend}
               disabled={false}
@@ -980,8 +1000,22 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               aria-label={sending ? "Stop generating" : "Send message"}>
               {sending ? <StopCircleIcon /> : <SendIcon />}
             </IconButton>
-          </span>
-        </Tooltip>
+          </Box>
+        ) : (
+          <Tooltip
+            title={sending ? "Stop Generation" : "Send Message (Enter)"}
+            disableTouchListener={isMobile}>
+            <span>
+              <IconButton
+                onClick={sending ? handleStop : handleSend}
+                disabled={false}
+                color={sending ? "error" : "primary"}
+                aria-label={sending ? "Stop generating" : "Send message"}>
+                {sending ? <StopCircleIcon /> : <SendIcon />}
+              </IconButton>
+            </span>
+          </Tooltip>
+        )}
       </Box>
     </Box>
   );
