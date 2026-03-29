@@ -18,7 +18,7 @@ const ThemeSelector: React.FC = () => {
   const handleModeChange = (
     _event: React.MouseEvent<HTMLElement>,
     newMode: "light" | "dark" | null,
-  ) => {
+  ): void => {
     if (newMode !== null) {
       setThemeMode(newMode);
     }
@@ -69,7 +69,7 @@ const ThemeSelector: React.FC = () => {
           {colorPresets.map((preset) => (
             <Paper
               key={preset.id}
-              onClick={() => setColorTheme(preset.id)}
+              onClick={(): void => setColorTheme(preset.id)}
               elevation={0}
               sx={{
                 p: 1.5,
@@ -106,7 +106,7 @@ const ThemeSelector: React.FC = () => {
                   borderRadius: "50%",
                   bgcolor: preset[themeMode].primary,
                   mb: 1,
-                  boxShadow: (theme) =>
+                  boxShadow: () =>
                     colorTheme === preset.id
                       ? `0 0 8px ${preset[themeMode].primary}`
                       : "none",

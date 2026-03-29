@@ -175,6 +175,50 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
     return processedGroups.slice(-visibleMessageCount);
   }, [processedGroups, visibleMessageCount]);
 
+  if (processedGroups.length === 0) {
+    return (
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          opacity: 0.8,
+          animation: "fadeIn 1.2s ease-out",
+          pointerEvents: "none",
+          userSelect: "none",
+          "@keyframes fadeIn": {
+            from: { opacity: 0, transform: "translateY(20px)" },
+            to: { opacity: 0.8, transform: "translateY(0)" },
+          },
+        }}>
+        <Box
+          component="img"
+          src="/athena/icons/android-chrome-192x192.png"
+          alt="Athena Logo"
+          sx={{
+            width: 100,
+            height: 100,
+            mb: 2,
+            filter: (theme) => (theme.palette.mode === "dark" ? "brightness(0.8) contrast(1.2)" : "none"),
+          }}
+        />
+        <Typography
+          variant="h3"
+          sx={{
+            fontWeight: "bold",
+            color: "text.primary",
+            fontFamily: "'IM Fell Double Pica', serif",
+            lineHeight: 1,
+            m: 0,
+          }}>
+          Athena
+        </Typography>
+      </Box>
+    );
+  }
+
   return (
     <ScrollToBottom
       key={topicId}

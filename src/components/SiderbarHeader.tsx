@@ -46,7 +46,7 @@ export const SidebarHeader = (): JSX.Element => {
           <Typography
             variant="h6"
             noWrap
-            sx={{ fontSize: 32, fontWeight: "bold", fontFamily: "'Cinzel', serif" }}>
+            sx={{ fontSize: 32, fontWeight: "bold", fontFamily: "'IM Fell Double Pica', serif" }}>
             Athena
           </Typography>
         </Box>

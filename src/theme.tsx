@@ -125,7 +125,7 @@ export const colorPresets: ColorPreset[] = [
 ];
 
 export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
-  const preset = colorPresets.find((p) => p.id === presetId) || colorPresets[0];
+  const preset = colorPresets.find((p) => p.id === presetId) ?? colorPresets[0];
   const palette = mode === "light" ? preset.light : preset.dark;
 
   return createTheme({

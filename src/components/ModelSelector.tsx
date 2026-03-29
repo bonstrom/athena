@@ -248,7 +248,7 @@ export function getDefaultTopicNameModel(): ChatModel {
       (m.provider === "moonshot" && moonshotApiKey),
   );
   const bestModel = available.find((m) => m.id.includes("nano") || m.id.includes("flash"));
-  return bestModel ?? available[0] ?? chatModels[0];
+  return bestModel ?? (available.length > 0 ? available[0] : chatModels[0]);
 }
 
 /** Returns a sensible default for the chaining reviewer model, always within the
