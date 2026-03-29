@@ -12,7 +12,12 @@ import {
   DialogTitle,
   Zoom,
   alpha,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from "@mui/material";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { useState, useRef, memo } from "react";
 import { useAuthStore } from "../store/AuthStore";
 import MarkdownWithCode from "./MarkdownWithCode";
@@ -30,7 +35,7 @@ import { useNotificationStore } from "../store/NotificationStore";
 import { useTopicStore } from "../store/TopicStore";
 import { useUiStore } from "../store/UiStore";
 import AltRouteIcon from "@mui/icons-material/AltRoute";
-import PsychologyIcon from "@mui/icons-material/Psychology";
+
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 
@@ -51,6 +56,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isAssistant = message.type === "assistant";
@@ -128,6 +134,29 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
     }
   };
 
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>): void => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = (): void => {
+    setAnchorEl(null);
+  };
+
+  const handleRegenerateMenu = (): void => {
+    void regenerateResponse(message.id);
+    handleMenuClose();
+  };
+
+  const handleForkMenu = (): void => {
+    void handleFork();
+    handleMenuClose();
+  };
+
+  const handleDeleteMenu = (): void => {
+    handleDeleteClick();
+    handleMenuClose();
+  };
+
   return (
     <Paper
       sx={{
@@ -197,14 +226,50 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   )}
                 </Box>
               }>
-              <Typography
+              <Box
+                onClick={message.reasoning ? (): void => setShowReasoning(!showReasoning) : undefined}
                 onMouseEnter={handleMouseEnter}
                 onMouseLeave={handleMouseLeave}
-                variant="subtitle2"
-                color="text.secondary"
-                sx={{ cursor: "default", display: "inline-block" }}>
-                {message.type === "user" ? userName : getModelLabel(message.model)}
-              </Typography>
+                sx={{
+                  cursor: message.reasoning ? "pointer" : "default",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 0.5,
+                  userSelect: "none",
+                  "&:hover": message.reasoning
+                    ? {
+                        "& .MuiTypography-root, & .reasoning-icon": {
+                          color: (theme): string =>
+                            theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.9)" : "rgba(0, 0, 0, 0.8)",
+                        },
+                      }
+                    : {},
+                }}>
+                <Typography
+                  variant="subtitle2"
+                  color="text.secondary"
+                  sx={{ transition: "color 0.2s", display: "inline-block" }}>
+                  {message.type === "user" ? userName : getModelLabel(message.model)}
+                </Typography>
+                {message.reasoning && (
+                  <Box
+                    className="reasoning-icon"
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      color: "text.secondary",
+                      transition: "color 0.2s",
+                      ml: 0.25,
+                    }}>
+
+                    {showReasoning ? (
+                      <ExpandLessIcon sx={{ fontSize: "1.1rem" }} />
+                    ) : (
+                      <ExpandMoreIcon sx={{ fontSize: "1.1rem" }} />
+                    )}
+                  </Box>
+                )}
+              </Box>
             </Tooltip>
 
             {isAssistant && versions && versions.length > 1 && (
@@ -263,115 +328,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             display="flex"
             alignItems="center"
             gap={1}>
-            {/* Group 1: Regenerate and Delete */}
-            <Box
-              display="flex"
-              alignItems="center"
-              gap={0.5}
-              mr={2}>
-              {isAssistant && message.content !== "" && !message.failed && (
-                <Tooltip
-                  title="Regenerate response"
-                  disableTouchListener={isMobile}>
-                  <IconButton
-                    size="small"
-                    onClick={(): void => {
-                      void regenerateResponse(message.id);
-                    }}
-                    sx={{
-                      color: (theme): string =>
-                        theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
-                      "&:hover": {
-                        bgcolor: (theme): string =>
-                          theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
-                      },
-                    }}>
-                    <Box
-                      position="relative"
-                      display="flex"
-                      alignItems="center"
-                      justifyContent="center"
-                      sx={{ width: 20, height: 20 }}>
-                      <Zoom
-                        in
-                        timeout={200}>
-                        <RefreshIcon fontSize="small" />
-                      </Zoom>
-                    </Box>
-                  </IconButton>
-                </Tooltip>
-              )}
-
-              <Tooltip
-                title="Delete message"
-                disableTouchListener={isMobile}>
-                <IconButton
-                  size="small"
-                  onClick={handleDeleteClick}
-                  sx={{
-                    color: (theme): string =>
-                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
-                    "&:hover": {
-                      bgcolor: (theme): string =>
-                        theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
-                    },
-                  }}>
-                  <Box
-                    position="relative"
-                    display="flex"
-                    alignItems="center"
-                    justifyContent="center"
-                    sx={{ width: 20, height: 20 }}>
-                    <Zoom
-                      in
-                      timeout={200}>
-                      <DeleteIcon fontSize="small" />
-                    </Zoom>
-                  </Box>
-                </IconButton>
-              </Tooltip>
-            </Box>
-
-            {/* Group 2: Copy and Pin */}
+            {/* High-frequency actions: Copy and Pin */}
             <Box
               display="flex"
               alignItems="center"
               gap={0.5}>
-              {isAssistant && message.content !== "" && !message.failed && (
-                <Tooltip
-                  title="Fork conversation here"
-                  disableTouchListener={isMobile}>
-                  <IconButton
-                    size="small"
-                    onClick={(): void => {
-                      void handleFork();
-                    }}
-                    sx={{
-                      color: (theme): string =>
-                        theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
-                      "&:hover": {
-                        bgcolor: (theme): string =>
-                          theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
-                      },
-                    }}>
-                    <Box
-                      position="relative"
-                      display="flex"
-                      alignItems="center"
-                      justifyContent="center"
-                      sx={{ width: 20, height: 20 }}>
-                      <Zoom
-                        in
-                        timeout={200}>
-                        <AltRouteIcon
-                          fontSize="small"
-                          sx={{ transform: "rotate(90deg)" }}
-                        />
-                      </Zoom>
-                    </Box>
-                  </IconButton>
-                </Tooltip>
-              )}
               <Tooltip
                 title={copied ? "Copied!" : "Copy message"}
                 disableTouchListener={isMobile}>
@@ -462,36 +423,58 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               </Tooltip>
             </Box>
 
-            {/* Group 3: Reasoning Toggle */}
-            {message.reasoning && (
-              <Box
-                display="flex"
-                alignItems="center">
-                <Tooltip
-                  title={showReasoning ? "Hide Reasoning" : "Show Reasoning"}
-                  disableTouchListener={isMobile}>
-                  <Button
-                    size="small"
-                    onClick={(): void => setShowReasoning(!showReasoning)}
-                    sx={{
-                      minWidth: 40,
-                      p: "4px",
-                      borderRadius: 1.5,
-                      display: "flex",
-                      gap: 0.25,
-                      color: (theme): string =>
-                        theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.7)" : "rgba(0, 0, 0, 0.6)",
-                      "&:hover": {
-                        bgcolor: (theme): string =>
-                          theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
-                      },
-                    }}>
-                    <PsychologyIcon fontSize="small" />
-                    {showReasoning ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                  </Button>
-                </Tooltip>
-              </Box>
-            )}
+
+
+            {/* More Actions Menu */}
+            <Box>
+              <Tooltip title="More actions">
+                <IconButton
+                  size="small"
+                  onClick={handleMenuOpen}
+                  sx={{
+                    color: (theme): string =>
+                      theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.5)" : "rgba(0, 0, 0, 0.5)",
+                    "&:hover": {
+                      bgcolor: (theme): string =>
+                        theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+                    },
+                  }}>
+                  <MoreVertIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={handleMenuClose}
+                transformOrigin={{ horizontal: "right", vertical: "top" }}
+                anchorOrigin={{ horizontal: "right", vertical: "bottom" }}>
+                {isAssistant && message.content !== "" && !message.failed && (
+                  <MenuItem onClick={handleRegenerateMenu}>
+                    <ListItemIcon>
+                      <RefreshIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>Regenerate</ListItemText>
+                  </MenuItem>
+                )}
+                {isAssistant && message.content !== "" && !message.failed && (
+                  <MenuItem onClick={handleForkMenu}>
+                    <ListItemIcon>
+                      <AltRouteIcon
+                        fontSize="small"
+                        sx={{ transform: "rotate(90deg)" }}
+                      />
+                    </ListItemIcon>
+                    <ListItemText>Fork</ListItemText>
+                  </MenuItem>
+                )}
+                <MenuItem onClick={handleDeleteMenu}>
+                  <ListItemIcon>
+                    <DeleteIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Delete</ListItemText>
+                </MenuItem>
+              </Menu>
+            </Box>
           </Box>
         </Box>
 

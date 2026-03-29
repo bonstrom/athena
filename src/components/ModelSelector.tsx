@@ -62,7 +62,7 @@ export const chatModels: ChatModel[] = [
   },
   {
     id: "deepseek-reasoner",
-    label: "Deepseek Reasoner",
+    label: "Deepseek R",
     input: 0.28,
     cachedInput: 0.028,
     output: 0.42,
