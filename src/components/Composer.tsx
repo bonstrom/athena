@@ -901,21 +901,26 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 </IconButton>
               </span>
             </Tooltip>
-            {selectedModel.provider === "moonshot" && (
-              <Tooltip
-                title={`Web Search (${webSearchEnabled ? "Enabled" : "Disabled"})`}
-                disableTouchListener={isMobile}>
-                <span>
-                  <IconButton
-                    onClick={(): void => setWebSearchEnabled(!webSearchEnabled)}
-                    disabled={sending}
-                    color={webSearchEnabled ? "primary" : "default"}
-                    aria-label="Toggle Web Search">
-                    <LanguageIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            )}
+            <Tooltip
+              title={`Web Search (${webSearchEnabled ? "Enabled" : "Disabled"})`}
+              disableTouchListener={isMobile}>
+              <span>
+                <IconButton
+                  onClick={(): void => {
+                    const nextState = !webSearchEnabled;
+                    if (nextState && selectedModel.id !== "kimi-k2.5") {
+                      const kimi = chatModels.find((m) => m.id === "kimi-k2.5");
+                      if (kimi) setSelectedModel(kimi);
+                    }
+                    setWebSearchEnabled(nextState);
+                  }}
+                  disabled={sending}
+                  color={webSearchEnabled ? "primary" : "default"}
+                  aria-label="Toggle Web Search">
+                  <LanguageIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
           </Box>
           <Tooltip
             title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Enter)"}

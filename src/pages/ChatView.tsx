@@ -53,27 +53,28 @@ const ChatView: React.FC = () => {
         sx={{
           flexGrow: 1,
           minHeight: 0,
-          overflow: "hidden",
           display: "flex",
           flexDirection: "column",
+          width: "100%",
           alignItems: "center",
-          pt: 1,
+          overflow: "hidden",
         }}>
         <Box
-          width="100%"
-          maxWidth={{ xs: "100%", md: chatWidth === "full" ? "100%" : chatWidth }}
-          px={{ xs: 1, md: 2 }}
-          mx="auto"
-          display="flex"
-          flexDirection="column"
-          flexGrow={1}
-          minHeight={0}>
+          sx={{
+            width: "100%",
+            maxWidth: { xs: "100%", md: chatWidth === "full" ? "100%" : chatWidth },
+            flexGrow: 1,
+            minHeight: 0,
+            display: "flex",
+            flexDirection: "column",
+            px: { xs: 1, md: 2 },
+          }}>
           {error ? (
             <Box
               display="flex"
               alignItems="center"
               justifyContent="center"
-              height="50vh"
+              height="100%"
               color="text.secondary">
               {error}
             </Box>
@@ -82,11 +83,7 @@ const ChatView: React.FC = () => {
               key={displayTopicId}
               in={isVisible}
               timeout={{ enter: 150, exit: 0 }}>
-              <Box
-                width="100%"
-                height="100%"
-                display="flex"
-                flexDirection="column">
+              <Box sx={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
                 {displayTopicId && <ForkTabs topicId={displayTopicId} />}
                 <MessageList
                   messages={messages}

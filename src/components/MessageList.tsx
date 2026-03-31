@@ -118,7 +118,7 @@ interface Props {
   maxContextMessages: number;
 }
 
-const ROOT_CLASS = css({ height: "100%", flex: 1 });
+const ROOT_CLASS = css({ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" });
 const FOLLOW_BUTTON_CLASS = css({ display: "none" });
 
 const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
