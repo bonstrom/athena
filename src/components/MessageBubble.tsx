@@ -40,6 +40,8 @@ import AltRouteIcon from '@mui/icons-material/AltRoute';
 
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 interface MessageBubbleProps {
   message: Message;
@@ -170,9 +172,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
     <Paper
       sx={{
         p: 2,
+        pl: message.type === 'user' ? { xs: 2, sm: 6 } : undefined,
         width: '100%',
         borderRadius: 3,
         border: message.failed ? (theme): string => `1px solid ${theme.palette.error.main}` : 'none',
+        borderLeft: !message.failed && message.type === 'assistant' ? (theme): string => `3px solid ${theme.palette.primary.main}` : undefined,
         bgcolor: (theme): string | undefined => {
           if (message.failed) return alpha(theme.palette.error.main, 0.1);
           if (message.type === 'assistant') return theme.palette.assistant.main;
@@ -184,6 +188,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           if (message.type === 'assistant') return theme.palette.assistant.contrastText;
           if (message.type === 'aiNote') return theme.palette.aiNote.contrastText;
           return undefined;
+        },
+        '&:hover .message-actions': {
+          opacity: 1,
         },
       }}
     >
@@ -283,7 +290,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   }}
                   sx={{ p: 0.25, color: 'text.secondary' }}
                 >
-                  <ExpandLessIcon fontSize="small" sx={{ transform: 'rotate(-90deg)', fontSize: '1.1rem' }} />
+                  <ChevronLeftIcon sx={{ fontSize: '1.1rem' }} />
                 </IconButton>
                 <Typography
                   variant="caption"
@@ -303,13 +310,22 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   }}
                   sx={{ p: 0.25, color: 'text.secondary' }}
                 >
-                  <ExpandMoreIcon fontSize="small" sx={{ transform: 'rotate(-90deg)', fontSize: '1.1rem' }} />
+                  <ChevronRightIcon sx={{ fontSize: '1.1rem' }} />
                 </IconButton>
               </Box>
             )}
           </Box>
 
-          <Box display="flex" alignItems="center" gap={1}>
+          <Box
+            className="message-actions"
+            display="flex"
+            alignItems="center"
+            gap={1}
+            sx={{
+              opacity: isMobile || Boolean(anchorEl) ? 1 : 0,
+              transition: 'opacity 0.15s ease',
+            }}
+          >
             {/* High-frequency actions: Copy and Pin */}
             <Box display="flex" alignItems="center" gap={0.5}>
               <Tooltip title={copied ? 'Copied!' : 'Copy message'} disableTouchListener={isMobile}>

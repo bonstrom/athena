@@ -18,6 +18,7 @@ import {
   FormControl,
   Select,
   SelectChangeEvent,
+  alpha,
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
@@ -265,7 +266,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       pt={1}
       justifyContent="center"
       sx={{
-        backgroundColor: (theme) => theme.palette.background.default,
+        backgroundColor: (theme) => alpha(theme.palette.background.default, 0.85),
+        backdropFilter: 'blur(12px)',
+        borderTop: (theme) => `1px solid ${theme.palette.divider}`,
         position: 'sticky',
         bottom: 0,
       }}
@@ -279,7 +282,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
           PaperProps={{
             sx: {
-              borderRadius: 3,
               minWidth: 260,
               mt: -1,
               border: (theme) => `1px solid ${theme.palette.divider}`,

@@ -13,23 +13,23 @@ import {
   Box,
   Tooltip,
   Typography,
-} from "@mui/material";
-import { useNavigate, useParams } from "react-router-dom";
-import { useUiStore } from "../store/UiStore";
-import { useAuthStore } from "../store/AuthStore";
-import { JSX, useState, useEffect, useRef } from "react";
-import { useTopicStore } from "../store/TopicStore";
-import EditIcon from "@mui/icons-material/Edit";
-import SaveIcon from "@mui/icons-material/Check";
-import CloseIcon from "@mui/icons-material/Close";
-import DeleteIcon from "@mui/icons-material/Delete";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
-import Menu from "@mui/material/Menu";
-import MenuItem from "@mui/material/MenuItem";
-import TopicContextDialog from "./TopicContextDialog";
-import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
-import AltRouteIcon from "@mui/icons-material/AltRoute";
-import { Topic } from "../database/AthenaDb";
+} from '@mui/material';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useUiStore } from '../store/UiStore';
+import { useAuthStore } from '../store/AuthStore';
+import { JSX, useState, useEffect, useRef } from 'react';
+import { useTopicStore } from '../store/TopicStore';
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Check';
+import CloseIcon from '@mui/icons-material/Close';
+import DeleteIcon from '@mui/icons-material/Delete';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import TopicContextDialog from './TopicContextDialog';
+import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined';
+import AltRouteIcon from '@mui/icons-material/AltRoute';
+import { Topic } from '../database/AthenaDb';
 
 export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
   const { topicId } = useParams();
@@ -66,7 +66,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
           setTokenCount(count);
           setTotalCost(cost);
         } catch (err) {
-          console.error("Failed to fetch topic stats", err);
+          console.error('Failed to fetch topic stats', err);
         } finally {
           setIsLoadingStats(false);
         }
@@ -83,7 +83,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
   const handleDelete = async (): Promise<void> => {
     setConfirmOpen(false);
     await deleteTopic(topic.id);
-    if (topic.id === topicId) void navigate("/");
+    if (topic.id === topicId) void navigate('/');
   };
 
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
@@ -117,23 +117,14 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
     <>
       <ListItem disablePadding>
         {isEditing ? (
-          <Box
-            display="flex"
-            alignItems="center"
-            width="100%"
-            pl={2}
-            pr={1}>
-            <TextField
-              value={editedName}
-              onChange={(e): void => setEditedName(e.target.value)}
-              size="small"
-              fullWidth
-            />
+          <Box display="flex" alignItems="center" width="100%" pl={2} pr={1}>
+            <TextField value={editedName} onChange={(e): void => setEditedName(e.target.value)} size="small" fullWidth />
 
             <IconButton
               onClick={(): void => {
                 void save();
-              }}>
+              }}
+            >
               <SaveIcon />
             </IconButton>
 
@@ -146,13 +137,17 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             display="flex"
             alignItems="center"
             width="100%"
-            py={0.5}>
+            py={0.5}
+            sx={{
+              '&:hover .morevert-btn': { opacity: 1 },
+            }}
+          >
             <Tooltip
               open={isMobile ? false : tooltipOpen}
               disableTouchListener={isMobile}
               title={
                 isLoadingStats || tokenCount === null || totalCost === null ? (
-                  "Calculating stats..."
+                  'Calculating stats...'
                 ) : (
                   <Box>
                     <Box>Context: ~{tokenCount} tokens active</Box>
@@ -160,7 +155,8 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                   </Box>
                 )
               }
-              placement="right">
+              placement="right"
+            >
               <ListItemButton
                 selected={topic.id === topicId}
                 onMouseEnter={handleMouseEnter}
@@ -174,41 +170,41 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                   minHeight: 40,
                   borderRadius: 2,
                   mx: 1,
-                }}>
+                  '&.Mui-selected': {
+                    boxShadow: (theme) => `inset 3px 0 0 ${theme.palette.primary.main}`,
+                  },
+                }}
+              >
                 <ListItemText
                   primary={
-                    <Box
-                      display="flex"
-                      alignItems="center"
-                      gap={1}>
+                    <Box display="flex" alignItems="center" gap={1}>
                       <Box
                         component="span"
                         sx={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}>
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {topic.name || topic.id}
                       </Box>
                       {(topic.forks?.length ?? 0) > 1 && (
-                        <Box
-                          display="flex"
-                          alignItems="center"
-                          sx={{ opacity: 0.6, ml: "auto", flexShrink: 0 }}>
+                        <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 'auto', flexShrink: 0 }}>
                           <AltRouteIcon
                             sx={{
-                              fontSize: "0.85rem",
+                              fontSize: '0.85rem',
                               mr: 0.3,
-                              transform: "rotate(90deg)",
+                              transform: 'rotate(90deg)',
                             }}
                           />
                           <Typography
                             variant="caption"
                             sx={{
                               fontSize: `${Math.max(11, chatFontSize * 0.7)}px`,
-                              fontWeight: "bold",
+                              fontWeight: 'bold',
                               lineHeight: 1,
-                            }}>
+                            }}
+                          >
                             {(topic.forks?.length ?? 1) - 1}
                           </Typography>
                         </Box>
@@ -226,11 +222,14 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             </Tooltip>
 
             <IconButton
+              className="morevert-btn"
               size="small"
               onClick={handleMenuOpen}
               aria-controls={openMenu ? `menu-${topic.id}` : undefined}
               aria-haspopup="true"
-              aria-expanded={openMenu ? "true" : undefined}>
+              aria-expanded={openMenu ? 'true' : undefined}
+              sx={{ opacity: isMobile ? 1 : 0, transition: 'opacity 0.15s ease' }}
+            >
               <MoreVertIcon fontSize="small" />
             </IconButton>
 
@@ -238,17 +237,16 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
               anchorEl={menuAnchorEl}
               open={openMenu}
               onClose={handleMenuClose}
-              anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-              transformOrigin={{ vertical: "top", horizontal: "right" }}>
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            >
               <MenuItem
                 onClick={(): void => {
                   setShowContextDialog(true);
                   handleMenuClose();
-                }}>
-                <MenuBookOutlined
-                  fontSize="small"
-                  sx={{ mr: 1 }}
-                />
+                }}
+              >
+                <MenuBookOutlined fontSize="small" sx={{ mr: 1 }} />
                 Edit Context
               </MenuItem>
 
@@ -256,11 +254,9 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                 onClick={(): void => {
                   setIsEditing(true);
                   handleMenuClose();
-                }}>
-                <EditIcon
-                  fontSize="small"
-                  sx={{ mr: 1 }}
-                />
+                }}
+              >
+                <EditIcon fontSize="small" sx={{ mr: 1 }} />
                 Rename
               </MenuItem>
 
@@ -268,11 +264,9 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                 onClick={(): void => {
                   setConfirmOpen(true);
                   handleMenuClose();
-                }}>
-                <DeleteIcon
-                  fontSize="small"
-                  sx={{ mr: 1 }}
-                />
+                }}
+              >
+                <DeleteIcon fontSize="small" sx={{ mr: 1 }} />
                 Delete
               </MenuItem>
             </Menu>
@@ -280,9 +274,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
         )}
       </ListItem>
 
-      <Dialog
-        open={confirmOpen}
-        onClose={(): void => setConfirmOpen(false)}>
+      <Dialog open={confirmOpen} onClose={(): void => setConfirmOpen(false)}>
         <DialogTitle>Delete Topic</DialogTitle>
 
         <DialogContent>
@@ -296,17 +288,14 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             onClick={(): void => {
               void handleDelete();
             }}
-            color="error">
+            color="error"
+          >
             Delete
           </Button>
         </DialogActions>
       </Dialog>
 
-      <TopicContextDialog
-        open={showContextDialog}
-        topicId={topic.id}
-        onClose={(): void => setShowContextDialog(false)}
-      />
+      <TopicContextDialog open={showContextDialog} topicId={topic.id} onClose={(): void => setShowContextDialog(false)} />
     </>
   );
 };
