@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from "react";
 import {
   Box,
   IconButton,
@@ -19,32 +19,32 @@ import {
   Select,
   SelectChangeEvent,
   alpha,
-} from '@mui/material';
-import SendIcon from '@mui/icons-material/Send';
-import StopCircleIcon from '@mui/icons-material/StopCircle';
-import AddIcon from '@mui/icons-material/Add';
-import CloseIcon from '@mui/icons-material/Close';
-import TuneIcon from '@mui/icons-material/Tune';
-import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
-import CodeIcon from '@mui/icons-material/Code';
-import AnalyticsIcon from '@mui/icons-material/Analytics';
-import ForumIcon from '@mui/icons-material/Forum';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import EditNoteIcon from '@mui/icons-material/EditNote';
-import OpenInFullIcon from '@mui/icons-material/OpenInFull';
-import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen';
-import AttachFileIcon from '@mui/icons-material/AttachFile';
-import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
-import LanguageIcon from '@mui/icons-material/Language';
-import TopicContextDialog from './TopicContextDialog';
-import ScratchpadDialog from './ScratchpadDialog';
-import { useAuthStore } from '../store/AuthStore';
-import { useChatStore } from '../store/ChatStore';
-import { useTopicStore } from '../store/TopicStore';
-import { chatModels } from './ModelSelector';
-import { SCRATCHPAD_LIMIT, USD_TO_SEK } from '../constants';
-import { Attachment } from '../database/AthenaDb';
-import { useNotificationStore } from '../store/NotificationStore';
+} from "@mui/material";
+import SendIcon from "@mui/icons-material/Send";
+import StopCircleIcon from "@mui/icons-material/StopCircle";
+import AddIcon from "@mui/icons-material/Add";
+import CloseIcon from "@mui/icons-material/Close";
+import TuneIcon from "@mui/icons-material/Tune";
+import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
+import CodeIcon from "@mui/icons-material/Code";
+import AnalyticsIcon from "@mui/icons-material/Analytics";
+import ForumIcon from "@mui/icons-material/Forum";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import EditNoteIcon from "@mui/icons-material/EditNote";
+import OpenInFullIcon from "@mui/icons-material/OpenInFull";
+import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
+import AttachFileIcon from "@mui/icons-material/AttachFile";
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
+import LanguageIcon from "@mui/icons-material/Language";
+import TopicContextDialog from "./TopicContextDialog";
+import ScratchpadDialog from "./ScratchpadDialog";
+import { useAuthStore } from "../store/AuthStore";
+import { useChatStore } from "../store/ChatStore";
+import { useTopicStore } from "../store/TopicStore";
+import { chatModels } from "./ModelSelector";
+import { SCRATCHPAD_LIMIT, USD_TO_SEK } from "../constants";
+import { Attachment } from "../database/AthenaDb";
+import { useNotificationStore } from "../store/NotificationStore";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -63,27 +63,36 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const questionRef = useRef('');
+  const questionRef = useRef("");
   const topicStore = useTopicStore();
   const { selectedModel, setSelectedModel, temperature, setTemperature, currentTopicId, stopSending } = useChatStore();
   const { addNotification } = useNotificationStore();
-  const { chatWidth, setChatWidth, chatFontSize, setChatFontSize, openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore();
+  const {
+    chatWidth,
+    setChatWidth,
+    chatFontSize,
+    setChatFontSize,
+    openAiKey,
+    deepSeekKey,
+    googleApiKey,
+    moonshotApiKey,
+  } = useAuthStore();
   const { webSearchEnabled, setWebSearchEnabled } = useChatStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [pages, setPages] = useState<Page[]>([{ id: crypto.randomUUID(), title: 'Page 1', content: '' }]);
+  const [pages, setPages] = useState<Page[]>([{ id: crypto.randomUUID(), title: "Page 1", content: "" }]);
   const [activePageIndex, setActivePageIndex] = useState(0);
   const [localMaxContext, setLocalMaxContext] = useState<number | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   const availableModels = chatModels.filter(
     (model) =>
-      (model.provider === 'openai' && openAiKey) ||
-      (model.provider === 'deepseek' && deepSeekKey) ||
-      (model.provider === 'google' && googleApiKey) ||
-      (model.provider === 'moonshot' && moonshotApiKey),
+      (model.provider === "openai" && openAiKey) ||
+      (model.provider === "deepseek" && deepSeekKey) ||
+      (model.provider === "google" && googleApiKey) ||
+      (model.provider === "moonshot" && moonshotApiKey),
   );
   const openTempMenu = Boolean(anchorEl);
 
@@ -99,26 +108,26 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   };
 
   const handleSend = (): void => {
-    const currentContent = textFieldRef.current?.value ?? '';
+    const currentContent = textFieldRef.current?.value ?? "";
     const updatedPages = pages.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p));
 
     const combinedContent = updatedPages
       .filter((p) => p.content.trim())
       .map((p) => p.content.trim())
-      .join('\n\n---\n\n');
+      .join("\n\n---\n\n");
 
     if (!combinedContent && attachments.length === 0) return;
 
     onSend(combinedContent, attachments);
-    questionRef.current = '';
-    if (textFieldRef.current) textFieldRef.current.value = '';
-    setPages([{ id: crypto.randomUUID(), title: 'Page 1', content: '' }]);
+    questionRef.current = "";
+    if (textFieldRef.current) textFieldRef.current.value = "";
+    setPages([{ id: crypto.randomUUID(), title: "Page 1", content: "" }]);
     setActivePageIndex(0);
     setAttachments([]);
   };
 
   const handleTabChange = (_: React.SyntheticEvent, newValue: number): void => {
-    const currentContent = textFieldRef.current?.value ?? '';
+    const currentContent = textFieldRef.current?.value ?? "";
     setPages((prev) => prev.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p)));
 
     const targetPage = pages[newValue];
@@ -130,13 +139,13 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   };
 
   const addPage = (): void => {
-    const currentContent = textFieldRef.current?.value ?? '';
+    const currentContent = textFieldRef.current?.value ?? "";
     setPages((prev) => {
       const updatedPrev = prev.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p));
       const newPage: Page = {
         id: crypto.randomUUID(),
         title: `Page ${updatedPrev.length + 1}`,
-        content: '',
+        content: "",
       };
       return [...updatedPrev, newPage];
     });
@@ -144,8 +153,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     setActivePageIndex(pages.length);
 
     if (textFieldRef.current) {
-      textFieldRef.current.value = '';
-      questionRef.current = '';
+      textFieldRef.current.value = "";
+      questionRef.current = "";
     }
   };
 
@@ -153,7 +162,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     e.stopPropagation();
     if (pages.length <= 1) return;
 
-    const currentContent = textFieldRef.current?.value ?? '';
+    const currentContent = textFieldRef.current?.value ?? "";
     const updatedPages = pages.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p));
     const newPages = updatedPages.filter((_, i) => i !== index);
 
@@ -179,7 +188,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const handleStop = async (): Promise<void> => {
     const restoredContent = await stopSending();
     if (restoredContent) {
-      setPages([{ id: crypto.randomUUID(), title: 'Page 1', content: restoredContent }]);
+      setPages([{ id: crypto.randomUUID(), title: "Page 1", content: restoredContent }]);
       setActivePageIndex(0);
       if (textFieldRef.current) {
         textFieldRef.current.value = restoredContent;
@@ -204,7 +213,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
     for (const file of Array.from(files)) {
       if (file.size > MAX_FILE_SIZE) {
-        addNotification('File too large', `${file.name} exceeds the 10MB limit.`);
+        addNotification("File too large", `${file.name} exceeds the 10MB limit.`);
         continue;
       }
 
@@ -213,10 +222,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           const reader = new FileReader();
           reader.onload = (): void => {
             const result = reader.result;
-            if (typeof result === 'string') {
+            if (typeof result === "string") {
               resolve(result);
             } else {
-              reject(new Error('Unexpected FileReader result type'));
+              reject(new Error("Unexpected FileReader result type"));
             }
           };
           reader.onerror = reject;
@@ -229,17 +238,17 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           type: file.type,
           size: file.size,
           data: data,
-          previewUrl: file.type.startsWith('image/') ? data : undefined,
+          previewUrl: file.type.startsWith("image/") ? data : undefined,
         });
       } catch (err) {
-        console.error('Failed to read file:', err);
-        addNotification('Upload failed', `Could not read ${file.name}`);
+        console.error("Failed to read file:", err);
+        addNotification("Upload failed", `Could not read ${file.name}`);
       }
     }
 
     setAttachments((prev) => [...prev, ...newAttachments]);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    if (cameraInputRef.current) cameraInputRef.current.value = '';
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
 
   const removeAttachment = (id: string): void => {
@@ -267,43 +276,50 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       justifyContent="center"
       sx={{
         backgroundColor: (theme) => alpha(theme.palette.background.default, 0.85),
-        backdropFilter: 'blur(12px)',
+        backdropFilter: "blur(12px)",
         borderTop: (theme) => `1px solid ${theme.palette.divider}`,
-        position: 'sticky',
-        bottom: 0,
-      }}
-    >
-      <Box width="100%" maxWidth={chatWidth === 'full' ? '100%' : chatWidth} display="flex" flexDirection="column" alignItems="stretch" gap={1}>
+        position: "relative",
+        flexShrink: 0,
+        zIndex: 1,
+      }}>
+      <Box
+        width="100%"
+        maxWidth={chatWidth === "full" ? "100%" : chatWidth}
+        display="flex"
+        flexDirection="column"
+        alignItems="stretch"
+        gap={1}>
         <Menu
           anchorEl={anchorEl}
           open={openTempMenu}
           onClose={handleTempClose}
-          transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-          anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+          transformOrigin={{ vertical: "bottom", horizontal: "left" }}
+          anchorOrigin={{ vertical: "top", horizontal: "left" }}
           PaperProps={{
             sx: {
               minWidth: 260,
               mt: -1,
               border: (theme) => `1px solid ${theme.palette.divider}`,
-              boxShadow: (theme) => (theme.palette.mode === 'dark' ? '0 8px 32px rgba(0,0,0,0.4)' : '0 8px 32px rgba(0,0,0,0.1)'),
-              bgcolor: 'background.paper',
+              boxShadow: (theme) =>
+                theme.palette.mode === "dark" ? "0 8px 32px rgba(0,0,0,0.4)" : "0 8px 32px rgba(0,0,0,0.1)",
+              bgcolor: "background.paper",
             },
-          }}
-        >
+          }}>
           <ListSubheader
             sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
-            }}
-          >
+              lineHeight: "36px",
+              fontWeight: "bold",
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              bgcolor: "transparent",
+            }}>
             Active Model
           </ListSubheader>
           <Box sx={{ px: 2, pb: 1 }}>
-            <FormControl fullWidth size="small">
+            <FormControl
+              fullWidth
+              size="small">
               <Select
                 value={selectedModel.id}
                 onChange={(e: SelectChangeEvent): void => {
@@ -311,21 +327,29 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   if (selected) setSelectedModel(selected);
                 }}
                 sx={{
-                  fontSize: '0.85rem',
-                  '& .MuiSelect-select': {
+                  fontSize: "0.85rem",
+                  "& .MuiSelect-select": {
                     py: 1,
                   },
                 }}
                 renderValue={(selected): React.ReactNode => {
                   const model = chatModels.find((m) => m.id === selected);
                   return model ? model.label : selected;
-                }}
-              >
+                }}>
                 {availableModels.map((m) => (
-                  <MenuItem key={m.id} value={m.id}>
-                    <Box display="flex" justifyContent="space-between" width="100%" alignItems="center">
+                  <MenuItem
+                    key={m.id}
+                    value={m.id}>
+                    <Box
+                      display="flex"
+                      justifyContent="space-between"
+                      width="100%"
+                      alignItems="center">
                       <Typography variant="body2">{m.label}</Typography>
-                      <Typography variant="caption" color="text.secondary" ml={2}>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        ml={2}>
                         {`${(m.input * USD_TO_SEK).toFixed(0)}kr | ${(m.output * USD_TO_SEK).toFixed(0)}kr / 1M`}
                       </Typography>
                     </Box>
@@ -339,23 +363,24 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
           <ListSubheader
             sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
-            }}
-          >
+              lineHeight: "36px",
+              fontWeight: "bold",
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              bgcolor: "transparent",
+            }}>
             Temperature Presets
             {!selectedModel.supportsTemperature && (
-              <Box component="span" sx={{ color: 'error.main', ml: 1 }}>
+              <Box
+                component="span"
+                sx={{ color: "error.main", ml: 1 }}>
                 (Not supported)
               </Box>
             )}
           </ListSubheader>
 
-          <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
+          <Box sx={{ px: 2, pb: 1, display: "flex", justifyContent: "center" }}>
             <MuiToggleButtonGroup
               value={temperature}
               exclusive
@@ -366,44 +391,51 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               size="small"
               fullWidth
               sx={{
-                bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"),
                 p: 0.5,
-                '& .MuiToggleButton-root': {
-                  border: 'none',
-                  borderRadius: '8px !important',
+                "& .MuiToggleButton-root": {
+                  border: "none",
+                  borderRadius: "8px !important",
                   mx: 0.25,
                   px: 1,
                   py: 0.5,
-                  fontSize: '0.75rem',
-                  fontWeight: 'bold',
-                  color: 'text.secondary',
-                  '&.Mui-selected': {
-                    bgcolor: 'primary.main',
-                    color: 'primary.contrastText',
-                    '&:hover': {
-                      bgcolor: 'primary.dark',
+                  fontSize: "0.75rem",
+                  fontWeight: "bold",
+                  color: "text.secondary",
+                  "&.Mui-selected": {
+                    bgcolor: "primary.main",
+                    color: "primary.contrastText",
+                    "&:hover": {
+                      bgcolor: "primary.dark",
                     },
                   },
                 },
-              }}
-            >
+              }}>
               <MuiToggleButton value={0.0}>
-                <Tooltip title="Coding / Math (0.0)" disableTouchListener={isMobile}>
+                <Tooltip
+                  title="Coding / Math (0.0)"
+                  disableTouchListener={isMobile}>
                   <CodeIcon fontSize="small" />
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value={1.0}>
-                <Tooltip title="Data Analysis (1.0)" disableTouchListener={isMobile}>
+                <Tooltip
+                  title="Data Analysis (1.0)"
+                  disableTouchListener={isMobile}>
                   <AnalyticsIcon fontSize="small" />
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value={1.3}>
-                <Tooltip title="General Chat (1.3)" disableTouchListener={isMobile}>
+                <Tooltip
+                  title="General Chat (1.3)"
+                  disableTouchListener={isMobile}>
                   <ForumIcon fontSize="small" />
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value={1.5}>
-                <Tooltip title="Creative Writing (1.5)" disableTouchListener={isMobile}>
+                <Tooltip
+                  title="Creative Writing (1.5)"
+                  disableTouchListener={isMobile}>
                   <AutoAwesomeIcon fontSize="small" />
                 </Tooltip>
               </MuiToggleButton>
@@ -414,65 +446,71 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
           <ListSubheader
             sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
-            }}
-          >
+              lineHeight: "36px",
+              fontWeight: "bold",
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              bgcolor: "transparent",
+            }}>
             Layout Width
           </ListSubheader>
 
-          <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
+          <Box sx={{ px: 2, pb: 1, display: "flex", justifyContent: "center" }}>
             <MuiToggleButtonGroup
               value={chatWidth}
               exclusive
-              onChange={(_, value: 'sm' | 'md' | 'lg' | 'full' | null): void => {
+              onChange={(_, value: "sm" | "md" | "lg" | "full" | null): void => {
                 if (value) setChatWidth(value);
               }}
               size="small"
               fullWidth
               sx={{
-                bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"),
                 p: 0.5,
-                '& .MuiToggleButton-root': {
-                  border: 'none',
-                  borderRadius: '8px !important',
+                "& .MuiToggleButton-root": {
+                  border: "none",
+                  borderRadius: "8px !important",
                   mx: 0.25,
                   px: 1.5,
                   py: 0.5,
-                  fontSize: '0.75rem',
-                  fontWeight: 'bold',
-                  color: 'text.secondary',
-                  '&.Mui-selected': {
-                    bgcolor: 'primary.main',
-                    color: 'primary.contrastText',
-                    '&:hover': {
-                      bgcolor: 'primary.dark',
+                  fontSize: "0.75rem",
+                  fontWeight: "bold",
+                  color: "text.secondary",
+                  "&.Mui-selected": {
+                    bgcolor: "primary.main",
+                    color: "primary.contrastText",
+                    "&:hover": {
+                      bgcolor: "primary.dark",
                     },
                   },
                 },
-              }}
-            >
+              }}>
               <MuiToggleButton value="sm">
-                <Tooltip title="Compact (600px)" disableTouchListener={isMobile}>
+                <Tooltip
+                  title="Compact (600px)"
+                  disableTouchListener={isMobile}>
                   <span>S</span>
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value="md">
-                <Tooltip title="Standard (900px)" disableTouchListener={isMobile}>
+                <Tooltip
+                  title="Standard (900px)"
+                  disableTouchListener={isMobile}>
                   <span>M</span>
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value="lg">
-                <Tooltip title="Wide (1200px)" disableTouchListener={isMobile}>
+                <Tooltip
+                  title="Wide (1200px)"
+                  disableTouchListener={isMobile}>
                   <span>L</span>
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value="full">
-                <Tooltip title="Full Width" disableTouchListener={isMobile}>
+                <Tooltip
+                  title="Full Width"
+                  disableTouchListener={isMobile}>
                   <span>Full</span>
                 </Tooltip>
               </MuiToggleButton>
@@ -483,18 +521,17 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
           <ListSubheader
             sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
-            }}
-          >
+              lineHeight: "36px",
+              fontWeight: "bold",
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              bgcolor: "transparent",
+            }}>
             Font Size
           </ListSubheader>
 
-          <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
+          <Box sx={{ px: 2, pb: 1, display: "flex", justifyContent: "center" }}>
             <MuiToggleButtonGroup
               value={chatFontSize}
               exclusive
@@ -504,29 +541,30 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               size="small"
               fullWidth
               sx={{
-                bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"),
                 p: 0.5,
-                '& .MuiToggleButton-root': {
-                  border: 'none',
-                  borderRadius: '8px !important',
+                "& .MuiToggleButton-root": {
+                  border: "none",
+                  borderRadius: "8px !important",
                   mx: 0.25,
                   px: 1,
                   py: 0.5,
-                  fontSize: '0.75rem',
-                  fontWeight: 'bold',
-                  color: 'text.secondary',
-                  '&.Mui-selected': {
-                    bgcolor: 'primary.main',
-                    color: 'primary.contrastText',
-                    '&:hover': {
-                      bgcolor: 'primary.dark',
+                  fontSize: "0.75rem",
+                  fontWeight: "bold",
+                  color: "text.secondary",
+                  "&.Mui-selected": {
+                    bgcolor: "primary.main",
+                    color: "primary.contrastText",
+                    "&:hover": {
+                      bgcolor: "primary.dark",
                     },
                   },
                 },
-              }}
-            >
+              }}>
               {[12, 14, 16, 18, 20, 24].map((size) => (
-                <MuiToggleButton key={size} value={size}>
+                <MuiToggleButton
+                  key={size}
+                  value={size}>
                   {size}
                 </MuiToggleButton>
               ))}
@@ -537,24 +575,31 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
           <ListSubheader
             sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
-            }}
-          >
+              lineHeight: "36px",
+              fontWeight: "bold",
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              bgcolor: "transparent",
+            }}>
             Context Limit
           </ListSubheader>
           <Box sx={{ px: 3, py: 1 }}>
-            <Box display="flex" justifyContent="space-between" mb={1}>
-              <Typography variant="caption" color="text.secondary">
-                Recent messages: {localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 10}
+            <Box
+              display="flex"
+              justifyContent="space-between"
+              mb={1}>
+              <Typography
+                variant="caption"
+                color="text.secondary">
+                Recent messages:{" "}
+                {localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 10}
               </Typography>
             </Box>
             <Slider
-              value={localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 10}
+              value={
+                localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 10
+              }
               min={1}
               max={50}
               step={1}
@@ -576,14 +621,13 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
           <ListSubheader
             sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
-            }}
-          >
+              lineHeight: "36px",
+              fontWeight: "bold",
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              bgcolor: "transparent",
+            }}>
             Chat Tools
           </ListSubheader>
 
@@ -593,14 +637,16 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               handleTempClose();
             }}
             disabled={!currentTopicId}
-            sx={{ py: 1.5, px: 2, borderRadius: 1.5, mx: 1, mb: 1 }}
-          >
-            <MenuBookOutlinedIcon fontSize="small" sx={{ mr: 2, color: 'text.secondary' }} />
+            sx={{ py: 1.5, px: 2, borderRadius: 1.5, mx: 1, mb: 1 }}>
+            <MenuBookOutlinedIcon
+              fontSize="small"
+              sx={{ mr: 2, color: "text.secondary" }}
+            />
             <ListItemText
               primary="Edit Context"
               secondary="Manage pinned messages"
-              primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
-              secondaryTypographyProps={{ variant: 'caption' }}
+              primaryTypographyProps={{ variant: "body2", fontWeight: 500 }}
+              secondaryTypographyProps={{ variant: "caption" }}
             />
           </MenuItem>
 
@@ -610,29 +656,39 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               handleTempClose();
             }}
             disabled={!currentTopicId}
-            sx={{ py: 1.5, px: 2, borderRadius: 1.5, mx: 1, mb: 1 }}
-          >
-            <EditNoteIcon fontSize="small" sx={{ mr: 2, color: 'text.secondary' }} />
+            sx={{ py: 1.5, px: 2, borderRadius: 1.5, mx: 1, mb: 1 }}>
+            <EditNoteIcon
+              fontSize="small"
+              sx={{ mr: 2, color: "text.secondary" }}
+            />
             <ListItemText
               primary="View Scratchpad"
               secondary={`AI persistent memory (${(topicStore.topics.find((t) => t.id === currentTopicId)?.scratchpad?.length ?? 0).toLocaleString()} / ${SCRATCHPAD_LIMIT.toLocaleString()})`}
-              primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
-              secondaryTypographyProps={{ variant: 'caption' }}
+              primaryTypographyProps={{ variant: "body2", fontWeight: 500 }}
+              secondaryTypographyProps={{ variant: "caption" }}
             />
           </MenuItem>
         </Menu>
 
         {currentTopicId && showContextDialog && (
-          <TopicContextDialog open={showContextDialog} topicId={currentTopicId} onClose={(): void => setShowContextDialog(false)} />
+          <TopicContextDialog
+            open={showContextDialog}
+            topicId={currentTopicId}
+            onClose={(): void => setShowContextDialog(false)}
+          />
         )}
         {currentTopicId && showScratchpadDialog && (
-          <ScratchpadDialog open={showScratchpadDialog} topicId={currentTopicId} onClose={(): void => setShowScratchpadDialog(false)} />
+          <ScratchpadDialog
+            open={showScratchpadDialog}
+            topicId={currentTopicId}
+            onClose={(): void => setShowScratchpadDialog(false)}
+          />
         )}
 
         <input
           type="file"
           ref={fileInputRef}
-          style={{ display: 'none' }}
+          style={{ display: "none" }}
           multiple
           accept="image/*"
           onChange={(e): void => {
@@ -642,7 +698,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         <input
           type="file"
           ref={cameraInputRef}
-          style={{ display: 'none' }}
+          style={{ display: "none" }}
           accept="image/*"
           capture="environment"
           onChange={(e): void => {
@@ -650,52 +706,87 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           }}
         />
 
-        <Box display="flex" flexDirection="column" width="100%" gap={isExpanded ? 1 : 0}>
+        <Box
+          display="flex"
+          flexDirection="column"
+          width="100%"
+          gap={isExpanded ? 1 : 0}>
           {isExpanded && (
-            <Box display="flex" alignItems="center" gap={1} sx={{ borderBottom: 1, borderColor: 'divider', mb: 1 }}>
-              <Tabs value={activePageIndex} onChange={handleTabChange} variant="scrollable" scrollButtons="auto" sx={{ minHeight: 40, height: 40 }}>
+            <Box
+              display="flex"
+              alignItems="center"
+              gap={1}
+              sx={{ borderBottom: 1, borderColor: "divider", mb: 1 }}>
+              <Tabs
+                value={activePageIndex}
+                onChange={handleTabChange}
+                variant="scrollable"
+                scrollButtons="auto"
+                sx={{ minHeight: 40, height: 40 }}>
                 {pages.map((page, index) => (
                   <Tab
                     key={page.id}
                     label={
-                      <Box display="flex" alignItems="center" gap={1}>
+                      <Box
+                        display="flex"
+                        alignItems="center"
+                        gap={1}>
                         {page.title}
                         {pages.length > 1 && (
-                          <IconButton component="span" size="small" onClick={(e): void => deletePage(index, e)} sx={{ p: 0.5 }}>
+                          <IconButton
+                            component="span"
+                            size="small"
+                            onClick={(e): void => deletePage(index, e)}
+                            sx={{ p: 0.5 }}>
                             <CloseIcon sx={{ fontSize: 14 }} />
                           </IconButton>
                         )}
                       </Box>
                     }
-                    sx={{ minHeight: 40, height: 40, textTransform: 'none', fontSize: '0.8rem' }}
+                    sx={{ minHeight: 40, height: 40, textTransform: "none", fontSize: "0.8rem" }}
                   />
                 ))}
               </Tabs>
-              <IconButton size="small" onClick={addPage} sx={{ ml: 1 }}>
+              <IconButton
+                size="small"
+                onClick={addPage}
+                sx={{ ml: 1 }}>
                 <AddIcon fontSize="small" />
               </IconButton>
             </Box>
           )}
 
           {attachments.length > 0 && (
-            <Box display="flex" flexWrap="wrap" gap={1} mb={1} px={1}>
+            <Box
+              display="flex"
+              flexWrap="wrap"
+              gap={1}
+              mb={1}
+              px={1}>
               {attachments.map((att) => (
                 <Box
                   key={att.id}
                   sx={{
-                    position: 'relative',
+                    position: "relative",
                     width: 60,
                     height: 60,
                     borderRadius: 1,
-                    overflow: 'hidden',
+                    overflow: "hidden",
                     border: (theme) => `1px solid ${theme.palette.divider}`,
-                    bgcolor: 'background.paper',
-                  }}
-                >
+                    bgcolor: "background.paper",
+                  }}>
                   {att.previewUrl ? (
-                    <img src={att.previewUrl} alt={att.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img
+                      src={att.previewUrl}
+                      alt={att.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
                   ) : (
-                    <Box display="flex" alignItems="center" justifyContent="center" height="100%">
+                    <Box
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      height="100%">
                       <AttachFileIcon fontSize="small" />
                     </Box>
                   )}
@@ -703,15 +794,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     size="small"
                     onClick={(): void => removeAttachment(att.id)}
                     sx={{
-                      position: 'absolute',
+                      position: "absolute",
                       top: 0,
                       right: 0,
                       p: 0.2,
-                      bgcolor: 'rgba(0,0,0,0.5)',
-                      color: 'white',
-                      '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' },
-                    }}
-                  >
+                      bgcolor: "rgba(0,0,0,0.5)",
+                      color: "white",
+                      "&:hover": { bgcolor: "rgba(0,0,0,0.7)" },
+                    }}>
                     <CloseIcon sx={{ fontSize: 12 }} />
                   </IconButton>
                 </Box>
@@ -726,23 +816,24 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             inputProps={{ maxLength: 100000 }}
             rows={isExpanded ? undefined : undefined}
             minRows={isExpanded ? undefined : 1}
-            maxRows={isExpanded ? undefined : 15}
+            maxRows={isMobile ? 5 : isExpanded ? undefined : 15}
             placeholder="Ask something..."
             sx={{
-              '& .MuiInputBase-root': {
-                height: isExpanded ? '80vh' : 'auto',
-                minHeight: isExpanded ? '80vh' : 'auto',
-                alignItems: 'start',
-                overflow: 'auto',
+              "& .MuiInputBase-root": {
+                height: isExpanded ? "80vh" : "auto",
+                minHeight: isExpanded ? "80vh" : "auto",
+                maxHeight: isMobile && !isExpanded ? "30vh" : "none",
+                alignItems: "start",
+                overflow: "auto",
               },
-              '& textarea': {
-                height: isExpanded ? '100% !important' : 'auto',
-                overflow: 'auto !important',
+              "& textarea": {
+                height: isExpanded ? "100% !important" : "auto",
+                overflow: "auto !important",
               },
             }}
             onChange={(e): string => (questionRef.current = e.target.value)}
             onKeyDown={(e): void => {
-              if (!isMobile && e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              if (!isMobile && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 handleSend();
                 e.preventDefault();
               }
@@ -751,67 +842,87 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           />
         </Box>
 
-        <Box display="flex" justifyContent="space-between" alignItems="center" width="100%">
-          <Box display="flex" alignItems="center">
-            <Tooltip title="Topic Settings" disableTouchListener={isMobile}>
+        <Box
+          display="flex"
+          justifyContent="space-between"
+          alignItems="center"
+          width="100%">
+          <Box
+            display="flex"
+            alignItems="center">
+            <Tooltip
+              title="Topic Settings"
+              disableTouchListener={isMobile}>
               <span>
-                <IconButton onClick={handleTempClick} disabled={sending} aria-label="Topic Settings">
+                <IconButton
+                  onClick={handleTempClick}
+                  disabled={sending}
+                  aria-label="Topic Settings">
                   <TuneIcon />
                 </IconButton>
               </span>
             </Tooltip>
-            <Tooltip title="Attach File (Images and PDFs supported by some models)" disableTouchListener={isMobile}>
+            <Tooltip
+              title="Attach File (Images and PDFs supported by some models)"
+              disableTouchListener={isMobile}>
               <span>
                 <IconButton
                   onClick={handleFileButtonClick}
                   disabled={sending || !(selectedModel.supportsVision || selectedModel.supportsFiles)}
-                  aria-label="Attach File"
-                >
+                  aria-label="Attach File">
                   <AttachFileIcon />
                 </IconButton>
               </span>
             </Tooltip>
-            <Tooltip title="Take Photo" disableTouchListener={isMobile}>
+            <Tooltip
+              title="Take Photo"
+              disableTouchListener={isMobile}>
               <span>
-                <IconButton onClick={handleCameraButtonClick} disabled={sending || !selectedModel.supportsVision} aria-label="Take Photo">
+                <IconButton
+                  onClick={handleCameraButtonClick}
+                  disabled={sending || !selectedModel.supportsVision}
+                  aria-label="Take Photo">
                   <PhotoCameraIcon />
                 </IconButton>
               </span>
             </Tooltip>
-            <Tooltip title={isExpanded ? 'Collapse' : 'Expand'} disableTouchListener={isMobile}>
+            <Tooltip
+              title={isExpanded ? "Collapse" : "Expand"}
+              disableTouchListener={isMobile}>
               <span>
                 <IconButton
                   onClick={(): void => setIsExpanded(!isExpanded)}
                   disabled={sending}
-                  aria-label={isExpanded ? 'Collapse message composer' : 'Expand message composer'}
-                >
+                  aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}>
                   {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
                 </IconButton>
               </span>
             </Tooltip>
-            {selectedModel.provider === 'moonshot' && (
-              <Tooltip title={`Web Search (${webSearchEnabled ? 'Enabled' : 'Disabled'})`} disableTouchListener={isMobile}>
+            {selectedModel.provider === "moonshot" && (
+              <Tooltip
+                title={`Web Search (${webSearchEnabled ? "Enabled" : "Disabled"})`}
+                disableTouchListener={isMobile}>
                 <span>
                   <IconButton
                     onClick={(): void => setWebSearchEnabled(!webSearchEnabled)}
                     disabled={sending}
-                    color={webSearchEnabled ? 'primary' : 'default'}
-                    aria-label="Toggle Web Search"
-                  >
+                    color={webSearchEnabled ? "primary" : "default"}
+                    aria-label="Toggle Web Search">
                     <LanguageIcon />
                   </IconButton>
                 </span>
               </Tooltip>
             )}
           </Box>
-          <Tooltip title={sending ? 'Stop Generation' : isMobile ? 'Send Message' : 'Send Message (Enter)'} disableTouchListener={isMobile}>
+          <Tooltip
+            title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Enter)"}
+            disableTouchListener={isMobile}>
             <span>
               <IconButton
                 onClick={sending ? handleStop : handleSend}
                 disabled={false}
-                color={sending ? 'error' : 'primary'}
-                aria-label={sending ? 'Stop generating' : 'Send message'}
-              >
+                color={sending ? "error" : "primary"}
+                aria-label={sending ? "Stop generating" : "Send message"}>
                 {sending ? <StopCircleIcon /> : <SendIcon />}
               </IconButton>
             </span>

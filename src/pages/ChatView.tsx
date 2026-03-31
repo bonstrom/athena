@@ -1,17 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import { Box, useMediaQuery, useTheme, Fade } from '@mui/material';
-import { useParams } from 'react-router-dom';
-import { useAuthStore } from '../store/AuthStore';
-import { useChatStore } from '../store/ChatStore';
-import { useTopicStore } from '../store/TopicStore';
-import MessageList from '../components/MessageList';
-import Composer from '../components/Composer';
-import ForkTabs from '../components/ForkTabs';
+import React, { useEffect, useState } from "react";
+import { Box, useMediaQuery, useTheme, Fade } from "@mui/material";
+import { useParams } from "react-router-dom";
+import { useAuthStore } from "../store/AuthStore";
+import { useChatStore } from "../store/ChatStore";
+import { useTopicStore } from "../store/TopicStore";
+import MessageList from "../components/MessageList";
+import Composer from "../components/Composer";
+import ForkTabs from "../components/ForkTabs";
 
 const ChatView: React.FC = () => {
   const { topicId } = useParams<{ topicId: string }>();
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const { chatWidth } = useAuthStore();
   const { messagesByTopic, sending, sendMessageStream, fetchMessages } = useChatStore();
@@ -34,7 +34,7 @@ const ChatView: React.FC = () => {
       const exists = topicId ? topicStoreState.topics.some((t) => t.id === topicId) : true;
 
       if (!exists && topicStoreState.topics.length > 0) {
-        setError('Topic not found');
+        setError("Topic not found");
       } else {
         setDisplayTopicId(topicId);
         setIsVisible(true);
@@ -43,27 +43,55 @@ const ChatView: React.FC = () => {
   }, [fetchMessages, topicId]);
 
   return (
-    <Box display="flex" flexDirection="column" height="100%" width="100%">
+    <Box
+      display="flex"
+      flexDirection="column"
+      height="100%"
+      width="100%"
+      sx={{ overflow: "hidden" }}>
       <Box
         sx={{
           flexGrow: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          display: 'flex',
-          justifyContent: 'center',
-          pt: 2,
-        }}
-      >
-        <Box width="100%" maxWidth={{ xs: '100%', md: chatWidth === 'full' ? '100%' : chatWidth }} px={{ xs: 1, md: 2 }} mx="auto">
+          minHeight: 0,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          pt: 1,
+        }}>
+        <Box
+          width="100%"
+          maxWidth={{ xs: "100%", md: chatWidth === "full" ? "100%" : chatWidth }}
+          px={{ xs: 1, md: 2 }}
+          mx="auto"
+          display="flex"
+          flexDirection="column"
+          flexGrow={1}
+          minHeight={0}>
           {error ? (
-            <Box display="flex" alignItems="center" justifyContent="center" height="50vh" color="text.secondary">
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              height="50vh"
+              color="text.secondary">
               {error}
             </Box>
           ) : (
-            <Fade key={displayTopicId} in={isVisible} timeout={{ enter: 150, exit: 0 }}>
-              <Box width="100%" height="100%" display="flex" flexDirection="column">
+            <Fade
+              key={displayTopicId}
+              in={isVisible}
+              timeout={{ enter: 150, exit: 0 }}>
+              <Box
+                width="100%"
+                height="100%"
+                display="flex"
+                flexDirection="column">
                 {displayTopicId && <ForkTabs topicId={displayTopicId} />}
-                <MessageList messages={messages} maxContextMessages={maxContextMessages} />
+                <MessageList
+                  messages={messages}
+                  maxContextMessages={maxContextMessages}
+                />
               </Box>
             </Fade>
           )}
