@@ -21,7 +21,7 @@ interface TopicState {
   addTopic: (topic: Topic) => void;
   generateTopicName(topicId: string, userMessage: string): Promise<void>;
   deleteTopic: (id: string) => Promise<void>;
-  getTopicContext(topicId: string): Promise<Message[]>;
+  getTopicContext(topicId: string, excludeAfterId?: string): Promise<Message[]>;
   updateTopicScratchpad: (id: string, scratchpad: string) => Promise<void>;
   forkTopic: (topicId: string, messageId: string) => Promise<void>;
   switchFork: (topicId: string, forkId: string) => Promise<void>;
@@ -114,7 +114,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     }
   },
 
-  async getTopicContext(topicId: string): Promise<Message[]> {
+  async getTopicContext(topicId: string, excludeAfterId?: string): Promise<Message[]> {
     const topic = get().topics.find((t) => t.id === topicId);
     if (!topic) return [];
 
@@ -129,12 +129,23 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     // Sort all messages once to ensure order
     const sorted = allMessages.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
+    // Pre-index assistant messages by parentId for fallback logic
+    const assistantByParent = new Map<string, Message[]>();
+    for (const m of sorted) {
+      if (m.type === "assistant" && m.parentMessageId) {
+        const existing = assistantByParent.get(m.parentMessageId) ?? [];
+        existing.push(m);
+        assistantByParent.set(m.parentMessageId, existing);
+      }
+    }
+
     // Filter for active sequence: User messages and their active assistant responses
     const activeSequence: Message[] = [];
     const userMessageMap = new Map<string, Message>();
 
     for (const m of sorted) {
       if (m.isDeleted) continue;
+      if (excludeAfterId && m.id === excludeAfterId) break;
 
       if (m.type === "user") {
         userMessageMap.set(m.id, m);
@@ -142,14 +153,21 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       } else if (m.type === "assistant") {
         if (m.parentMessageId) {
           const parent = userMessageMap.get(m.parentMessageId);
-          // Only include if it's the active response for its parent
-          if (parent && parent.activeResponseId === m.id) {
-            activeSequence.push(m);
+          if (parent) {
+            const versions = assistantByParent.get(m.parentMessageId) ?? [];
+            // Use activeResponseId if set, otherwise fallback to the latest version in the sequence
+            const activeId = parent.activeResponseId ?? (versions.length > 0 ? versions[versions.length - 1].id : null);
+            if (activeId === m.id) {
+              activeSequence.push(m);
+            }
           }
         } else {
           // Legacy or standalone assistant message
           activeSequence.push(m);
         }
+      } else {
+        // aiNote, system, etc.
+        activeSequence.push(m);
       }
     }
 
@@ -157,8 +175,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       .filter((m) => m.type === "user" || m.type === "assistant")
       .slice(-(topic.maxContextMessages ?? 10));
 
-    const pinned = allMessages.filter((m) => m.includeInContext);
-    const aiNotes = allMessages.filter((m) => m.type === "aiNote");
+    // Ensure only active versions are included even if pinned (user request: only active messages)
+    const pinned = activeSequence.filter((m) => m.includeInContext);
+    const aiNotes = activeSequence.filter((m) => m.type === "aiNote");
 
     const combined = [...pinned, ...recent, ...aiNotes];
     const unique = Array.from(new Map(combined.map((m) => [m.id, m])).values());
@@ -188,7 +207,8 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       const result = await askLlm(model, 1.0, [
         {
           role: "system",
-          content: "Reply with a short and descriptive title for the message. No explanation. Just the title. Max 5 words.",
+          content:
+            "Reply with a short and descriptive title for the message. No explanation. Just the title. Max 5 words.",
         },
         {
           role: "user",
