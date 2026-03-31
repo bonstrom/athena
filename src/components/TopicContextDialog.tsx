@@ -54,22 +54,31 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
   useEffect(() => {
     if (!open || !topicId) return;
 
+    let cancelled = false;
     setLoading(true);
 
     useTopicStore
       .getState()
       .getTopicContext(topicId)
       .then((contextMessages) => {
+        if (cancelled) return;
         setMessages(contextMessages);
         const pinned = contextMessages.filter((m) => m.includeInContext).map((m) => m.id);
         setSelectedIds(new Set(pinned));
       })
       .catch((err) => {
+        if (cancelled) return;
         console.error('Failed to load context', err);
         const message = err instanceof Error ? err.message : String(err);
         addNotification('Failed to load context', message);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [addNotification, open, topicId]);
 
   // Reset page when filters change
