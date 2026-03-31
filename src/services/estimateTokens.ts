@@ -11,10 +11,21 @@ export function estimateTokens(
   completionTokens: number;
   totalTokens: number;
 } {
-  const promptKey = messages.map((m) => `${m.role}:${m.content ?? ''}:${m.reasoning_content ?? ''}`).join('|');
+  const contentToString = (content: LlmMessage['content']): string => {
+    if (content === null) return '';
+    if (typeof content === 'string') return content;
+    return content
+      .filter((p) => p.type === 'text')
+      .map((p) => (p as { type: 'text'; text: string }).text)
+      .join(' ');
+  };
+
+  const promptKey = messages.map((m) => `${m.role}:${contentToString(m.content)}:${m.reasoning_content ?? ''}`).join('|');
   let promptTokens = promptCache.get(promptKey);
   if (promptTokens === undefined) {
-    const prompt = messages.map((m) => `${m.role}: ${m.content ?? ''}${m.reasoning_content ? `\nreasoning: ${m.reasoning_content}` : ''}`).join('\n');
+    const prompt = messages
+      .map((m) => `${m.role}: ${contentToString(m.content)}${m.reasoning_content ? `\nreasoning: ${m.reasoning_content}` : ''}`)
+      .join('\n');
     promptTokens = encode(prompt).length;
 
     // Limit cache size to 100 entries (LRU: evict least-recently-used first)
