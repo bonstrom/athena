@@ -281,6 +281,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         position: "relative",
         flexShrink: 0,
         zIndex: 1,
+        maxHeight: "100%",
+        display: "flex",
+        flexDirection: "column",
       }}>
       <Box
         width="100%"
@@ -820,8 +823,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             placeholder="Ask something..."
             sx={{
               "& .MuiInputBase-root": {
-                height: isExpanded ? "80vh" : "auto",
-                minHeight: isExpanded ? "80vh" : "auto",
+                height: isExpanded ? (isMobile ? "65vh" : "80vh") : "auto",
+                minHeight: isExpanded ? (isMobile ? "65vh" : "80vh") : "auto",
                 maxHeight: isMobile && !isExpanded ? "30vh" : "none",
                 alignItems: "start",
                 overflow: "auto",
