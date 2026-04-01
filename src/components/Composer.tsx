@@ -384,7 +384,12 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       }}>
       <Box
         width="100%"
-        maxWidth={chatWidth === "full" ? "100%" : chatWidth}
+        sx={{
+          maxWidth:
+            chatWidth === "full"
+              ? "100%"
+              : (theme) => `calc(${theme.breakpoints.values[chatWidth]}px + 408px)`,
+        }}
         display="flex"
         flexDirection="column"
         alignItems="stretch"
@@ -930,7 +935,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               flexShrink: 0,
               gap: 0,
               mb: { xs: 0, md: 0.25 },
-              flexGrow: { xs: 1, md: 0 },
+              width: { xs: "auto", md: 220 },
+              justifyContent: "flex-end",
             }}>
             <Tooltip
               title="Parameters"
@@ -1250,6 +1256,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               flexShrink: 0,
               display: "flex",
               alignItems: "center",
+              width: { xs: "auto", md: 220 },
+              justifyContent: "flex-start",
             }}>
             <Tooltip
               title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Enter)"}
