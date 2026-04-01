@@ -19,6 +19,7 @@ import {
   Select,
   SelectChangeEvent,
   alpha,
+  Chip,
   InputAdornment,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
@@ -90,6 +91,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const [localMaxContext, setLocalMaxContext] = useState<number | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [promptAnchorEl, setPromptAnchorEl] = useState<null | HTMLElement>(null);
+  const [inputValue, setInputValue] = useState("");
+
+  const topic = topicStore.topics.find((t) => t.id === currentTopicId);
 
   const availableModels = chatModels.filter(
     (model) =>
@@ -112,7 +116,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   };
 
   const handleSend = (): void => {
-    const currentContent = textFieldRef.current?.value ?? "";
+    const currentContent = inputValue;
     const updatedPages = pages.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p));
 
     const combinedContent = updatedPages
@@ -124,26 +128,24 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
     onSend(combinedContent, attachments);
     questionRef.current = "";
-    if (textFieldRef.current) textFieldRef.current.value = "";
+    setInputValue("");
     setPages([{ id: crypto.randomUUID(), title: "Page 1", content: "" }]);
     setActivePageIndex(0);
     setAttachments([]);
   };
 
   const handleTabChange = (_: React.SyntheticEvent, newValue: number): void => {
-    const currentContent = textFieldRef.current?.value ?? "";
+    const currentContent = inputValue;
     setPages((prev) => prev.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p)));
 
     const targetPage = pages[newValue];
-    if (textFieldRef.current) {
-      textFieldRef.current.value = targetPage.content;
-      questionRef.current = targetPage.content;
-    }
+    setInputValue(targetPage.content);
+    questionRef.current = targetPage.content;
     setActivePageIndex(newValue);
   };
 
   const addPage = (): void => {
-    const currentContent = textFieldRef.current?.value ?? "";
+    const currentContent = inputValue;
     setPages((prev) => {
       const updatedPrev = prev.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p));
       const newPage: Page = {
@@ -155,18 +157,15 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     });
 
     setActivePageIndex(pages.length);
-
-    if (textFieldRef.current) {
-      textFieldRef.current.value = "";
-      questionRef.current = "";
-    }
+    setInputValue("");
+    questionRef.current = "";
   };
 
   const deletePage = (index: number, e: React.MouseEvent): void => {
     e.stopPropagation();
     if (pages.length <= 1) return;
 
-    const currentContent = textFieldRef.current?.value ?? "";
+    const currentContent = inputValue;
     const updatedPages = pages.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p));
     const newPages = updatedPages.filter((_, i) => i !== index);
 
@@ -182,10 +181,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
     if (activePageIndex === index) {
       const targetContent = newPages[newIndex].content;
-      if (textFieldRef.current) {
-        textFieldRef.current.value = targetContent;
-        questionRef.current = targetContent;
-      }
+      setInputValue(targetContent);
+      questionRef.current = targetContent;
     }
   };
 
@@ -194,19 +191,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     if (restoredContent) {
       setPages([{ id: crypto.randomUUID(), title: "Page 1", content: restoredContent }]);
       setActivePageIndex(0);
-      if (textFieldRef.current) {
-        textFieldRef.current.value = restoredContent;
-        questionRef.current = restoredContent;
-      }
+      setInputValue(restoredContent);
+      questionRef.current = restoredContent;
     }
-  };
-
-  const handleFileButtonClick = (): void => {
-    fileInputRef.current?.click();
-  };
-
-  const handleCameraButtonClick = (): void => {
-    cameraInputRef.current?.click();
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
@@ -282,16 +269,18 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       alignItems="center"
       gap={1}
       px={2}
-      pb={2}
-      pt={1}
+      pb={isMobile ? 0.5 : 1.5}
+      pt={isMobile ? 1 : 1.5}
       justifyContent="center"
       sx={{
         backgroundColor: (theme) => alpha(theme.palette.background.default, 0.85),
         backdropFilter: "blur(12px)",
         borderTop: (theme) => `1px solid ${theme.palette.divider}`,
+        boxShadow: (theme) =>
+          theme.palette.mode === "dark" ? "0 -4px 16px rgba(0,0,0,0.4)" : "0 -4px 16px rgba(0,0,0,0.05)",
         position: "relative",
         flexShrink: 0,
-        zIndex: 1,
+        zIndex: 10,
         maxHeight: "100%",
         display: "flex",
         flexDirection: "column",
@@ -724,19 +713,20 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           display="flex"
           flexDirection="column"
           width="100%"
-          gap={isExpanded ? 1 : 0}>
+          gap={isExpanded ? 0.5 : 0}
+          mb={attachments.length > 0 ? 0.5 : 0}>
           {isExpanded && (
             <Box
               display="flex"
               alignItems="center"
               gap={1}
-              sx={{ borderBottom: 1, borderColor: "divider", mb: 1 }}>
+              sx={{ borderBottom: 1, borderColor: "divider", mb: 0.5 }}>
               <Tabs
                 value={activePageIndex}
                 onChange={handleTabChange}
                 variant="scrollable"
                 scrollButtons="auto"
-                sx={{ minHeight: 40, height: 40 }}>
+                sx={{ minHeight: 32, height: 32 }}>
                 {pages.map((page, index) => (
                   <Tab
                     key={page.id}
@@ -744,28 +734,28 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                       <Box
                         display="flex"
                         alignItems="center"
-                        gap={1}>
+                        gap={0.5}>
                         {page.title}
                         {pages.length > 1 && (
                           <IconButton
                             component="span"
                             size="small"
                             onClick={(e): void => deletePage(index, e)}
-                            sx={{ p: 0.5 }}>
-                            <CloseIcon sx={{ fontSize: 14 }} />
+                            sx={{ p: 0.25 }}>
+                            <CloseIcon sx={{ fontSize: 12 }} />
                           </IconButton>
                         )}
                       </Box>
                     }
-                    sx={{ minHeight: 40, height: 40, textTransform: "none", fontSize: "0.8rem" }}
+                    sx={{ minHeight: 32, height: 32, textTransform: "none", fontSize: "0.75rem" }}
                   />
                 ))}
               </Tabs>
               <IconButton
                 size="small"
                 onClick={addPage}
-                sx={{ ml: 1 }}>
-                <AddIcon fontSize="small" />
+                sx={{ ml: 0.5, p: 0.5 }}>
+                <AddIcon sx={{ fontSize: 16 }} />
               </IconButton>
             </Box>
           )}
@@ -774,16 +764,16 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             <Box
               display="flex"
               flexWrap="wrap"
-              gap={1}
-              mb={1}
+              gap={0.5}
+              mb={0.5}
               px={1}>
               {attachments.map((att) => (
                 <Box
                   key={att.id}
                   sx={{
                     position: "relative",
-                    width: 60,
-                    height: 60,
+                    width: 50,
+                    height: 50,
                     borderRadius: 1,
                     overflow: "hidden",
                     border: (theme) => `1px solid ${theme.palette.divider}`,
@@ -811,124 +801,84 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                       position: "absolute",
                       top: 0,
                       right: 0,
-                      p: 0.2,
+                      p: 0.1,
                       bgcolor: "rgba(0,0,0,0.5)",
                       color: "white",
                       "&:hover": { bgcolor: "rgba(0,0,0,0.7)" },
                     }}>
-                    <CloseIcon sx={{ fontSize: 12 }} />
+                    <CloseIcon sx={{ fontSize: 10 }} />
                   </IconButton>
                 </Box>
               ))}
             </Box>
           )}
-
-          <TextField
-            inputRef={textFieldRef}
-            fullWidth
-            multiline
-            inputProps={{ maxLength: 100000 }}
-            rows={isExpanded ? undefined : undefined}
-            minRows={isExpanded ? undefined : 1}
-            maxRows={isMobile ? 5 : isExpanded ? undefined : 15}
-            placeholder="Ask something..."
-            sx={{
-              "& .MuiInputBase-root": {
-                height: isExpanded ? (isMobile ? "65vh" : "80vh") : "auto",
-                minHeight: isExpanded ? (isMobile ? "65vh" : "80vh") : "auto",
-                maxHeight: isMobile && !isExpanded ? "30vh" : "none",
-                alignItems: "start",
-                overflow: "auto",
-              },
-              "& textarea": {
-                height: isExpanded ? "100% !important" : "auto",
-                overflow: "auto !important",
-              },
-            }}
-            onChange={(e): string => (questionRef.current = e.target.value)}
-            onKeyDown={(e): void => {
-              if (!isMobile && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                handleSend();
-                e.preventDefault();
-              }
-            }}
-            disabled={sending}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment
-                  position="end"
-                  sx={{
-                    alignSelf: "flex-end",
-                    mb: 1,
-                    position: "absolute",
-                    right: 8,
-                    top: 8,
-                  }}>
-                  <Tooltip
-                    title={isExpanded ? "Collapse" : "Expand"}
-                    disableTouchListener={isMobile}>
-                    <span>
-                      <IconButton
-                        onClick={(): void => setIsExpanded(!isExpanded)}
-                        disabled={sending}
-                        size="small"
-                        aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}>
-                        {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </InputAdornment>
-              ),
-            }}
-          />
         </Box>
 
         <Box
-          display="flex"
-          justifyContent="space-between"
-          alignItems="center"
-          width="100%">
+          sx={{
+            width: "100%",
+            display: "flex",
+            flexDirection: "row",
+            flexWrap: "wrap",
+            alignItems: "center",
+            columnGap: { xs: 0.5, md: 1 },
+            rowGap: 0,
+          }}>
+          {/* Left Actions (Icons) */}
           <Box
-            display="flex"
-            alignItems="center"
-            flexWrap="wrap"
-            gap={0.5}>
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              order: { xs: 2, md: 1 },
+              flexShrink: 0,
+              gap: 0,
+              mb: { xs: 0, md: 0.25 },
+              flexGrow: { xs: 1, md: 0 },
+            }}>
             <Tooltip
-              title="Topic Settings"
+              title="Parameters"
               disableTouchListener={isMobile}>
               <span>
                 <IconButton
                   onClick={handleTempClick}
                   disabled={sending}
-                  aria-label="Topic Settings">
-                  <TuneIcon />
+                  size="small"
+                  color={topic?.maxContextMessages !== undefined ? "primary" : "default"}
+                  aria-label="Adjust parameters">
+                  <TuneIcon fontSize="small" />
                 </IconButton>
               </span>
             </Tooltip>
+
             <Tooltip
-              title="Attach File (Images and PDFs supported by some models)"
+              title="Attach File"
               disableTouchListener={isMobile}>
               <span>
                 <IconButton
-                  onClick={handleFileButtonClick}
-                  disabled={sending || !(selectedModel.supportsVision || selectedModel.supportsFiles)}
-                  aria-label="Attach File">
-                  <AttachFileIcon />
+                  onClick={(): void => fileInputRef.current?.click()}
+                  disabled={sending}
+                  size="small"
+                  aria-label="Attach file">
+                  <AttachFileIcon fontSize="small" />
                 </IconButton>
               </span>
             </Tooltip>
-            <Tooltip
-              title="Take Photo"
-              disableTouchListener={isMobile}>
-              <span>
-                <IconButton
-                  onClick={handleCameraButtonClick}
-                  disabled={sending || !selectedModel.supportsVision}
-                  aria-label="Take Photo">
-                  <PhotoCameraIcon />
-                </IconButton>
-              </span>
-            </Tooltip>
+
+            {!isMobile && (
+              <Tooltip
+                title="Camera"
+                disableTouchListener={isMobile}>
+                <span>
+                  <IconButton
+                    disabled={sending}
+                    size="small"
+                    aria-label="Camera">
+                    <PhotoCameraIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+
             <Tooltip
               title={`Web Search (${webSearchEnabled ? "Enabled" : "Disabled"})`}
               disableTouchListener={isMobile}>
@@ -943,9 +893,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     setWebSearchEnabled(nextState);
                   }}
                   disabled={sending}
+                  size="small"
                   color={webSearchEnabled ? "primary" : "default"}
                   aria-label="Toggle Web Search">
-                  <LanguageIcon />
+                  <LanguageIcon fontSize="small" />
                 </IconButton>
               </span>
             </Tooltip>
@@ -957,8 +908,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 <IconButton
                   onClick={handlePromptClick}
                   disabled={sending || predefinedPrompts.length === 0}
+                  size="small"
                   aria-label="Predefined Prompts">
-                  <PsychologyIcon />
+                  <PsychologyIcon fontSize="small" />
                 </IconButton>
               </span>
             </Tooltip>
@@ -1010,19 +962,137 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               )}
             </Menu>
           </Box>
-          <Tooltip
-            title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Enter)"}
-            disableTouchListener={isMobile}>
-            <span>
-              <IconButton
-                onClick={sending ? handleStop : handleSend}
-                disabled={false}
-                color={sending ? "error" : "primary"}
-                aria-label={sending ? "Stop generating" : "Send message"}>
-                {sending ? <StopCircleIcon /> : <SendIcon />}
-              </IconButton>
-            </span>
-          </Tooltip>
+
+          {/* Center (Input Field) */}
+          <Box
+            sx={{
+              flexGrow: { xs: 0, md: 1 },
+              width: { xs: "100%", md: "auto" },
+              order: { xs: 1, md: 2 },
+              display: "flex",
+              flexDirection: "column",
+              mb: 0,
+            }}>
+            {attachments.length > 0 && (
+              <Box
+                sx={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 1,
+                  mb: 1,
+                  px: 1,
+                }}>
+                {attachments.map((file, idx) => (
+                  <Chip
+                    key={idx}
+                    label={file.name}
+                    onDelete={(): void => {
+                      setAttachments((prev) => prev.filter((_, i) => i !== idx));
+                    }}
+                    size="small"
+                  />
+                ))}
+              </Box>
+            )}
+            <TextField
+              fullWidth
+              multiline
+              inputRef={textFieldRef}
+              maxRows={isExpanded ? 25 : 10}
+              minRows={isExpanded ? 15 : 1}
+              placeholder={isMobile ? "Message..." : "Type your message..."}
+              value={inputValue}
+              onChange={(e): void => {
+                setInputValue(e.target.value);
+                questionRef.current = e.target.value;
+              }}
+              onKeyDown={(e): void => {
+                if (!isMobile && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  handleSend();
+                  e.preventDefault();
+                }
+              }}
+              disabled={sending}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment
+                    position="end"
+                    sx={{
+                      alignSelf: "flex-end",
+                      mb: 0,
+                      mr: 0.5,
+                    }}>
+                    <Tooltip
+                      title={isExpanded ? "Collapse" : "Expand"}
+                      disableTouchListener={isMobile}>
+                      <span>
+                        <IconButton
+                          onClick={(): void => setIsExpanded(!isExpanded)}
+                          disabled={sending}
+                          size="small"
+                          aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}
+                          sx={{
+                            opacity: 0.4,
+                            transition: "opacity 0.2s",
+                            "&:hover": {
+                              opacity: 1,
+                              backgroundColor: (theme) => alpha(theme.palette.action.active, 0.05),
+                            },
+                          }}>
+                          {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 3,
+                  py: 0.75,
+                  backgroundColor: (theme) =>
+                    theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
+                  transition: "background-color 0.2s",
+                  "&:hover": {
+                    backgroundColor: (theme) =>
+                      theme.palette.mode === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)",
+                  },
+                  "& fieldset": {
+                    borderColor: (theme) => alpha(theme.palette.divider, 0.5),
+                  },
+                },
+              }}
+            />
+          </Box>
+
+          {/* Right (Send Button) */}
+          <Box
+            sx={{
+              order: 3,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+            }}>
+            <Tooltip
+              title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Enter)"}
+              disableTouchListener={isMobile}>
+              <span>
+                <IconButton
+                  color="primary"
+                  onClick={sending ? handleStop : handleSend}
+                  disabled={!inputValue.trim() && !attachments.length && !sending}
+                  sx={{
+                    width: 44,
+                    height: 44,
+                    "&.Mui-disabled": {
+                      backgroundColor: "transparent",
+                    },
+                  }}>
+                  {sending ? <StopCircleIcon /> : <SendIcon />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
         </Box>
       </Box>
     </Box>

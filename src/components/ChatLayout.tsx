@@ -75,14 +75,21 @@ const ChatLayout: React.FC = () => {
               sx={{
                 display: "flex",
                 alignItems: "center",
-                px: 0.5,
-                py: 0.25,
+                px: 1,
+                py: 0.5,
+                bgcolor: (theme) => alpha(theme.palette.background.default, 0.85),
+                backdropFilter: "blur(12px)",
                 borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
+                boxShadow: (theme) =>
+                  theme.palette.mode === "dark" ? "0 2px 8px rgba(0,0,0,0.3)" : "0 2px 8px rgba(0,0,0,0.05)",
                 flexShrink: 0,
+                position: "relative",
+                zIndex: 10,
               }}>
               <IconButton
                 onClick={(): void => openDrawer()}
-                aria-label="Open menu">
+                aria-label="Open menu"
+                sx={{ mr: 0.5 }}>
                 <MenuIcon />
               </IconButton>
               {topic && (
@@ -143,13 +150,19 @@ const ChatLayout: React.FC = () => {
             <Box
               sx={{
                 px: 2,
-                py: 0.75,
+                py: 1,
+                bgcolor: (theme) => alpha(theme.palette.background.default, 0.85),
+                backdropFilter: "blur(12px)",
                 borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
+                boxShadow: (theme) =>
+                  theme.palette.mode === "dark" ? "0 2px 8px rgba(0,0,0,0.3)" : "0 2px 8px rgba(0,0,0,0.05)",
                 flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
                 flexWrap: "wrap",
                 gap: 1.5,
+                position: "relative",
+                zIndex: 10,
               }}>
               <Box sx={{ display: "flex", alignItems: "baseline", gap: 1.5, flexShrink: 0 }}>
                 <Typography

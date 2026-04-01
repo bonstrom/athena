@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import { useAuthStore } from "../store/AuthStore";
 import { useChatStore } from "../store/ChatStore";
 import { useTopicStore } from "../store/TopicStore";
+import { Attachment } from "../database/AthenaDb";
 import MessageList from "../components/MessageList";
 import Composer from "../components/Composer";
 import ForkTabs from "../components/ForkTabs";
@@ -97,7 +98,7 @@ const ChatView: React.FC = () => {
 
       <Composer
         sending={sending}
-        onSend={(content, attachments): void => {
+        onSend={(content: string, attachments?: Attachment[]): void => {
           if (!topicId) return;
           void sendMessageStream(content, topicId, undefined, attachments);
         }}
