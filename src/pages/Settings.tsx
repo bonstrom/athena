@@ -13,11 +13,13 @@ import {
   Switch,
   FormControlLabel,
   Chip,
+  LinearProgress,
 } from "@mui/material";
-import { CheckCircle as CheckCircleIcon, Add as AddIcon } from "@mui/icons-material";
+import { CheckCircle as CheckCircleIcon, Add as AddIcon, CloudDownload as DownloadIcon } from "@mui/icons-material";
 import { useAuthStore } from "../store/AuthStore";
 import { BackupService } from "../services/backupService";
 import { useBackupStore } from "../store/BackupStore";
+import { llmSuggestionService, LlmProgress } from "../services/llmSuggestionService";
 import { getMoonshotBalance, getDeepSeekBalance } from "../services/llmService";
 import { USD_TO_SEK } from "../constants";
 import ThemeSelector from "../components/ThemeSelector";
@@ -47,12 +49,24 @@ const Settings: React.FC = () => {
     addPredefinedPrompt,
     updatePredefinedPrompt,
     deletePredefinedPrompt,
+    llmSuggestionEnabled,
+    llmModelSelected,
+    llmModelDownloadStatus,
+    setLlmSuggestionEnabled,
+    setLlmModelSelected,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState("");
   const [deepSeekInput, setDeepSeekInput] = useState("");
   const [googleInput, setGoogleInput] = useState("");
   const [moonshotInput, setMoonshotInput] = useState("");
+
+  const modelMap = {
+    "qwen-0.5b-chat": "Xenova/Qwen1.5-0.5B-Chat",
+    "distilgpt2-q8": "Xenova/distilgpt2",
+  };
+  const currentModelId = modelMap[llmModelSelected];
+  const status = llmModelDownloadStatus[currentModelId] ?? "not_downloaded";
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
 
@@ -72,6 +86,30 @@ const Settings: React.FC = () => {
   const [promptContentInput, setPromptContentInput] = useState("");
 
   const { status: backupStatus, lastBackupTime, setStatus: setBackupStatus, setLastBackupTime } = useBackupStore();
+
+  const [llmProgress, setLlmProgress] = useState<LlmProgress | null>(null);
+
+  useEffect(() => {
+    llmSuggestionService.setOnProgress((progress) => {
+      setLlmProgress(progress);
+    });
+    return () => {
+      // Clean up the callback when the component unmounts
+      llmSuggestionService.setOnProgress(() => {
+        /* no-op */
+      });
+    };
+  }, []);
+
+  const handleDownloadModel = (): void => {
+    // Model IDs for transformers.js
+    const modelMap = {
+      "qwen-0.5b-chat": "Xenova/Qwen1.5-0.5B-Chat",
+      "distilgpt2-q8": "Xenova/distilgpt2",
+    };
+    const modelId = modelMap[llmModelSelected];
+    llmSuggestionService.loadModel(modelId, true);
+  };
 
   useEffect(() => {
     setUserNameInput(userName);
@@ -924,6 +962,118 @@ const Settings: React.FC = () => {
             )}
           </Box>
         </Box>
+      </Paper>
+
+      {/* AI Suggestions Section */}
+      <Paper
+        elevation={3}
+        sx={{
+          p: 3,
+          mt: 4,
+          width: "100%",
+          maxWidth: 600,
+          bgcolor: (theme) => theme.palette.background.paper,
+        }}>
+        <Typography
+          variant="h6"
+          gutterBottom
+          sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1, mb: 2 }}>
+          AI Suggestions (Experimental)
+        </Typography>
+        <Typography
+          variant="body2"
+          sx={{ mb: 2, color: "text.secondary" }}>
+          Enable local LLM type-ahead suggestions. This runs entirely in your browser.
+        </Typography>
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={llmSuggestionEnabled}
+              onChange={(e): void => setLlmSuggestionEnabled(e.target.checked)}
+            />
+          }
+          label="Enable AI suggestions"
+          sx={{ mb: 3 }}
+        />
+
+        {llmSuggestionEnabled && (
+          <Box sx={{ mt: 2 }}>
+            <FormControl
+              fullWidth
+              size="small"
+              sx={{ mb: 3 }}>
+              <InputLabel>Selected Model</InputLabel>
+              <Select
+                value={llmModelSelected}
+                label="Selected Model"
+                onChange={(e): void => setLlmModelSelected(e.target.value as "qwen-0.5b-chat" | "distilgpt2-q8")}>
+                <MenuItem value="qwen-0.5b-chat">Qwen1.5 0.5B Chat (Recommended • ~350MB)</MenuItem>
+                <MenuItem value="distilgpt2-q8">DistilGPT-2 (Basic • ~150MB)</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 1,
+                border: "1px solid",
+                borderColor: "divider",
+                bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)"),
+              }}>
+              <Box
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center"
+                mb={llmProgress ? 2 : 0}>
+                <Typography
+                  variant="body2"
+                  component="div">
+                  {status === "downloaded" ? (
+                    <Box
+                      display="flex"
+                      alignItems="center"
+                      gap={1}>
+                      <CheckCircleIcon color="success" />
+                      Model Downloaded
+                    </Box>
+                  ) : status === "downloading" ? (
+                    "Downloading Model..."
+                  ) : (
+                    "Model not downloaded"
+                  )}
+                </Typography>
+
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<DownloadIcon />}
+                  disabled={status === "downloading"}
+                  onClick={(): void => {
+                    handleDownloadModel();
+                  }}>
+                  {status === "downloaded" ? "Re-download" : "Download"}
+                </Button>
+              </Box>
+
+              {llmProgress && status === "downloading" && (
+                <Box sx={{ width: "100%", mt: 2 }}>
+                  <LinearProgress
+                    variant="determinate"
+                    value={llmProgress.progress}
+                  />
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ mt: 1, display: "block" }}>
+                    {llmProgress.progress.toFixed(1)}% ({Math.round(llmProgress.loaded / 1024 / 1024)}MB /{" "}
+                    {Math.round(llmProgress.total / 1024 / 1024)}MB)
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
+        )}
       </Paper>
     </Box>
   );

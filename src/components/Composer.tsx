@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   Box,
   IconButton,
@@ -21,7 +21,9 @@ import {
   alpha,
   Chip,
   InputAdornment,
+  CircularProgress,
 } from "@mui/material";
+import { Theme } from "@mui/material/styles";
 import SendIcon from "@mui/icons-material/Send";
 import StopCircleIcon from "@mui/icons-material/StopCircle";
 import AddIcon from "@mui/icons-material/Add";
@@ -42,6 +44,7 @@ import LanguageIcon from "@mui/icons-material/Language";
 import TopicContextDialog from "./TopicContextDialog";
 import ScratchpadDialog from "./ScratchpadDialog";
 import { useAuthStore } from "../store/AuthStore";
+import { llmSuggestionService } from "../services/llmSuggestionService";
 import { useChatStore } from "../store/ChatStore";
 import { useTopicStore } from "../store/TopicStore";
 import { chatModels } from "./ModelSelector";
@@ -80,6 +83,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     googleApiKey,
     moonshotApiKey,
     predefinedPrompts,
+    llmSuggestionEnabled,
+    llmModelSelected,
+    llmModelDownloadStatus,
   } = useAuthStore();
   const { webSearchEnabled, setWebSearchEnabled } = useChatStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -92,6 +98,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [promptAnchorEl, setPromptAnchorEl] = useState<null | HTMLElement>(null);
   const [inputValue, setInputValue] = useState("");
+  const [suggestion, setSuggestion] = useState("");
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const suggestionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const topic = topicStore.topics.find((t) => t.id === currentTopicId);
 
@@ -262,6 +271,94 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   useEffect(() => {
     setLocalMaxContext(null);
   }, [currentTopicId]);
+
+  // Load model into memory if enabled
+  useEffect(() => {
+    const modelMap = {
+      "qwen-0.5b-chat": "Xenova/Qwen1.5-0.5B-Chat",
+      "distilgpt2-q8": "Xenova/distilgpt2",
+    } as const;
+    const modelId = modelMap[llmModelSelected];
+    const status = llmModelDownloadStatus[modelId] ?? "not_downloaded";
+
+    if (llmSuggestionEnabled && status === "downloaded") {
+      llmSuggestionService.loadModel(modelId, true, true);
+    }
+  }, [llmSuggestionEnabled, llmModelSelected, llmModelDownloadStatus]);
+
+  const fetchSuggestion = useCallback(
+    async (text: string) => {
+      const modelMap = {
+        "qwen-0.5b-chat": "Xenova/Qwen1.5-0.5B-Chat",
+        "distilgpt2-q8": "Xenova/distilgpt2",
+      };
+      const modelId = modelMap[llmModelSelected];
+      if (!llmSuggestionEnabled || llmModelDownloadStatus[modelId] !== "downloaded" || !text.trim()) {
+        setSuggestion("");
+        return;
+      }
+
+      setIsSuggesting(true);
+      try {
+        const result = await llmSuggestionService.getSuggestion(text);
+        if (result && result.length > 0) {
+          const cleaned = result.replace(/^\n+/, "");
+          const firstLine = cleaned.split("\n")[0];
+          setSuggestion(firstLine);
+        } else {
+          setSuggestion("");
+        }
+      } catch (err) {
+        console.error("Suggestion error:", err);
+        setSuggestion("");
+      } finally {
+        setIsSuggesting(false);
+      }
+    },
+    [llmSuggestionEnabled, llmModelDownloadStatus, llmModelSelected],
+  );
+
+  useEffect(() => {
+    if (suggestionTimeoutRef.current) {
+      clearTimeout(suggestionTimeoutRef.current);
+    }
+
+    if (!inputValue.trim()) {
+      setSuggestion("");
+      return;
+    }
+
+    // Only fetch suggestion if the user has typed a space or newline (finished a word)
+    if (!inputValue.endsWith(" ") && !inputValue.endsWith("\n")) {
+      setSuggestion("");
+      return;
+    }
+
+    suggestionTimeoutRef.current = setTimeout(() => {
+      fetchSuggestion(inputValue).catch(console.error);
+    }, 500); // 500ms debounce
+
+    return () => {
+      if (suggestionTimeoutRef.current) {
+        clearTimeout(suggestionTimeoutRef.current);
+      }
+    };
+  }, [inputValue, fetchSuggestion]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === "Tab" && suggestion) {
+      e.preventDefault();
+      const newValue = inputValue + suggestion;
+      setInputValue(newValue);
+      questionRef.current = newValue;
+      setSuggestion("");
+    }
+
+    if (!isMobile && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      handleSend();
+      e.preventDefault();
+    }
+  };
 
   return (
     <Box
@@ -989,75 +1086,161 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 ))}
               </Box>
             )}
-            <TextField
-              fullWidth
-              multiline
-              inputRef={textFieldRef}
-              maxRows={isExpanded ? 25 : 10}
-              minRows={isExpanded ? 15 : 1}
-              placeholder={isMobile ? "Message..." : "Type your message..."}
-              value={inputValue}
-              onChange={(e): void => {
-                setInputValue(e.target.value);
-                questionRef.current = e.target.value;
-              }}
-              onKeyDown={(e): void => {
-                if (!isMobile && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  handleSend();
-                  e.preventDefault();
-                }
-              }}
-              disabled={sending}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment
-                    position="end"
-                    sx={{
-                      alignSelf: "flex-end",
-                      mb: 0,
-                      mr: 0.5,
-                    }}>
-                    <Tooltip
-                      title={isExpanded ? "Collapse" : "Expand"}
-                      disableTouchListener={isMobile}>
-                      <span>
-                        <IconButton
-                          onClick={(): void => setIsExpanded(!isExpanded)}
-                          disabled={sending}
-                          size="small"
-                          aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}
-                          sx={{
-                            opacity: 0.4,
-                            transition: "opacity 0.2s",
-                            "&:hover": {
-                              opacity: 1,
-                              backgroundColor: (theme) => alpha(theme.palette.action.active, 0.05),
-                            },
-                          }}>
-                          {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </InputAdornment>
-                ),
-              }}
+            <Box
               sx={{
-                "& .MuiOutlinedInput-root": {
-                  borderRadius: 3,
-                  py: 0.75,
+                position: "relative",
+                width: "100%",
+                borderRadius: 3,
+                backgroundColor: (theme) =>
+                  theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
+                "&:hover": {
                   backgroundColor: (theme) =>
-                    theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
-                  transition: "background-color 0.2s",
-                  "&:hover": {
-                    backgroundColor: (theme) =>
-                      theme.palette.mode === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)",
-                  },
-                  "& fieldset": {
-                    borderColor: (theme) => alpha(theme.palette.divider, 0.5),
-                  },
+                    theme.palette.mode === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)",
                 },
-              }}
-            />
+              }}>
+              {/* Suggestion overlay moved to InputProps */}
+              <TextField
+                fullWidth
+                multiline
+                inputRef={textFieldRef}
+                maxRows={isExpanded ? 25 : 10}
+                minRows={isExpanded ? 15 : 1}
+                placeholder={isMobile ? "Message..." : "Type your message..."}
+                value={inputValue}
+                onChange={(e): void => {
+                  setInputValue(e.target.value);
+                  questionRef.current = e.target.value;
+                  setSuggestion(""); // Clear suggestion immediately on change
+                }}
+                onKeyDown={handleKeyDown}
+                disabled={sending}
+                InputProps={{
+                  startAdornment: suggestion ? (
+                    <Box
+                      sx={{
+                        position: "absolute",
+                        top: "1px",
+                        left: "1px",
+                        right: "1px",
+                        bottom: "1px",
+                        pt: "6px",
+                        pb: "6px",
+                        pl: "14px",
+                        pr: "50px",
+                        pointerEvents: "none",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        fontSize: `${chatFontSize}px !important`,
+                        fontFamily: "var(--font-family, inherit)",
+                        color: "transparent",
+                        lineHeight: "1.5 !important",
+                        overflow: "hidden",
+                        display: "block",
+                        zIndex: 1,
+                      }}>
+                      <span>{inputValue}</span>
+                      <Box
+                        component="span"
+                        onClick={(e: React.MouseEvent): void => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const newValue = inputValue + suggestion;
+                          setInputValue(newValue);
+                          questionRef.current = newValue;
+                          setSuggestion("");
+                          setTimeout(() => {
+                            if (textFieldRef.current) {
+                              textFieldRef.current.focus();
+                              const length = newValue.length;
+                              textFieldRef.current.setSelectionRange(length, length);
+                            }
+                          }, 0);
+                        }}
+                        sx={{
+                          color: "rgba(128, 128, 128, 0.5)",
+                          pointerEvents: "auto",
+                          cursor: "pointer",
+                          "&:hover": { color: "rgba(128, 128, 128, 0.8)" },
+                        }}>
+                        {suggestion}
+                        <Typography
+                          component="span"
+                          variant="caption"
+                          sx={{
+                            ml: 1,
+                            bgcolor: "rgba(128, 128, 128, 0.1)",
+                            px: 0.5,
+                            borderRadius: 0.5,
+                            fontSize: "0.6rem",
+                            verticalAlign: "middle",
+                          }}>
+                          {isMobile ? "Tap to apply" : "Tab"}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ) : undefined,
+                  endAdornment: (
+                    <InputAdornment
+                      position="end"
+                      sx={{
+                        alignSelf: "flex-end",
+                        mb: 0,
+                        mr: 0.5,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 0.5,
+                      }}>
+                      {isSuggesting && (
+                        <CircularProgress
+                          size={16}
+                          sx={{ mr: 1 }}
+                        />
+                      )}
+                      <Tooltip
+                        title={isExpanded ? "Collapse" : "Expand"}
+                        disableTouchListener={isMobile}>
+                        <span>
+                          <IconButton
+                            onClick={(): void => setIsExpanded(!isExpanded)}
+                            disabled={sending}
+                            size="small"
+                            aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}
+                            sx={{
+                              opacity: 0.4,
+                              transition: "opacity 0.2s",
+                              "&:hover": {
+                                opacity: 1,
+                                backgroundColor: (theme: Theme) => alpha(theme.palette.action.active, 0.05),
+                              },
+                            }}>
+                            {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 3,
+                    paddingTop: "6px !important",
+                    paddingBottom: "6px !important",
+                    fontSize: `${chatFontSize}px !important`,
+                    lineHeight: "1.5 !important",
+                    backgroundColor: "transparent",
+                    transition: "background-color 0.2s",
+                    "& fieldset": {
+                      borderColor: (theme: Theme) => alpha(theme.palette.divider, 0.5),
+                    },
+                  },
+                  "& .MuiInputBase-input": {
+                    fontSize: `${chatFontSize}px !important`,
+                    fontFamily: "var(--font-family, inherit)",
+                    lineHeight: "1.5 !important",
+                  },
+                }}
+              />
+            </Box>
           </Box>
 
           {/* Right (Send Button) */}
@@ -1079,10 +1262,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   sx={{
                     width: 52,
                     height: 52,
-                    backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                    "&:hover": {
-                      backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.2),
-                    },
                     "&.Mui-disabled": {
                       backgroundColor: "transparent",
                     },

@@ -16,6 +16,12 @@ interface AuthState {
   themeMode: "light" | "dark";
   colorTheme: string;
   predefinedPrompts: PredefinedPrompt[];
+  llmSuggestionEnabled: boolean;
+  llmModelSelected: "qwen-0.5b-chat" | "distilgpt2-q8";
+  llmModelDownloadStatus: Record<string, "not_downloaded" | "downloading" | "downloaded" | undefined>;
+  setLlmSuggestionEnabled: (enabled: boolean) => void;
+  setLlmModelSelected: (model: "qwen-0.5b-chat" | "distilgpt2-q8") => void;
+  setLlmModelDownloadStatus: (modelId: string, status: "not_downloaded" | "downloading" | "downloaded") => void;
   clearAuth: () => void;
   setOpenAiKey: (key: string) => void;
   setDeepSeekKey: (key: string) => void;
@@ -46,6 +52,13 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedChatFontSize = Number(localStorage.getItem("chatFontSize") ?? "16");
   const storedThemeMode = (localStorage.getItem("themeMode") as "light" | "dark" | null) ?? "dark";
   const storedColorTheme = localStorage.getItem("colorTheme") ?? "default";
+  const storedLlmSuggestionEnabled = localStorage.getItem("llmSuggestionEnabled") === "true";
+  const storedLlmModelSelected =
+    (localStorage.getItem("llmModelSelected") as "qwen-0.5b-chat" | "distilgpt2-q8" | null) ?? "qwen-0.5b-chat";
+  const storedLlmModelDownloadStatus = JSON.parse(localStorage.getItem("llmModelDownloadStatus") ?? "{}") as Record<
+    string,
+    "not_downloaded" | "downloading" | "downloaded" | undefined
+  >;
 
   return {
     openAiKey: storedOpenAiKey,
@@ -60,6 +73,9 @@ export const useAuthStore = create<AuthState>((set) => {
     themeMode: storedThemeMode,
     colorTheme: storedColorTheme,
     predefinedPrompts: [],
+    llmSuggestionEnabled: storedLlmSuggestionEnabled,
+    llmModelSelected: storedLlmModelSelected,
+    llmModelDownloadStatus: storedLlmModelDownloadStatus,
     clearAuth: (): void => {
       localStorage.removeItem("openAiKey");
       localStorage.removeItem("deepSeekKey");
@@ -82,6 +98,24 @@ export const useAuthStore = create<AuthState>((set) => {
         themeMode: "dark",
         colorTheme: "default",
         predefinedPrompts: [],
+        llmSuggestionEnabled: false,
+        llmModelSelected: "qwen-0.5b-chat",
+        llmModelDownloadStatus: {},
+      });
+    },
+    setLlmSuggestionEnabled: (enabled: boolean): void => {
+      localStorage.setItem("llmSuggestionEnabled", String(enabled));
+      set({ llmSuggestionEnabled: enabled });
+    },
+    setLlmModelSelected: (model: "qwen-0.5b-chat" | "distilgpt2-q8"): void => {
+      localStorage.setItem("llmModelSelected", model);
+      set({ llmModelSelected: model });
+    },
+    setLlmModelDownloadStatus: (modelId: string, status: "not_downloaded" | "downloading" | "downloaded"): void => {
+      set((state) => {
+        const newStatus = { ...state.llmModelDownloadStatus, [modelId]: status };
+        localStorage.setItem("llmModelDownloadStatus", JSON.stringify(newStatus));
+        return { llmModelDownloadStatus: newStatus };
       });
     },
     setOpenAiKey: (key: string): void => {
