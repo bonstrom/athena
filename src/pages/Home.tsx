@@ -173,18 +173,6 @@ const Home: React.FC = () => {
             </Button>
           )}
         </Paper>
-
-        <Box sx={{ mt: 2 }}>
-          <Button
-            onClick={(): void => {
-              logout();
-            }}
-            color="inherit"
-            sx={{ opacity: 0.6, "&:hover": { opacity: 1 } }}
-            size="small">
-            Logout
-          </Button>
-        </Box>
       </Box>
     </Box>
   );
