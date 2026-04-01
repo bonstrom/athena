@@ -86,8 +86,17 @@ const ChatLayout: React.FC = () => {
                 <MenuIcon />
               </IconButton>
               {topic && (
-                <Box sx={{ ml: 0.5, overflow: "hidden", display: "flex", flexDirection: "column", minWidth: 0 }}>
-                  <Box sx={{ display: "flex", alignItems: "baseline", gap: 1.5 }}>
+                <Box
+                  sx={{
+                    ml: 0.5,
+                    overflow: "hidden",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    gap: 1,
+                    minWidth: 0,
+                  }}>
+                  <Box sx={{ display: "flex", alignItems: "baseline", gap: 1.5, flexShrink: 0 }}>
                     <Typography
                       variant="subtitle2"
                       fontWeight="bold"
@@ -103,7 +112,7 @@ const ChatLayout: React.FC = () => {
                     </Typography>
                   </Box>
                   {topic.selectedPromptIds && topic.selectedPromptIds.length > 0 && (
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.25 }}>
+                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
                       {predefinedPrompts
                         .filter((p) => topic.selectedPromptIds?.includes(p.id))
                         .map((prompt) => (
@@ -139,48 +148,47 @@ const ChatLayout: React.FC = () => {
                 flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 1.5,
               }}>
-              <Box sx={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-                <Box sx={{ display: "flex", alignItems: "baseline", gap: 1.5 }}>
-                  <Typography
-                    variant="subtitle1"
-                    fontWeight="bold"
-                    noWrap>
-                    {topic.name || "New Topic"}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    noWrap
-                    sx={{ flexShrink: 0 }}>
-                    {selectedModel.label}
-                  </Typography>
-                </Box>
-                {topic.selectedPromptIds && topic.selectedPromptIds.length > 0 && (
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.25 }}>
-                    {predefinedPrompts
-                      .filter((p) => topic.selectedPromptIds?.includes(p.id))
-                      .map((prompt) => (
-                        <Chip
-                          key={prompt.id}
-                          label={prompt.name}
-                          size="small"
-                          onDelete={(): void => {
-                            const newIds = topic.selectedPromptIds?.filter((id) => id !== prompt.id) ?? [];
-                            void topicStore.updateTopicPromptSelection(topic.id, newIds);
-                          }}
-                          sx={{
-                            height: 20,
-                            fontSize: "0.65rem",
-                            bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-                            "& .MuiChip-deleteIcon": { fontSize: 14 },
-                          }}
-                        />
-                      ))}
-                  </Box>
-                )}
+              <Box sx={{ display: "flex", alignItems: "baseline", gap: 1.5, flexShrink: 0 }}>
+                <Typography
+                  variant="subtitle1"
+                  fontWeight="bold"
+                  noWrap>
+                  {topic.name || "New Topic"}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  noWrap
+                  sx={{ flexShrink: 0 }}>
+                  {selectedModel.label}
+                </Typography>
               </Box>
+              {topic.selectedPromptIds && topic.selectedPromptIds.length > 0 && (
+                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                  {predefinedPrompts
+                    .filter((p) => topic.selectedPromptIds?.includes(p.id))
+                    .map((prompt) => (
+                      <Chip
+                        key={prompt.id}
+                        label={prompt.name}
+                        size="small"
+                        onDelete={(): void => {
+                          const newIds = topic.selectedPromptIds?.filter((id) => id !== prompt.id) ?? [];
+                          void topicStore.updateTopicPromptSelection(topic.id, newIds);
+                        }}
+                        sx={{
+                          height: 20,
+                          fontSize: "0.65rem",
+                          bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                          "& .MuiChip-deleteIcon": { fontSize: 14 },
+                        }}
+                      />
+                    ))}
+                </Box>
+              )}
             </Box>
           )}
 
