@@ -20,7 +20,6 @@ const App: React.FC = () => {
             path="/"
             element={<ChatLayout />}>
             <Route
-              path="home"
               index
               element={<Home />}
             />
