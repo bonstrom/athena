@@ -917,7 +917,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             display: "flex",
             flexDirection: "row",
             flexWrap: "wrap",
-            alignItems: "center",
+            alignItems: "flex-end",
             columnGap: { xs: 0.5, md: 1 },
             rowGap: 0,
           }}>
