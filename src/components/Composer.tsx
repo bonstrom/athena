@@ -1103,8 +1103,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 fullWidth
                 multiline
                 inputRef={textFieldRef}
-                maxRows={isExpanded ? 25 : 10}
-                minRows={isExpanded ? 15 : 1}
+                maxRows={isExpanded ? (isMobile ? 25 : 40) : 10}
+                minRows={isExpanded ? (isMobile ? 15 : 30) : 1}
                 placeholder={isMobile ? "Message..." : "Type your message..."}
                 value={inputValue}
                 onChange={(e): void => {
