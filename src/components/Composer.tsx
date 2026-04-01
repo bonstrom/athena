@@ -19,6 +19,7 @@ import {
   Select,
   SelectChangeEvent,
   alpha,
+  InputAdornment,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import StopCircleIcon from "@mui/icons-material/StopCircle";
@@ -30,6 +31,7 @@ import CodeIcon from "@mui/icons-material/Code";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
 import ForumIcon from "@mui/icons-material/Forum";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
+import PsychologyIcon from "@mui/icons-material/Psychology";
 import EditNoteIcon from "@mui/icons-material/EditNote";
 import OpenInFullIcon from "@mui/icons-material/OpenInFull";
 import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
@@ -76,6 +78,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     deepSeekKey,
     googleApiKey,
     moonshotApiKey,
+    predefinedPrompts,
   } = useAuthStore();
   const { webSearchEnabled, setWebSearchEnabled } = useChatStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -86,6 +89,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const [activePageIndex, setActivePageIndex] = useState(0);
   const [localMaxContext, setLocalMaxContext] = useState<number | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [promptAnchorEl, setPromptAnchorEl] = useState<null | HTMLElement>(null);
 
   const availableModels = chatModels.filter(
     (model) =>
@@ -253,6 +257,13 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
   const removeAttachment = (id: string): void => {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  const handlePromptClick = (event: React.MouseEvent<HTMLElement>): void => {
+    setPromptAnchorEl(event.currentTarget);
+  };
+  const handlePromptClose = (): void => {
+    setPromptAnchorEl(null);
   };
 
   useEffect(() => {
@@ -842,6 +853,33 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               }
             }}
             disabled={sending}
+            InputProps={{
+              endAdornment: (
+                <InputAdornment
+                  position="end"
+                  sx={{
+                    alignSelf: "flex-end",
+                    mb: 1,
+                    position: "absolute",
+                    right: 8,
+                    top: 8,
+                  }}>
+                  <Tooltip
+                    title={isExpanded ? "Collapse" : "Expand"}
+                    disableTouchListener={isMobile}>
+                    <span>
+                      <IconButton
+                        onClick={(): void => setIsExpanded(!isExpanded)}
+                        disabled={sending}
+                        size="small"
+                        aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}>
+                        {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </InputAdornment>
+              ),
+            }}
           />
         </Box>
 
@@ -852,7 +890,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           width="100%">
           <Box
             display="flex"
-            alignItems="center">
+            alignItems="center"
+            flexWrap="wrap"
+            gap={0.5}>
             <Tooltip
               title="Topic Settings"
               disableTouchListener={isMobile}>
@@ -890,18 +930,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </span>
             </Tooltip>
             <Tooltip
-              title={isExpanded ? "Collapse" : "Expand"}
-              disableTouchListener={isMobile}>
-              <span>
-                <IconButton
-                  onClick={(): void => setIsExpanded(!isExpanded)}
-                  disabled={sending}
-                  aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}>
-                  {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip
               title={`Web Search (${webSearchEnabled ? "Enabled" : "Disabled"})`}
               disableTouchListener={isMobile}>
               <span>
@@ -921,6 +949,66 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 </IconButton>
               </span>
             </Tooltip>
+
+            <Tooltip
+              title="Predefined Prompts"
+              disableTouchListener={isMobile}>
+              <span>
+                <IconButton
+                  onClick={handlePromptClick}
+                  disabled={sending || predefinedPrompts.length === 0}
+                  aria-label="Predefined Prompts">
+                  <PsychologyIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            <Menu
+              anchorEl={promptAnchorEl}
+              open={Boolean(promptAnchorEl)}
+              onClose={handlePromptClose}
+              PaperProps={{
+                sx: {
+                  minWidth: 200,
+                  maxHeight: 400,
+                  mt: -1,
+                },
+              }}>
+              <ListSubheader sx={{ bgcolor: "transparent", fontWeight: "bold" }}>Predefined Prompts</ListSubheader>
+              {predefinedPrompts.map((prompt) => {
+                const topic = topicStore.topics.find((t) => t.id === currentTopicId);
+                const isSelected = topic?.selectedPromptIds?.includes(prompt.id) ?? false;
+                return (
+                  <MenuItem
+                    key={prompt.id}
+                    onClick={(): void => {
+                      if (!currentTopicId) return;
+                      const currentIds = topic?.selectedPromptIds ?? [];
+                      const newIds = isSelected
+                        ? currentIds.filter((id) => id !== prompt.id)
+                        : [...currentIds, prompt.id];
+                      void topicStore.updateTopicPromptSelection(currentTopicId, newIds);
+                    }}>
+                    <ListItemText primary={prompt.name} />
+                    <Box
+                      sx={{
+                        ml: 2,
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        bgcolor: isSelected ? "primary.main" : "transparent",
+                        border: (theme) => `1px solid ${isSelected ? "primary.main" : theme.palette.divider}`,
+                      }}
+                    />
+                  </MenuItem>
+                );
+              })}
+              {predefinedPrompts.length === 0 && (
+                <MenuItem disabled>
+                  <Typography variant="body2">No predefined prompts. Add some in settings.</Typography>
+                </MenuItem>
+              )}
+            </Menu>
           </Box>
           <Tooltip
             title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Enter)"}

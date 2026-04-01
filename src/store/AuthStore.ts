@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { useNavigate } from "react-router-dom";
 import { SecurityUtils } from "../utils/security";
+import { PredefinedPrompt, athenaDb } from "../database/AthenaDb";
 
 interface AuthState {
   openAiKey: string;
@@ -14,6 +15,7 @@ interface AuthState {
   chatFontSize: number;
   themeMode: "light" | "dark";
   colorTheme: string;
+  predefinedPrompts: PredefinedPrompt[];
   clearAuth: () => void;
   setOpenAiKey: (key: string) => void;
   setDeepSeekKey: (key: string) => void;
@@ -26,6 +28,10 @@ interface AuthState {
   setChatFontSize: (size: number) => void;
   setThemeMode: (mode: "light" | "dark") => void;
   setColorTheme: (theme: string) => void;
+  setPredefinedPrompts: (prompts: PredefinedPrompt[]) => void;
+  addPredefinedPrompt: (prompt: PredefinedPrompt) => void;
+  updatePredefinedPrompt: (prompt: PredefinedPrompt) => void;
+  deletePredefinedPrompt: (id: string) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => {
@@ -53,6 +59,7 @@ export const useAuthStore = create<AuthState>((set) => {
     chatFontSize: storedChatFontSize,
     themeMode: storedThemeMode,
     colorTheme: storedColorTheme,
+    predefinedPrompts: [],
     clearAuth: (): void => {
       localStorage.removeItem("openAiKey");
       localStorage.removeItem("deepSeekKey");
@@ -62,6 +69,7 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem("customInstructions");
       localStorage.removeItem("chatWidth");
       localStorage.removeItem("chatFontSize");
+      void athenaDb.predefinedPrompts.clear();
       set({
         openAiKey: "",
         deepSeekKey: "",
@@ -73,6 +81,7 @@ export const useAuthStore = create<AuthState>((set) => {
         chatFontSize: 16,
         themeMode: "dark",
         colorTheme: "default",
+        predefinedPrompts: [],
       });
     },
     setOpenAiKey: (key: string): void => {
@@ -119,7 +128,31 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.setItem("colorTheme", theme);
       set({ colorTheme: theme });
     },
+    setPredefinedPrompts: (predefinedPrompts: PredefinedPrompt[]): void => {
+      set({ predefinedPrompts });
+    },
+    addPredefinedPrompt: (prompt: PredefinedPrompt): void => {
+      set((state) => ({ predefinedPrompts: [...state.predefinedPrompts, prompt] }));
+      void athenaDb.predefinedPrompts.add(prompt);
+    },
+    updatePredefinedPrompt: (prompt: PredefinedPrompt): void => {
+      set((state) => ({
+        predefinedPrompts: state.predefinedPrompts.map((p) => (p.id === prompt.id ? prompt : p)),
+      }));
+      void athenaDb.predefinedPrompts.put(prompt);
+    },
+    deletePredefinedPrompt: (id: string): void => {
+      set((state) => ({
+        predefinedPrompts: state.predefinedPrompts.filter((p) => p.id !== id),
+      }));
+      void athenaDb.predefinedPrompts.delete(id);
+    },
   };
+});
+
+// Load predefined prompts from DB on init
+void athenaDb.predefinedPrompts.toArray().then((prompts) => {
+  useAuthStore.getState().setPredefinedPrompts(prompts);
 });
 
 export const useLogout = (): (() => void) => {

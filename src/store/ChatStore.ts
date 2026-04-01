@@ -6,6 +6,7 @@ import { Message, Attachment } from "../database/AthenaDb";
 import { athenaDb } from "../database/AthenaDb";
 import { useNotificationStore } from "./NotificationStore";
 import { BackupService } from "../services/backupService";
+import { useAuthStore } from "./AuthStore";
 
 import { SCRATCHPAD_LIMIT } from "../constants";
 
@@ -320,6 +321,15 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         content:
           "You have access to real-time internet search via the $web_search tool. Use it whenever you need up-to-date information or are unsure about recent events (like 'Vem vann Melodifestivalen 2024?').",
       });
+    }
+
+    const selectedPromptIds = topic?.selectedPromptIds ?? [];
+    if (selectedPromptIds.length > 0) {
+      const allPrompts = useAuthStore.getState().predefinedPrompts;
+      const selectedPrompts = allPrompts.filter((p) => selectedPromptIds.includes(p.id));
+      for (const p of selectedPrompts) {
+        systems.push({ role: "system", content: p.content });
+      }
     }
 
     llmContext.unshift(...systems);

@@ -29,6 +29,7 @@ interface TopicState {
   getTopicTokenCount: (topicId: string) => Promise<number>;
   getTopicTotalCost: (topicId: string) => Promise<number>;
   updateTopicMaxContextMessages: (id: string, maxContextMessages: number) => Promise<void>;
+  updateTopicPromptSelection: (id: string, selectedPromptIds: string[]) => Promise<void>;
 }
 
 export const useTopicStore = create<TopicState>((set, get) => ({
@@ -388,14 +389,24 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       totalTokens += encode(`system: ${customInstructions}`).length;
     }
 
-    // 2. Scratchpad System Message
+    // 2. Selected Predefined Prompts
+    const selectedPromptIds = topic?.selectedPromptIds ?? [];
+    if (selectedPromptIds.length > 0) {
+      const allPrompts = auth.predefinedPrompts;
+      const selectedPrompts = allPrompts.filter((p) => selectedPromptIds.includes(p.id));
+      for (const p of selectedPrompts) {
+        totalTokens += encode(`system: ${p.content}`).length;
+      }
+    }
+
+    // 3. Scratchpad System Message
     let scratchpadSystemMsg = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). To append a note to it, include \`<!-- persist: your note here -->\` in your response. To replace the entire scratchpad, use \`<!-- replace: your new content here -->\`. Use the scratchpad to remember key facts, character details, or state during games.`;
     if (topic?.scratchpad) {
       scratchpadSystemMsg += "\n\n[Current Scratchpad Content]:\n" + topic.scratchpad;
     }
     totalTokens += encode(`system: ${scratchpadSystemMsg}`).length;
 
-    // 3. Context Messages
+    // 4. Context Messages
     for (const msg of contextMessages) {
       if (msg.promptTokens || msg.completionTokens) {
         totalTokens += (msg.promptTokens || 0) + (msg.completionTokens || 0);
@@ -420,6 +431,18 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       console.error("Failed to update topic max context messages", err);
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification("Failed to update context limit", message);
+    }
+  },
+  updateTopicPromptSelection: async (id, selectedPromptIds): Promise<void> => {
+    try {
+      await athenaDb.topics.update(id, { selectedPromptIds });
+      set((state) => ({
+        topics: state.topics.map((t) => (t.id === id ? { ...t, selectedPromptIds } : t)),
+      }));
+    } catch (err) {
+      console.error("Failed to update topic prompt selection", err);
+      const message = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification("Failed to update selection", message);
     }
   },
 }));

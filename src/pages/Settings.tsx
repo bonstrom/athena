@@ -14,13 +14,14 @@ import {
   FormControlLabel,
   Chip,
 } from "@mui/material";
-import { CheckCircle as CheckCircleIcon } from "@mui/icons-material";
+import { CheckCircle as CheckCircleIcon, Add as AddIcon } from "@mui/icons-material";
 import { useAuthStore } from "../store/AuthStore";
 import { BackupService } from "../services/backupService";
 import { useBackupStore } from "../store/BackupStore";
 import { getMoonshotBalance, getDeepSeekBalance } from "../services/llmService";
 import { USD_TO_SEK } from "../constants";
 import ThemeSelector from "../components/ThemeSelector";
+import { PredefinedPrompt } from "../database/AthenaDb";
 
 const Settings: React.FC = () => {
   const {
@@ -42,6 +43,10 @@ const Settings: React.FC = () => {
     setCustomInstructions,
     setChatWidth,
     setChatFontSize,
+    predefinedPrompts,
+    addPredefinedPrompt,
+    updatePredefinedPrompt,
+    deletePredefinedPrompt,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState("");
@@ -60,6 +65,11 @@ const Settings: React.FC = () => {
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [moonshotBalance, setMoonshotBalance] = useState<number | null>(null);
   const [deepSeekBalance, setDeepSeekBalance] = useState<{ balance: number; currency: string } | null>(null);
+
+  const [showPromptForm, setShowPromptForm] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState<PredefinedPrompt | null>(null);
+  const [promptNameInput, setPromptNameInput] = useState("");
+  const [promptContentInput, setPromptContentInput] = useState("");
 
   const { status: backupStatus, lastBackupTime, setStatus: setBackupStatus, setLastBackupTime } = useBackupStore();
 
@@ -585,6 +595,165 @@ const Settings: React.FC = () => {
           maxWidth: 600,
           bgcolor: (theme) => theme.palette.background.paper,
         }}>
+        <Box sx={{ mb: 4 }}>
+          <Typography
+            variant="h6"
+            gutterBottom
+            sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1, mb: 2 }}>
+            Predefined Prompts
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{ mb: 2, color: "text.secondary" }}>
+            Create reusable prompt snippets that you can easily toggle in your conversations.
+          </Typography>
+
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}>
+            {predefinedPrompts.map((prompt) => (
+              <Paper
+                key={prompt.id}
+                variant="outlined"
+                sx={{
+                  p: 2,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1,
+                  position: "relative",
+                  bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)"),
+                }}>
+                <Box
+                  display="flex"
+                  justifyContent="space-between"
+                  alignItems="center">
+                  <Typography
+                    variant="subtitle2"
+                    sx={{ fontWeight: "bold" }}>
+                    {prompt.name}
+                  </Typography>
+                  <Box>
+                    <Button
+                      size="small"
+                      onClick={(): void => {
+                        setEditingPrompt(prompt);
+                        setPromptNameInput(prompt.name);
+                        setPromptContentInput(prompt.content);
+                        setShowPromptForm(true);
+                      }}>
+                      Edit
+                    </Button>
+                    <Button
+                      size="small"
+                      color="error"
+                      onClick={(): void => {
+                        if (window.confirm(`Delete prompt "${prompt.name}"?`)) {
+                          deletePredefinedPrompt(prompt.id);
+                        }
+                      }}>
+                      Delete
+                    </Button>
+                  </Box>
+                </Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    whiteSpace: "pre-wrap",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    color: "text.secondary",
+                  }}>
+                  {prompt.content}
+                </Typography>
+              </Paper>
+            ))}
+
+            {showPromptForm ? (
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
+                <Typography variant="subtitle2">{editingPrompt ? "Edit Prompt" : "New Prompt"}</Typography>
+                <TextField
+                  label="Name (e.g., Programming)"
+                  size="small"
+                  fullWidth
+                  value={promptNameInput}
+                  onChange={(e): void => setPromptNameInput(e.target.value)}
+                />
+                <TextField
+                  label="Context / Instructions"
+                  placeholder="The context or instructions to add..."
+                  multiline
+                  minRows={3}
+                  fullWidth
+                  value={promptContentInput}
+                  onChange={(e): void => setPromptContentInput(e.target.value)}
+                />
+                <Box
+                  display="flex"
+                  justifyContent="flex-end"
+                  gap={1}>
+                  <Button
+                    size="small"
+                    onClick={(): void => {
+                      setShowPromptForm(false);
+                      setEditingPrompt(null);
+                    }}>
+                    Cancel
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    disabled={!promptNameInput.trim() || !promptContentInput.trim()}
+                    onClick={(): void => {
+                      if (editingPrompt) {
+                        updatePredefinedPrompt({
+                          ...editingPrompt,
+                          name: promptNameInput.trim(),
+                          content: promptContentInput.trim(),
+                        });
+                      } else {
+                        addPredefinedPrompt({
+                          id: crypto.randomUUID(),
+                          name: promptNameInput.trim(),
+                          content: promptContentInput.trim(),
+                        });
+                      }
+                      setShowPromptForm(false);
+                      setEditingPrompt(null);
+                      setPromptNameInput("");
+                      setPromptContentInput("");
+                    }}>
+                    {editingPrompt ? "Save Changes" : "Add Prompt"}
+                  </Button>
+                </Box>
+              </Paper>
+            ) : (
+              <Button
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={(): void => setShowPromptForm(true)}>
+                Add Predefined Prompt
+              </Button>
+            )}
+          </Box>
+        </Box>
+      </Paper>
+
+      <Paper
+        elevation={3}
+        sx={{
+          p: 3,
+          mt: 4,
+          width: "100%",
+          maxWidth: 600,
+          bgcolor: (theme) => theme.palette.background.paper,
+        }}>
         <Typography
           variant="h6"
           gutterBottom>
@@ -663,7 +832,7 @@ const Settings: React.FC = () => {
                         onClick={(): void => {
                           handleChangeLocation().catch(console.error);
                         }}
-                        sx={{ }}>
+                        sx={{}}>
                         Change Location
                       </Button>
                     )}
