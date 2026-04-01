@@ -936,7 +936,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               gap: 0,
               mb: { xs: 0, md: 0.25 },
               width: { xs: "auto", md: 220 },
-              justifyContent: "flex-end",
+              justifyContent: { xs: "flex-start", md: "flex-end" },
+              flexGrow: { xs: 1, md: 0 },
             }}>
             <Tooltip
               title="Parameters"
@@ -1257,7 +1258,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               display: "flex",
               alignItems: "center",
               width: { xs: "auto", md: 220 },
-              justifyContent: "flex-start",
+              justifyContent: { xs: "flex-end", md: "flex-start" },
             }}>
             <Tooltip
               title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Enter)"}
