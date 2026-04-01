@@ -842,10 +842,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 <IconButton
                   onClick={handleTempClick}
                   disabled={sending}
-                  size="small"
                   color={topic?.maxContextMessages !== undefined ? "primary" : "default"}
                   aria-label="Adjust parameters">
-                  <TuneIcon fontSize="small" />
+                  <TuneIcon />
                 </IconButton>
               </span>
             </Tooltip>
@@ -857,9 +856,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 <IconButton
                   onClick={(): void => fileInputRef.current?.click()}
                   disabled={sending}
-                  size="small"
                   aria-label="Attach file">
-                  <AttachFileIcon fontSize="small" />
+                  <AttachFileIcon />
                 </IconButton>
               </span>
             </Tooltip>
@@ -871,9 +869,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 <span>
                   <IconButton
                     disabled={sending}
-                    size="small"
                     aria-label="Camera">
-                    <PhotoCameraIcon fontSize="small" />
+                    <PhotoCameraIcon />
                   </IconButton>
                 </span>
               </Tooltip>
@@ -893,10 +890,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     setWebSearchEnabled(nextState);
                   }}
                   disabled={sending}
-                  size="small"
                   color={webSearchEnabled ? "primary" : "default"}
                   aria-label="Toggle Web Search">
-                  <LanguageIcon fontSize="small" />
+                  <LanguageIcon />
                 </IconButton>
               </span>
             </Tooltip>
@@ -908,9 +904,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 <IconButton
                   onClick={handlePromptClick}
                   disabled={sending || predefinedPrompts.length === 0}
-                  size="small"
                   aria-label="Predefined Prompts">
-                  <PsychologyIcon fontSize="small" />
+                  <PsychologyIcon />
                 </IconButton>
               </span>
             </Tooltip>
@@ -1082,8 +1077,12 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   onClick={sending ? handleStop : handleSend}
                   disabled={!inputValue.trim() && !attachments.length && !sending}
                   sx={{
-                    width: 44,
-                    height: 44,
+                    width: 52,
+                    height: 52,
+                    backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                    "&:hover": {
+                      backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.2),
+                    },
                     "&.Mui-disabled": {
                       backgroundColor: "transparent",
                     },
