@@ -275,12 +275,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
   // Load model into memory if enabled
   useEffect(() => {
-    const modelMap = {
-      'qwen-0.5b-chat': 'Xenova/Qwen1.5-0.5B-Chat',
-      'distilgpt2-q8': 'Xenova/distilgpt2',
-      'qwen3-2b': 'onnx-community/Qwen2.5-1.5B-Instruct',
-    } as const;
-    const modelId = modelMap[llmModelSelected];
+    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
     const status = llmModelDownloadStatus[modelId] ?? 'not_downloaded';
 
     if (llmSuggestionEnabled && status === 'downloaded') {
@@ -290,12 +285,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
   const fetchSuggestion = useCallback(
     async (text: string) => {
-      const modelMap = {
-        'qwen-0.5b-chat': 'Xenova/Qwen1.5-0.5B-Chat',
-        'distilgpt2-q8': 'Xenova/distilgpt2',
-        'qwen3-2b': 'onnx-community/Qwen2.5-1.5B-Instruct',
-      };
-      const modelId = modelMap[llmModelSelected];
+      const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
       if (!llmSuggestionEnabled || llmModelDownloadStatus[modelId] !== 'downloaded' || !text.trim()) {
         setSuggestion('');
         return;

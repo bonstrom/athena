@@ -46,6 +46,7 @@ interface ChatStore {
   stopSending: () => Promise<string | null>;
   pendingSuggestions: string[] | null;
   clearSuggestions: () => void;
+  isSuggestionsLoading: boolean;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -61,8 +62,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   abortController: null,
   currentRequestMessageIds: null,
   pendingSuggestions: null,
+  isSuggestionsLoading: false,
 
-  clearSuggestions: (): void => set({ pendingSuggestions: null }),
+  clearSuggestions: (): void => set({ pendingSuggestions: null, isSuggestionsLoading: false }),
 
   setWebSearchEnabled: (value: boolean): void => set({ webSearchEnabled: value }),
 
@@ -229,7 +231,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (get().sending) return;
 
     // Clear any pending suggestions when a new message is sent
-    set({ pendingSuggestions: null });
+    set({ pendingSuggestions: null, isSuggestionsLoading: false });
 
     // Trigger auto-backup on user gesture to ensure permissions are refreshed
     void BackupService.performAutoBackup(true);
@@ -499,6 +501,7 @@ ${topic?.scratchpad ?? '(Empty)'}`;
       // Generate reply predictions if enabled
       const { replyPredictionEnabled, replyPredictionModel } = useAuthStore.getState();
       if (replyPredictionEnabled) {
+        set({ isSuggestionsLoading: true });
         void (async (): Promise<void> => {
           try {
             const suggestionContext: LlmMessage[] = [
@@ -514,17 +517,33 @@ ${topic?.scratchpad ?? '(Empty)'}`;
             let suggestions: string[] | null = null;
 
             if (replyPredictionModel === 'local') {
-              // Use local LLM via llmSuggestionService
-              const conversationText = `${content}\n\n${assistantPatch.content}`;
-              const raw = await llmSuggestionService.getSuggestion('Suggest 3 follow-up questions: ', conversationText.slice(-500));
+              // Use local LLM via llmSuggestionService with a full instruct prompt
+              const prompt =
+                `<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n` +
+                `<|im_start|>user\nConversation summary:\nUser: ${content.slice(-300)}\nAssistant: ${assistantPatch.content.slice(-300)}\n\n` +
+                `List exactly 3 short follow-up questions the user might ask next. Reply with ONLY a JSON array of 3 strings, e.g. ["Q1","Q2","Q3"].<|im_end|>\n` +
+                `<|im_start|>assistant\n`;
+              const raw = await (llmSuggestionService.getCompletion as (p: string, t: number) => Promise<string>)(prompt, 150);
               if (raw.trim()) {
-                // Local model won't return JSON — split by newline/number patterns
-                const lines = raw
-                  .split(/\n|\d+[.)]/)
-                  .map((s) => s.trim())
-                  .filter((s) => s.length > 5)
-                  .slice(0, 3);
-                if (lines.length > 0) suggestions = lines;
+                const jsonMatch = raw.match(/\[[\s\S]*?\]/);
+                if (jsonMatch) {
+                  try {
+                    const parsed = JSON.parse(jsonMatch[0]) as unknown;
+                    if (Array.isArray(parsed) && parsed.every((s) => typeof s === 'string')) {
+                      suggestions = (parsed as string[]).slice(0, 3);
+                    }
+                  } catch {
+                    // fall through to line splitting
+                  }
+                }
+                if (!suggestions) {
+                  const lines = raw
+                    .split(/\n|\d+[.)]/)
+                    .map((s) => s.trim().replace(/^["']|["']$/g, ''))
+                    .filter((s) => s.length > 5)
+                    .slice(0, 3);
+                  if (lines.length > 0) suggestions = lines;
+                }
               }
             } else {
               const targetModel =
@@ -541,10 +560,13 @@ ${topic?.scratchpad ?? '(Empty)'}`;
             }
 
             if (suggestions && suggestions.length > 0) {
-              set({ pendingSuggestions: suggestions });
+              set({ pendingSuggestions: suggestions, isSuggestionsLoading: false });
+            } else {
+              set({ isSuggestionsLoading: false });
             }
           } catch {
             // Silently ignore suggestion errors
+            set({ isSuggestionsLoading: false });
           }
         })();
       }

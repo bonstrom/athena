@@ -11,6 +11,8 @@ class LlmSuggestionService {
   private worker: Worker | null = null;
   private currentSuggestionResolve: ((suggestion: string) => void) | null = null;
   private currentSuggestionTimeout: ReturnType<typeof setTimeout> | null = null;
+  private currentCompletionResolve: ((text: string) => void) | null = null;
+  private currentCompletionTimeout: ReturnType<typeof setTimeout> | null = null;
   private onProgressCallback: ((progress: LlmProgress) => void) | null = null;
   private onStatusCallback: ((status: string) => void) | null = null;
   private loadingModelId: string | null = null;
@@ -32,11 +34,23 @@ class LlmSuggestionService {
     }
   }
 
+  private resolvePendingCompletion(text = ''): void {
+    if (this.currentCompletionTimeout) {
+      clearTimeout(this.currentCompletionTimeout);
+      this.currentCompletionTimeout = null;
+    }
+    if (this.currentCompletionResolve) {
+      this.currentCompletionResolve(text);
+      this.currentCompletionResolve = null;
+    }
+  }
+
   private handleWorkerFailure(error: string): void {
     console.error('LLM Worker Failure:', error);
     this.loadingModelId = null;
     this.loadedModelId = null;
     this.resolvePendingSuggestion('');
+    this.resolvePendingCompletion('');
     this.worker?.terminate();
     this.worker = null;
   }
@@ -72,6 +86,7 @@ class LlmSuggestionService {
       const data = e.data as {
         type: string;
         suggestion?: string;
+        text?: string;
         progress?: number;
         loaded?: number;
         total?: number;
@@ -79,11 +94,14 @@ class LlmSuggestionService {
         status?: string;
         error?: string;
       };
-      const { type, suggestion, progress, loaded, total, modelId, status, error } = data;
+      const { type, suggestion, text, progress, loaded, total, modelId, status, error } = data;
 
       switch (type) {
         case 'suggestion':
           this.resolvePendingSuggestion(suggestion?.trim() ?? '');
+          break;
+        case 'completion':
+          this.resolvePendingCompletion(text ?? '');
           break;
         case 'progress':
           if (this.onProgressCallback) {
@@ -116,6 +134,7 @@ class LlmSuggestionService {
           console.error('LLM Worker Error:', error);
           this.loadingModelId = null;
           this.resolvePendingSuggestion('');
+          this.resolvePendingCompletion('');
           break;
       }
     };
@@ -129,16 +148,21 @@ class LlmSuggestionService {
     this.onStatusCallback = callback;
   }
 
-  public loadModel(modelId: string, quantized = true, silent = false): void {
+  public loadModel(modelId: string, _quantized = true, silent = false): void {
     if (this.loadingModelId === modelId || this.loadedModelId === modelId) return;
     this.loadingModelId = modelId;
     console.log('LLM: Auto-loading model into memory:', modelId);
+
+    // Qwen3.5 ONNX models require WebGPU (block quantization not supported in WASM)
+    const isQwen35 = modelId.includes('Qwen3.5');
+    const device = isQwen35 ? 'webgpu' : 'wasm';
+    const dtype: string | Record<string, string> = isQwen35 ? { embed_tokens: 'q4', decoder_model_merged: 'q4' } : 'q8';
 
     this.initWorker();
     if (!silent) {
       useAuthStore.getState().setLlmModelDownloadStatus(modelId, 'downloading');
     }
-    this.worker?.postMessage({ type: 'load', modelId, quantized });
+    this.worker?.postMessage({ type: 'load', modelId, device, dtype });
   }
 
   public cancelSuggestion(): void {
@@ -183,6 +207,45 @@ class LlmSuggestionService {
     });
 
     return Promise.race([suggestionPromise, timeoutPromise]);
+  }
+
+  public async getCompletion(prompt: string, maxTokens = 200): Promise<string> {
+    const { llmModelSelected, llmModelDownloadStatus } = useAuthStore.getState();
+    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+
+    // Ensure model is loaded
+    if (llmModelDownloadStatus[modelId] !== 'downloaded') return '';
+    this.loadModel(modelId, true, true);
+
+    // Wait for model to be ready if still loading
+    if (this.loadedModelId !== modelId) {
+      await new Promise<void>((resolve) => {
+        const interval = setInterval(() => {
+          if (this.loadedModelId === modelId) {
+            clearInterval(interval);
+            resolve();
+          }
+        }, 200);
+        setTimeout(() => {
+          clearInterval(interval);
+          resolve();
+        }, 15000);
+      });
+    }
+
+    this.initWorker();
+    if (!this.worker) return '';
+
+    // Cancel any pending completion
+    this.resolvePendingCompletion('');
+
+    return new Promise<string>((resolve) => {
+      this.currentCompletionResolve = resolve;
+      this.currentCompletionTimeout = setTimeout(() => {
+        this.resolvePendingCompletion('');
+      }, 30000);
+      this.worker?.postMessage({ type: 'complete', prompt, maxTokens });
+    });
   }
 }
 

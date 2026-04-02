@@ -19,12 +19,12 @@ interface AuthState {
   llmSuggestionEnabled: boolean;
   replyPredictionEnabled: boolean;
   replyPredictionModel: string;
-  llmModelSelected: 'qwen-0.5b-chat' | 'distilgpt2-q8' | 'qwen3-2b';
+  llmModelSelected: 'qwen3.5-0.8b' | 'qwen3.5-2b';
   llmModelDownloadStatus: Record<string, 'not_downloaded' | 'downloading' | 'downloaded' | undefined>;
   setLlmSuggestionEnabled: (enabled: boolean) => void;
   setReplyPredictionEnabled: (enabled: boolean) => void;
   setReplyPredictionModel: (model: string) => void;
-  setLlmModelSelected: (model: 'qwen-0.5b-chat' | 'distilgpt2-q8' | 'qwen3-2b') => void;
+  setLlmModelSelected: (model: 'qwen3.5-0.8b' | 'qwen3.5-2b') => void;
   setLlmModelDownloadStatus: (modelId: string, status: 'not_downloaded' | 'downloading' | 'downloaded') => void;
   clearAuth: () => void;
   setOpenAiKey: (key: string) => void;
@@ -59,8 +59,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedLlmSuggestionEnabled = localStorage.getItem('llmSuggestionEnabled') === 'true';
   const storedReplyPredictionEnabled = localStorage.getItem('replyPredictionEnabled') === 'true';
   const storedReplyPredictionModel = localStorage.getItem('replyPredictionModel') ?? 'same';
-  const storedLlmModelSelected =
-    (localStorage.getItem('llmModelSelected') as 'qwen-0.5b-chat' | 'distilgpt2-q8' | 'qwen3-2b' | null) ?? 'qwen-0.5b-chat';
+  const storedLlmModelSelected = (localStorage.getItem('llmModelSelected') as 'qwen3.5-0.8b' | 'qwen3.5-2b' | null) ?? 'qwen3.5-0.8b';
   const storedLlmModelDownloadStatus = JSON.parse(localStorage.getItem('llmModelDownloadStatus') ?? '{}') as Record<
     string,
     'not_downloaded' | 'downloading' | 'downloaded' | undefined
@@ -109,7 +108,7 @@ export const useAuthStore = create<AuthState>((set) => {
         llmSuggestionEnabled: false,
         replyPredictionEnabled: false,
         replyPredictionModel: 'same',
-        llmModelSelected: 'qwen-0.5b-chat',
+        llmModelSelected: 'qwen3.5-0.8b',
         llmModelDownloadStatus: {},
       });
     },
@@ -125,7 +124,7 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.setItem('replyPredictionModel', model);
       set({ replyPredictionModel: model });
     },
-    setLlmModelSelected: (model: 'qwen-0.5b-chat' | 'distilgpt2-q8' | 'qwen3-2b'): void => {
+    setLlmModelSelected: (model: 'qwen3.5-0.8b' | 'qwen3.5-2b'): void => {
       localStorage.setItem('llmModelSelected', model);
       set({ llmModelSelected: model });
     },

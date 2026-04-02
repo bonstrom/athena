@@ -1,4 +1,4 @@
-import { pipeline, env, type TextGenerationPipeline, type TextGenerationSingle } from '@xenova/transformers';
+import { pipeline, env, type TextGenerationPipeline } from '@huggingface/transformers';
 
 interface TransformersEnv {
   allowLocalModels: boolean;
@@ -50,13 +50,14 @@ interface ProgressData {
   file?: string;
 }
 
-async function loadModel(modelId: string, quantized: boolean): Promise<void> {
+async function loadModel(modelId: string, device: string, dtype: string | Record<string, string>): Promise<void> {
   try {
     self.postMessage({ type: 'status', status: 'loading', modelId });
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
     generator = (await (pipeline as any)('text-generation', modelId, {
-      quantized,
+      device,
+      dtype,
       progress_callback: (progress: ProgressData) => {
         if (progress.status === 'progress') {
           self.postMessage({
@@ -110,7 +111,7 @@ async function generateSuggestion(text: string, context?: string): Promise<void>
         const safeText = prompt.length > 512 ? prompt.slice(-512) : prompt;
 
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const output = await (generator as unknown as (input: string, options: Record<string, unknown>) => Promise<TextGenerationSingle[]>)(
+        const output = await (generator as unknown as (input: string, options: Record<string, unknown>) => Promise<{ generated_text: string }[]>)(
           safeText,
           {
             max_new_tokens: 2,
@@ -150,15 +151,46 @@ async function generateSuggestion(text: string, context?: string): Promise<void>
 interface WorkerMessage {
   type: string;
   modelId?: string;
-  quantized?: boolean;
+  device?: string;
+  dtype?: string | Record<string, string>;
   text?: string;
   context?: string;
+  prompt?: string;
+  maxTokens?: number;
+}
+
+async function generateCompletion(prompt: string, maxTokens: number): Promise<void> {
+  if (!generator) {
+    self.postMessage({ type: 'completion', text: '' });
+    return;
+  }
+  try {
+    const safePrompt = prompt.length > 2048 ? prompt.slice(-2048) : prompt;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const output = await (generator as unknown as (input: string, options: Record<string, unknown>) => Promise<{ generated_text: string }[]>)(
+      safePrompt,
+      {
+        max_new_tokens: maxTokens,
+        do_sample: true,
+        temperature: 0.7,
+        return_full_text: false,
+        truncation: true,
+      },
+    );
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+    const rawText = output[0]?.generated_text;
+    const text = typeof rawText === 'string' ? rawText : '';
+    self.postMessage({ type: 'completion', text });
+  } catch (error) {
+    console.error('Completion failed:', error);
+    self.postMessage({ type: 'completion', text: '' });
+  }
 }
 
 self.onmessage = async (e: MessageEvent<WorkerMessage>): Promise<void> => {
-  const { type, modelId, quantized, text, context } = e.data;
+  const { type, modelId, device, dtype, text, context, prompt, maxTokens } = e.data;
   if (type === 'load' && modelId) {
-    await loadModel(modelId, !!quantized);
+    await loadModel(modelId, device ?? 'wasm', dtype ?? 'q8');
   } else if (type === 'unload') {
     unloadModel(modelId);
   } else if (type === 'cancel') {
@@ -167,5 +199,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>): Promise<void> => {
   } else if (type === 'generate' && text !== undefined) {
     cancelled = false;
     await generateSuggestion(text, context);
+  } else if (type === 'complete' && prompt !== undefined) {
+    await generateCompletion(prompt, maxTokens ?? 200);
   }
 };

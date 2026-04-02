@@ -66,12 +66,7 @@ const Settings: React.FC = () => {
   const [googleInput, setGoogleInput] = useState('');
   const [moonshotInput, setMoonshotInput] = useState('');
 
-  const modelMap = {
-    'qwen-0.5b-chat': 'Xenova/Qwen1.5-0.5B-Chat',
-    'distilgpt2-q8': 'Xenova/distilgpt2',
-    'qwen3-2b': 'onnx-community/Qwen2.5-1.5B-Instruct',
-  };
-  const currentModelId = modelMap[llmModelSelected];
+  const currentModelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
   const status = llmModelDownloadStatus[currentModelId] ?? 'not_downloaded';
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
@@ -109,18 +104,12 @@ const Settings: React.FC = () => {
   }, []);
 
   const handleDownloadModel = (): void => {
-    // Model IDs for transformers.js
-    const modelMap = {
-      'qwen-0.5b-chat': 'Xenova/Qwen1.5-0.5B-Chat',
-      'distilgpt2-q8': 'Xenova/distilgpt2',
-      'qwen3-2b': 'onnx-community/Qwen2.5-1.5B-Instruct',
-    };
-    const modelId = modelMap[llmModelSelected];
+    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
     llmSuggestionService.loadModel(modelId, true);
   };
 
   const handleDeleteModel = async (): Promise<void> => {
-    const modelId = modelMap[llmModelSelected];
+    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
     if (!window.confirm(`Delete downloaded model "${modelId}" from local cache?`)) {
       return;
     }
@@ -910,11 +899,10 @@ const Settings: React.FC = () => {
             <Select
               value={llmModelSelected}
               label="Selected Model"
-              onChange={(e): void => setLlmModelSelected(e.target.value as 'qwen-0.5b-chat' | 'distilgpt2-q8' | 'qwen3-2b')}
+              onChange={(e): void => setLlmModelSelected(e.target.value as 'qwen3.5-0.8b' | 'qwen3.5-2b')}
             >
-              <MenuItem value="qwen-0.5b-chat">Qwen1.5 0.5B Chat (Recommended • ~350MB)</MenuItem>
-              <MenuItem value="qwen3-2b">Qwen2.5 1.5B Instruct (~1.5GB)</MenuItem>
-              <MenuItem value="distilgpt2-q8">DistilGPT-2 (Basic • ~150MB)</MenuItem>
+              <MenuItem value="qwen3.5-0.8b">Qwen3.5 0.8B (Recommended • ~500MB)</MenuItem>
+              <MenuItem value="qwen3.5-2b">Qwen3.5 2B (~1.5GB)</MenuItem>
             </Select>
           </FormControl>
 

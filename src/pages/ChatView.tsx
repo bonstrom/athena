@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, useMediaQuery, useTheme, Fade } from '@mui/material';
+import { Box, useMediaQuery, useTheme, Fade, CircularProgress, Typography } from '@mui/material';
 import { useParams } from 'react-router-dom';
 import { useAuthStore } from '../store/AuthStore';
 import { useChatStore } from '../store/ChatStore';
@@ -16,7 +16,7 @@ const ChatView: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const { chatWidth } = useAuthStore();
-  const { messagesByTopic, sending, sendMessageStream, fetchMessages, pendingSuggestions, clearSuggestions } = useChatStore();
+  const { messagesByTopic, sending, sendMessageStream, fetchMessages, pendingSuggestions, clearSuggestions, isSuggestionsLoading } = useChatStore();
   const [displayTopicId, setDisplayTopicId] = useState<string | undefined>(topicId);
   const [isVisible, setIsVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +86,14 @@ const ChatView: React.FC = () => {
                       void sendMessageStream(suggestion, topicId);
                     }}
                   />
+                )}
+                {isSuggestionsLoading && !sending && !pendingSuggestions && (
+                  <Box display="flex" alignItems="center" gap={1} px={2} py={0.5} justifyContent="flex-end">
+                    <CircularProgress size={12} />
+                    <Typography variant="caption" color="text.secondary">
+                      Generating suggestions...
+                    </Typography>
+                  </Box>
                 )}
               </Box>
             </Fade>
