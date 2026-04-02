@@ -71,7 +71,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const questionRef = useRef('');
   const topicStore = useTopicStore();
-  const { selectedModel, setSelectedModel, temperature, setTemperature, currentTopicId, stopSending } = useChatStore();
+  const { selectedModel, setSelectedModel, temperature, setTemperature, currentTopicId, stopSending, messagesByTopic } = useChatStore();
   const { addNotification } = useNotificationStore();
   const {
     chatWidth,
@@ -298,9 +298,12 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         return;
       }
 
+      const currentMessages = currentTopicId ? (messagesByTopic[currentTopicId] ?? []) : [];
+      const lastAssistantMessage = [...currentMessages].reverse().find((message) => message.type === 'assistant' && !message.isDeleted);
+
       setIsSuggesting(true);
       try {
-        const result = await llmSuggestionService.getSuggestion(text);
+        const result = await llmSuggestionService.getSuggestion(text, lastAssistantMessage?.content);
         if (result && result.length > 0) {
           const cleaned = result.replace(/^\n+/, '');
           const firstLine = cleaned.split('\n')[0];
@@ -315,13 +318,15 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         setIsSuggesting(false);
       }
     },
-    [llmSuggestionEnabled, llmModelDownloadStatus, llmModelSelected],
+    [currentTopicId, llmSuggestionEnabled, llmModelDownloadStatus, llmModelSelected, messagesByTopic],
   );
 
   useEffect(() => {
     if (suggestionTimeoutRef.current) {
       clearTimeout(suggestionTimeoutRef.current);
     }
+
+    llmSuggestionService.cancelSuggestion();
 
     if (!inputValue.trim()) {
       setSuggestion('');

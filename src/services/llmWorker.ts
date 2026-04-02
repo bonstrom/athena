@@ -34,6 +34,12 @@ console.log = (...args: unknown[]): void => {
 };
 
 let generator: TextGenerationPipeline | null = null;
+let cancelled = false;
+
+interface SuggestionRequest {
+  text: string;
+  context?: string;
+}
 
 interface ProgressData {
   status: string;
@@ -71,40 +77,55 @@ async function loadModel(modelId: string, quantized: boolean): Promise<void> {
   }
 }
 
-let isGenerating = false;
-let pendingText: string | null = null;
+function unloadModel(modelId?: string): void {
+  generator = null;
+  cancelled = true;
+  pendingRequest = null;
+  self.postMessage({ type: 'status', status: 'unloaded', modelId });
+}
 
-async function generateSuggestion(text: string): Promise<void> {
+let isGenerating = false;
+let pendingRequest: SuggestionRequest | null = null;
+
+async function generateSuggestion(text: string, context?: string): Promise<void> {
   if (!generator) return;
 
   if (isGenerating) {
-    pendingText = text;
+    pendingRequest = { text, context };
     return;
   }
 
   isGenerating = true;
-  let currentText: string | null = text;
+  let currentRequest: SuggestionRequest | null = { text, context };
 
   try {
-    while (currentText !== null) {
-      const trimmed = currentText.trim();
+    while (currentRequest !== null) {
+      const trimmed = currentRequest.text.trim();
 
       if (trimmed) {
+        const trimmedContext = currentRequest.context?.trim();
+        const prompt = trimmedContext ? `[context] ${trimmedContext}\n${trimmed}` : trimmed;
+
         // Explicitly truncate characters to stay safe (approx 2 tokens per char worst case)
-        const safeText = trimmed.length > 512 ? trimmed.slice(-512) : trimmed;
+        const safeText = prompt.length > 512 ? prompt.slice(-512) : prompt;
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-        const output = (await generator(safeText, {
-          max_new_tokens: 2,
-          do_sample: false,
-          use_cache: false,
-          return_full_text: false,
-          // CRITICAL: Force the tokenizer to handle bounds checking
-          truncation: true,
-          padding: true,
-        })) as TextGenerationSingle[];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const output = await (generator as unknown as (input: string, options: Record<string, unknown>) => Promise<TextGenerationSingle[]>)(
+          safeText,
+          {
+            max_new_tokens: 2,
+            do_sample: false,
+            use_cache: false,
+            return_full_text: false,
+            // CRITICAL: Force the tokenizer to handle bounds checking
+            truncation: true,
+            padding: true,
+          },
+        );
 
-        if (!pendingText) {
+        if (cancelled) {
+          cancelled = false;
+        } else if (!pendingRequest) {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
           const rawSuggestion = output[0]?.generated_text;
           const suggestion = typeof rawSuggestion === 'string' ? rawSuggestion : '';
@@ -115,8 +136,8 @@ async function generateSuggestion(text: string): Promise<void> {
       }
 
       // Move to next in queue
-      currentText = pendingText;
-      pendingText = null;
+      currentRequest = pendingRequest;
+      pendingRequest = null;
     }
   } catch (error) {
     console.error('Inference failed:', error);
@@ -131,13 +152,20 @@ interface WorkerMessage {
   modelId?: string;
   quantized?: boolean;
   text?: string;
+  context?: string;
 }
 
 self.onmessage = async (e: MessageEvent<WorkerMessage>): Promise<void> => {
-  const { type, modelId, quantized, text } = e.data;
+  const { type, modelId, quantized, text, context } = e.data;
   if (type === 'load' && modelId) {
     await loadModel(modelId, !!quantized);
+  } else if (type === 'unload') {
+    unloadModel(modelId);
+  } else if (type === 'cancel') {
+    cancelled = true;
+    pendingRequest = null;
   } else if (type === 'generate' && text !== undefined) {
-    await generateSuggestion(text);
+    cancelled = false;
+    await generateSuggestion(text, context);
   }
 };
