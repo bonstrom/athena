@@ -1,23 +1,35 @@
-import { pipeline, env, type TextGenerationPipeline, type TextGenerationSingle } from "@xenova/transformers";
+import { pipeline, env, type TextGenerationPipeline, type TextGenerationSingle } from '@xenova/transformers';
+
+interface TransformersEnv {
+  allowLocalModels: boolean;
+  useBrowserCache: boolean;
+  backends?: {
+    onnx?: {
+      logLevel?: string;
+      wasm?: { proxy?: boolean; numThreads?: number };
+    };
+  };
+}
 
 // --- 1. STRICT ENVIRONMENT CONFIG ---
-env.allowLocalModels = false;
-env.useBrowserCache = true;
+const typedEnv = env as unknown as TransformersEnv;
+typedEnv.allowLocalModels = false;
+typedEnv.useBrowserCache = true;
 
 // This is the most critical fix for RangeErrors in Workers
-if (env.backends && env.backends.onnx) {
-  env.backends.onnx.logLevel = "fatal";
+if (typedEnv.backends?.onnx) {
+  typedEnv.backends.onnx.logLevel = 'fatal';
   // Disable the internal ORT proxy to prevent nested worker memory issues
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-  (env.backends.onnx.wasm as any).proxy = false;
-  env.backends.onnx.wasm.numThreads = 1;
+  if (typedEnv.backends.onnx.wasm) {
+    typedEnv.backends.onnx.wasm.proxy = false;
+    typedEnv.backends.onnx.wasm.numThreads = 1;
+  }
 }
 
 // Simple logging filter
 const originalLog = console.log;
-console.log = (...args: unknown[]) => {
-  if (typeof args[0] === "string" && (args[0].includes("Removing initializer") || args[0].includes("CleanUnused")))
-    return;
+console.log = (...args: unknown[]): void => {
+  if (typeof args[0] === 'string' && (args[0].includes('Removing initializer') || args[0].includes('CleanUnused'))) return;
   originalLog(...args);
 };
 
@@ -34,15 +46,15 @@ interface ProgressData {
 
 async function loadModel(modelId: string, quantized: boolean): Promise<void> {
   try {
-    self.postMessage({ type: "status", status: "loading", modelId });
+    self.postMessage({ type: 'status', status: 'loading', modelId });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    generator = await pipeline("text-generation", modelId, {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
+    generator = (await (pipeline as any)('text-generation', modelId, {
       quantized,
       progress_callback: (progress: ProgressData) => {
-        if (progress.status === "progress") {
+        if (progress.status === 'progress') {
           self.postMessage({
-            type: "progress",
+            type: 'progress',
             modelId,
             progress: progress.progress ?? 0,
             loaded: progress.loaded ?? 0,
@@ -50,12 +62,12 @@ async function loadModel(modelId: string, quantized: boolean): Promise<void> {
           });
         }
       },
-    } as any);
+    })) as TextGenerationPipeline;
 
-    self.postMessage({ type: "status", status: "ready", modelId });
+    self.postMessage({ type: 'status', status: 'ready', modelId });
   } catch (error) {
-    console.error("Failed to load model:", error);
-    self.postMessage({ type: "error", error: (error as Error).message });
+    console.error('Failed to load model:', error);
+    self.postMessage({ type: 'error', error: (error as Error).message });
   }
 }
 
@@ -81,7 +93,7 @@ async function generateSuggestion(text: string): Promise<void> {
         // Explicitly truncate characters to stay safe (approx 2 tokens per char worst case)
         const safeText = trimmed.length > 512 ? trimmed.slice(-512) : trimmed;
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
         const output = (await generator(safeText, {
           max_new_tokens: 2,
           do_sample: false,
@@ -90,15 +102,16 @@ async function generateSuggestion(text: string): Promise<void> {
           // CRITICAL: Force the tokenizer to handle bounds checking
           truncation: true,
           padding: true,
-        } as any)) as TextGenerationSingle[];
+        })) as TextGenerationSingle[];
 
         if (!pendingText) {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
           const rawSuggestion = output[0]?.generated_text;
-          const suggestion = typeof rawSuggestion === "string" ? rawSuggestion : "";
-          self.postMessage({ type: "suggestion", suggestion });
+          const suggestion = typeof rawSuggestion === 'string' ? rawSuggestion : '';
+          self.postMessage({ type: 'suggestion', suggestion });
         }
       } else {
-        self.postMessage({ type: "suggestion", suggestion: "" });
+        self.postMessage({ type: 'suggestion', suggestion: '' });
       }
 
       // Move to next in queue
@@ -106,8 +119,8 @@ async function generateSuggestion(text: string): Promise<void> {
       pendingText = null;
     }
   } catch (error) {
-    console.error("Inference failed:", error);
-    self.postMessage({ type: "error", error: (error as Error).message });
+    console.error('Inference failed:', error);
+    self.postMessage({ type: 'error', error: (error as Error).message });
   } finally {
     isGenerating = false;
   }
@@ -120,11 +133,11 @@ interface WorkerMessage {
   text?: string;
 }
 
-self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
+self.onmessage = async (e: MessageEvent<WorkerMessage>): Promise<void> => {
   const { type, modelId, quantized, text } = e.data;
-  if (type === "load" && modelId) {
+  if (type === 'load' && modelId) {
     await loadModel(modelId, !!quantized);
-  } else if (type === "generate" && text !== undefined) {
+  } else if (type === 'generate' && text !== undefined) {
     await generateSuggestion(text);
   }
 };

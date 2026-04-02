@@ -1,16 +1,14 @@
-import { calculateCostSEK, ChatModel } from "../components/ModelSelector";
-import { useAuthStore } from "../store/AuthStore";
-import { estimateTokens } from "./estimateTokens";
+import { calculateCostSEK, ChatModel } from '../components/ModelSelector';
+import { useAuthStore } from '../store/AuthStore';
+import { estimateTokens } from './estimateTokens';
 
-export type LlmContentPart =
-  | { type: "text"; text: string }
-  | { type: "image_url"; image_url: { url: string } };
+export type LlmContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
 export interface LlmMessage {
-  role: "user" | "assistant" | "system" | "tool";
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string | LlmContentPart[] | null;
   reasoning_content?: string;
-  tool_calls?: { id: string; type: "function" | "builtin_function"; function: { name: string; arguments: string } }[];
+  tool_calls?: { id: string; type: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[];
   tool_call_id?: string;
   name?: string;
 }
@@ -20,37 +18,37 @@ export interface LlmResult {
   promptTokens: number;
   completionTokens: number;
   aiNote?: string | null;
-  aiNoteAction?: "append" | "replace";
+  aiNoteAction?: 'append' | 'replace';
   promptTokensDetails?: { cached_tokens?: number };
   completionTokensDetails?: { reasoning_tokens?: number };
-  toolCalls?: { id: string; type: "function" | "builtin_function"; function: { name: string; arguments: string } }[];
+  toolCalls?: { id: string; type: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[];
   searchCount: number;
   finishReason?: string;
   reasoning?: string;
 }
 
 export const SCRATCHPAD_TOOL: LlmTool = {
-  type: "function",
+  type: 'function',
   function: {
-    name: "update_scratchpad",
-    description: "Store or update information in your private long-term memory scratchpad.",
+    name: 'update_scratchpad',
+    description: 'Store or update information in your private long-term memory scratchpad.',
     parameters: {
-      type: "object",
+      type: 'object',
       properties: {
-        content: { type: "string", description: "The information to store." },
+        content: { type: 'string', description: 'The information to store.' },
         action: {
-          type: "string",
-          enum: ["append", "replace"],
+          type: 'string',
+          enum: ['append', 'replace'],
           description: "'append' to add to existing memory, 'replace' to overwrite everything.",
         },
       },
-      required: ["content", "action"],
+      required: ['content', 'action'],
     },
   },
 };
 
 export interface LlmTool {
-  type: "function" | "builtin_function";
+  type: 'function' | 'builtin_function';
   function: {
     name: string;
     description?: string;
@@ -65,14 +63,14 @@ interface LlmPayload {
   stream: boolean;
   stream_options?: { include_usage: boolean };
   tools?: LlmTool[];
-  thinking?: { type: "enabled" | "disabled" };
+  thinking?: { type: 'enabled' | 'disabled' };
 }
 
 const PROVIDER_URLS: Record<string, string> = {
-  openai: "https://api.openai.com/v1/chat/completions",
-  deepseek: "https://api.deepseek.com/v1/chat/completions",
-  google: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-  moonshot: "https://api.moonshot.ai/v1/chat/completions",
+  openai: 'https://api.openai.com/v1/chat/completions',
+  deepseek: 'https://api.deepseek.com/v1/chat/completions',
+  google: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+  moonshot: 'https://api.moonshot.ai/v1/chat/completions',
 };
 
 function buildPayload(
@@ -93,22 +91,22 @@ function buildPayload(
   });
 
   if (customInstructions) {
-    if (finalMessages.length > 0 && finalMessages[0].role === "system") {
+    if (finalMessages.length > 0 && finalMessages[0].role === 'system') {
       finalMessages[0] = {
         ...finalMessages[0],
-        content: `${customInstructions}\n\n${typeof finalMessages[0].content === "string" ? finalMessages[0].content : ""}`,
+        content: `${customInstructions}\n\n${typeof finalMessages[0].content === 'string' ? finalMessages[0].content : ''}`,
       };
     } else {
-      finalMessages.unshift({ role: "system", content: customInstructions });
+      finalMessages.unshift({ role: 'system', content: customInstructions });
     }
   }
 
   const finalTools = [...(tools ?? [])];
-  if (webSearch && model.provider === "moonshot") {
+  if (webSearch && model.provider === 'moonshot') {
     finalTools.push({
-      type: "builtin_function",
+      type: 'builtin_function',
       function: {
-        name: "$web_search",
+        name: '$web_search',
         description: "Search the internet for real-time information with Moonshot AI's built-in search.",
       },
     });
@@ -118,7 +116,7 @@ function buildPayload(
     model: model.id,
     messages: finalMessages.map((m) => ({
       role: m.role,
-      content: m.content as string | (LlmContentPart & { type: "text" | "image_url" })[] | null,
+      content: m.content as string | (LlmContentPart & { type: 'text' | 'image_url' })[] | null,
       ...(m.reasoning_content && { reasoning_content: m.reasoning_content }),
       ...(m.tool_calls && { tool_calls: m.tool_calls }),
       ...(m.tool_call_id && { tool_call_id: m.tool_call_id }),
@@ -126,42 +124,42 @@ function buildPayload(
     })),
     stream,
     ...(model.supportsTemperature && {
-      temperature: webSearch && model.id === "kimi-k2.5" ? 0.6 : temperature,
+      temperature: webSearch && model.id === 'kimi-k2.5' ? 0.6 : temperature,
     }),
     ...(stream && { stream_options: { include_usage: true } }),
     ...(model.supportsTools && finalTools.length > 0 && { tools: finalTools }),
-    ...(webSearch && model.provider === "moonshot" && { thinking: { type: "disabled" } }),
+    ...(webSearch && model.provider === 'moonshot' && { thinking: { type: 'disabled' } }),
   };
 }
 
 export function filterMessagesForModel(model: ChatModel, messages: LlmMessage[]): LlmMessage[] {
-  if (model.id !== "deepseek-reasoner") return messages;
+  if (model.id !== 'deepseek-reasoner') return messages;
 
   const filtered: LlmMessage[] = [];
   let foundUser = false;
-  let lastRole: "user" | "assistant" | "tool" | null = null;
+  let lastRole: 'user' | 'assistant' | 'tool' | null = null;
 
   for (const msg of messages) {
-    if (msg.role === "system") {
+    if (msg.role === 'system') {
       filtered.push(msg);
-    } else if (!foundUser && msg.role === "user") {
+    } else if (!foundUser && msg.role === 'user') {
       foundUser = true;
-      lastRole = "user";
+      lastRole = 'user';
       filtered.push(msg);
     } else if (foundUser) {
       if (msg.role === lastRole) {
         continue;
       }
       filtered.push(msg);
-      if (msg.role === "user" || msg.role === "assistant") {
+      if (msg.role === 'user' || msg.role === 'assistant') {
         lastRole = msg.role;
       }
     }
   }
 
-  const firstContent = filtered.find((m) => m.role !== "system");
-  if (!firstContent || firstContent.role !== "user") {
-    throw new Error("Deepseek Reasoner requires the first non-system message to be from the user.");
+  const firstContent = filtered.find((m) => m.role !== 'system');
+  if (!firstContent || firstContent.role !== 'user') {
+    throw new Error('Deepseek Reasoner requires the first non-system message to be from the user.');
   }
 
   return filtered;
@@ -181,17 +179,17 @@ export async function askLlm(
   const payload = buildPayload(model, messages, false, temperature, tools, webSearch);
 
   const res = await fetch(url, {
-    method: "POST",
+    method: 'POST',
     headers: {
       Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
     signal,
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "Unknown error");
+    const text = await res.text().catch(() => 'Unknown error');
     throw new Error(`LLM Error ${res.status}: ${text}`);
   }
 
@@ -201,7 +199,7 @@ export async function askLlm(
         content: string;
         reasoning_content?: string;
         reasoning?: string;
-        tool_calls?: { id?: string; type?: "function" | "builtin_function"; function: { name: string; arguments: string } }[];
+        tool_calls?: { id?: string; type?: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[];
       };
     }[];
     usage: { prompt_tokens: number; completion_tokens: number };
@@ -211,28 +209,28 @@ export async function askLlm(
   const toolCallsData = message.tool_calls;
   const toolCalls = toolCallsData?.map((tc, index) => ({
     id: tc.id ?? `call_${index}`,
-    type: tc.type ?? "function",
+    type: tc.type ?? 'function',
     function: tc.function,
   }));
-  const content = (toolCalls && toolCalls.length > 0 ? message.content : message.content.trim()) || "";
-  const reasoning = message.reasoning_content ?? message.reasoning ?? "";
+  const content = (toolCalls && toolCalls.length > 0 ? message.content : message.content.trim()) || '';
+  const reasoning = message.reasoning_content ?? message.reasoning ?? '';
 
   const persistMatch = /<!--\s*persist:\s*([\s\S]*?)\s*-->/i.exec(content);
   const replaceMatch = /<!--\s*replace:\s*([\s\S]*?)\s*-->/i.exec(content);
 
   let aiNote = null;
-  let aiNoteAction: "append" | "replace" | undefined;
+  let aiNoteAction: 'append' | 'replace' | undefined;
 
   // Handle Tool Calls
   if (toolCalls && toolCalls.length > 0) {
-    const scratchpadTool = toolCalls.find((tc) => tc.function.name === "update_scratchpad");
+    const scratchpadTool = toolCalls.find((tc) => tc.function.name === 'update_scratchpad');
     if (scratchpadTool) {
       try {
-        const args = JSON.parse(scratchpadTool.function.arguments) as { content: string; action: "append" | "replace" };
+        const args = JSON.parse(scratchpadTool.function.arguments) as { content: string; action: 'append' | 'replace' };
         aiNote = args.content;
         aiNoteAction = args.action;
       } catch (e) {
-        console.warn("Failed to parse tool call arguments:", e);
+        console.warn('Failed to parse tool call arguments:', e);
       }
     }
   }
@@ -241,33 +239,32 @@ export async function askLlm(
   if (!aiNote) {
     if (replaceMatch) {
       aiNote = replaceMatch[1].trim();
-      aiNoteAction = "replace";
+      aiNoteAction = 'replace';
     } else if (persistMatch) {
       aiNote = persistMatch[1].trim();
-      aiNoteAction = "append";
+      aiNoteAction = 'append';
     }
   }
 
   const result = {
     content: content
-      .replace(/<!--\s*persist:\s*[\s\S]*?\s*-->/gi, "")
-      .replace(/<!--\s*replace:\s*[\s\S]*?\s*-->/gi, "")
+      .replace(/<!--\s*persist:\s*[\s\S]*?\s*-->/gi, '')
+      .replace(/<!--\s*replace:\s*[\s\S]*?\s*-->/gi, '')
       .trim(),
     promptTokens: data.usage.prompt_tokens,
     completionTokens: data.usage.completion_tokens,
     promptTokensDetails: (data.usage as { prompt_tokens_details?: { cached_tokens?: number } }).prompt_tokens_details,
-    completionTokensDetails: (data.usage as { completion_tokens_details?: { reasoning_tokens?: number } })
-      .completion_tokens_details,
+    completionTokensDetails: (data.usage as { completion_tokens_details?: { reasoning_tokens?: number } }).completion_tokens_details,
     aiNote,
     aiNoteAction,
     toolCalls,
-    searchCount: toolCalls?.filter((tc) => tc.function.name === "$web_search").length ?? 0,
+    searchCount: toolCalls?.filter((tc) => tc.function.name === '$web_search').length ?? 0,
     finishReason,
     reasoning: reasoning.trim(),
   };
 
   if (!result.content && result.aiNote) {
-    result.content = "*(Updated scratchpad)*";
+    result.content = '*(Updated scratchpad)*';
   }
 
   return result;
@@ -289,40 +286,40 @@ export async function askLlmStream(
   const payload = buildPayload(model, messages, true, temperature, tools, webSearch);
 
   const res = await fetch(url, {
-    method: "POST",
+    method: 'POST',
     headers: {
       Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
     signal,
   });
 
   if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => "Unknown error");
+    const text = await res.text().catch(() => 'Unknown error');
     throw new Error(`LLM Error ${res.status}: ${text}`);
   }
 
   const reader = res.body.getReader();
-  const decoder = new TextDecoder("utf-8");
+  const decoder = new TextDecoder('utf-8');
 
   let promptTokens = 0;
   let completionTokens = 0;
   let promptTokensDetails: { cached_tokens?: number } | undefined;
   let completionTokensDetails: { reasoning_tokens?: number } | undefined;
-  let accumulated = "";
+  let accumulated = '';
   let toolCallStarted = false;
-  let toolCalls: { id: string; type: "function" | "builtin_function"; function: { name: string; arguments: string } }[] | undefined;
+  let toolCalls: { id: string; type: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[] | undefined;
   let finishReason: string | undefined;
-  let reasoning = "";
+  let reasoning = '';
   let done = false;
 
   const onAbort = (): void => {
     reader.cancel().catch((err) => {
-      console.warn("Reader cancel failed:", err);
+      console.warn('Reader cancel failed:', err);
     });
   };
-  signal?.addEventListener("abort", onAbort);
+  signal?.addEventListener('abort', onAbort);
 
   try {
     while (!done) {
@@ -338,12 +335,12 @@ export async function askLlmStream(
       }
 
       const chunk = decoder.decode(result.value);
-      for (const line of chunk.split("\n")) {
+      for (const line of chunk.split('\n')) {
         const trimmed = line.trim();
-        if (!trimmed.startsWith("data: ")) continue;
+        if (!trimmed.startsWith('data: ')) continue;
 
         const json = trimmed.slice(6);
-        if (json === "[DONE]") {
+        if (json === '[DONE]') {
           done = true;
           break;
         }
@@ -359,7 +356,7 @@ export async function askLlmStream(
                 tool_calls?: {
                   id: string; // id only appears in the first chunk for a tool call usually
                   index: number;
-                  type?: "function" | "builtin_function";
+                  type?: 'function' | 'builtin_function';
                   function?: { name?: string; arguments?: string };
                 }[];
               };
@@ -385,12 +382,12 @@ export async function askLlmStream(
           }
 
           const delta = choice?.delta;
-          const token = delta?.content ?? "";
+          const token = delta?.content ?? '';
           accumulated += token;
           if (onToken && token) onToken(token);
 
           if (delta?.reasoning_content || delta?.reasoning) {
-            const rToken = delta.reasoning_content ?? delta.reasoning ?? "";
+            const rToken = delta.reasoning_content ?? delta.reasoning ?? '';
             reasoning += rToken;
             if (onReasoning && rToken) onReasoning(rToken);
           }
@@ -399,7 +396,7 @@ export async function askLlmStream(
             if (!toolCallStarted) {
               toolCallStarted = true;
               if (!accumulated && onToken) {
-                const statusMsg = "*(Updating scratchpad...)*\n\n";
+                const statusMsg = '*(Updating scratchpad...)*\n\n';
                 accumulated += statusMsg;
                 onToken(statusMsg);
               }
@@ -408,14 +405,16 @@ export async function askLlmStream(
               // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
               const idx = tc.index ?? 0;
               if (!toolCalls) toolCalls = [];
-              let existing: {
-                id: string;
-                type: "function" | "builtin_function";
-                function: { name: string; arguments: string };
-              } | undefined = toolCalls[idx];
+              let existing:
+                | {
+                    id: string;
+                    type: 'function' | 'builtin_function';
+                    function: { name: string; arguments: string };
+                  }
+                | undefined = toolCalls[idx];
               // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
               if (!existing) {
-                existing = { id: tc.id || "", type: tc.type || "function", function: { name: "", arguments: "" } };
+                existing = { id: tc.id || '', type: tc.type ?? 'function', function: { name: '', arguments: '' } };
                 toolCalls[idx] = existing;
               }
               if (tc.id) {
@@ -431,12 +430,12 @@ export async function askLlmStream(
             }
           }
         } catch (e) {
-          console.warn("Invalid stream chunk:", trimmed, e);
+          console.warn('Invalid stream chunk:', trimmed, e);
         }
       }
     }
   } finally {
-    signal?.removeEventListener("abort", onAbort);
+    signal?.removeEventListener('abort', onAbort);
     reader.releaseLock();
   }
 
@@ -448,17 +447,17 @@ export async function askLlmStream(
   }
 
   let aiNote: string | null = null;
-  let aiNoteAction: "append" | "replace" | undefined;
+  let aiNoteAction: 'append' | 'replace' | undefined;
 
   if (toolCalls && toolCalls.length > 0) {
-    const scratchpadTool = toolCalls.find((tc) => tc.function.name === "update_scratchpad");
+    const scratchpadTool = toolCalls.find((tc) => tc.function.name === 'update_scratchpad');
     if (scratchpadTool?.function.arguments) {
       try {
-        const args = JSON.parse(scratchpadTool.function.arguments) as { content: string; action: "append" | "replace" };
+        const args = JSON.parse(scratchpadTool.function.arguments) as { content: string; action: 'append' | 'replace' };
         aiNote = args.content;
         aiNoteAction = args.action;
       } catch (e) {
-        console.warn("Failed to parse streamed tool call arguments:", e);
+        console.warn('Failed to parse streamed tool call arguments:', e);
       }
     }
   }
@@ -470,17 +469,17 @@ export async function askLlmStream(
   if (!aiNote) {
     if (replaceMatch) {
       aiNote = replaceMatch[1].trim();
-      aiNoteAction = "replace";
+      aiNoteAction = 'replace';
     } else if (persistMatch) {
       aiNote = persistMatch[1].trim();
-      aiNoteAction = "append";
+      aiNoteAction = 'append';
     }
   }
 
   const result: LlmResult = {
     content: accumulated
-      .replace(/<!--\s*persist:\s*[\s\S]*?\s*-->/gi, "")
-      .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
+      .replace(/<!--\s*persist:\s*[\s\S]*?\s*-->/gi, '')
+      .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
       .trim(),
     promptTokens,
     completionTokens,
@@ -489,13 +488,13 @@ export async function askLlmStream(
     aiNote,
     aiNoteAction,
     toolCalls,
-    searchCount: toolCalls?.filter((tc) => tc.function.name === "$web_search").length ?? 0,
+    searchCount: toolCalls?.filter((tc) => tc.function.name === '$web_search').length ?? 0,
     finishReason,
     reasoning: reasoning.trim(),
   };
 
   if (!result.content && result.aiNote) {
-    result.content = "*(Updated scratchpad)*";
+    result.content = '*(Updated scratchpad)*';
   }
 
   return result;
@@ -515,7 +514,7 @@ export async function orchestrateLlmLoop(
   messages: LlmMessage[],
   onToken?: (token: string) => void,
   onReasoning?: (token: string) => void,
-  onScratchpadUpdate?: (content: string, action: "append" | "replace") => Promise<void>,
+  onScratchpadUpdate?: (content: string, action: 'append' | 'replace') => Promise<void>,
   webSearch?: boolean,
   signal?: AbortSignal,
 ): Promise<OrchestrateResult> {
@@ -524,7 +523,7 @@ export async function orchestrateLlmLoop(
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
   let totalSearchCount = 0;
-  let finalContent = "";
+  let finalContent = '';
   let lastResult: LlmResult | null = null;
 
   while (loopCount < 5) {
@@ -544,14 +543,14 @@ export async function orchestrateLlmLoop(
       finalContent = finalContent ? `${finalContent}\n\n${result.content}` : result.content;
     } // Process AI Note (Scratchpad)
     if (result.aiNote && onScratchpadUpdate) {
-      await onScratchpadUpdate(result.aiNote, result.aiNoteAction ?? "append");
+      await onScratchpadUpdate(result.aiNote, result.aiNoteAction ?? 'append');
     }
 
     // Handle Tool Calls Loop
-    if (result.toolCalls && result.toolCalls.length > 0 && result.finishReason === "tool_calls") {
+    if (result.toolCalls && result.toolCalls.length > 0 && result.finishReason === 'tool_calls') {
       // Add assistant tool calls to context
       llmContext.push({
-        role: "assistant",
+        role: 'assistant',
         content: result.content || null,
         ...(result.reasoning && { reasoning_content: result.reasoning }),
         tool_calls: result.toolCalls.map((tc) => ({
@@ -563,12 +562,12 @@ export async function orchestrateLlmLoop(
 
       // Add tool results to context
       for (const tc of result.toolCalls) {
-        const isWebSearch = tc.function.name === "$web_search";
+        const isWebSearch = tc.function.name === '$web_search';
         llmContext.push({
-          role: "tool",
+          role: 'tool',
           tool_call_id: tc.id,
           name: tc.function.name,
-          content: isWebSearch ? tc.function.arguments : "Updated.",
+          content: isWebSearch ? tc.function.arguments : 'Updated.',
         });
       }
       continue;
@@ -576,7 +575,7 @@ export async function orchestrateLlmLoop(
     break;
   }
 
-  if (!lastResult) throw new Error("No result from LLM");
+  if (!lastResult) throw new Error('No result from LLM');
 
   return {
     finalContent,
@@ -590,13 +589,13 @@ export async function orchestrateLlmLoop(
 function getApiKey(model: ChatModel): string {
   const auth = useAuthStore.getState();
   switch (model.provider) {
-    case "openai":
+    case 'openai':
       return auth.openAiKey;
-    case "deepseek":
+    case 'deepseek':
       return auth.deepSeekKey;
-    case "google":
+    case 'google':
       return auth.googleApiKey;
-    case "moonshot":
+    case 'moonshot':
       return auth.moonshotApiKey;
     default:
       throw new Error(`No API key found for provider "${String(model.provider)}"`);
@@ -607,7 +606,7 @@ export function estimateStreamedTokens(
   model: ChatModel,
   messages: LlmMessage[],
   response: string,
-): Pick<LlmResult, "promptTokens" | "completionTokens"> & { costSEK: number } {
+): Pick<LlmResult, 'promptTokens' | 'completionTokens'> & { costSEK: number } {
   const { promptTokens, completionTokens } = estimateTokens(messages, response);
   const costSEK = calculateCostSEK(model, promptTokens, completionTokens);
   return { promptTokens, completionTokens, costSEK };
@@ -628,7 +627,7 @@ export async function getMoonshotBalance(): Promise<{ available_balance: number 
   if (!key) return null;
 
   try {
-    const res = await fetch("https://api.moonshot.ai/v1/users/me/balance", {
+    const res = await fetch('https://api.moonshot.ai/v1/users/me/balance', {
       headers: {
         Authorization: `Bearer ${key}`,
       },
@@ -641,7 +640,7 @@ export async function getMoonshotBalance(): Promise<{ available_balance: number 
     }
     return null;
   } catch (e) {
-    console.error("Failed to fetch Moonshot balance:", e);
+    console.error('Failed to fetch Moonshot balance:', e);
     return null;
   }
 }
@@ -662,10 +661,10 @@ export async function getDeepSeekBalance(): Promise<{ balance: number; currency:
   if (!key) return null;
 
   try {
-    const res = await fetch("https://api.deepseek.com/user/balance", {
+    const res = await fetch('https://api.deepseek.com/user/balance', {
       headers: {
         Authorization: `Bearer ${key}`,
-        Accept: "application/json",
+        Accept: 'application/json',
       },
     });
 
@@ -680,8 +679,8 @@ export async function getDeepSeekBalance(): Promise<{ balance: number; currency:
     }
     return null;
   } catch (e) {
-    if (process.env.NODE_ENV === "development") {
-      console.error("Failed to fetch DeepSeek balance:", e);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Failed to fetch DeepSeek balance:', e);
     }
     return null;
   }
