@@ -263,10 +263,6 @@ export async function askLlm(
     reasoning: reasoning.trim(),
   };
 
-  if (!result.content && result.aiNote) {
-    result.content = '*(Updated scratchpad)*';
-  }
-
   return result;
 }
 
@@ -395,11 +391,6 @@ export async function askLlmStream(
           if (delta?.tool_calls) {
             if (!toolCallStarted) {
               toolCallStarted = true;
-              if (!accumulated && onToken) {
-                const statusMsg = '*(Updating scratchpad...)*\n\n';
-                accumulated += statusMsg;
-                onToken(statusMsg);
-              }
             }
             for (const tc of delta.tool_calls) {
               // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -492,10 +483,6 @@ export async function askLlmStream(
     finishReason,
     reasoning: reasoning.trim(),
   };
-
-  if (!result.content && result.aiNote) {
-    result.content = '*(Updated scratchpad)*';
-  }
 
   return result;
 }

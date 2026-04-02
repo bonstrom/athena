@@ -24,6 +24,7 @@ import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
 import { USD_TO_SEK } from '../constants';
 import ThemeSelector from '../components/ThemeSelector';
 import { PredefinedPrompt } from '../database/AthenaDb';
+import { chatModels } from '../components/ModelSelector';
 
 const Settings: React.FC = () => {
   const {
@@ -50,9 +51,13 @@ const Settings: React.FC = () => {
     updatePredefinedPrompt,
     deletePredefinedPrompt,
     llmSuggestionEnabled,
+    replyPredictionEnabled,
+    replyPredictionModel,
     llmModelSelected,
     llmModelDownloadStatus,
     setLlmSuggestionEnabled,
+    setReplyPredictionEnabled,
+    setReplyPredictionModel,
     setLlmModelSelected,
   } = useAuthStore();
 
@@ -64,6 +69,7 @@ const Settings: React.FC = () => {
   const modelMap = {
     'qwen-0.5b-chat': 'Xenova/Qwen1.5-0.5B-Chat',
     'distilgpt2-q8': 'Xenova/distilgpt2',
+    'qwen3-2b': 'onnx-community/Qwen2.5-1.5B-Instruct',
   };
   const currentModelId = modelMap[llmModelSelected];
   const status = llmModelDownloadStatus[currentModelId] ?? 'not_downloaded';
@@ -107,6 +113,7 @@ const Settings: React.FC = () => {
     const modelMap = {
       'qwen-0.5b-chat': 'Xenova/Qwen1.5-0.5B-Chat',
       'distilgpt2-q8': 'Xenova/distilgpt2',
+      'qwen3-2b': 'onnx-community/Qwen2.5-1.5B-Instruct',
     };
     const modelId = modelMap[llmModelSelected];
     llmSuggestionService.loadModel(modelId, true);
@@ -883,95 +890,127 @@ const Settings: React.FC = () => {
         <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
           AI Suggestions (Experimental)
         </Typography>
-        <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-          Enable local LLM type-ahead suggestions. This runs entirely in your browser.
-        </Typography>
 
-        <FormControlLabel
-          control={<Switch checked={llmSuggestionEnabled} onChange={(e): void => setLlmSuggestionEnabled(e.target.checked)} />}
-          label="Enable AI suggestions"
-          sx={{ mb: 3 }}
-        />
+        {/* Type-ahead suggestions */}
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+            Type-ahead Suggestions
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1.5, color: 'text.secondary' }}>
+            Local LLM word prediction while you type. Runs entirely in your browser. Press Tab to accept a suggestion.
+          </Typography>
+          <FormControlLabel
+            control={<Switch checked={llmSuggestionEnabled} onChange={(e): void => setLlmSuggestionEnabled(e.target.checked)} />}
+            label="Enable type-ahead suggestions"
+            sx={{ mb: 2 }}
+          />
 
-        {llmSuggestionEnabled && (
-          <Box sx={{ mt: 2 }}>
-            <FormControl fullWidth size="small" sx={{ mb: 3 }}>
-              <InputLabel>Selected Model</InputLabel>
-              <Select
-                value={llmModelSelected}
-                label="Selected Model"
-                onChange={(e): void => setLlmModelSelected(e.target.value as 'qwen-0.5b-chat' | 'distilgpt2-q8')}
-              >
-                <MenuItem value="qwen-0.5b-chat">Qwen1.5 0.5B Chat (Recommended • ~350MB)</MenuItem>
-                <MenuItem value="distilgpt2-q8">DistilGPT-2 (Basic • ~150MB)</MenuItem>
-              </Select>
-            </FormControl>
-
-            <Box
-              sx={{
-                p: 2,
-                borderRadius: 1,
-                border: '1px solid',
-                borderColor: 'divider',
-                bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
-              }}
+          <FormControl fullWidth size="small" sx={{ mb: 3 }}>
+            <InputLabel>Selected Model</InputLabel>
+            <Select
+              value={llmModelSelected}
+              label="Selected Model"
+              onChange={(e): void => setLlmModelSelected(e.target.value as 'qwen-0.5b-chat' | 'distilgpt2-q8' | 'qwen3-2b')}
             >
-              <Box display="flex" justifyContent="space-between" alignItems="center" mb={llmProgress ? 2 : 0}>
-                <Typography variant="body2" component="div">
-                  {status === 'downloaded' ? (
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <CheckCircleIcon color="success" />
-                      Model Downloaded
-                    </Box>
-                  ) : status === 'downloading' ? (
-                    'Downloading Model...'
-                  ) : (
-                    'Model not downloaded'
-                  )}
-                </Typography>
+              <MenuItem value="qwen-0.5b-chat">Qwen1.5 0.5B Chat (Recommended • ~350MB)</MenuItem>
+              <MenuItem value="qwen3-2b">Qwen2.5 1.5B Instruct (~1.5GB)</MenuItem>
+              <MenuItem value="distilgpt2-q8">DistilGPT-2 (Basic • ~150MB)</MenuItem>
+            </Select>
+          </FormControl>
 
-                <Box display="flex" gap={1}>
-                  {status === 'downloaded' && (
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      color="error"
-                      startIcon={<DeleteIcon />}
-                      disabled={isDeletingModel}
-                      onClick={(): void => {
-                        void handleDeleteModel();
-                      }}
-                    >
-                      {isDeletingModel ? 'Deleting...' : 'Delete Model'}
-                    </Button>
-                  )}
+          <Box
+            sx={{
+              p: 2,
+              borderRadius: 1,
+              border: '1px solid',
+              borderColor: 'divider',
+              bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
+            }}
+          >
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={llmProgress ? 2 : 0}>
+              <Typography variant="body2" component="div">
+                {status === 'downloaded' ? (
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <CheckCircleIcon color="success" />
+                    Model Downloaded
+                  </Box>
+                ) : status === 'downloading' ? (
+                  'Downloading Model...'
+                ) : (
+                  'Model not downloaded'
+                )}
+              </Typography>
 
+              <Box display="flex" gap={1}>
+                {status === 'downloaded' && (
                   <Button
                     variant="outlined"
                     size="small"
-                    startIcon={<DownloadIcon />}
-                    disabled={status === 'downloading' || isDeletingModel}
+                    color="error"
+                    startIcon={<DeleteIcon />}
+                    disabled={isDeletingModel}
                     onClick={(): void => {
-                      handleDownloadModel();
+                      void handleDeleteModel();
                     }}
                   >
-                    {status === 'downloaded' ? 'Re-download' : 'Download'}
+                    {isDeletingModel ? 'Deleting...' : 'Delete Model'}
                   </Button>
-                </Box>
-              </Box>
+                )}
 
-              {llmProgress && status === 'downloading' && (
-                <Box sx={{ width: '100%', mt: 2 }}>
-                  <LinearProgress variant="determinate" value={llmProgress.progress} />
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                    {llmProgress.progress.toFixed(1)}% ({Math.round(llmProgress.loaded / 1024 / 1024)}MB /{' '}
-                    {Math.round(llmProgress.total / 1024 / 1024)}MB)
-                  </Typography>
-                </Box>
-              )}
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<DownloadIcon />}
+                  disabled={status === 'downloading' || isDeletingModel}
+                  onClick={(): void => {
+                    handleDownloadModel();
+                  }}
+                >
+                  {status === 'downloaded' ? 'Re-download' : 'Download'}
+                </Button>
+              </Box>
             </Box>
+
+            {llmProgress && status === 'downloading' && (
+              <Box sx={{ width: '100%', mt: 2 }}>
+                <LinearProgress variant="determinate" value={llmProgress.progress} />
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                  {llmProgress.progress.toFixed(1)}% ({Math.round(llmProgress.loaded / 1024 / 1024)}MB / {Math.round(llmProgress.total / 1024 / 1024)}
+                  MB)
+                </Typography>
+              </Box>
+            )}
           </Box>
-        )}
+        </Box>
+
+        {/* Reply prediction */}
+        <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+            Reply Prediction
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1.5, color: 'text.secondary' }}>
+            After each assistant response, generate 3 suggested follow-up questions. Click a suggestion to send it instantly.
+          </Typography>
+          <FormControlLabel
+            control={<Switch checked={replyPredictionEnabled} onChange={(e): void => setReplyPredictionEnabled(e.target.checked)} />}
+            label="Enable reply prediction"
+            sx={{ mb: replyPredictionEnabled ? 2 : 0 }}
+          />
+          {replyPredictionEnabled && (
+            <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+              <InputLabel>Prediction Model</InputLabel>
+              <Select value={replyPredictionModel} label="Prediction Model" onChange={(e): void => setReplyPredictionModel(e.target.value)}>
+                <MenuItem value="same">Same as active chat model</MenuItem>
+                <MenuItem value="local">Local LLM (browser model)</MenuItem>
+                {chatModels.map((m) => (
+                  <MenuItem key={m.id} value={m.id}>
+                    {m.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+        </Box>
       </Paper>
     </Box>
   );

@@ -1,18 +1,18 @@
-import React, { useEffect } from "react";
-import { Box, CssBaseline, Drawer, useMediaQuery, useTheme, IconButton, Typography, Chip, alpha } from "@mui/material";
-import MenuIcon from "@mui/icons-material/Menu";
-import { Outlet } from "react-router-dom";
-import { useUiStore } from "../store/UiStore";
-import { useChatStore } from "../store/ChatStore";
-import { useTopicStore } from "../store/TopicStore";
-import { useAuthStore } from "../store/AuthStore";
-import { Sidebar } from "./Sidebar";
+import React, { useEffect } from 'react';
+import { Box, CssBaseline, Drawer, useMediaQuery, useTheme, IconButton, Typography, Chip, alpha } from '@mui/material';
+import MenuIcon from '@mui/icons-material/Menu';
+import { Outlet } from 'react-router-dom';
+import { useUiStore } from '../store/UiStore';
+import { useChatStore } from '../store/ChatStore';
+import { useTopicStore } from '../store/TopicStore';
+import { useAuthStore } from '../store/AuthStore';
+import { Sidebar } from './Sidebar';
 
 const drawerWidth = 300;
 
 const ChatLayout: React.FC = () => {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const { drawerOpen, openDrawer, closeDrawer, setMobile } = useUiStore();
   const { currentTopicId, selectedModel } = useChatStore();
@@ -25,23 +25,24 @@ const ChatLayout: React.FC = () => {
   }, [isMobile, setMobile]);
 
   return (
-    <Box sx={{ display: "flex", height: "100vh" }}>
+    <Box sx={{ display: 'flex', height: '100dvh' }}>
       <CssBaseline />
 
       {/* Drawer */}
 
       <Drawer
-        variant={isMobile ? "temporary" : "persistent"}
+        variant={isMobile ? 'temporary' : 'persistent'}
         open={drawerOpen}
         onClose={closeDrawer}
         sx={{
           [`& .MuiDrawer-paper`]: {
             width: drawerWidth,
-            boxSizing: "border-box",
-            display: "flex",
-            flexDirection: "column",
+            boxSizing: 'border-box',
+            display: 'flex',
+            flexDirection: 'column',
           },
-        }}>
+        }}
+      >
         <Sidebar />
       </Drawer>
 
@@ -51,75 +52,68 @@ const ChatLayout: React.FC = () => {
         component="main"
         sx={{
           flexGrow: 1,
-          bgcolor: "background.default",
+          bgcolor: 'background.default',
           ml: isMobile ? 0 : drawerOpen ? `${drawerWidth}px` : 0,
-          transition: theme.transitions.create("margin", {
+          transition: theme.transitions.create('margin', {
             easing: drawerOpen ? theme.transitions.easing.easeOut : theme.transitions.easing.sharp,
             duration: drawerOpen ? theme.transitions.duration.enteringScreen : theme.transitions.duration.leavingScreen,
           }),
-          display: "flex",
-          flexDirection: "column",
-          height: "100vh",
-          maxWidth: { xs: "100%", sm: "100%", md: "100%" },
-          overflowX: "hidden",
-        }}>
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100dvh',
+          maxWidth: { xs: '100%', sm: '100%', md: '100%' },
+          overflowX: 'hidden',
+        }}
+      >
         <Box
           sx={{
             flexGrow: 1,
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-          }}>
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
           {isMobile && !drawerOpen && (
             <Box
               sx={{
-                display: "flex",
-                alignItems: "center",
+                display: 'flex',
+                alignItems: 'center',
                 px: 1,
                 py: 0.5,
                 bgcolor: (theme) => alpha(theme.palette.background.default, 0.85),
-                backdropFilter: "blur(12px)",
+                backdropFilter: 'blur(12px)',
                 borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
-                boxShadow: (theme) =>
-                  theme.palette.mode === "dark" ? "0 2px 8px rgba(0,0,0,0.3)" : "0 2px 8px rgba(0,0,0,0.05)",
+                boxShadow: (theme) => (theme.palette.mode === 'dark' ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.05)'),
                 flexShrink: 0,
-                position: "relative",
+                position: 'relative',
                 zIndex: 10,
-              }}>
-              <IconButton
-                onClick={(): void => openDrawer()}
-                aria-label="Open menu"
-                sx={{ mr: 0.5 }}>
+              }}
+            >
+              <IconButton onClick={(): void => openDrawer()} aria-label="Open menu" sx={{ mr: 0.5 }}>
                 <MenuIcon />
               </IconButton>
               {topic && (
                 <Box
                   sx={{
                     ml: 0.5,
-                    overflow: "hidden",
-                    display: "flex",
-                    flexWrap: "wrap",
-                    alignItems: "center",
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
                     gap: 1,
                     minWidth: 0,
-                  }}>
-                  <Box sx={{ display: "flex", alignItems: "baseline", gap: 1.5, flexShrink: 0 }}>
-                    <Typography
-                      variant="subtitle2"
-                      fontWeight="bold"
-                      noWrap>
-                      {topic.name || "New Topic"}
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, flexShrink: 0 }}>
+                    <Typography variant="subtitle2" fontWeight="bold" noWrap>
+                      {topic.name || 'New Topic'}
                     </Typography>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      noWrap
-                      sx={{ flexShrink: 0 }}>
+                    <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0 }}>
                       {selectedModel.label}
                     </Typography>
                   </Box>
                   {topic.selectedPromptIds && topic.selectedPromptIds.length > 0 && (
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                       {predefinedPrompts
                         .filter((p) => topic.selectedPromptIds?.includes(p.id))
                         .map((prompt) => (
@@ -133,9 +127,9 @@ const ChatLayout: React.FC = () => {
                             }}
                             sx={{
                               height: 18,
-                              fontSize: "0.6rem",
+                              fontSize: '0.6rem',
                               bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-                              "& .MuiChip-deleteIcon": { fontSize: 12 },
+                              '& .MuiChip-deleteIcon': { fontSize: 12 },
                             }}
                           />
                         ))}
@@ -152,35 +146,28 @@ const ChatLayout: React.FC = () => {
                 px: 2,
                 py: 1,
                 bgcolor: (theme) => alpha(theme.palette.background.default, 0.85),
-                backdropFilter: "blur(12px)",
+                backdropFilter: 'blur(12px)',
                 borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
-                boxShadow: (theme) =>
-                  theme.palette.mode === "dark" ? "0 2px 8px rgba(0,0,0,0.3)" : "0 2px 8px rgba(0,0,0,0.05)",
+                boxShadow: (theme) => (theme.palette.mode === 'dark' ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.05)'),
                 flexShrink: 0,
-                display: "flex",
-                alignItems: "center",
-                flexWrap: "wrap",
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
                 gap: 1.5,
-                position: "relative",
+                position: 'relative',
                 zIndex: 10,
-              }}>
-              <Box sx={{ display: "flex", alignItems: "baseline", gap: 1.5, flexShrink: 0 }}>
-                <Typography
-                  variant="subtitle1"
-                  fontWeight="bold"
-                  noWrap>
-                  {topic.name || "New Topic"}
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, flexShrink: 0 }}>
+                <Typography variant="subtitle1" fontWeight="bold" noWrap>
+                  {topic.name || 'New Topic'}
                 </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  noWrap
-                  sx={{ flexShrink: 0 }}>
+                <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0 }}>
                   {selectedModel.label}
                 </Typography>
               </Box>
               {topic.selectedPromptIds && topic.selectedPromptIds.length > 0 && (
-                <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                   {predefinedPrompts
                     .filter((p) => topic.selectedPromptIds?.includes(p.id))
                     .map((prompt) => (
@@ -194,9 +181,9 @@ const ChatLayout: React.FC = () => {
                         }}
                         sx={{
                           height: 20,
-                          fontSize: "0.65rem",
+                          fontSize: '0.65rem',
                           bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-                          "& .MuiChip-deleteIcon": { fontSize: 14 },
+                          '& .MuiChip-deleteIcon': { fontSize: 14 },
                         }}
                       />
                     ))}

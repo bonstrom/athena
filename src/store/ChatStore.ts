@@ -1,14 +1,16 @@
-import { create } from "zustand";
-import { calculateCostSEK, ChatModel, getDefaultModel } from "../components/ModelSelector";
-import { useTopicStore } from "./TopicStore";
-import { orchestrateLlmLoop, LlmMessage, LlmContentPart } from "../services/llmService";
-import { Message, Attachment } from "../database/AthenaDb";
-import { athenaDb } from "../database/AthenaDb";
-import { useNotificationStore } from "./NotificationStore";
-import { BackupService } from "../services/backupService";
-import { useAuthStore } from "./AuthStore";
+import { create } from 'zustand';
+import { calculateCostSEK, ChatModel, getDefaultModel } from '../components/ModelSelector';
+import { useTopicStore } from './TopicStore';
+import { orchestrateLlmLoop, askLlm, LlmMessage, LlmContentPart } from '../services/llmService';
+import { chatModels } from '../components/ModelSelector';
+import { llmSuggestionService } from '../services/llmSuggestionService';
+import { Message, Attachment } from '../database/AthenaDb';
+import { athenaDb } from '../database/AthenaDb';
+import { useNotificationStore } from './NotificationStore';
+import { BackupService } from '../services/backupService';
+import { useAuthStore } from './AuthStore';
 
-import { SCRATCHPAD_LIMIT } from "../constants";
+import { SCRATCHPAD_LIMIT } from '../constants';
 
 interface ChatStore {
   messagesByTopic: Record<string, Message[] | undefined>;
@@ -31,12 +33,7 @@ interface ChatStore {
   updateMessage: (id: string, patch: Partial<Message>) => Promise<void>;
   updateMessages: (updates: { id: string; patch: Partial<Message> }[]) => Promise<void>;
   updateMessageStateOnly: (id: string, patch: Partial<Message>) => void;
-  sendMessageStream: (
-    content: string,
-    topicId: string,
-    messageId?: string,
-    attachments?: Attachment[],
-  ) => Promise<void>;
+  sendMessageStream: (content: string, topicId: string, messageId?: string, attachments?: Attachment[]) => Promise<void>;
   setSelectedModel: (model: ChatModel) => void;
   updateMessageContext: (messageId: string, include: boolean) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
@@ -47,6 +44,8 @@ interface ChatStore {
   abortController: AbortController | null;
   currentRequestMessageIds: { userMessageId: string; assistantMessageId: string } | null;
   stopSending: () => Promise<string | null>;
+  pendingSuggestions: string[] | null;
+  clearSuggestions: () => void;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -61,6 +60,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   webSearchEnabled: false,
   abortController: null,
   currentRequestMessageIds: null,
+  pendingSuggestions: null,
+
+  clearSuggestions: (): void => set({ pendingSuggestions: null }),
 
   setWebSearchEnabled: (value: boolean): void => set({ webSearchEnabled: value }),
 
@@ -76,7 +78,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setInitialLoad: (value: boolean): void => set({ isInitialLoad: value }),
 
   setSelectedModel: (model: ChatModel): void => {
-    localStorage.setItem("athena_selected_model", model.id);
+    localStorage.setItem('athena_selected_model', model.id);
     set({ selectedModel: model });
   },
 
@@ -88,9 +90,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // to avoid sending orphaned context references to the LLM.
     const messages = messagesByTopic[currentTopicId] ?? [];
     const target = messages.find((m) => m.id === id);
-    const pairedUserMessageId = target?.type === "assistant" && target.parentMessageId ? target.parentMessageId : null;
+    const pairedUserMessageId = target?.type === 'assistant' && target.parentMessageId ? target.parentMessageId : null;
 
-    await athenaDb.transaction("rw", athenaDb.messages, async () => {
+    await athenaDb.transaction('rw', athenaDb.messages, async () => {
       await athenaDb.messages.delete(id);
       if (pairedUserMessageId) {
         await athenaDb.messages.update(pairedUserMessageId, { includeInContext: false });
@@ -109,13 +111,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   fetchMessages: async (topicId: string, forkId?: string): Promise<void> => {
     const topic = useTopicStore.getState().topics.find((t) => t.id === topicId);
-    const activeForkId = forkId ?? topic?.activeForkId ?? "main";
+    const activeForkId = forkId ?? topic?.activeForkId ?? 'main';
 
     const all = await athenaDb.messages
-      .where("topicId")
+      .where('topicId')
       .equals(topicId)
       .and((m) => m.forkId === activeForkId)
-      .sortBy("created");
+      .sortBy('created');
 
     set((state) => ({
       messagesByTopic: { ...state.messagesByTopic, [topicId]: all },
@@ -131,9 +133,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { currentTopicId, messagesByTopic } = get();
     if (!currentTopicId) return;
 
-    const updated = (messagesByTopic[currentTopicId] ?? []).map((m) =>
-      m.id === id ? { ...m, includeInContext: include } : m,
-    );
+    const updated = (messagesByTopic[currentTopicId] ?? []).map((m) => (m.id === id ? { ...m, includeInContext: include } : m));
 
     set({ messagesByTopic: { ...messagesByTopic, [currentTopicId]: updated } });
   },
@@ -224,14 +224,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  sendMessageStream: async (
-    content: string,
-    topicId: string,
-    messageId?: string,
-    attachments?: Attachment[],
-  ): Promise<void> => {
+  sendMessageStream: async (content: string, topicId: string, messageId?: string, attachments?: Attachment[]): Promise<void> => {
     // Guard against concurrent sends (e.g. rapid double-tap)
     if (get().sending) return;
+
+    // Clear any pending suggestions when a new message is sent
+    set({ pendingSuggestions: null });
 
     // Trigger auto-backup on user gesture to ensure permissions are refreshed
     void BackupService.performAutoBackup(true);
@@ -248,19 +246,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     let userMessage: Message;
     const topic = topicStoreState.topics.find((t) => t.id === topicId);
-    const activeForkId = topic?.activeForkId ?? "main";
+    const activeForkId = topic?.activeForkId ?? 'main';
 
     // 1. Handle User Message
     if (isRetry) {
       const existing = await athenaDb.messages.get(messageId);
-      if (!existing) throw new Error("Original message not found for retry.");
+      if (!existing) throw new Error('Original message not found for retry.');
       userMessage = existing;
     } else {
       userMessage = {
         id: crypto.randomUUID(),
         topicId,
         forkId: activeForkId,
-        type: "user",
+        type: 'user',
         content: content.trim(),
         created: now,
         model: undefined,
@@ -278,12 +276,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const existingContext = await topicStoreState.getTopicContext(topicId, isRetry ? messageId : undefined);
 
     const llmContext: LlmMessage[] = existingContext.map((m) => {
-      const role = m.type === "user" ? "user" : m.type === "assistant" ? "assistant" : "system";
+      const role = m.type === 'user' ? 'user' : m.type === 'assistant' ? 'assistant' : 'system';
       if (m.attachments && m.attachments.length > 0 && (selectedModel.supportsVision || selectedModel.supportsFiles)) {
-        const parts: LlmContentPart[] = [{ type: "text", text: m.content }];
+        const parts: LlmContentPart[] = [{ type: 'text', text: m.content }];
         for (const att of m.attachments) {
-          if (att.type.startsWith("image/") && selectedModel.supportsVision) {
-            parts.push({ type: "image_url", image_url: { url: att.data } });
+          if (att.type.startsWith('image/') && selectedModel.supportsVision) {
+            parts.push({ type: 'image_url', image_url: { url: att.data } });
           }
         }
         return { role, content: parts, reasoning_content: m.reasoning };
@@ -304,20 +302,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 * **Managing space:** If the scratchpad is getting full or contains outdated facts (e.g., a goal was completed, or a preference changed), use the \`replace\` action to rewrite the entire scratchpad, keeping only the currently relevant facts and discarding the dead ones.
 
 [Current Scratchpad Content]:
-${topic?.scratchpad ?? "(Empty)"}`;
+${topic?.scratchpad ?? '(Empty)'}`;
 
     if (selectedModel.supportsTools) {
-      systems.push({ role: "system", content: scratchpadRules });
+      systems.push({ role: 'system', content: scratchpadRules });
     } else {
       systems.push({
-        role: "system",
+        role: 'system',
         content: `${scratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`,
       });
     }
 
-    if (get().webSearchEnabled && selectedModel.provider === "moonshot") {
+    if (get().webSearchEnabled && selectedModel.provider === 'moonshot') {
       systems.push({
-        role: "system",
+        role: 'system',
         content:
           "You have access to real-time internet search via the $web_search tool. Use it whenever you need up-to-date information or are unsure about recent events (like 'Vem vann Melodifestivalen 2024?').",
       });
@@ -328,27 +326,23 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       const allPrompts = useAuthStore.getState().predefinedPrompts;
       const selectedPrompts = allPrompts.filter((p) => selectedPromptIds.includes(p.id));
       for (const p of selectedPrompts) {
-        systems.push({ role: "system", content: p.content });
+        systems.push({ role: 'system', content: p.content });
       }
     }
 
     llmContext.unshift(...systems);
 
     // Add current user message to context before calling loop
-    if (
-      userMessage.attachments &&
-      userMessage.attachments.length > 0 &&
-      (selectedModel.supportsVision || selectedModel.supportsFiles)
-    ) {
-      const parts: LlmContentPart[] = [{ type: "text", text: userMessage.content }];
+    if (userMessage.attachments && userMessage.attachments.length > 0 && (selectedModel.supportsVision || selectedModel.supportsFiles)) {
+      const parts: LlmContentPart[] = [{ type: 'text', text: userMessage.content }];
       for (const att of userMessage.attachments) {
-        if (att.type.startsWith("image/") && selectedModel.supportsVision) {
-          parts.push({ type: "image_url", image_url: { url: att.data } });
+        if (att.type.startsWith('image/') && selectedModel.supportsVision) {
+          parts.push({ type: 'image_url', image_url: { url: att.data } });
         }
       }
-      llmContext.push({ role: "user", content: parts });
+      llmContext.push({ role: 'user', content: parts });
     } else {
-      llmContext.push({ role: "user", content: userMessage.content });
+      llmContext.push({ role: 'user', content: userMessage.content });
     }
 
     // 3. Prepare Assistant Message
@@ -357,8 +351,8 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       id: assistantId,
       topicId,
       forkId: activeForkId,
-      type: "assistant",
-      content: "",
+      type: 'assistant',
+      content: '',
       created: new Date().toISOString(),
       model: selectedModel.id,
       isDeleted: false,
@@ -372,7 +366,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
 
     try {
       // Create initial DB state in a single transaction
-      await athenaDb.transaction("rw", athenaDb.messages, async () => {
+      await athenaDb.transaction('rw', athenaDb.messages, async () => {
         if (isRetry) {
           await athenaDb.messages.update(userMessage.id, { failed: false });
         } else {
@@ -388,9 +382,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         let updated = [...existingMessages];
 
         if (isRetry) {
-          updated = updated.map((m) =>
-            m.id === userMessage.id ? { ...m, failed: false, activeResponseId: assistantId } : m,
-          );
+          updated = updated.map((m) => (m.id === userMessage.id ? { ...m, failed: false, activeResponseId: assistantId } : m));
         } else {
           updated.push(userMessage);
         }
@@ -406,19 +398,19 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       });
 
       const loopStartTime = Date.now();
-      let streamedContent = "";
+      let streamedContent = '';
       let lastContentRenderTime = 0;
       let lastReasoningRenderTime = 0;
       const RENDER_THROTTLE_MS = 64; // ~15fps for smooth but efficient UI
 
-      let streamedReasoning = "";
+      let streamedReasoning = '';
       const onTokenCallback = (chunk: string): void => {
         streamedContent += chunk;
         const now = Date.now();
         if (now - lastContentRenderTime > RENDER_THROTTLE_MS) {
           const displayContent = streamedContent
-            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
-            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "");
+            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
+            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '');
           get().updateMessageStateOnly(assistantId, { content: displayContent });
           lastContentRenderTime = now;
         }
@@ -440,19 +432,17 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         llmContext,
         onTokenCallback,
         onReasoningCallback,
-        async (aiNote: string, action: "append" | "replace") => {
-          const currentScratchpad = topicStoreState.topics.find((t) => t.id === topicId)?.scratchpad ?? "";
-          let updatedScratchpad = "";
-          if (action === "replace") {
+        async (aiNote: string, action: 'append' | 'replace') => {
+          const currentScratchpad = useTopicStore.getState().topics.find((t) => t.id === topicId)?.scratchpad ?? '';
+          let updatedScratchpad = '';
+          if (action === 'replace') {
             updatedScratchpad = aiNote;
           } else {
             updatedScratchpad = currentScratchpad ? `${currentScratchpad}\n${aiNote}` : aiNote;
           }
           if (updatedScratchpad.length > SCRATCHPAD_LIMIT) {
             updatedScratchpad = updatedScratchpad.slice(0, SCRATCHPAD_LIMIT);
-            useNotificationStore
-              .getState()
-              .addNotification("Scratchpad full", "Content was trimmed to fit the character limit.");
+            useNotificationStore.getState().addNotification('Scratchpad full', 'Content was trimmed to fit the character limit.');
           }
           await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
         },
@@ -461,16 +451,11 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       );
 
       const finalContent = primaryResult.finalContent;
-      const finalReasoning = primaryResult.lastResult.reasoning ?? "";
+      const finalReasoning = primaryResult.lastResult.reasoning ?? '';
       const totalPromptTokens = primaryResult.totalPromptTokens;
       const totalCompletionTokens = primaryResult.totalCompletionTokens;
       const lastResult = primaryResult.lastResult;
-      const finalTotalCost = calculateCostSEK(
-        selectedModel,
-        totalPromptTokens,
-        totalCompletionTokens,
-        lastResult.promptTokensDetails,
-      );
+      const finalTotalCost = calculateCostSEK(selectedModel, totalPromptTokens, totalCompletionTokens, lastResult.promptTokensDetails);
 
       // 5. Finalize DB Updates in atomic transaction
       const latencyMs = Date.now() - loopStartTime;
@@ -481,8 +466,8 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       };
       const assistantPatch = {
         content: finalContent
-          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, "")
-          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, "")
+          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
+          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
           .trim(),
         reasoning: finalReasoning.trim(),
         completionTokens: totalCompletionTokens,
@@ -492,7 +477,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         model: selectedModel.id,
       };
 
-      await athenaDb.transaction("rw", athenaDb.messages, async () => {
+      await athenaDb.transaction('rw', athenaDb.messages, async () => {
         await athenaDb.messages.update(userMessage.id, userPatch);
         await athenaDb.messages.update(assistantId, assistantPatch);
       });
@@ -510,13 +495,66 @@ ${topic?.scratchpad ?? "(Empty)"}`;
       }));
 
       void topicStoreState.generateTopicName(topicId, content);
+
+      // Generate reply predictions if enabled
+      const { replyPredictionEnabled, replyPredictionModel } = useAuthStore.getState();
+      if (replyPredictionEnabled) {
+        void (async (): Promise<void> => {
+          try {
+            const suggestionContext: LlmMessage[] = [
+              ...llmContext,
+              { role: 'assistant', content: assistantPatch.content },
+              {
+                role: 'user',
+                content:
+                  'Based on this conversation, suggest exactly 3 short follow-up questions the user might want to ask next. Reply with ONLY a JSON array of 3 strings. No explanation, no markdown, just the raw JSON array.',
+              },
+            ];
+
+            let suggestions: string[] | null = null;
+
+            if (replyPredictionModel === 'local') {
+              // Use local LLM via llmSuggestionService
+              const conversationText = `${content}\n\n${assistantPatch.content}`;
+              const raw = await llmSuggestionService.getSuggestion('Suggest 3 follow-up questions: ', conversationText.slice(-500));
+              if (raw.trim()) {
+                // Local model won't return JSON — split by newline/number patterns
+                const lines = raw
+                  .split(/\n|\d+[.)]/)
+                  .map((s) => s.trim())
+                  .filter((s) => s.length > 5)
+                  .slice(0, 3);
+                if (lines.length > 0) suggestions = lines;
+              }
+            } else {
+              const targetModel =
+                replyPredictionModel === 'same' ? selectedModel : (chatModels.find((m) => m.id === replyPredictionModel) ?? selectedModel);
+              const result = await askLlm(targetModel, 0.7, suggestionContext);
+              const raw = result.content.trim();
+              const jsonMatch = raw.match(/\[[\s\S]*\]/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]) as unknown;
+                if (Array.isArray(parsed) && parsed.every((s) => typeof s === 'string')) {
+                  suggestions = (parsed as string[]).slice(0, 3);
+                }
+              }
+            }
+
+            if (suggestions && suggestions.length > 0) {
+              set({ pendingSuggestions: suggestions });
+            }
+          } catch {
+            // Silently ignore suggestion errors
+          }
+        })();
+      }
     } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
+      if (err instanceof Error && err.name === 'AbortError') {
         return;
       }
-      console.error("LLM request failed", err);
+      console.error('LLM request failed', err);
       const msg = err instanceof Error ? err.message : String(err);
-      useNotificationStore.getState().addNotification("LLM request failed", msg);
+      useNotificationStore.getState().addNotification('LLM request failed', msg);
 
       await get().updateMessage(userMessage.id, { failed: true });
       await get().updateMessage(assistantId, { isDeleted: true });
@@ -536,7 +574,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
     const userMsg = messages
       .slice(0, assistantMsgIndex)
       .reverse()
-      .find((m) => m.type === "user");
+      .find((m) => m.type === 'user');
 
     if (!userMsg) return;
 
@@ -566,9 +604,7 @@ ${topic?.scratchpad ?? "(Empty)"}`;
         currentRequestMessageIds: null,
         messagesByTopic: {
           ...state.messagesByTopic,
-          [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? []).filter(
-            (m) => m.id !== userMessageId && m.id !== assistantMessageId,
-          ),
+          [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? []).filter((m) => m.id !== userMessageId && m.id !== assistantMessageId),
         },
       }));
 

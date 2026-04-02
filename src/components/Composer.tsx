@@ -138,6 +138,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     onSend(combinedContent, attachments);
     questionRef.current = '';
     setInputValue('');
+    textFieldRef.current?.blur();
     setPages([{ id: crypto.randomUUID(), title: 'Page 1', content: '' }]);
     setActivePageIndex(0);
     setAttachments([]);
@@ -277,6 +278,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     const modelMap = {
       'qwen-0.5b-chat': 'Xenova/Qwen1.5-0.5B-Chat',
       'distilgpt2-q8': 'Xenova/distilgpt2',
+      'qwen3-2b': 'onnx-community/Qwen2.5-1.5B-Instruct',
     } as const;
     const modelId = modelMap[llmModelSelected];
     const status = llmModelDownloadStatus[modelId] ?? 'not_downloaded';
@@ -291,6 +293,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       const modelMap = {
         'qwen-0.5b-chat': 'Xenova/Qwen1.5-0.5B-Chat',
         'distilgpt2-q8': 'Xenova/distilgpt2',
+        'qwen3-2b': 'onnx-community/Qwen2.5-1.5B-Instruct',
       };
       const modelId = modelMap[llmModelSelected];
       if (!llmSuggestionEnabled || llmModelDownloadStatus[modelId] !== 'downloaded' || !text.trim()) {
