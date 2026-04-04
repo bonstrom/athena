@@ -139,6 +139,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     questionRef.current = '';
     setInputValue('');
     textFieldRef.current?.blur();
+    setIsExpanded(false)
     setPages([{ id: crypto.randomUUID(), title: 'Page 1', content: '' }]);
     setActivePageIndex(0);
     setAttachments([]);
