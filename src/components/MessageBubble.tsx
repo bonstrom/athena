@@ -52,7 +52,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const { updateMessageContext, deleteMessage, sendMessageStream, regenerateResponse, switchMessageVersion } = useChatStore();
   const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
-  const { userName, chatFontSize } = useAuthStore();
+  const { userName, chatFontSize, messageTruncateChars } = useAuthStore();
   const { isMobile } = useUiStore();
 
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
@@ -60,6 +60,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const [copied, setCopied] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [isExpanded, setIsExpanded] = useState(() => messageTruncateChars === 0 || message.content.length <= messageTruncateChars);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -71,6 +72,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   }, []);
 
   const isAssistant = message.type === 'assistant';
+  const isStreaming = isAssistant && message.content === '';
+  const isLong = messageTruncateChars > 0 && message.content.length > messageTruncateChars;
+  const displayContent = isLong && !isExpanded ? message.content.slice(0, messageTruncateChars) + '\u2026' : message.content;
+
+  // Keep expanded while the message is being streamed/generated
+  useEffect(() => {
+    if (isStreaming) setIsExpanded(true);
+  }, [isStreaming]);
 
   const togglePin = async (): Promise<void> => {
     try {
@@ -433,7 +442,22 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               {getModelLabel(message.model)} stored a hidden note here.
             </Typography>
           ) : (
-            <MarkdownWithCode fontSize={chatFontSize}>{message.content}</MarkdownWithCode>
+            <>
+              <MarkdownWithCode fontSize={chatFontSize}>{displayContent}</MarkdownWithCode>
+              {isLong && (
+                <Box mt={0.5}>
+                  <Button
+                    size="small"
+                    variant="text"
+                    startIcon={isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    onClick={(): void => setIsExpanded((v) => !v)}
+                    sx={{ textTransform: 'none', color: 'text.secondary', fontSize: '0.75rem', px: 0.5 }}
+                  >
+                    {isExpanded ? 'Show less' : 'Show more'}
+                  </Button>
+                </Box>
+              )}
+            </>
           )}
         </Box>
 

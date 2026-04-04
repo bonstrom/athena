@@ -62,6 +62,8 @@ const Settings: React.FC = () => {
     setLlmModelSelected,
     topicPreloadCount,
     setTopicPreloadCount,
+    messageTruncateChars,
+    setMessageTruncateChars,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState('');
@@ -439,6 +441,22 @@ const Settings: React.FC = () => {
               <MenuItem value={10}>10 topics</MenuItem>
               <MenuItem value={20}>20 topics</MenuItem>
               <MenuItem value={50}>50 topics</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl fullWidth size="small">
+            <InputLabel>Message Preview Length</InputLabel>
+            <Select
+              value={messageTruncateChars}
+              label="Message Preview Length"
+              onChange={(e): void => setMessageTruncateChars(e.target.value as number)}
+            >
+              <MenuItem value={0}>Always show full messages</MenuItem>
+              <MenuItem value={100}>Tiny (100 characters)</MenuItem>
+              <MenuItem value={500}>Default (500 characters)</MenuItem>
+              <MenuItem value={800}>Medium (800 characters)</MenuItem>
+              <MenuItem value={1200}>Long (1200 characters)</MenuItem>
+              <MenuItem value={2000}>Very long (2000 characters)</MenuItem>
+              <MenuItem value={4000}>Maximum (4000 characters)</MenuItem>
             </Select>
           </FormControl>
         </Box>

@@ -22,12 +22,14 @@ interface AuthState {
   llmModelSelected: 'qwen3.5-0.8b' | 'qwen3.5-2b';
   llmModelDownloadStatus: Record<string, 'not_downloaded' | 'downloading' | 'downloaded' | undefined>;
   topicPreloadCount: number;
+  messageTruncateChars: number;
   setLlmSuggestionEnabled: (enabled: boolean) => void;
   setReplyPredictionEnabled: (enabled: boolean) => void;
   setReplyPredictionModel: (model: string) => void;
   setLlmModelSelected: (model: 'qwen3.5-0.8b' | 'qwen3.5-2b') => void;
   setLlmModelDownloadStatus: (modelId: string, status: 'not_downloaded' | 'downloading' | 'downloaded') => void;
   setTopicPreloadCount: (count: number) => void;
+  setMessageTruncateChars: (chars: number) => void;
   clearAuth: () => void;
   setOpenAiKey: (key: string) => void;
   setDeepSeekKey: (key: string) => void;
@@ -67,6 +69,7 @@ export const useAuthStore = create<AuthState>((set) => {
     'not_downloaded' | 'downloading' | 'downloaded' | undefined
   >;
   const storedTopicPreloadCount = Number(localStorage.getItem('topicPreloadCount') ?? '5');
+  const storedMessageTruncateChars = Number(localStorage.getItem('messageTruncateChars') ?? '500');
 
   return {
     openAiKey: storedOpenAiKey,
@@ -87,6 +90,7 @@ export const useAuthStore = create<AuthState>((set) => {
     llmModelSelected: storedLlmModelSelected,
     llmModelDownloadStatus: storedLlmModelDownloadStatus,
     topicPreloadCount: storedTopicPreloadCount,
+    messageTruncateChars: storedMessageTruncateChars,
     clearAuth: (): void => {
       localStorage.removeItem('openAiKey');
       localStorage.removeItem('deepSeekKey');
@@ -142,6 +146,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setTopicPreloadCount: (count: number): void => {
       localStorage.setItem('topicPreloadCount', String(count));
       set({ topicPreloadCount: count });
+    },
+    setMessageTruncateChars: (chars: number): void => {
+      localStorage.setItem('messageTruncateChars', String(chars));
+      set({ messageTruncateChars: chars });
     },
     setOpenAiKey: (key: string): void => {
       localStorage.setItem('openAiKey', SecurityUtils.encode(key));

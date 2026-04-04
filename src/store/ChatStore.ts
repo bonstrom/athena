@@ -539,7 +539,7 @@ ${topic?.scratchpad ?? '(Empty)'}`;
         void (async (): Promise<void> => {
           try {
             const suggestionContext: LlmMessage[] = [
-              ...llmContext,
+              { role: 'user', content },
               { role: 'assistant', content: assistantPatch.content },
               {
                 role: 'user',
