@@ -138,11 +138,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     onSend(combinedContent, attachments);
     questionRef.current = '';
     setInputValue('');
-    textFieldRef.current?.blur();
-    setIsExpanded(false)
+    setIsExpanded(false);
     setPages([{ id: crypto.randomUUID(), title: 'Page 1', content: '' }]);
     setActivePageIndex(0);
     setAttachments([]);
+    // Defer blur so it runs after React re-renders – needed to dismiss the Android keyboard
+    requestAnimationFrame(() => {
+      textFieldRef.current?.blur();
+    });
   };
 
   const handleTabChange = (_: React.SyntheticEvent, newValue: number): void => {
@@ -265,10 +268,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   };
 
   useEffect(() => {
-    if (!sending && textFieldRef.current) {
+    if (!sending && !isMobile && textFieldRef.current) {
       textFieldRef.current.focus();
     }
-  }, [sending]);
+  }, [sending, isMobile]);
 
   useEffect(() => {
     setLocalMaxContext(null);
