@@ -47,6 +47,7 @@ interface ChatStore {
   pendingSuggestions: string[] | null;
   clearSuggestions: () => void;
   isSuggestionsLoading: boolean;
+  preloadTopics: (topicIds: string[]) => Promise<void>;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -65,6 +66,32 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   isSuggestionsLoading: false,
 
   clearSuggestions: (): void => set({ pendingSuggestions: null, isSuggestionsLoading: false }),
+
+  preloadTopics: async (topicIds: string[]): Promise<void> => {
+    const { messagesByTopic } = get();
+    const unloaded = topicIds.filter((id) => messagesByTopic[id] === undefined);
+    if (unloaded.length === 0) return;
+
+    const results = await Promise.all(
+      unloaded.map((topicId) =>
+        athenaDb.messages
+          .where('topicId')
+          .equals(topicId)
+          .sortBy('created')
+          .then((msgs) => ({ topicId, msgs })),
+      ),
+    );
+
+    set((state) => {
+      const updates: Record<string, Message[]> = {};
+      for (const { topicId, msgs } of results) {
+        if (state.messagesByTopic[topicId] === undefined) {
+          updates[topicId] = msgs;
+        }
+      }
+      return { messagesByTopic: { ...state.messagesByTopic, ...updates } };
+    });
+  },
 
   setWebSearchEnabled: (value: boolean): void => set({ webSearchEnabled: value }),
 
@@ -114,6 +141,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   fetchMessages: async (topicId: string, forkId?: string): Promise<void> => {
     const topic = useTopicStore.getState().topics.find((t) => t.id === topicId);
     const activeForkId = forkId ?? topic?.activeForkId ?? 'main';
+
+    // If already cached and on the main fork, just switch to it instantly
+    const cached = get().messagesByTopic[topicId];
+    if (cached !== undefined && !forkId) {
+      set({ currentTopicId: topicId, isInitialLoad: true, visibleMessageCount: 10 });
+      return;
+    }
 
     const all = await athenaDb.messages
       .where('topicId')

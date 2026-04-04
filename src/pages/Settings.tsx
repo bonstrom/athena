@@ -59,6 +59,8 @@ const Settings: React.FC = () => {
     setReplyPredictionEnabled,
     setReplyPredictionModel,
     setLlmModelSelected,
+    topicPreloadCount,
+    setTopicPreloadCount,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState('');
@@ -414,6 +416,28 @@ const Settings: React.FC = () => {
               <MenuItem value={18}>Large (18px)</MenuItem>
               <MenuItem value={20}>Extra Large (20px)</MenuItem>
               <MenuItem value={24}>Huge (24px)</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+
+        <Box sx={{ mb: 4 }}>
+          <Typography
+            variant="subtitle2"
+            color="text.secondary"
+            gutterBottom
+            sx={{ fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}
+          >
+            Performance
+          </Typography>
+          <FormControl fullWidth size="small">
+            <InputLabel>Topic Preload Count</InputLabel>
+            <Select value={topicPreloadCount} label="Topic Preload Count" onChange={(e): void => setTopicPreloadCount(e.target.value as number)}>
+              <MenuItem value={0}>Disabled</MenuItem>
+              <MenuItem value={3}>3 topics</MenuItem>
+              <MenuItem value={5}>5 topics</MenuItem>
+              <MenuItem value={10}>10 topics</MenuItem>
+              <MenuItem value={20}>20 topics</MenuItem>
+              <MenuItem value={50}>50 topics</MenuItem>
             </Select>
           </FormControl>
         </Box>

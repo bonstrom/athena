@@ -1,15 +1,25 @@
 import { Box, CircularProgress, List, ListSubheader, Button } from '@mui/material';
 import { useTopicStore } from '../store/TopicStore';
+import { useChatStore } from '../store/ChatStore';
+import { useAuthStore } from '../store/AuthStore';
 import { TopicListItem } from './TopicListItem';
 import React, { JSX, useEffect } from 'react';
 import { groupTopicsByDate } from '../utils/groupTopicsByDate';
 
 export const TopicList = (): JSX.Element => {
   const { topics, loading, loadTopics, visibleTopicCount, increaseVisibleTopicCount } = useTopicStore();
+  const preloadTopics = useChatStore((state) => state.preloadTopics);
+  const topicPreloadCount = useAuthStore((state) => state.topicPreloadCount);
 
   useEffect(() => {
-    void loadTopics();
-  }, [loadTopics]);
+    void loadTopics().then(() => {
+      const recentIds = useTopicStore
+        .getState()
+        .topics.slice(0, topicPreloadCount)
+        .map((t) => t.id);
+      void preloadTopics(recentIds);
+    });
+  }, [loadTopics, preloadTopics, topicPreloadCount]);
 
   const visibleTopics = topics.slice(0, visibleTopicCount);
   const grouped = groupTopicsByDate(visibleTopics);
