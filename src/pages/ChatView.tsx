@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, useMediaQuery, useTheme, Fade, CircularProgress, Typography } from '@mui/material';
+import { Box, useMediaQuery, useTheme, Fade } from '@mui/material';
 import { useParams } from 'react-router-dom';
 import { useAuthStore } from '../store/AuthStore';
 import { useChatStore } from '../store/ChatStore';
@@ -8,7 +8,6 @@ import { Attachment } from '../database/AthenaDb';
 import MessageList from '../components/MessageList';
 import Composer from '../components/Composer';
 import ForkTabs from '../components/ForkTabs';
-import SuggestedReplies from '../components/SuggestedReplies';
 
 const ChatView: React.FC = () => {
   const { topicId } = useParams<{ topicId: string }>();
@@ -28,6 +27,7 @@ const ChatView: React.FC = () => {
 
   useEffect(() => {
     setError(null);
+    clearSuggestions();
 
     const fetchPromise = topicId ? fetchMessages(topicId) : Promise.resolve();
 
@@ -42,7 +42,7 @@ const ChatView: React.FC = () => {
         setIsVisible(true);
       }
     });
-  }, [fetchMessages, topicId]);
+  }, [fetchMessages, topicId, clearSuggestions]);
 
   return (
     <Box display="flex" flexDirection="column" height="100%" width="100%" sx={{ overflow: 'hidden' }}>
@@ -76,25 +76,17 @@ const ChatView: React.FC = () => {
             <Fade key={displayTopicId} in={isVisible} timeout={{ enter: 150, exit: 0 }}>
               <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}>
                 {displayTopicId && <ForkTabs topicId={displayTopicId} />}
-                <MessageList messages={messages} maxContextMessages={maxContextMessages} />
-                {pendingSuggestions && pendingSuggestions.length > 0 && !sending && (
-                  <SuggestedReplies
-                    suggestions={pendingSuggestions}
-                    onSelect={(suggestion): void => {
-                      clearSuggestions();
-                      if (!topicId) return;
-                      void sendMessageStream(suggestion, topicId);
-                    }}
-                  />
-                )}
-                {isSuggestionsLoading && !sending && !pendingSuggestions && (
-                  <Box display="flex" alignItems="center" gap={1} px={2} py={0.5} justifyContent="flex-end">
-                    <CircularProgress size={12} />
-                    <Typography variant="caption" color="text.secondary">
-                      Generating suggestions...
-                    </Typography>
-                  </Box>
-                )}
+                <MessageList
+                  messages={messages}
+                  maxContextMessages={maxContextMessages}
+                  suggestions={!sending ? (pendingSuggestions ?? []) : []}
+                  isSuggestionsLoading={isSuggestionsLoading && !sending && !pendingSuggestions}
+                  onSuggestionSelect={(suggestion): void => {
+                    clearSuggestions();
+                    if (!topicId) return;
+                    void sendMessageStream(suggestion, topicId);
+                  }}
+                />
               </Box>
             </Fade>
           )}

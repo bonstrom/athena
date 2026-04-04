@@ -1,14 +1,15 @@
-import React, { JSX, useEffect, useRef } from "react";
-import { ListItem, Button, Fab, Box, Typography } from "@mui/material";
-import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
-import ScrollToBottom, { useScrollToBottom, useSticky } from "react-scroll-to-bottom";
-import { css } from "@emotion/css";
-import { useParams } from "react-router-dom";
+import React, { JSX, useEffect, useRef } from 'react';
+import { ListItem, Button, Fab, Box, Typography, CircularProgress } from '@mui/material';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import ScrollToBottom, { useScrollToBottom, useSticky } from 'react-scroll-to-bottom';
+import { css } from '@emotion/css';
+import { useParams } from 'react-router-dom';
 
-import { useChatStore } from "../store/ChatStore";
-import { useUiStore } from "../store/UiStore";
-import MessageBubble from "./MessageBubble";
-import { Message } from "../database/AthenaDb";
+import { useChatStore } from '../store/ChatStore';
+import { useUiStore } from '../store/UiStore';
+import MessageBubble from './MessageBubble';
+import SuggestedReplies from './SuggestedReplies';
+import { Message } from '../database/AthenaDb';
 
 const FollowFab = (): JSX.Element | null => {
   const scrollToBottom = useScrollToBottom();
@@ -20,7 +21,7 @@ const FollowFab = (): JSX.Element | null => {
       color="primary"
       size="small"
       sx={{
-        position: "absolute",
+        position: 'absolute',
         right: 20,
         bottom: 10,
         zIndex: 10,
@@ -28,16 +29,17 @@ const FollowFab = (): JSX.Element | null => {
         height: 32,
         width: 32,
         p: 0,
-        bgcolor: "transparent",
-        boxShadow: "none",
-        color: "primary.main",
-        "&:hover": {
-          bgcolor: "primary.main",
-          color: "#fff",
+        bgcolor: 'transparent',
+        boxShadow: 'none',
+        color: 'primary.main',
+        '&:hover': {
+          bgcolor: 'primary.main',
+          color: '#fff',
           boxShadow: 3,
         },
       }}
-      onClick={(): void => scrollToBottom({ behavior: "smooth" })}>
+      onClick={(): void => scrollToBottom({ behavior: 'smooth' })}
+    >
       <ArrowDownwardIcon fontSize="small" />
     </Fab>
   );
@@ -53,14 +55,14 @@ const Pane: React.FC<{
 
   const lastGroup = groups.length > 0 ? groups[groups.length - 1] : undefined;
   const last = lastGroup?.msg;
-  const sig = last ? `${last.id}:${last.content.length}` : "";
+  const sig = last ? `${last.id}:${last.content.length}` : '';
 
   const prevSigRef = useRef(sig);
   const wasStickyRef = useRef<boolean>(true);
 
   useEffect(() => {
     if (sig !== prevSigRef.current && wasStickyRef.current) {
-      scrollToBottom({ behavior: "smooth" });
+      scrollToBottom({ behavior: 'smooth' });
     }
 
     prevSigRef.current = sig;
@@ -68,11 +70,8 @@ const Pane: React.FC<{
   }, [sig, sticky, scrollToBottom]);
 
   // For the context window indicator, we need the active sequence
-  const contextMessages = groups.map((g) => g.msg).filter((m) => m.type === "user" || m.type === "assistant");
-  const firstInWindowId =
-    contextMessages.length > maxContextMessages
-      ? contextMessages[contextMessages.length - maxContextMessages].id
-      : null;
+  const contextMessages = groups.map((g) => g.msg).filter((m) => m.type === 'user' || m.type === 'assistant');
+  const firstInWindowId = contextMessages.length > maxContextMessages ? contextMessages[contextMessages.length - maxContextMessages].id : null;
 
   return (
     <>
@@ -81,26 +80,17 @@ const Pane: React.FC<{
         return (
           <React.Fragment key={m.id}>
             {isFirstInWindow && (
-              <ListItem sx={{ py: 1, px: 2, display: "flex", alignItems: "center", gap: 2 }}>
-                <Box sx={{ flex: 1, height: "1px", bgcolor: "divider", opacity: 0.3 }} />
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ opacity: 0.5, whiteSpace: "nowrap", userSelect: "none" }}>
+              <ListItem sx={{ py: 1, px: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{ flex: 1, height: '1px', bgcolor: 'divider', opacity: 0.3 }} />
+                <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.5, whiteSpace: 'nowrap', userSelect: 'none' }}>
                   Context Window
                 </Typography>
-                <Box sx={{ flex: 1, height: "1px", bgcolor: "divider", opacity: 0.3 }} />
+                <Box sx={{ flex: 1, height: '1px', bgcolor: 'divider', opacity: 0.3 }} />
               </ListItem>
             )}
-            <ListItem
-              disableGutters
-              sx={{ px: 2 }}>
+            <ListItem disableGutters sx={{ px: 2 }}>
               <MessageBubble
-                message={
-                  m.type === "aiNote" && !showAllMessages
-                    ? { ...m, content: "⚠️ Assistant stored a hidden note here." }
-                    : m
-                }
+                message={m.type === 'aiNote' && !showAllMessages ? { ...m, content: '⚠️ Assistant stored a hidden note here.' } : m}
                 versions={versions}
               />
             </ListItem>
@@ -116,12 +106,15 @@ const Pane: React.FC<{
 interface Props {
   messages: Message[];
   maxContextMessages: number;
+  suggestions?: string[];
+  isSuggestionsLoading?: boolean;
+  onSuggestionSelect?: (suggestion: string) => void;
 }
 
-const ROOT_CLASS = css({ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" });
-const FOLLOW_BUTTON_CLASS = css({ display: "none" });
+const ROOT_CLASS = css({ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' });
+const FOLLOW_BUTTON_CLASS = css({ display: 'none' });
 
-const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
+const MessageList: React.FC<Props> = ({ messages, maxContextMessages, suggestions = [], isSuggestionsLoading = false, onSuggestionSelect }) => {
   const { topicId } = useParams();
   const { visibleMessageCount, increaseVisibleMessageCount } = useChatStore();
   const { showAllMessages } = useUiStore();
@@ -129,9 +122,7 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
   // 1. Filter, Sort, and Group
   const processedGroups = React.useMemo(() => {
     // 1.1 Filter deleted and sort
-    const all = messages
-      .filter((m) => !m.isDeleted)
-      .sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+    const all = messages.filter((m) => !m.isDeleted).sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
     // 1.2 Group versions
     const groups: { msg: Message; versions?: Message[] }[] = [];
@@ -140,7 +131,7 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
     // Pre-index assistant messages by parentId for O(N) grouping
     const assistantByParent = new Map<string, Message[]>();
     for (const m of all) {
-      if (m.type === "assistant" && m.parentMessageId) {
+      if (m.type === 'assistant' && m.parentMessageId) {
         const existing = assistantByParent.get(m.parentMessageId) ?? [];
         existing.push(m);
         assistantByParent.set(m.parentMessageId, existing);
@@ -150,7 +141,7 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
     for (const m of all) {
       if (processedIds.has(m.id)) continue;
 
-      if (m.type === "user") {
+      if (m.type === 'user') {
         processedIds.add(m.id);
         groups.push({ msg: m });
 
@@ -180,21 +171,22 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
       <Box
         className={ROOT_CLASS}
         sx={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "flex-end",
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
           flex: 1,
           paddingBottom: 8,
           opacity: 0.8,
-          animation: "fadeIn 1.2s ease-out",
-          pointerEvents: "none",
-          userSelect: "none",
-          "@keyframes fadeIn": {
-            from: { opacity: 0, transform: "translateY(20px)" },
-            to: { opacity: 0.8, transform: "translateY(0)" },
+          animation: 'fadeIn 1.2s ease-out',
+          pointerEvents: 'none',
+          userSelect: 'none',
+          '@keyframes fadeIn': {
+            from: { opacity: 0, transform: 'translateY(20px)' },
+            to: { opacity: 0.8, transform: 'translateY(0)' },
           },
-        }}>
+        }}
+      >
         <Box
           component="img"
           src="/athena/icons/android-chrome-192x192.png"
@@ -203,18 +195,19 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
             width: 100,
             height: 100,
             mb: 2,
-            filter: (theme) => (theme.palette.mode === "dark" ? "brightness(0.8) contrast(1.2)" : "none"),
+            filter: (theme) => (theme.palette.mode === 'dark' ? 'brightness(0.8) contrast(1.2)' : 'none'),
           }}
         />
         <Typography
           variant="h3"
           sx={{
-            fontWeight: "bold",
-            color: "text.primary",
+            fontWeight: 'bold',
+            color: 'text.primary',
             fontFamily: "'IM Fell Double Pica', serif",
             lineHeight: 1,
             m: 0,
-          }}>
+          }}
+        >
           Athena
         </Typography>
       </Box>
@@ -227,23 +220,26 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages }) => {
       className={ROOT_CLASS}
       initialScrollBehavior="auto"
       scrollViewClassName="my-scroll-view"
-      followButtonClassName={FOLLOW_BUTTON_CLASS}>
+      followButtonClassName={FOLLOW_BUTTON_CLASS}
+    >
       {processedGroups.length > visibleGroups.length && (
         <ListItem>
-          <Button
-            onClick={increaseVisibleMessageCount}
-            fullWidth
-            variant="outlined">
+          <Button onClick={increaseVisibleMessageCount} fullWidth variant="outlined">
             Load older messages ({processedGroups.length - visibleGroups.length} more)
           </Button>
         </ListItem>
       )}
 
-      <Pane
-        groups={visibleGroups}
-        maxContextMessages={maxContextMessages}
-        showAllMessages={showAllMessages}
-      />
+      <Pane groups={visibleGroups} maxContextMessages={maxContextMessages} showAllMessages={showAllMessages} />
+      {suggestions.length > 0 && onSuggestionSelect && <SuggestedReplies suggestions={suggestions} onSelect={onSuggestionSelect} />}
+      {isSuggestionsLoading && (
+        <Box display="flex" alignItems="center" gap={1} px={2} py={0.5} justifyContent="flex-end">
+          <CircularProgress size={12} />
+          <Typography variant="caption" color="text.secondary">
+            Generating suggestions...
+          </Typography>
+        </Box>
+      )}
     </ScrollToBottom>
   );
 };
