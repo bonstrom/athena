@@ -1,7 +1,7 @@
-import { exportDB, importDB } from "dexie-export-import";
-import { athenaDb } from "../database/AthenaDb";
-import { get, set } from "idb-keyval";
-import { useBackupStore } from "../store/BackupStore";
+import { exportDB, importDB, importInto } from 'dexie-export-import';
+import { athenaDb } from '../database/AthenaDb';
+import { get, set } from 'idb-keyval';
+import { useBackupStore } from '../store/BackupStore';
 
 interface FileSystemWritableFileStream extends WritableStream {
   write(data: BufferSource | Blob | string): Promise<void>;
@@ -10,12 +10,12 @@ interface FileSystemWritableFileStream extends WritableStream {
 }
 
 interface FileSystemFileHandle {
-  readonly kind: "file";
+  readonly kind: 'file';
   readonly name: string;
   getFile(): Promise<File>;
   createWritable(options?: { keepExistingData?: boolean }): Promise<FileSystemWritableFileStream>;
-  queryPermission(descriptor?: { mode: "read" | "readwrite" }): Promise<PermissionState>;
-  requestPermission(descriptor?: { mode: "read" | "readwrite" }): Promise<PermissionState>;
+  queryPermission(descriptor?: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission(descriptor?: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
 }
 
 declare global {
@@ -24,8 +24,8 @@ declare global {
   }
 }
 
-const BACKUP_HANDLE_KEY = "autoBackupFileHandle";
-const LAST_BACKUP_TIME_KEY = "lastAutoBackupTime";
+const BACKUP_HANDLE_KEY = 'autoBackupFileHandle';
+const LAST_BACKUP_TIME_KEY = 'lastAutoBackupTime';
 
 export const BackupService = {
   /**
@@ -35,18 +35,29 @@ export const BackupService = {
     try {
       const blob = await exportDB(athenaDb, { prettyJson: true });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
+      const a = document.createElement('a');
       a.href = url;
-      a.download = `athena_backup_${new Date().toISOString().split("T")[0]}.json`;
+      a.download = `athena_backup_${new Date().toISOString().split('T')[0]}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
-      if (process.env.NODE_ENV === "development") {
-        console.error("Failed to export database", error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to export database', error);
       }
       throw error;
+    }
+  },
+
+  /**
+   * Validates the structure of a backup file blob/text, throwing if invalid.
+   */
+  async validateBackupFile(file: File): Promise<void> {
+    const text = await file.text();
+    const json = JSON.parse(text) as unknown;
+    if (typeof json !== 'object' || json === null || !('data' in json) || typeof (json as Record<string, unknown>).data !== 'object') {
+      throw new Error('Invalid backup file: missing expected structure.');
     }
   },
 
@@ -56,18 +67,9 @@ export const BackupService = {
   async restoreBackup(file: File): Promise<void> {
     // Validate the backup file before destroying existing data
     try {
-      const text = await file.text();
-      const json = JSON.parse(text) as unknown;
-      if (
-        typeof json !== "object" ||
-        json === null ||
-        !("data" in json) ||
-        typeof (json as Record<string, unknown>).data !== "object"
-      ) {
-        throw new Error("Invalid backup file: missing expected structure.");
-      }
+      await BackupService.validateBackupFile(file);
     } catch (validationError) {
-      const msg = validationError instanceof Error ? validationError.message : "File could not be read as JSON.";
+      const msg = validationError instanceof Error ? validationError.message : 'File could not be read as JSON.';
       throw new Error(`Backup validation failed: ${msg}`);
     }
 
@@ -76,8 +78,47 @@ export const BackupService = {
       await athenaDb.open();
       await importDB(file);
     } catch (error) {
-      if (process.env.NODE_ENV === "development") {
-        console.error("Failed to restore database", error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to restore database', error);
+      }
+      throw error;
+    }
+  },
+
+  /**
+   * Exports the current database as a timestamped pre-import safety backup and downloads it.
+   */
+  async createPreImportBackup(): Promise<void> {
+    const blob = await exportDB(athenaDb, { prettyJson: true });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `athena_pre_import_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+
+  /**
+   * Merges a JSON backup file into the existing database without deleting current data.
+   * Downloads a pre-merge safety backup first, then imports with overwrite enabled.
+   */
+  async mergeBackup(file: File): Promise<void> {
+    try {
+      await BackupService.validateBackupFile(file);
+    } catch (validationError) {
+      const msg = validationError instanceof Error ? validationError.message : 'File could not be read as JSON.';
+      throw new Error(`Backup validation failed: ${msg}`);
+    }
+
+    await BackupService.createPreImportBackup();
+
+    try {
+      await importInto(athenaDb, file, { overwriteValues: true, clearTablesBeforeImport: false });
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to merge database', error);
       }
       throw error;
     }
@@ -90,17 +131,15 @@ export const BackupService = {
     try {
       const showSaveFilePicker = window.showSaveFilePicker;
       if (!showSaveFilePicker) {
-        throw new Error(
-          "Auto-backup requires the File System Access API, which is not supported in this browser. Try using Chrome or Edge.",
-        );
+        throw new Error('Auto-backup requires the File System Access API, which is not supported in this browser. Try using Chrome or Edge.');
       }
 
       const fileHandle = await showSaveFilePicker({
-        suggestedName: "athena_backup.json",
+        suggestedName: 'athena_backup.json',
         types: [
           {
-            description: "JSON Database Backup",
-            accept: { "application/json": [".json"] },
+            description: 'JSON Database Backup',
+            accept: { 'application/json': ['.json'] },
           },
         ],
       });
@@ -108,10 +147,10 @@ export const BackupService = {
       await set(BACKUP_HANDLE_KEY, fileHandle);
       return true;
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
+      if (error instanceof Error && error.name === 'AbortError') {
         return false;
       }
-      console.error("Failed to select auto-backup file", error);
+      console.error('Failed to select auto-backup file', error);
       throw error;
     }
   },
@@ -132,23 +171,23 @@ export const BackupService = {
     try {
       const handle = await this.getAutoBackupHandle();
       if (!handle) {
-        store.setStatus("no_handle");
+        store.setStatus('no_handle');
         return;
       }
 
       // Check if we have write permission
-      let permission = await handle.queryPermission({ mode: "readwrite" });
+      let permission = await handle.queryPermission({ mode: 'readwrite' });
 
-      if (permission !== "granted" && interactive) {
-        permission = await handle.requestPermission({ mode: "readwrite" });
+      if (permission !== 'granted' && interactive) {
+        permission = await handle.requestPermission({ mode: 'readwrite' });
       }
 
-      if (permission !== "granted") {
-        store.setStatus("permission_required");
+      if (permission !== 'granted') {
+        store.setStatus('permission_required');
         return;
       }
 
-      store.setStatus("in-progress");
+      store.setStatus('in-progress');
       const blob = await exportDB(athenaDb, { prettyJson: true });
       const writable = await handle.createWritable();
       await writable.write(blob);
@@ -157,18 +196,18 @@ export const BackupService = {
       const now = new Date().toISOString();
       localStorage.setItem(LAST_BACKUP_TIME_KEY, now);
       store.setLastBackupTime(now);
-      store.setStatus("success");
+      store.setStatus('success');
       store.setErrorMessage(null);
 
-      if (process.env.NODE_ENV === "development") {
-        console.debug("Auto-backup completed successfully at", now);
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('Auto-backup completed successfully at', now);
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       store.setErrorMessage(msg);
-      store.setStatus("error");
-      if (process.env.NODE_ENV === "development") {
-        console.error("Failed auto-backup:", error);
+      store.setStatus('error');
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed auto-backup:', error);
       }
       throw error;
     }

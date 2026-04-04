@@ -23,6 +23,7 @@ import { llmSuggestionService, LlmProgress } from '../services/llmSuggestionServ
 import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
 import { USD_TO_SEK } from '../constants';
 import ThemeSelector from '../components/ThemeSelector';
+import ImportDialog from '../components/ImportDialog';
 import { PredefinedPrompt } from '../database/AthenaDb';
 import { chatModels } from '../components/ModelSelector';
 
@@ -202,6 +203,8 @@ const Settings: React.FC = () => {
   }
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
 
   const handleExport = async (): Promise<void> => {
     try {
@@ -212,23 +215,21 @@ const Settings: React.FC = () => {
     }
   };
 
-  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+  const handleImport = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
     if (!file) return;
+    setPendingImportFile(file);
+    setImportDialogOpen(true);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
-    if (window.confirm('This will replace all your current conversations with the imported backup. Proceed?')) {
-      try {
-        await BackupService.restoreBackup(file);
-        window.location.reload();
-      } catch (error) {
-        console.error(error);
-        alert('Failed to import backup.');
-      }
-    }
+  const handleImportDialogClose = (): void => {
+    setImportDialogOpen(false);
+    setPendingImportFile(null);
+  };
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+  const handleImportComplete = (): void => {
+    window.location.reload();
   };
 
   const handleToggleAutoBackup = async (checked: boolean): Promise<void> => {
@@ -792,7 +793,7 @@ const Settings: React.FC = () => {
               style={{ display: 'none' }}
               ref={fileInputRef}
               onChange={(e): void => {
-                handleImport(e).catch(console.error);
+                handleImport(e);
               }}
             />
           </Box>
@@ -1024,6 +1025,8 @@ const Settings: React.FC = () => {
           )}
         </Box>
       </Paper>
+
+      <ImportDialog open={importDialogOpen} file={pendingImportFile} onClose={handleImportDialogClose} onComplete={handleImportComplete} />
     </Box>
   );
 };
