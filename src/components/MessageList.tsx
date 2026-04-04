@@ -203,7 +203,6 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, suggestion
           sx={{
             fontWeight: 'bold',
             color: 'text.primary',
-            fontFamily: "'IM Fell Double Pica', serif",
             lineHeight: 1,
             m: 0,
           }}

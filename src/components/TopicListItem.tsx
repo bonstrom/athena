@@ -118,9 +118,16 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
       <ListItem disablePadding>
         {isEditing ? (
           <Box display="flex" alignItems="center" width="100%" pl={2} pr={1}>
-            <TextField value={editedName} onChange={(e): void => setEditedName(e.target.value)} size="small" fullWidth />
+            <TextField
+              value={editedName}
+              onChange={(e): void => setEditedName(e.target.value)}
+              size="small"
+              fullWidth
+              inputProps={{ 'aria-label': 'Topic name' }}
+            />
 
             <IconButton
+              aria-label="Save topic name"
               onClick={(): void => {
                 void save();
               }}
@@ -128,7 +135,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
               <SaveIcon />
             </IconButton>
 
-            <IconButton onClick={(): void => setIsEditing(false)}>
+            <IconButton aria-label="Cancel editing" onClick={(): void => setIsEditing(false)}>
               <CloseIcon />
             </IconButton>
           </Box>
@@ -224,6 +231,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             <IconButton
               className="morevert-btn"
               size="small"
+              aria-label="Topic options"
               onClick={handleMenuOpen}
               aria-controls={openMenu ? `menu-${topic.id}` : undefined}
               aria-haspopup="true"

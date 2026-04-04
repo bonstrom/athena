@@ -290,6 +290,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               >
                 <IconButton
                   size="small"
+                  aria-label="Previous version"
                   disabled={versions.findIndex((v) => v.id === message.id) === 0}
                   onClick={(): void => {
                     const currentIndex = versions.findIndex((v) => v.id === message.id);
@@ -310,6 +311,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 </Typography>
                 <IconButton
                   size="small"
+                  aria-label="Next version"
                   disabled={versions.findIndex((v) => v.id === message.id) === versions.length - 1}
                   onClick={(): void => {
                     const currentIndex = versions.findIndex((v) => v.id === message.id);
@@ -340,6 +342,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               <Tooltip title={copied ? 'Copied!' : 'Copy message'} disableTouchListener={isMobile}>
                 <IconButton
                   size="small"
+                  aria-label={copied ? 'Copied!' : 'Copy message'}
                   onClick={(): void => {
                     void handleCopy();
                   }}
@@ -364,6 +367,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               <Tooltip title={message.includeInContext ? 'Unpin from context' : 'Pin to context'} disableTouchListener={isMobile}>
                 <IconButton
                   size="small"
+                  aria-label={message.includeInContext ? 'Unpin from context' : 'Pin to context'}
                   onClick={(): void => {
                     void togglePin();
                   }}
@@ -391,6 +395,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               <Tooltip title="More actions">
                 <IconButton
                   size="small"
+                  aria-label="More actions"
                   onClick={handleMenuOpen}
                   sx={{
                     color: 'text.secondary',

@@ -781,7 +781,13 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                       <Box display="flex" alignItems="center" gap={0.5}>
                         {page.title}
                         {pages.length > 1 && (
-                          <IconButton component="span" size="small" onClick={(e): void => deletePage(index, e)} sx={{ p: 0.25 }}>
+                          <IconButton
+                            component="span"
+                            size="small"
+                            aria-label={`Delete page ${page.title}`}
+                            onClick={(e): void => deletePage(index, e)}
+                            sx={{ p: 0.25 }}
+                          >
                             <CloseIcon sx={{ fontSize: 12 }} />
                           </IconButton>
                         )}
@@ -791,7 +797,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   />
                 ))}
               </Tabs>
-              <IconButton size="small" onClick={addPage} sx={{ ml: 0.5, p: 0.5 }}>
+              <IconButton size="small" aria-label="Add page" onClick={addPage} sx={{ ml: 0.5, p: 0.5 }}>
                 <AddIcon sx={{ fontSize: 16 }} />
               </IconButton>
             </Box>
@@ -821,6 +827,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   )}
                   <IconButton
                     size="small"
+                    aria-label={`Remove attachment ${att.name}`}
                     onClick={(): void => removeAttachment(att.id)}
                     sx={{
                       position: 'absolute',

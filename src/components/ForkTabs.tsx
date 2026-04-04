@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState } from 'react';
 import {
   Tabs,
   Tab,
@@ -12,11 +12,11 @@ import {
   DialogContentText,
   DialogActions,
   Button,
-} from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
-import { useTopicStore } from "../store/TopicStore";
-import { useChatStore } from "../store/ChatStore";
-import { useAuthStore } from "../store/AuthStore";
+} from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import { useTopicStore } from '../store/TopicStore';
+import { useChatStore } from '../store/ChatStore';
+import { useAuthStore } from '../store/AuthStore';
 
 interface ForkTabsProps {
   topicId: string;
@@ -33,7 +33,7 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
     return null;
   }
 
-  const activeForkId = topic.activeForkId ?? "main";
+  const activeForkId = topic.activeForkId ?? 'main';
 
   const handleChange = (_event: React.SyntheticEvent, newValue: string): void => {
     void (async (): Promise<void> => {
@@ -53,7 +53,7 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
       await deleteFork(topicId, forkToDelete);
       const updatedTopic = useTopicStore.getState().topics.find((t) => t.id === topicId);
       if (updatedTopic) {
-        await fetchMessages(topicId, updatedTopic.activeForkId ?? "main");
+        await fetchMessages(topicId, updatedTopic.activeForkId ?? 'main');
       }
       setForkToDelete(null);
     })();
@@ -64,16 +64,17 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
       elevation={0}
       sx={{
         borderBottom: 1,
-        borderColor: "divider",
+        borderColor: 'divider',
         bgcolor: (theme) => alpha(theme.palette.background.paper, 0.8),
-        backdropFilter: "blur(8px)",
-        position: "sticky",
+        backdropFilter: 'blur(8px)',
+        position: 'sticky',
         top: 0,
         zIndex: 10,
         mb: 2,
         borderRadius: 0,
-      }}>
-      <Box sx={{ maxWidth: "md", mx: "auto", px: 2 }}>
+      }}
+    >
+      <Box sx={{ maxWidth: 'md', mx: 'auto', px: 2 }}>
         <Tabs
           value={activeForkId}
           onChange={handleChange}
@@ -81,32 +82,35 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
           scrollButtons="auto"
           sx={{
             minHeight: 48,
-            "& .MuiTab-root": {
-              textTransform: "none",
+            '& .MuiTab-root': {
+              textTransform: 'none',
               fontWeight: 500,
               fontSize: `${Math.max(13, chatFontSize * 0.9)}px`,
               minWidth: 100,
             },
-          }}>
+          }}
+        >
           {topic.forks?.map((fork) => (
             <Tab
               key={fork.id}
               value={fork.id}
               label={
-                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   {fork.name}
                   {topic.forks && topic.forks.length > 1 && (
                     <IconButton
                       component="span"
                       size="small"
+                      aria-label={`Delete branch ${fork.name}`}
                       onClick={(e): void => handleDeleteClick(e, fork.id)}
                       sx={{
                         p: 0.2,
                         ml: 0.5,
                         opacity: 0.5,
-                        "&:hover": { opacity: 1, bgcolor: "rgba(0,0,0,0.1)" },
-                      }}>
-                      <CloseIcon sx={{ fontSize: "0.75rem" }} />
+                        '&:hover': { opacity: 1, bgcolor: 'rgba(0,0,0,0.1)' },
+                      }}
+                    >
+                      <CloseIcon sx={{ fontSize: '0.75rem' }} />
                     </IconButton>
                   )}
                 </Box>
@@ -116,9 +120,7 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
         </Tabs>
       </Box>
 
-      <Dialog
-        open={Boolean(forkToDelete)}
-        onClose={(): void => setForkToDelete(null)}>
+      <Dialog open={Boolean(forkToDelete)} onClose={(): void => setForkToDelete(null)}>
         <DialogTitle>Delete Conversation Branch</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -127,10 +129,7 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
         </DialogContent>
         <DialogActions>
           <Button onClick={(): void => setForkToDelete(null)}>Cancel</Button>
-          <Button
-            onClick={handleConfirmDelete}
-            color="error"
-            variant="contained">
+          <Button onClick={handleConfirmDelete} color="error" variant="contained">
             Delete
           </Button>
         </DialogActions>

@@ -66,6 +66,7 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
         void handleCopy();
       }}
       size="small"
+      aria-label={copied ? 'Copied!' : 'Copy code to clipboard'}
       className="copy-button"
       sx={{
         position: 'absolute',

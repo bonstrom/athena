@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, JSX } from "react";
+import { useState, useEffect, useRef, JSX } from 'react';
 import {
   Box,
   TextField,
@@ -11,25 +11,25 @@ import {
   Typography,
   Paper,
   ClickAwayListener,
-} from "@mui/material";
-import SearchIcon from "@mui/icons-material/Search";
-import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
-import TopicIcon from "@mui/icons-material/Topic";
-import { useNavigate } from "react-router-dom";
-import { athenaDb, Topic } from "../database/AthenaDb";
-import { useUiStore } from "../store/UiStore";
+} from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
+import TopicIcon from '@mui/icons-material/Topic';
+import { useNavigate } from 'react-router-dom';
+import { athenaDb, Topic } from '../database/AthenaDb';
+import { useUiStore } from '../store/UiStore';
 
 interface SearchResult {
   id: string; // Unique ID for the result item
   topicId: string; // ID of the destination topic
-  type: "topic" | "message";
+  type: 'topic' | 'message';
   title: string;
   snippet?: string; // Preview of message content
   date: string;
 }
 
 export const GlobalSearch = (): JSX.Element => {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -62,14 +62,14 @@ export const GlobalSearch = (): JSX.Element => {
     try {
       // 1. Search Topics - Use index for prefix matches first
       const prefixMatchedTopics = await athenaDb.topics
-        .where("name")
+        .where('name')
         .startsWithIgnoreCase(searchQuery)
         .filter((t) => !t.isDeleted)
         .toArray();
 
       // Also search for partial matches if needed (still a scan but more focused)
       const otherMatchedTopics = await athenaDb.topics
-        .where("isDeleted")
+        .where('isDeleted')
         .equals(0)
         .filter((t) => t.name.toLowerCase().includes(searchQuery) && !t.name.toLowerCase().startsWith(searchQuery))
         .toArray();
@@ -78,7 +78,7 @@ export const GlobalSearch = (): JSX.Element => {
 
       // 2. Search Messages - Start with isDeleted index to avoid full table scan
       const matchedMessages = await athenaDb.messages
-        .where("isDeleted")
+        .where('isDeleted')
         .equals(0)
         .filter((m) => m.content.toLowerCase().includes(searchQuery))
         .toArray();
@@ -102,7 +102,7 @@ export const GlobalSearch = (): JSX.Element => {
         combinedResults.push({
           id: `topic-${t.id}`,
           topicId: t.id,
-          type: "topic",
+          type: 'topic',
           title: t.name,
           date: t.updatedOn,
         });
@@ -119,18 +119,15 @@ export const GlobalSearch = (): JSX.Element => {
           if (matchIndex !== -1) {
             const start = Math.max(0, matchIndex - 30);
             const end = Math.min(m.content.length, matchIndex + searchQuery.length + 30);
-            snippet =
-              (start > 0 ? "..." : "") +
-              m.content.substring(start, end).replace(/\n/g, " ") +
-              (end < m.content.length ? "..." : "");
+            snippet = (start > 0 ? '...' : '') + m.content.substring(start, end).replace(/\n/g, ' ') + (end < m.content.length ? '...' : '');
           } else {
-            snippet = m.content.substring(0, 60).replace(/\n/g, " ") + (m.content.length > 60 ? "..." : "");
+            snippet = m.content.substring(0, 60).replace(/\n/g, ' ') + (m.content.length > 60 ? '...' : '');
           }
 
           combinedResults.push({
             id: `msg-${m.id}`,
             topicId: m.topicId,
-            type: "message",
+            type: 'message',
             title: parentTopic.name, // Show the topic name it belongs to
             snippet: snippet,
             date: m.created,
@@ -145,14 +142,14 @@ export const GlobalSearch = (): JSX.Element => {
       setResults(combinedResults.slice(0, 20));
       setIsSearching(false);
     } catch (error) {
-      console.error("Search failed:", error);
+      console.error('Search failed:', error);
       setIsSearching(false);
     }
   };
 
   const handleResultClick = (topicId: string): void => {
     setIsOpen(false);
-    setQuery(""); // Optional: clear search on navigation
+    setQuery(''); // Optional: clear search on navigation
     void navigate(`/chat/${topicId}`);
     if (isMobile) {
       closeDrawer();
@@ -161,10 +158,11 @@ export const GlobalSearch = (): JSX.Element => {
 
   return (
     <ClickAwayListener onClickAway={(): void => setIsOpen(false)}>
-      <Box sx={{ position: "relative", width: "100%", px: 2, pb: 1, zIndex: 1200 }}>
+      <Box sx={{ position: 'relative', width: '100%', px: 2, pb: 1, zIndex: 1200 }}>
         <TextField
           fullWidth
           size="small"
+          inputProps={{ 'aria-label': 'Search topics and messages' }}
           placeholder="Search topics and messages..."
           value={query}
           onChange={(e): void => setQuery(e.target.value)}
@@ -184,9 +182,9 @@ export const GlobalSearch = (): JSX.Element => {
             ) : null,
           }}
           sx={{
-            "& .MuiOutlinedInput-root": {
+            '& .MuiOutlinedInput-root': {
               borderRadius: 2,
-              bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255, 255, 255, 0.05)" : "rgba(0,0,0,0.03)"),
+              bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0,0,0,0.03)'),
             },
           }}
         />
@@ -195,46 +193,38 @@ export const GlobalSearch = (): JSX.Element => {
           <Paper
             elevation={4}
             sx={{
-              position: "absolute",
-              top: "100%",
+              position: 'absolute',
+              top: '100%',
               left: 8,
               right: 8,
               mt: 0.5,
               maxHeight: 400,
-              overflowY: "auto",
+              overflowY: 'auto',
               borderRadius: 2,
               border: (theme) => `1px solid ${theme.palette.divider}`,
-              bgcolor: "background.paper", // Ensure solid background over content
-            }}>
+              bgcolor: 'background.paper', // Ensure solid background over content
+            }}
+          >
             {results.length === 0 ? (
-              <Box
-                p={3}
-                textAlign="center">
-                <Typography
-                  variant="body2"
-                  color="text.secondary">
+              <Box p={3} textAlign="center">
+                <Typography variant="body2" color="text.secondary">
                   No results found for &quot;{query}&quot;
                 </Typography>
               </Box>
             ) : (
               <List disablePadding>
                 {results.map((result) => (
-                  <ListItem
-                    key={result.id}
-                    disablePadding
-                    divider>
+                  <ListItem key={result.id} disablePadding divider>
                     <ListItemButton onClick={(): void => handleResultClick(result.topicId)}>
-                      {result.type === "topic" ? (
-                        <TopicIcon sx={{ mr: 2, color: "text.secondary", fontSize: 20 }} />
+                      {result.type === 'topic' ? (
+                        <TopicIcon sx={{ mr: 2, color: 'text.secondary', fontSize: 20 }} />
                       ) : (
-                        <ChatBubbleOutlineIcon sx={{ mr: 2, color: "text.secondary", fontSize: 20 }} />
+                        <ChatBubbleOutlineIcon sx={{ mr: 2, color: 'text.secondary', fontSize: 20 }} />
                       )}
 
                       <ListItemText
                         primary={
-                          <Typography
-                            variant="body2"
-                            fontWeight={result.type === "topic" ? "bold" : "inherit"}>
+                          <Typography variant="body2" fontWeight={result.type === 'topic' ? 'bold' : 'inherit'}>
                             {result.title}
                           </Typography>
                         }
@@ -244,12 +234,13 @@ export const GlobalSearch = (): JSX.Element => {
                               variant="caption"
                               color="text.secondary"
                               sx={{
-                                display: "-webkit-box",
+                                display: '-webkit-box',
                                 WebkitLineClamp: 2,
-                                WebkitBoxOrient: "vertical",
-                                overflow: "hidden",
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
                                 mt: 0.5,
-                              }}>
+                              }}
+                            >
                               {result.snippet}
                             </Typography>
                           )
