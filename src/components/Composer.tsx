@@ -1181,6 +1181,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               <span>
                 <IconButton
                   color="primary"
+                  aria-label={sending ? 'Stop Generation' : 'Send Message'}
                   onClick={sending ? handleStop : handleSend}
                   disabled={!inputValue.trim() && !attachments.length && !sending}
                   sx={{

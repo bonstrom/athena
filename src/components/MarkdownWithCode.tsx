@@ -136,7 +136,17 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) 
           <SyntaxHighlighter
             language={match[1]}
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-            style={(theme.palette.mode === 'dark' ? oneDark : oneLight) as any}
+            style={
+              theme.palette.mode === 'dark'
+                ? // Override oneDark comment color (#5c6370 on #282c34 fails WCAG AA) with #7f8ea3
+                  ({
+                    ...oneDark,
+                    comment: { ...oneDark['comment'], color: '#7f8ea3' },
+                    'block-comment': { ...oneDark['block-comment'], color: '#7f8ea3' },
+                    prolog: { ...oneDark['prolog'], color: '#7f8ea3' },
+                  } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+                : (oneLight as any)
+            } // eslint-disable-line @typescript-eslint/no-explicit-any
             PreTag="div"
             customStyle={{
               whiteSpace: 'pre',

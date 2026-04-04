@@ -80,15 +80,15 @@ const Pane: React.FC<{
         return (
           <React.Fragment key={m.id}>
             {isFirstInWindow && (
-              <ListItem sx={{ py: 1, px: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+              <ListItem component="div" sx={{ py: 1, px: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Box sx={{ flex: 1, height: '1px', bgcolor: 'divider', opacity: 0.3 }} />
-                <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.5, whiteSpace: 'nowrap', userSelect: 'none' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap', userSelect: 'none' }}>
                   Context Window
                 </Typography>
                 <Box sx={{ flex: 1, height: '1px', bgcolor: 'divider', opacity: 0.3 }} />
               </ListItem>
             )}
-            <ListItem disableGutters sx={{ px: 2 }}>
+            <ListItem component="div" disableGutters sx={{ px: 2 }}>
               <MessageBubble
                 message={m.type === 'aiNote' && !showAllMessages ? { ...m, content: '⚠️ Assistant stored a hidden note here.' } : m}
                 versions={versions}
@@ -222,7 +222,7 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, suggestion
       followButtonClassName={FOLLOW_BUTTON_CLASS}
     >
       {processedGroups.length > visibleGroups.length && (
-        <ListItem>
+        <ListItem component="div">
           <Button onClick={increaseVisibleMessageCount} fullWidth variant="outlined">
             Load older messages ({processedGroups.length - visibleGroups.length} more)
           </Button>
