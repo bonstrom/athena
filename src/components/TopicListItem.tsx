@@ -11,13 +11,12 @@ import {
   DialogTitle,
   Button,
   Box,
-  Tooltip,
   Typography,
 } from '@mui/material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useUiStore } from '../store/UiStore';
 import { useAuthStore } from '../store/AuthStore';
-import { JSX, useState, useEffect, useRef } from 'react';
+import { JSX, useState } from 'react';
 import { useTopicStore } from '../store/TopicStore';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Check';
@@ -42,38 +41,6 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(topic.name);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [tokenCount, setTokenCount] = useState<number | null>(null);
-  const [totalCost, setTotalCost] = useState<number | null>(null);
-  const [isLoadingStats, setIsLoadingStats] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
-  const [tooltipOpen, setTooltipOpen] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    setTokenCount(null);
-    setTotalCost(null);
-  }, [topic.activeForkId, topic.updatedOn, topic.maxContextMessages]);
-
-  useEffect(() => {
-    if (isHovering && (tokenCount === null || totalCost === null) && !isLoadingStats) {
-      const fetchStats = async (): Promise<void> => {
-        setIsLoadingStats(true);
-        try {
-          const [count, cost] = await Promise.all([
-            useTopicStore.getState().getTopicTokenCount(topic.id),
-            useTopicStore.getState().getTopicTotalCost(topic.id),
-          ]);
-          setTokenCount(count);
-          setTotalCost(cost);
-        } catch (err) {
-          console.error('Failed to fetch topic stats', err);
-        } finally {
-          setIsLoadingStats(false);
-        }
-      };
-      void fetchStats();
-    }
-  }, [isHovering, tokenCount, totalCost, isLoadingStats, topic.id]);
 
   const save = async (): Promise<void> => {
     await renameTopic(topic.id, editedName);
@@ -95,22 +62,6 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
 
   const handleMenuClose = (): void => {
     setMenuAnchorEl(null);
-  };
-
-  const handleMouseEnter = (): void => {
-    setIsHovering(true);
-    timeoutRef.current = setTimeout(() => {
-      setTooltipOpen(true);
-    }, 700);
-  };
-
-  const handleMouseLeave = (): void => {
-    setIsHovering(false);
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    setTooltipOpen(false);
   };
 
   return (
@@ -149,84 +100,66 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
               '&:hover .morevert-btn': { opacity: 1 },
             }}
           >
-            <Tooltip
-              open={isMobile ? false : tooltipOpen}
-              disableTouchListener={isMobile}
-              title={
-                isLoadingStats || tokenCount === null || totalCost === null ? (
-                  'Calculating stats...'
-                ) : (
-                  <Box>
-                    <Box>Context: ~{tokenCount} tokens active</Box>
-                    <Box>Total Cost: {totalCost.toFixed(3)} SEK</Box>
-                  </Box>
-                )
-              }
-              placement="right"
+            <ListItemButton
+              selected={topic.id === topicId}
+              onClick={(): void => {
+                if (isMobile) closeDrawer();
+                void navigate(`/chat/${topic.id}`);
+              }}
+              sx={{
+                flexGrow: 1,
+                minHeight: 40,
+                borderRadius: 2,
+                mx: 1,
+                '&.Mui-selected': {
+                  boxShadow: (theme) => `inset 3px 0 0 ${theme.palette.primary.main}`,
+                },
+              }}
             >
-              <ListItemButton
-                selected={topic.id === topicId}
-                onMouseEnter={handleMouseEnter}
-                onMouseLeave={handleMouseLeave}
-                onClick={(): void => {
-                  if (isMobile) closeDrawer();
-                  void navigate(`/chat/${topic.id}`);
-                }}
-                sx={{
-                  flexGrow: 1,
-                  minHeight: 40,
-                  borderRadius: 2,
-                  mx: 1,
-                  '&.Mui-selected': {
-                    boxShadow: (theme) => `inset 3px 0 0 ${theme.palette.primary.main}`,
+              <ListItemText
+                primary={
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <Box
+                      component="span"
+                      sx={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {topic.name || topic.id}
+                    </Box>
+                    {(topic.forks?.length ?? 0) > 1 && (
+                      <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 'auto', flexShrink: 0 }}>
+                        <AltRouteIcon
+                          sx={{
+                            fontSize: '0.85rem',
+                            mr: 0.3,
+                            transform: 'rotate(90deg)',
+                          }}
+                        />
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            fontSize: `${Math.max(11, chatFontSize * 0.7)}px`,
+                            fontWeight: 'bold',
+                            lineHeight: 1,
+                          }}
+                        >
+                          {(topic.forks?.length ?? 1) - 1}
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+                }
+                slotProps={{
+                  primary: {
+                    noWrap: false, // Changed to false because we wrap the name in a box with ellipsis
+                    fontSize: `${Math.max(12, chatFontSize * 0.8)}px`,
                   },
                 }}
-              >
-                <ListItemText
-                  primary={
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <Box
-                        component="span"
-                        sx={{
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {topic.name || topic.id}
-                      </Box>
-                      {(topic.forks?.length ?? 0) > 1 && (
-                        <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 'auto', flexShrink: 0 }}>
-                          <AltRouteIcon
-                            sx={{
-                              fontSize: '0.85rem',
-                              mr: 0.3,
-                              transform: 'rotate(90deg)',
-                            }}
-                          />
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              fontSize: `${Math.max(11, chatFontSize * 0.7)}px`,
-                              fontWeight: 'bold',
-                              lineHeight: 1,
-                            }}
-                          >
-                            {(topic.forks?.length ?? 1) - 1}
-                          </Typography>
-                        </Box>
-                      )}
-                    </Box>
-                  }
-                  slotProps={{
-                    primary: {
-                      noWrap: false, // Changed to false because we wrap the name in a box with ellipsis
-                      fontSize: `${Math.max(12, chatFontSize * 0.8)}px`,
-                    },
-                  }}
-                />
-              </ListItemButton>
-            </Tooltip>
+              />
+            </ListItemButton>
 
             <IconButton
               className="morevert-btn"

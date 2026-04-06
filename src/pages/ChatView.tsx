@@ -21,7 +21,7 @@ const ChatView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const topic = useTopicStore((state) => state.topics.find((t) => t.id === displayTopicId));
-  const maxContextMessages = topic?.maxContextMessages ?? 10;
+  const maxContextMessages = topic?.maxContextMessages ?? 6;
 
   const messages = displayTopicId ? (messagesByTopic[displayTopicId] ?? []) : [];
 

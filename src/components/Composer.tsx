@@ -670,11 +670,11 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           <Box sx={{ px: 3, py: 1 }}>
             <Box display="flex" justifyContent="space-between" mb={1}>
               <Typography variant="caption" color="text.secondary">
-                Recent messages: {localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 10}
+                Recent messages: {localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 6}
               </Typography>
             </Box>
             <Slider
-              value={localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 10}
+              value={localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 6}
               min={1}
               max={50}
               step={1}

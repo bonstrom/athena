@@ -118,13 +118,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       entries.push({ message: { role: 'system', content: customInstructions }, sourceLabel: 'Custom Instructions' });
     }
 
-    // System: Scratchpad rules
+    // System: Scratchpad rules + content (shown as two entries for clarity in the inspector)
     const rawScratchpadRules = useAuthStore.getState().scratchpadRules.replace('{{SCRATCHPAD_LIMIT}}', String(SCRATCHPAD_LIMIT));
-    const scratchpadRulesWithContent = `${rawScratchpadRules}\n\n[Current Scratchpad Content]:\n${topic?.scratchpad ?? '(Empty)'}`;
-    const scratchpadContent = selectedModel.supportsTools
-      ? scratchpadRulesWithContent
-      : `${scratchpadRulesWithContent}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`;
-    entries.push({ message: { role: 'system', content: scratchpadContent }, sourceLabel: 'Scratchpad Rules' });
+    const scratchpadRulesOnly = selectedModel.supportsTools
+      ? rawScratchpadRules
+      : `${rawScratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`;
+    entries.push({ message: { role: 'system', content: scratchpadRulesOnly }, sourceLabel: 'Scratchpad Rules' });
+    entries.push({ message: { role: 'system', content: topic?.scratchpad ?? '(Empty)' }, sourceLabel: 'Scratchpad Content' });
 
     // System: Web search instructions
     if (webSearchEnabled && selectedModel.provider === 'moonshot') {
