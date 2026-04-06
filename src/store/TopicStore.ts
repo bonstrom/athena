@@ -4,8 +4,11 @@ import { encode } from 'gpt-tokenizer';
 import { athenaDb, Message, Topic } from '../database/AthenaDb';
 import { useAuthStore } from './AuthStore';
 import { askLlm } from '../services/llmService';
+import { embeddingService } from '../services/embeddingService';
 import { getDefaultTopicNameModel } from '../components/ModelSelector';
 import { SCRATCHPAD_LIMIT } from '../constants';
+
+const RAG_TOP_K = 5;
 
 interface TopicState {
   topics: Topic[];
@@ -21,7 +24,7 @@ interface TopicState {
   addTopic: (topic: Topic) => void;
   generateTopicName(topicId: string, userMessage: string): Promise<void>;
   deleteTopic: (id: string) => Promise<void>;
-  getTopicContext(topicId: string, excludeAfterId?: string): Promise<Message[]>;
+  getTopicContext(topicId: string, excludeAfterId?: string, userQuery?: string): Promise<Message[]>;
   updateTopicScratchpad: (id: string, scratchpad: string) => Promise<void>;
   forkTopic: (topicId: string, messageId: string) => Promise<void>;
   switchFork: (topicId: string, forkId: string) => Promise<void>;
@@ -115,7 +118,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     }
   },
 
-  async getTopicContext(topicId: string, excludeAfterId?: string): Promise<Message[]> {
+  async getTopicContext(topicId: string, excludeAfterId?: string, userQuery?: string): Promise<Message[]> {
     const topic = get().topics.find((t) => t.id === topicId);
     if (!topic) return [];
 
@@ -180,8 +183,31 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
     const combined = [...pinned, ...recent, ...aiNotes];
     const unique = Array.from(new Map(combined.map((m) => [m.id, m])).values());
+    const base = unique.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
-    return unique.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+    // RAG: inject semantically similar messages from outside the current window
+    const ragEnabled = useAuthStore.getState().ragEnabled;
+    if (ragEnabled && userQuery && embeddingService.isReady) {
+      const includedIds = new Set(base.map((m) => m.id));
+      const candidates = activeSequence.filter(
+        (m) => !includedIds.has(m.id) && (m.type === 'user' || m.type === 'assistant') && m.embedding && m.embedding.length > 0,
+      );
+
+      try {
+        const retrieved = await embeddingService.searchSimilarMessages(userQuery, candidates, RAG_TOP_K);
+        const tagged = retrieved.map((m) => ({
+          ...m,
+          content: `[Context from earlier in conversation]\n${m.content}`,
+        }));
+        const merged = [...base, ...tagged];
+        const deduped = Array.from(new Map(merged.map((m) => [m.id, m])).values());
+        return deduped.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+      } catch (err) {
+        console.warn('RAG retrieval failed, falling back to base context:', err);
+      }
+    }
+
+    return base;
   },
 
   generateTopicName: async (topicId: string, userMessage: string): Promise<void> => {

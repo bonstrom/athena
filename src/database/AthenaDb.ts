@@ -1,4 +1,4 @@
-import Dexie, { Table } from "dexie";
+import Dexie, { Table } from 'dexie';
 
 class AthenaDatabase extends Dexie {
   topics!: Table<Topic, string>;
@@ -7,32 +7,32 @@ class AthenaDatabase extends Dexie {
   userSettings!: Table<UserSetting, string>;
 
   constructor() {
-    super("AthenaDatabase");
+    super('AthenaDatabase');
 
     this.version(1).stores({
-      topics: "id, userId, name, createdOn, updatedOn, isDeleted",
-      messages: "id, topicId, type, created, isDeleted, includeInContext",
-      usages: "id, messageId",
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted',
+      messages: 'id, topicId, type, created, isDeleted, includeInContext',
+      usages: 'id, messageId',
     });
 
     this.version(2)
       .stores({
-        topics: "id, userId, name, createdOn, updatedOn, isDeleted, activeForkId",
-        messages: "id, topicId, forkId, type, created, isDeleted, includeInContext",
+        topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId',
+        messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext',
       })
       .upgrade(async (trans) => {
-        const DEFAULT_FORK_ID = "main";
+        const DEFAULT_FORK_ID = 'main';
 
         // Migrate topics
         await trans
-          .table("topics")
+          .table('topics')
           .toCollection()
           .modify((topic: Topic) => {
             if (!topic.forks) {
               topic.forks = [
                 {
                   id: DEFAULT_FORK_ID,
-                  name: "Main",
+                  name: 'Main',
                   createdOn: topic.createdOn,
                 },
               ];
@@ -42,7 +42,7 @@ class AthenaDatabase extends Dexie {
 
         // Migrate messages
         await trans
-          .table("messages")
+          .table('messages')
           .toCollection()
           .modify((message: Message) => {
             if (!message.forkId) {
@@ -54,21 +54,21 @@ class AthenaDatabase extends Dexie {
     // Version 3 was never shipped; this stub ensures a clean upgrade path
     // for any database that somehow landed on schema version 3.
     this.version(3).stores({
-      topics: "id, userId, name, createdOn, updatedOn, isDeleted, activeForkId",
-      messages: "id, topicId, forkId, type, created, isDeleted, includeInContext",
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext',
     });
 
     this.version(4).stores({
-      topics: "id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages",
-      messages: "id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId",
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
     });
 
     this.version(5)
       .stores({
-        messages: "id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId",
+        messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
       })
       .upgrade(async (trans) => {
-        const allMessages = (await trans.table("messages").toArray()) as Message[];
+        const allMessages = (await trans.table('messages').toArray()) as Message[];
 
         // Sort by topic and created time
         const sorted = allMessages.sort((a, b) => {
@@ -80,9 +80,9 @@ class AthenaDatabase extends Dexie {
         const lastUserMessageByTopic = new Map<string, string>();
 
         for (const m of sorted) {
-          if (m.type === "user") {
+          if (m.type === 'user') {
             lastUserMessageByTopic.set(m.topicId, m.id);
-          } else if (m.type === "assistant" && !m.parentMessageId) {
+          } else if (m.type === 'assistant' && !m.parentMessageId) {
             const parentId = lastUserMessageByTopic.get(m.topicId);
             if (parentId) {
               updates.push({ id: m.id, parentMessageId: parentId });
@@ -91,20 +91,28 @@ class AthenaDatabase extends Dexie {
         }
 
         for (const update of updates) {
-          await trans.table("messages").update(update.id, { parentMessageId: update.parentMessageId });
+          await trans.table('messages').update(update.id, { parentMessageId: update.parentMessageId });
         }
       });
 
     this.version(6).stores({
-      topics: "id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages",
-      messages: "id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId",
-      predefinedPrompts: "id, name",
-      userSettings: "id",
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
+    });
+
+    // Version 7: add embedding field to messages (no new index needed)
+    this.version(7).stores({
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
     });
   }
 }
 
-export type MessageType = "user" | "assistant" | "system" | "aiNote";
+export type MessageType = 'user' | 'assistant' | 'system' | 'aiNote';
 
 export interface Attachment {
   id: string;
@@ -152,6 +160,7 @@ export interface Message {
   parentMessageId?: string;
   activeResponseId?: string;
   attachments?: Attachment[];
+  embedding?: number[] | null;
 }
 
 export interface Topic {

@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route } from 'react-router-dom';
 import ChatLayout from './components/ChatLayout';
 import { GlobalErrorSnackbar } from './components/GlobalErrorSnackbar';
 import { useAutoBackup } from './hooks/useAutoBackup';
+import { useEmbeddingBackfill } from './hooks/useEmbeddingBackfill';
 import { useAuthStore } from './store/AuthStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -13,6 +14,7 @@ const ChatView = React.lazy(() => import('./pages/ChatView'));
 const App: React.FC = () => {
   const { backupInterval } = useAuthStore();
   useAutoBackup(backupInterval); // Run auto-backup based on user preference
+  useEmbeddingBackfill(); // Backfill message embeddings for RAG
 
   return (
     <ErrorBoundary>

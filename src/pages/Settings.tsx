@@ -66,6 +66,8 @@ const Settings: React.FC = () => {
     setTopicPreloadCount,
     messageTruncateChars,
     setMessageTruncateChars,
+    ragEnabled,
+    setRagEnabled,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState('');
@@ -464,6 +466,18 @@ const Settings: React.FC = () => {
               <MenuItem value={4000}>Maximum (4000 characters)</MenuItem>
             </Select>
           </FormControl>
+          <FormControlLabel
+            control={<Switch checked={ragEnabled} onChange={(e): void => setRagEnabled(e.target.checked)} size="small" />}
+            label={
+              <Box>
+                <Typography variant="body2">Semantic Search (RAG)</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Retrieves relevant older messages using a 23MB local model. Disable on slower devices.
+                </Typography>
+              </Box>
+            }
+            sx={{ mt: 1, alignItems: 'flex-start' }}
+          />
         </Box>
 
         {/* OpenAI Section */}

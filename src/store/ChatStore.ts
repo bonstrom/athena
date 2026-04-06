@@ -9,6 +9,7 @@ import { athenaDb } from '../database/AthenaDb';
 import { useNotificationStore } from './NotificationStore';
 import { BackupService } from '../services/backupService';
 import { useAuthStore } from './AuthStore';
+import { embeddingService } from '../services/embeddingService';
 
 import { SCRATCHPAD_LIMIT } from '../constants';
 
@@ -18,6 +19,7 @@ export interface ContextEntry {
   messageId?: string;
   messageType?: string;
   isConversationMessage?: boolean;
+  isRagRetrieved?: boolean;
 }
 
 interface ChatStore {
@@ -109,7 +111,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const topicStoreState = useTopicStore.getState();
     const topic = topicStoreState.topics.find((t) => t.id === topicId);
 
-    const existingContext = await topicStoreState.getTopicContext(topicId);
+    const existingContext = await topicStoreState.getTopicContext(topicId, undefined, userMessagePreview?.trim());
     const entries: ContextEntry[] = [];
 
     // System: Custom instructions (prepended first, same as buildPayload in llmService)
@@ -151,9 +153,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Conversation messages
     for (const m of existingContext) {
       const role: LlmMessage['role'] = m.type === 'user' ? 'user' : m.type === 'assistant' ? 'assistant' : 'system';
+      const RAG_PREFIX = '[Context from earlier in conversation]\n';
+      const isRag = m.content.startsWith(RAG_PREFIX);
       let sourceLabel: string;
       if (m.type === 'aiNote') {
         sourceLabel = 'AI Note';
+      } else if (isRag) {
+        sourceLabel = `RAG Retrieved ${m.type === 'user' ? 'User' : 'Assistant'} Message`;
       } else if (m.includeInContext) {
         sourceLabel = `Pinned ${m.type === 'user' ? 'User' : 'Assistant'} Message`;
       } else {
@@ -165,6 +171,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         messageId: m.id,
         messageType: m.type,
         isConversationMessage: m.type === 'user' || m.type === 'assistant',
+        isRagRetrieved: isRag,
       });
     }
 
@@ -265,6 +272,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (existing) return;
 
     await athenaDb.messages.add(message);
+
+    // Fire-and-forget embedding
+    if (embeddingService.isReady && message.content.trim()) {
+      void embeddingService.generateEmbedding(message.content).then((vector) => athenaDb.messages.update(id, { embedding: vector }));
+    }
 
     set((state) => {
       const existing = state.messagesByTopic[topicId];
@@ -393,7 +405,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     // 2. Build Context
-    const existingContext = await topicStoreState.getTopicContext(topicId, isRetry ? messageId : undefined);
+    const existingContext = await topicStoreState.getTopicContext(topicId, isRetry ? messageId : undefined, content.trim());
 
     const llmContext: LlmMessage[] = existingContext.map((m) => {
       const role = m.type === 'user' ? 'user' : m.type === 'assistant' ? 'assistant' : 'system';
@@ -488,6 +500,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await athenaDb.messages.add(assistantMessage);
         await athenaDb.messages.update(userMessage.id, { activeResponseId: assistantId });
       });
+
+      // Fire-and-forget embedding for the new user message (not a retry)
+      if (!isRetry && embeddingService.isReady && userMessage.content.trim()) {
+        void embeddingService
+          .generateEmbedding(userMessage.content)
+          .then((vector) => athenaDb.messages.update(userMessage.id, { embedding: vector }));
+      }
 
       // Update state once for both messages
       set((state) => {
@@ -594,6 +613,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await athenaDb.messages.update(userMessage.id, userPatch);
         await athenaDb.messages.update(assistantId, assistantPatch);
       });
+
+      // Fire-and-forget embedding for the finalized assistant response
+      if (embeddingService.isReady && assistantPatch.content.trim()) {
+        void embeddingService
+          .generateEmbedding(assistantPatch.content)
+          .then((vector) => athenaDb.messages.update(assistantId, { embedding: vector }));
+      }
 
       // Update state in one go
       set((state) => ({

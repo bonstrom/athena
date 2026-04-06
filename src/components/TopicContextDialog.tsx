@@ -82,7 +82,8 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
     const conversation = entries.filter((e) => e.isConversationMessage).length;
     const aiNotes = entries.filter((e) => e.messageType === 'aiNote').length;
     const pinned = entries.filter((e) => e.isConversationMessage && e.sourceLabel.startsWith('Pinned')).length;
-    return { system, conversation, aiNotes, pinned };
+    const rag = entries.filter((e) => e.isRagRetrieved).length;
+    return { system, conversation, aiNotes, pinned, rag };
   }, [entries]);
 
   const togglePin = async (entry: ContextEntry): Promise<void> => {
@@ -168,6 +169,9 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
             {counts.aiNotes > 0 && (
               <Chip label={`${counts.aiNotes} AI notes`} size="small" color="warning" variant="outlined" sx={{ fontSize: '0.7rem' }} />
             )}
+            {counts.rag > 0 && (
+              <Chip label={`${counts.rag} RAG retrieved`} size="small" color="success" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+            )}
           </Stack>
         </Box>
       )}
@@ -206,6 +210,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
               const globalIndex = entries.indexOf(entry);
               const isExpanded = expandedIds.has(globalIndex);
               const isPinned = entry.isConversationMessage && entry.sourceLabel.startsWith('Pinned');
+              const isRag = entry.isRagRetrieved === true;
               const isPreview = entry.sourceLabel.startsWith('Current User Message');
               const rawContent = typeof entry.message.content === 'string' ? entry.message.content : '';
               const isTruncated = rawContent.length > 300;
@@ -219,9 +224,10 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
                       p: 2,
                       borderRadius: 2,
                       border: (theme): string =>
-                        `1px solid ${isPreview ? theme.palette.info.main : isPinned ? theme.palette.primary.main : theme.palette.divider}`,
+                        `1px solid ${isPreview ? theme.palette.info.main : isRag ? theme.palette.success.main : isPinned ? theme.palette.primary.main : theme.palette.divider}`,
                       bgcolor: (theme): string => {
                         if (isPreview) return theme.palette.mode === 'dark' ? 'rgba(33,150,243,0.06)' : 'rgba(33,150,243,0.04)';
+                        if (isRag) return theme.palette.mode === 'dark' ? 'rgba(76,175,80,0.07)' : 'rgba(76,175,80,0.05)';
                         if (entry.message.role === 'system') return theme.palette.mode === 'dark' ? 'rgba(244,67,54,0.05)' : 'rgba(244,67,54,0.03)';
                         if (entry.messageType === 'aiNote') return theme.palette.mode === 'dark' ? 'rgba(255,167,38,0.07)' : 'rgba(255,167,38,0.05)';
                         if (entry.message.role === 'assistant') return theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)';
@@ -229,6 +235,9 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
                       },
                       ...(isPinned && {
                         boxShadow: (theme): string => `0 0 0 1px ${theme.palette.primary.main}`,
+                      }),
+                      ...(isRag && {
+                        boxShadow: (theme): string => `0 0 0 1px ${theme.palette.success.main}`,
                       }),
                     }}
                   >

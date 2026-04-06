@@ -25,6 +25,8 @@ interface AuthState {
   llmModelDownloadStatus: Record<string, 'not_downloaded' | 'downloading' | 'downloaded' | undefined>;
   topicPreloadCount: number;
   messageTruncateChars: number;
+  ragEnabled: boolean;
+  setRagEnabled: (enabled: boolean) => void;
   setLlmSuggestionEnabled: (enabled: boolean) => void;
   setReplyPredictionEnabled: (enabled: boolean) => void;
   setReplyPredictionModel: (model: string) => void;
@@ -74,6 +76,7 @@ export const useAuthStore = create<AuthState>((set) => {
   >;
   const storedTopicPreloadCount = Number(localStorage.getItem('topicPreloadCount') ?? '5');
   const storedMessageTruncateChars = Number(localStorage.getItem('messageTruncateChars') ?? '500');
+  const storedRagEnabled = localStorage.getItem('ragEnabled') !== 'false'; // default true
 
   return {
     openAiKey: storedOpenAiKey,
@@ -96,6 +99,7 @@ export const useAuthStore = create<AuthState>((set) => {
     llmModelDownloadStatus: storedLlmModelDownloadStatus,
     topicPreloadCount: storedTopicPreloadCount,
     messageTruncateChars: storedMessageTruncateChars,
+    ragEnabled: storedRagEnabled,
     clearAuth: (): void => {
       localStorage.removeItem('openAiKey');
       localStorage.removeItem('deepSeekKey');
@@ -155,6 +159,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setMessageTruncateChars: (chars: number): void => {
       localStorage.setItem('messageTruncateChars', String(chars));
       set({ messageTruncateChars: chars });
+    },
+    setRagEnabled: (enabled: boolean): void => {
+      localStorage.setItem('ragEnabled', String(enabled));
+      set({ ragEnabled: enabled });
     },
     setOpenAiKey: (key: string): void => {
       localStorage.setItem('openAiKey', SecurityUtils.encode(key));
