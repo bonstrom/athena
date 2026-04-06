@@ -26,7 +26,9 @@ interface AuthState {
   topicPreloadCount: number;
   messageTruncateChars: number;
   ragEnabled: boolean;
+  maxContextTokens: number;
   setRagEnabled: (enabled: boolean) => void;
+  setMaxContextTokens: (tokens: number) => void;
   setLlmSuggestionEnabled: (enabled: boolean) => void;
   setReplyPredictionEnabled: (enabled: boolean) => void;
   setReplyPredictionModel: (model: string) => void;
@@ -77,6 +79,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedTopicPreloadCount = Number(localStorage.getItem('topicPreloadCount') ?? '5');
   const storedMessageTruncateChars = Number(localStorage.getItem('messageTruncateChars') ?? '500');
   const storedRagEnabled = localStorage.getItem('ragEnabled') !== 'false'; // default true
+  const storedMaxContextTokens = Number(localStorage.getItem('maxContextTokens') ?? '16000');
 
   return {
     openAiKey: storedOpenAiKey,
@@ -100,6 +103,7 @@ export const useAuthStore = create<AuthState>((set) => {
     topicPreloadCount: storedTopicPreloadCount,
     messageTruncateChars: storedMessageTruncateChars,
     ragEnabled: storedRagEnabled,
+    maxContextTokens: storedMaxContextTokens,
     clearAuth: (): void => {
       localStorage.removeItem('openAiKey');
       localStorage.removeItem('deepSeekKey');
@@ -163,6 +167,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setRagEnabled: (enabled: boolean): void => {
       localStorage.setItem('ragEnabled', String(enabled));
       set({ ragEnabled: enabled });
+    },
+    setMaxContextTokens: (tokens: number): void => {
+      localStorage.setItem('maxContextTokens', String(tokens));
+      set({ maxContextTokens: tokens });
     },
     setOpenAiKey: (key: string): void => {
       localStorage.setItem('openAiKey', SecurityUtils.encode(key));

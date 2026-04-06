@@ -85,10 +85,7 @@ function buildPayload(
   const auth = useAuthStore.getState();
   const customInstructions = auth.customInstructions.trim();
 
-  const finalMessages = filtered.map((msg) => {
-    const m = { ...msg };
-    return m;
-  });
+  const finalMessages = filtered.map((msg) => ({ ...msg }));
 
   if (customInstructions) {
     if (finalMessages.length > 0 && finalMessages[0].role === 'system') {
@@ -99,6 +96,19 @@ function buildPayload(
     } else {
       finalMessages.unshift({ role: 'system', content: customInstructions });
     }
+  }
+
+  // Safety cap: drop oldest non-system messages until tokens fit within the user's max context budget
+  // Also respects the hard model context window (whichever is smaller)
+  const userTokenBudget = useAuthStore.getState().maxContextTokens;
+  const tokenBudget = Math.min(userTokenBudget, Math.floor(model.contextWindow * 0.9));
+  while (finalMessages.length > 1) {
+    const { promptTokens } = estimateTokens(finalMessages);
+    if (promptTokens <= tokenBudget) break;
+    // Find and remove the oldest non-system message
+    const oldestNonSystemIndex = finalMessages.findIndex((m) => m.role !== 'system');
+    if (oldestNonSystemIndex === -1) break; // all system messages — nothing safe to drop
+    finalMessages.splice(oldestNonSystemIndex, 1);
   }
 
   const finalTools = [...(tools ?? [])];

@@ -68,6 +68,8 @@ const Settings: React.FC = () => {
     setMessageTruncateChars,
     ragEnabled,
     setRagEnabled,
+    maxContextTokens,
+    setMaxContextTokens,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState('');
@@ -478,6 +480,16 @@ const Settings: React.FC = () => {
             }
             sx={{ mt: 1, alignItems: 'flex-start' }}
           />
+          <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+            <InputLabel>Max Context Tokens</InputLabel>
+            <Select value={maxContextTokens} label="Max Context Tokens" onChange={(e): void => setMaxContextTokens(e.target.value as number)}>
+              <MenuItem value={4000}>4k — Minimal (cheap)</MenuItem>
+              <MenuItem value={8000}>8k — Compact</MenuItem>
+              <MenuItem value={16000}>16k — Default</MenuItem>
+              <MenuItem value={32000}>32k — Large</MenuItem>
+              <MenuItem value={64000}>64k — Maximum</MenuItem>
+            </Select>
+          </FormControl>
         </Box>
 
         {/* OpenAI Section */}

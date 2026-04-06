@@ -27,6 +27,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useChatStore, ContextEntry } from '../store/ChatStore';
 import { estimateTokens } from '../services/estimateTokens';
 import { useNotificationStore } from '../store/NotificationStore';
+import { useAuthStore } from '../store/AuthStore';
 
 interface TopicContextDialogProps {
   open: boolean;
@@ -43,6 +44,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
 
   const { buildFullContext, updateMessageContext } = useChatStore();
   const { addNotification } = useNotificationStore();
+  const { maxContextTokens } = useAuthStore();
 
   const reload = (): void => {
     if (!topicId) return;
@@ -67,6 +69,23 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
     if (entries.length === 0) return 0;
     return estimateTokens(entries.map((e) => e.message)).promptTokens;
   }, [entries]);
+
+  // Simulate the same truncation logic as buildPayload to identify which entries would be dropped
+  const droppedIds = useMemo(() => {
+    if (tokenCount <= maxContextTokens) return new Set<string | undefined>();
+    // Walk from oldest non-system entry forward, marking drops until under budget
+    const dropped = new Set<string | undefined>();
+    const working = entries.map((e) => e.message);
+    while (working.length > 1 && estimateTokens(working).promptTokens > maxContextTokens) {
+      const idx = working.findIndex((m) => m.role !== 'system');
+      if (idx === -1) break;
+      // Map back to the entry to get its messageId/index
+      const droppedEntry = entries.find((e) => e.message === working[idx]);
+      dropped.add(droppedEntry?.messageId ?? String(entries.indexOf(droppedEntry!)));
+      working.splice(idx, 1);
+    }
+    return dropped;
+  }, [entries, tokenCount, maxContextTokens]);
 
   const filteredEntries = useMemo(() => {
     if (!searchQuery.trim()) return entries;
@@ -151,7 +170,12 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
           <span>Context Inspector</span>
           {!loading && (
             <Stack direction="row" spacing={1} alignItems="center">
-              <Chip label={`~${tokenCount.toLocaleString()} tokens`} size="small" variant="outlined" color="info" />
+              <Chip
+                label={`~${tokenCount.toLocaleString()} tokens`}
+                size="small"
+                variant="outlined"
+                color={tokenCount > maxContextTokens ? 'error' : tokenCount > maxContextTokens * 0.8 ? 'warning' : 'info'}
+              />
               <Chip label={`${entries.length} messages`} size="small" variant="outlined" />
             </Stack>
           )}
@@ -214,9 +238,11 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
               const isPreview = entry.sourceLabel.startsWith('Current User Message');
               const rawContent = typeof entry.message.content === 'string' ? entry.message.content : '';
               const isTruncated = rawContent.length > 300;
+              const dropKey = entry.messageId ?? String(globalIndex);
+              const willBeDropped = droppedIds.has(dropKey);
 
               return (
-                <ListItem key={index} disableGutters sx={{ mb: 1.5 }}>
+                <ListItem key={index} disableGutters sx={{ mb: 1.5, opacity: willBeDropped ? 0.45 : 1 }}>
                   <Paper
                     elevation={0}
                     sx={{
@@ -252,6 +278,9 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
                         <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
                           {entry.sourceLabel}
                         </Typography>
+                        {willBeDropped && (
+                          <Chip label="will be dropped" size="small" color="error" variant="outlined" sx={{ height: 16, fontSize: '0.65rem' }} />
+                        )}
                       </Stack>
 
                       {entry.isConversationMessage && entry.messageId && (
