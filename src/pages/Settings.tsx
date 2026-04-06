@@ -21,7 +21,7 @@ import { BackupService } from '../services/backupService';
 import { useBackupStore } from '../store/BackupStore';
 import { llmSuggestionService, LlmProgress } from '../services/llmSuggestionService';
 import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
-import { USD_TO_SEK } from '../constants';
+import { USD_TO_SEK, DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from '../constants';
 import ThemeSelector from '../components/ThemeSelector';
 import ImportDialog from '../components/ImportDialog';
 import { PredefinedPrompt } from '../database/AthenaDb';
@@ -36,6 +36,7 @@ const Settings: React.FC = () => {
     userName,
     backupInterval,
     customInstructions,
+    scratchpadRules,
     chatWidth,
     chatFontSize,
     setOpenAiKey,
@@ -45,6 +46,7 @@ const Settings: React.FC = () => {
     setUserName,
     setBackupInterval,
     setCustomInstructions,
+    setScratchpadRules,
     setChatWidth,
     setChatFontSize,
     predefinedPrompts,
@@ -75,6 +77,7 @@ const Settings: React.FC = () => {
   const status = llmModelDownloadStatus[currentModelId] ?? 'not_downloaded';
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
+  const [scratchpadRulesInput, setScratchpadRulesInput] = useState(scratchpadRules);
 
   const [isUpdatingOpenAi, setIsUpdatingOpenAi] = useState(!openAiKey);
   const [isUpdatingDeepSeek, setIsUpdatingDeepSeek] = useState(!deepSeekKey);
@@ -133,7 +136,8 @@ const Settings: React.FC = () => {
   useEffect(() => {
     setUserNameInput(userName);
     setCustomInstructionsInput(customInstructions);
-  }, [userName, customInstructions]);
+    setScratchpadRulesInput(scratchpadRules);
+  }, [userName, customInstructions, scratchpadRules]);
 
   useEffect(() => {
     setIsUpdatingOpenAi(!openAiKey);
@@ -200,6 +204,7 @@ const Settings: React.FC = () => {
     }
     setUserName(userNameInput.trim());
     setCustomInstructions(customInstructionsInput.trim());
+    setScratchpadRules(scratchpadRulesInput.trim() || DEFAULT_SCRATCHPAD_RULES);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
@@ -600,6 +605,23 @@ const Settings: React.FC = () => {
           sx={{ mb: 2 }}
           helperText="These instructions will be prepended to the system prompt for all new messages."
         />
+
+        <TextField
+          label="Scratchpad Rules (System Prompt)"
+          fullWidth
+          multiline
+          minRows={5}
+          maxRows={15}
+          value={scratchpadRulesInput}
+          onChange={(e): void => setScratchpadRulesInput(e.target.value)}
+          sx={{ mb: 1 }}
+          helperText={`Instructions sent to the LLM controlling how it uses its long-term memory scratchpad. Use {{SCRATCHPAD_LIMIT}} for the character limit (${SCRATCHPAD_LIMIT.toLocaleString()}). The current scratchpad content is always appended automatically.`}
+        />
+        <Box display="flex" justifyContent="flex-end" mb={2}>
+          <Button size="small" variant="text" color="inherit" onClick={(): void => setScratchpadRulesInput(DEFAULT_SCRATCHPAD_RULES)}>
+            Reset to default
+          </Button>
+        </Box>
 
         <Box display="flex" justifyContent="flex-end">
           <Button

@@ -717,8 +717,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           >
             <MenuBookOutlinedIcon fontSize="small" sx={{ mr: 2, color: 'text.secondary' }} />
             <ListItemText
-              primary="Edit Context"
-              secondary="Manage pinned messages"
+              primary="Inspect Context"
+              secondary="View the full LLM context payload"
               primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
               secondaryTypographyProps={{ variant: 'caption' }}
             />
@@ -743,7 +743,12 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         </Menu>
 
         {currentTopicId && showContextDialog && (
-          <TopicContextDialog open={showContextDialog} topicId={currentTopicId} onClose={(): void => setShowContextDialog(false)} />
+          <TopicContextDialog
+            open={showContextDialog}
+            topicId={currentTopicId}
+            onClose={(): void => setShowContextDialog(false)}
+            userMessagePreview={inputValue}
+          />
         )}
         {currentTopicId && showScratchpadDialog && (
           <ScratchpadDialog open={showScratchpadDialog} topicId={currentTopicId} onClose={(): void => setShowScratchpadDialog(false)} />

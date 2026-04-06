@@ -12,6 +12,14 @@ import { useAuthStore } from './AuthStore';
 
 import { SCRATCHPAD_LIMIT } from '../constants';
 
+export interface ContextEntry {
+  message: LlmMessage;
+  sourceLabel: string;
+  messageId?: string;
+  messageType?: string;
+  isConversationMessage?: boolean;
+}
+
 interface ChatStore {
   messagesByTopic: Record<string, Message[] | undefined>;
   currentTopicId: string | null;
@@ -34,6 +42,7 @@ interface ChatStore {
   updateMessages: (updates: { id: string; patch: Partial<Message> }[]) => Promise<void>;
   updateMessageStateOnly: (id: string, patch: Partial<Message>) => void;
   sendMessageStream: (content: string, topicId: string, messageId?: string, attachments?: Attachment[]) => Promise<void>;
+  buildFullContext: (topicId: string, userMessagePreview?: string) => Promise<ContextEntry[]>;
   setSelectedModel: (model: ChatModel) => void;
   updateMessageContext: (messageId: string, include: boolean) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
@@ -94,6 +103,81 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   setWebSearchEnabled: (value: boolean): void => set({ webSearchEnabled: value }),
+
+  buildFullContext: async (topicId: string, userMessagePreview?: string): Promise<ContextEntry[]> => {
+    const { selectedModel, webSearchEnabled } = get();
+    const topicStoreState = useTopicStore.getState();
+    const topic = topicStoreState.topics.find((t) => t.id === topicId);
+
+    const existingContext = await topicStoreState.getTopicContext(topicId);
+    const entries: ContextEntry[] = [];
+
+    // System: Custom instructions (prepended first, same as buildPayload in llmService)
+    const customInstructions = useAuthStore.getState().customInstructions.trim();
+    if (customInstructions) {
+      entries.push({ message: { role: 'system', content: customInstructions }, sourceLabel: 'Custom Instructions' });
+    }
+
+    // System: Scratchpad rules
+    const rawScratchpadRules = useAuthStore.getState().scratchpadRules.replace('{{SCRATCHPAD_LIMIT}}', String(SCRATCHPAD_LIMIT));
+    const scratchpadRulesWithContent = `${rawScratchpadRules}\n\n[Current Scratchpad Content]:\n${topic?.scratchpad ?? '(Empty)'}`;
+    const scratchpadContent = selectedModel.supportsTools
+      ? scratchpadRulesWithContent
+      : `${scratchpadRulesWithContent}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`;
+    entries.push({ message: { role: 'system', content: scratchpadContent }, sourceLabel: 'Scratchpad Rules' });
+
+    // System: Web search instructions
+    if (webSearchEnabled && selectedModel.provider === 'moonshot') {
+      entries.push({
+        message: {
+          role: 'system',
+          content:
+            "You have access to real-time internet search via the $web_search tool. Use it whenever you need up-to-date information or are unsure about recent events (like 'Vem vann Melodifestivalen 2024?').",
+        },
+        sourceLabel: 'Web Search Instructions',
+      });
+    }
+
+    // System: Predefined prompts
+    const selectedPromptIds = topic?.selectedPromptIds ?? [];
+    if (selectedPromptIds.length > 0) {
+      const allPrompts = useAuthStore.getState().predefinedPrompts;
+      const selectedPrompts = allPrompts.filter((p) => selectedPromptIds.includes(p.id));
+      for (const p of selectedPrompts) {
+        entries.push({ message: { role: 'system', content: p.content }, sourceLabel: `Predefined Prompt: ${p.name}` });
+      }
+    }
+
+    // Conversation messages
+    for (const m of existingContext) {
+      const role: LlmMessage['role'] = m.type === 'user' ? 'user' : m.type === 'assistant' ? 'assistant' : 'system';
+      let sourceLabel: string;
+      if (m.type === 'aiNote') {
+        sourceLabel = 'AI Note';
+      } else if (m.includeInContext) {
+        sourceLabel = `Pinned ${m.type === 'user' ? 'User' : 'Assistant'} Message`;
+      } else {
+        sourceLabel = `Recent ${m.type === 'user' ? 'User' : 'Assistant'} Message`;
+      }
+      entries.push({
+        message: { role, content: m.content, reasoning_content: m.reasoning },
+        sourceLabel,
+        messageId: m.id,
+        messageType: m.type,
+        isConversationMessage: m.type === 'user' || m.type === 'assistant',
+      });
+    }
+
+    // Current user message preview
+    if (userMessagePreview?.trim()) {
+      entries.push({
+        message: { role: 'user', content: userMessagePreview.trim() },
+        sourceLabel: 'Current User Message (Preview)',
+      });
+    }
+
+    return entries;
+  },
 
   setTemperature: (temp): void => set({ temperature: temp }),
   setSending: (value): void => set({ sending: value }),
@@ -330,15 +414,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
 
     const systems: LlmMessage[] = [];
-    const scratchpadRules = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). 
-
-**Rules for the Scratchpad:**
-* **What to store:** Only persistent, long-term facts (user preferences, ongoing goals, core character details, or established rules). 
-* **What NOT to store:** Transient conversation history, short-term tasks that were just completed, or immediate context (I already remember recent messages).
-* **Managing space:** If the scratchpad is getting full or contains outdated facts (e.g., a goal was completed, or a preference changed), use the \`replace\` action to rewrite the entire scratchpad, keeping only the currently relevant facts and discarding the dead ones.
-
-[Current Scratchpad Content]:
-${topic?.scratchpad ?? '(Empty)'}`;
+    const rawScratchpadRules = useAuthStore.getState().scratchpadRules.replace('{{SCRATCHPAD_LIMIT}}', String(SCRATCHPAD_LIMIT));
+    const scratchpadRules = `${rawScratchpadRules}\n\n[Current Scratchpad Content]:\n${topic?.scratchpad ?? '(Empty)'}`;
 
     if (selectedModel.supportsTools) {
       systems.push({ role: 'system', content: scratchpadRules });

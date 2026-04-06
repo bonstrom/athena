@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+﻿import React, { useEffect, useState, useMemo } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -14,144 +14,127 @@ import {
   Paper,
   TextField,
   InputAdornment,
-  FormControlLabel,
-  Switch,
-  Pagination,
   Stack,
   Chip,
+  Tooltip,
+  Divider,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import PushPinIcon from '@mui/icons-material/PushPin';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 
-import { useChatStore } from '../store/ChatStore';
-import { Message } from '../database/AthenaDb';
+import { useChatStore, ContextEntry } from '../store/ChatStore';
+import { estimateTokens } from '../services/estimateTokens';
 import { useNotificationStore } from '../store/NotificationStore';
-import { useTopicStore } from '../store/TopicStore';
 
 interface TopicContextDialogProps {
   open: boolean;
   topicId: string | null;
   onClose: () => void;
+  userMessagePreview?: string;
 }
 
-const ITEMS_PER_PAGE = 5;
-
-const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, onClose }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, onClose, userMessagePreview }) => {
+  const [entries, setEntries] = useState<ContextEntry[]>([]);
   const [loading, setLoading] = useState(false);
-
-  // New State for search and pagination
   const [searchQuery, setSearchQuery] = useState('');
-  const [showOnlyPinned, setShowOnlyPinned] = useState(false);
-  const [page, setPage] = useState(1);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
-  const { updateMessageContext } = useChatStore();
-
+  const { buildFullContext, updateMessageContext } = useChatStore();
   const { addNotification } = useNotificationStore();
 
-  useEffect(() => {
-    if (!open || !topicId) return;
-
-    let cancelled = false;
+  const reload = (): void => {
+    if (!topicId) return;
     setLoading(true);
-
-    useTopicStore
-      .getState()
-      .getTopicContext(topicId)
-      .then((contextMessages) => {
-        if (cancelled) return;
-        setMessages(contextMessages);
-        const pinned = contextMessages.filter((m) => m.includeInContext).map((m) => m.id);
-        setSelectedIds(new Set(pinned));
-      })
+    buildFullContext(topicId, userMessagePreview)
+      .then((result) => setEntries(result))
       .catch((err) => {
-        if (cancelled) return;
-        console.error('Failed to load context', err);
+        console.error('Failed to build context', err);
         const message = err instanceof Error ? err.message : String(err);
         addNotification('Failed to load context', message);
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .finally(() => setLoading(false));
+  };
 
-    return () => {
-      cancelled = true;
-    };
-  }, [addNotification, open, topicId]);
-
-  // Reset page when filters change
   useEffect(() => {
-    setPage(1);
-  }, [searchQuery, showOnlyPinned]);
+    if (!open || !topicId) return;
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, topicId, userMessagePreview]);
 
-  const toggleMessage = async (id: string): Promise<void> => {
-    const isSelected = selectedIds.has(id);
-    const newValue = !isSelected;
+  const tokenCount = useMemo(() => {
+    if (entries.length === 0) return 0;
+    return estimateTokens(entries.map((e) => e.message)).promptTokens;
+  }, [entries]);
 
-    try {
-      await updateMessageContext(id, newValue);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        if (newValue) {
-          next.add(id);
-        } else {
-          next.delete(id);
-        }
-        return next;
-      });
-    } catch (err) {
-      console.error('Failed to update context pin:', err);
-      const message = err instanceof Error ? err.message : String(err);
-      addNotification('Failed to update context pin', message);
-    }
-  };
-
-  const filteredMessages = useMemo(() => {
-    return messages.filter((msg) => {
-      // 1. Text Search Filter
-      const matchesSearch = msg.content.toLowerCase().includes(searchQuery.toLowerCase());
-
-      // 2. Pinned Filter
-      const matchesPinned = showOnlyPinned ? selectedIds.has(msg.id) : true;
-
-      return matchesSearch && matchesPinned;
+  const filteredEntries = useMemo(() => {
+    if (!searchQuery.trim()) return entries;
+    const q = searchQuery.toLowerCase();
+    return entries.filter((e) => {
+      const content = typeof e.message.content === 'string' ? e.message.content : '';
+      return content.toLowerCase().includes(q) || e.sourceLabel.toLowerCase().includes(q);
     });
-  }, [messages, searchQuery, showOnlyPinned, selectedIds]);
+  }, [entries, searchQuery]);
 
-  const pageCount = Math.ceil(filteredMessages.length / ITEMS_PER_PAGE);
-  const paginatedMessages = filteredMessages.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+  const counts = useMemo(() => {
+    const system = entries.filter((e) => e.message.role === 'system').length;
+    const conversation = entries.filter((e) => e.isConversationMessage).length;
+    const aiNotes = entries.filter((e) => e.messageType === 'aiNote').length;
+    const pinned = entries.filter((e) => e.isConversationMessage && e.sourceLabel.startsWith('Pinned')).length;
+    return { system, conversation, aiNotes, pinned };
+  }, [entries]);
 
-  const formatTime = (dateString: string): string => {
+  const togglePin = async (entry: ContextEntry): Promise<void> => {
+    if (!entry.messageId) return;
+    const isPinned = entry.sourceLabel.startsWith('Pinned');
     try {
-      return new Intl.DateTimeFormat('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      }).format(new Date(dateString));
-    } catch {
-      return '';
+      await updateMessageContext(entry.messageId, !isPinned);
+      reload();
+    } catch (err) {
+      console.error('Failed to update pin:', err);
+      const message = err instanceof Error ? err.message : String(err);
+      addNotification('Failed to update pin', message);
     }
   };
 
-  const getRoleLabel = (type: string): string => {
-    switch (type) {
-      case 'user':
-        return 'User';
-      case 'assistant':
-        return 'Assistant';
-      case 'aiNote':
-        return 'AI Note';
-      case 'system':
-        return 'System';
-      default:
-        return 'Unknown';
-    }
+  const toggleExpanded = (index: number): void => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
   };
 
-  // Prevent dialog from growing/shrinking abruptly by keeping a min-height for the content
+  const handleCopyJson = (): void => {
+    const payload = entries.map((e) => e.message);
+    navigator.clipboard.writeText(JSON.stringify(payload, null, 2)).catch(() => {
+      addNotification('Copy failed', 'Could not copy to clipboard.');
+    });
+  };
+
+  const getRoleColor = (role: string, messageType?: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
+    if (messageType === 'aiNote') return 'warning';
+    if (role === 'system') return 'error';
+    if (role === 'user') return 'primary';
+    return 'default';
+  };
+
+  const getContentPreview = (entry: ContextEntry, expanded: boolean): string => {
+    const raw = typeof entry.message.content === 'string' ? entry.message.content : '[attachment]';
+    if (expanded || raw.length <= 300) return raw;
+    return raw.slice(0, 300) + '...';
+  };
+
+  const formatRole = (role: string, messageType?: string): string => {
+    if (messageType === 'aiNote') return 'AI Note';
+    return role.charAt(0).toUpperCase() + role.slice(1);
+  };
+
   return (
     <Dialog
       open={open}
@@ -159,19 +142,41 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
       maxWidth="md"
       fullWidth
       PaperProps={{
-        sx: {
-          borderRadius: 3,
-          bgcolor: 'background.paper',
-          backgroundImage: 'none',
-        },
+        sx: { borderRadius: 3, bgcolor: 'background.paper', backgroundImage: 'none' },
       }}
     >
-      <DialogTitle sx={{ pb: 1, fontWeight: 'bold' }}>Edit Topic Context</DialogTitle>
+      <DialogTitle sx={{ pb: 1, fontWeight: 'bold' }}>
+        <Box display="flex" justifyContent="space-between" alignItems="center">
+          <span>Context Inspector</span>
+          {!loading && (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Chip label={`~${tokenCount.toLocaleString()} tokens`} size="small" variant="outlined" color="info" />
+              <Chip label={`${entries.length} messages`} size="small" variant="outlined" />
+            </Stack>
+          )}
+        </Box>
+      </DialogTitle>
 
-      <Box px={3} pb={2} display="flex" gap={2} alignItems="center" flexWrap="wrap">
+      {!loading && entries.length > 0 && (
+        <Box px={3} pb={1}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Chip label={`${counts.system} system`} size="small" color="error" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+            <Chip label={`${counts.conversation} conversation`} size="small" color="primary" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+            {counts.pinned > 0 && (
+              <Chip label={`${counts.pinned} pinned`} size="small" color="secondary" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+            )}
+            {counts.aiNotes > 0 && (
+              <Chip label={`${counts.aiNotes} AI notes`} size="small" color="warning" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+            )}
+          </Stack>
+        </Box>
+      )}
+
+      <Box px={3} pb={2} pt={1}>
         <TextField
           size="small"
-          placeholder="Search items..."
+          fullWidth
+          placeholder="Search content or source labels..."
           value={searchQuery}
           onChange={(e): void => setSearchQuery(e.target.value)}
           InputProps={{
@@ -181,99 +186,128 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
               </InputAdornment>
             ),
           }}
-          sx={{ flexGrow: 1, minWidth: 200 }}
-        />
-        <FormControlLabel
-          control={<Switch checked={showOnlyPinned} onChange={(e): void => setShowOnlyPinned(e.target.checked)} color="primary" />}
-          label="Show Pinned Only"
-          sx={{ whiteSpace: 'nowrap' }}
         />
       </Box>
 
-      <DialogContent dividers sx={{ minHeight: 400, px: { xs: 2, sm: 3 } }}>
+      <Divider />
+
+      <DialogContent sx={{ minHeight: 400, px: { xs: 2, sm: 3 } }}>
         {loading ? (
-          <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+          <Box display="flex" justifyContent="center" alignItems="center" height={300}>
             <CircularProgress />
           </Box>
-        ) : filteredMessages.length === 0 ? (
-          <Box display="flex" justifyContent="center" alignItems="center" height="100%" color="text.secondary">
-            <Typography>No messages match your criteria.</Typography>
+        ) : filteredEntries.length === 0 ? (
+          <Box display="flex" justifyContent="center" alignItems="center" height={200} color="text.secondary">
+            <Typography>No entries match your search.</Typography>
           </Box>
         ) : (
           <List disablePadding>
-            {paginatedMessages.map((msg) => (
-              <ListItem key={msg.id} disableGutters sx={{ mb: 2 }}>
-                <Paper
-                  elevation={0}
-                  sx={{
-                    position: 'relative',
-                    width: '100%',
-                    p: 2,
-                    borderRadius: 3,
-                    border: (theme): string => `1px solid ${theme.palette.divider}`,
-                    bgcolor: (theme): string => {
-                      if (msg.type === 'assistant') return theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)';
-                      if (msg.type === 'aiNote') return theme.palette.mode === 'dark' ? 'rgba(255, 167, 38, 0.05)' : 'rgba(255, 167, 38, 0.05)';
-                      if (msg.type === 'system') return theme.palette.mode === 'dark' ? 'rgba(244, 67, 54, 0.05)' : 'rgba(244, 67, 54, 0.05)';
-                      return 'transparent';
-                    },
-                    transition: 'border-color 0.2s, box-shadow 0.2s',
-                    ...(selectedIds.has(msg.id) && {
-                      borderColor: 'primary.main',
-                      boxShadow: (theme): string => `0 0 0 1px ${theme.palette.primary.main}`,
-                    }),
-                  }}
-                >
-                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Chip
-                        label={getRoleLabel(msg.type)}
-                        size="small"
-                        color={msg.type === 'user' ? 'primary' : msg.type === 'assistant' ? 'default' : msg.type === 'aiNote' ? 'warning' : 'error'}
-                        sx={{ height: 20, fontSize: '0.7rem', fontWeight: 'bold' }}
-                      />
-                      <Typography variant="caption" color="text.secondary">
-                        {formatTime(msg.created)}
-                      </Typography>
-                    </Stack>
+            {filteredEntries.map((entry, index) => {
+              const globalIndex = entries.indexOf(entry);
+              const isExpanded = expandedIds.has(globalIndex);
+              const isPinned = entry.isConversationMessage && entry.sourceLabel.startsWith('Pinned');
+              const isPreview = entry.sourceLabel.startsWith('Current User Message');
+              const rawContent = typeof entry.message.content === 'string' ? entry.message.content : '';
+              const isTruncated = rawContent.length > 300;
 
-                    <Checkbox
-                      icon={<PushPinOutlinedIcon />}
-                      checkedIcon={<PushPinIcon />}
-                      checked={selectedIds.has(msg.id)}
-                      onChange={(): void => {
-                        void toggleMessage(msg.id);
-                      }}
-                      tabIndex={-1}
-                      color="primary"
-                    />
-                  </Box>
-
-                  <Typography
-                    variant="body2"
-                    color="text.primary"
+              return (
+                <ListItem key={index} disableGutters sx={{ mb: 1.5 }}>
+                  <Paper
+                    elevation={0}
                     sx={{
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      overflowWrap: 'anywhere',
-                      lineHeight: 1.5,
+                      width: '100%',
+                      p: 2,
+                      borderRadius: 2,
+                      border: (theme): string =>
+                        `1px solid ${isPreview ? theme.palette.info.main : isPinned ? theme.palette.primary.main : theme.palette.divider}`,
+                      bgcolor: (theme): string => {
+                        if (isPreview) return theme.palette.mode === 'dark' ? 'rgba(33,150,243,0.06)' : 'rgba(33,150,243,0.04)';
+                        if (entry.message.role === 'system') return theme.palette.mode === 'dark' ? 'rgba(244,67,54,0.05)' : 'rgba(244,67,54,0.03)';
+                        if (entry.messageType === 'aiNote') return theme.palette.mode === 'dark' ? 'rgba(255,167,38,0.07)' : 'rgba(255,167,38,0.05)';
+                        if (entry.message.role === 'assistant') return theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)';
+                        return 'transparent';
+                      },
+                      ...(isPinned && {
+                        boxShadow: (theme): string => `0 0 0 1px ${theme.palette.primary.main}`,
+                      }),
                     }}
                   >
-                    {msg.content.length > 300 ? msg.content.slice(0, 300) + '...' : msg.content}
-                  </Typography>
-                </Paper>
-              </ListItem>
-            ))}
+                    <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
+                      <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap" useFlexGap>
+                        <Chip
+                          label={formatRole(entry.message.role, entry.messageType)}
+                          size="small"
+                          color={getRoleColor(entry.message.role, entry.messageType)}
+                          sx={{ height: 20, fontSize: '0.7rem', fontWeight: 'bold' }}
+                        />
+                        <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                          {entry.sourceLabel}
+                        </Typography>
+                      </Stack>
+
+                      {entry.isConversationMessage && entry.messageId && (
+                        <Tooltip title={isPinned ? 'Unpin from context' : 'Pin to always include in context'}>
+                          <Checkbox
+                            icon={<PushPinOutlinedIcon fontSize="small" />}
+                            checkedIcon={<PushPinIcon fontSize="small" />}
+                            checked={isPinned}
+                            onChange={(): void => {
+                              void togglePin(entry);
+                            }}
+                            tabIndex={-1}
+                            color="primary"
+                            size="small"
+                            sx={{ p: 0.5 }}
+                          />
+                        </Tooltip>
+                      )}
+                    </Box>
+
+                    <Typography
+                      variant="body2"
+                      color="text.primary"
+                      sx={{
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        overflowWrap: 'anywhere',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {getContentPreview(entry, isExpanded)}
+                    </Typography>
+
+                    {isTruncated && (
+                      <Button
+                        size="small"
+                        onClick={(): void => toggleExpanded(globalIndex)}
+                        sx={{ mt: 0.5, p: 0, textTransform: 'none', fontSize: '0.75rem' }}
+                      >
+                        {isExpanded ? 'Show less' : `Show all (${rawContent.length.toLocaleString()} chars)`}
+                      </Button>
+                    )}
+                  </Paper>
+                </ListItem>
+              );
+            })}
           </List>
         )}
       </DialogContent>
 
       <DialogActions sx={{ px: 3, py: 2, justifyContent: 'space-between' }}>
-        <Box>
-          {!loading && pageCount > 1 && (
-            <Pagination count={pageCount} page={page} onChange={(_, val): void => setPage(val)} color="primary" size="small" />
-          )}
-        </Box>
+        <Tooltip title="Copy the full context payload as JSON">
+          <span>
+            <Button
+              startIcon={<ContentCopyIcon fontSize="small" />}
+              onClick={handleCopyJson}
+              variant="outlined"
+              color="inherit"
+              size="small"
+              disabled={loading || entries.length === 0}
+            >
+              Copy as JSON
+            </Button>
+          </span>
+        </Tooltip>
         <Button onClick={onClose} variant="outlined" color="inherit">
           Done
         </Button>

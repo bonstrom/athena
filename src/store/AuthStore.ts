@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { useNavigate } from 'react-router-dom';
 import { SecurityUtils } from '../utils/security';
 import { PredefinedPrompt, athenaDb } from '../database/AthenaDb';
+import { DEFAULT_SCRATCHPAD_RULES } from '../constants';
 
 interface AuthState {
   openAiKey: string;
@@ -11,6 +12,7 @@ interface AuthState {
   userName: string;
   backupInterval: number;
   customInstructions: string;
+  scratchpadRules: string;
   chatWidth: 'sm' | 'md' | 'lg' | 'full';
   chatFontSize: number;
   themeMode: 'light' | 'dark';
@@ -38,6 +40,7 @@ interface AuthState {
   setUserName: (name: string) => void;
   setBackupInterval: (minutes: number) => void;
   setCustomInstructions: (instructions: string) => void;
+  setScratchpadRules: (rules: string) => void;
   setChatWidth: (width: 'sm' | 'md' | 'lg' | 'full') => void;
   setChatFontSize: (size: number) => void;
   setThemeMode: (mode: 'light' | 'dark') => void;
@@ -56,6 +59,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const userName = localStorage.getItem('userName') ?? '';
   const storedBackupInterval = Number(localStorage.getItem('backupInterval') ?? '30');
   const storedCustomInstructions = localStorage.getItem('customInstructions') ?? '';
+  const storedScratchpadRules = localStorage.getItem('scratchpadRules') ?? DEFAULT_SCRATCHPAD_RULES;
   const storedChatWidth = (localStorage.getItem('chatWidth') as 'sm' | 'md' | 'lg' | 'full' | null) ?? 'lg';
   const storedChatFontSize = Number(localStorage.getItem('chatFontSize') ?? '16');
   const storedThemeMode = (localStorage.getItem('themeMode') as 'light' | 'dark' | null) ?? 'dark';
@@ -79,6 +83,7 @@ export const useAuthStore = create<AuthState>((set) => {
     userName: userName,
     backupInterval: storedBackupInterval,
     customInstructions: storedCustomInstructions,
+    scratchpadRules: storedScratchpadRules,
     chatWidth: storedChatWidth,
     chatFontSize: storedChatFontSize,
     themeMode: storedThemeMode,
@@ -178,6 +183,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setCustomInstructions: (instructions: string): void => {
       localStorage.setItem('customInstructions', instructions);
       set({ customInstructions: instructions });
+    },
+    setScratchpadRules: (rules: string): void => {
+      localStorage.setItem('scratchpadRules', rules);
+      set({ scratchpadRules: rules });
     },
     setChatWidth: (width: 'sm' | 'md' | 'lg' | 'full'): void => {
       localStorage.setItem('chatWidth', width);
