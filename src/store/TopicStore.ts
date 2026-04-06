@@ -4,11 +4,13 @@ import { encode } from 'gpt-tokenizer';
 import { athenaDb, Message, Topic } from '../database/AthenaDb';
 import { useAuthStore } from './AuthStore';
 import { askLlm } from '../services/llmService';
-import { embeddingService } from '../services/embeddingService';
+import { embeddingService, ScoredMessage } from '../services/embeddingService';
 import { getDefaultTopicNameModel } from '../components/ModelSelector';
 import { SCRATCHPAD_LIMIT } from '../constants';
 
 const RAG_TOP_K = 5;
+const RAG_MIN_SCORE = 0.3; // discard weakly-related matches
+const RAG_MAX_CHARS = 4000; // hard cap on total RAG block size
 
 interface TopicState {
   topics: Topic[];
@@ -194,14 +196,64 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       );
 
       try {
-        const retrieved = await embeddingService.searchSimilarMessages(userQuery, candidates, RAG_TOP_K);
-        const tagged = retrieved.map((m) => ({
-          ...m,
-          content: `[Context from earlier in conversation]\n${m.content}`,
-        }));
-        const merged = [...base, ...tagged];
-        const deduped = Array.from(new Map(merged.map((m) => [m.id, m])).values());
-        return deduped.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+        const scoredResults: ScoredMessage[] = await embeddingService.searchSimilarMessages(userQuery, candidates, RAG_TOP_K);
+        // Apply minimum similarity threshold — drop weakly-related matches
+        const relevant: ScoredMessage[] = scoredResults.filter((s) => s.score >= RAG_MIN_SCORE);
+        if (relevant.length > 0) {
+          // For each retrieved user message, also pull in its active assistant response
+          // so the LLM sees the full exchange, not just the question
+          const allCandidatesById = new Map(activeSequence.map((m) => [m.id, m]));
+          // Build pairs: keep score of the triggering message so we can budget-cut by relevance
+          const pairs: { messages: Message[]; score: number }[] = [];
+          const seenIds = new Set<string>();
+          for (const { message: m, score } of relevant) {
+            if (seenIds.has(m.id)) continue;
+            const pair: Message[] = [m];
+            seenIds.add(m.id);
+            if (m.type === 'user') {
+              const assistantVersions = assistantByParent.get(m.id) ?? [];
+              const activeId = m.activeResponseId ?? (assistantVersions.length > 0 ? assistantVersions[assistantVersions.length - 1].id : null);
+              if (activeId && !includedIds.has(activeId)) {
+                const reply = allCandidatesById.get(activeId);
+                if (reply) {
+                  pair.push(reply);
+                  seenIds.add(reply.id);
+                }
+              }
+            }
+            pairs.push({ messages: pair, score });
+          }
+
+          // Apply character budget: include pairs highest-score-first until budget exhausted
+          const budgetedMessages: Message[] = [];
+          let usedChars = 0;
+          for (const { messages } of pairs) {
+            const pairChars = messages.reduce((sum, m) => sum + m.content.length, 0);
+            if (usedChars + pairChars > RAG_MAX_CHARS) break;
+            budgetedMessages.push(...messages);
+            usedChars += pairChars;
+          }
+
+          if (budgetedMessages.length > 0) {
+            // Sort chronologically for readable context
+            const sorted = budgetedMessages.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+            const ragContent = sorted.map((m) => `[${m.type === 'user' ? 'User' : 'Assistant'}]: ${m.content}`).join('\n\n');
+            const ragMessage: Message = {
+              id: '__rag_context__',
+              topicId,
+              type: 'system',
+              content: `Relevant context retrieved from earlier in this conversation:\n\n${ragContent}`,
+              isDeleted: false,
+              includeInContext: false,
+              created: new Date(0).toISOString(),
+              failed: false,
+              promptTokens: 0,
+              completionTokens: 0,
+              totalCost: 0,
+            };
+            return [ragMessage, ...base];
+          }
+        }
       } catch (err) {
         console.warn('RAG retrieval failed, falling back to base context:', err);
       }

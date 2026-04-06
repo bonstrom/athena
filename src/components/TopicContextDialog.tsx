@@ -120,7 +120,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
 
   const getRoleColor = (role: string, messageType?: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
     if (messageType === 'aiNote') return 'warning';
-    if (role === 'system') return 'error';
+    if (role === 'system') return 'secondary';
     if (role === 'user') return 'primary';
     return 'default';
   };
@@ -161,7 +161,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
       {!loading && entries.length > 0 && (
         <Box px={3} pb={1}>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            <Chip label={`${counts.system} system`} size="small" color="error" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+            <Chip label={`${counts.system} system`} size="small" color="secondary" variant="outlined" sx={{ fontSize: '0.7rem' }} />
             <Chip label={`${counts.conversation} conversation`} size="small" color="primary" variant="outlined" sx={{ fontSize: '0.7rem' }} />
             {counts.pinned > 0 && (
               <Chip label={`${counts.pinned} pinned`} size="small" color="secondary" variant="outlined" sx={{ fontSize: '0.7rem' }} />
@@ -228,7 +228,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
                       bgcolor: (theme): string => {
                         if (isPreview) return theme.palette.mode === 'dark' ? 'rgba(33,150,243,0.06)' : 'rgba(33,150,243,0.04)';
                         if (isRag) return theme.palette.mode === 'dark' ? 'rgba(76,175,80,0.07)' : 'rgba(76,175,80,0.05)';
-                        if (entry.message.role === 'system') return theme.palette.mode === 'dark' ? 'rgba(244,67,54,0.05)' : 'rgba(244,67,54,0.03)';
+                        if (entry.message.role === 'system') return theme.palette.mode === 'dark' ? 'rgba(156,39,176,0.07)' : 'rgba(156,39,176,0.04)';
                         if (entry.messageType === 'aiNote') return theme.palette.mode === 'dark' ? 'rgba(255,167,38,0.07)' : 'rgba(255,167,38,0.05)';
                         if (entry.message.role === 'assistant') return theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)';
                         return 'transparent';

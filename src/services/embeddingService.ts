@@ -1,5 +1,10 @@
 import { Message } from '../database/AthenaDb';
 
+export interface ScoredMessage {
+  message: Message;
+  score: number;
+}
+
 type EmbeddingStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 interface PendingEmbedding {
@@ -108,22 +113,22 @@ class EmbeddingService {
     return dot;
   }
 
-  async searchSimilarMessages(query: string, candidates: Message[], topK: number): Promise<Message[]> {
+  async searchSimilarMessages(query: string, candidates: Message[], topK: number): Promise<ScoredMessage[]> {
     if (!this.isReady || candidates.length === 0) return [];
 
     const queryVec = await this.generateEmbedding(query);
 
-    const scored = candidates
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      .filter((m): m is typeof m & { embedding: number[] } => Array.isArray(m.embedding) && (m.embedding as any).length > 0)
-      .map((m) => ({
-        message: m,
-        score: this.cosineSimilarity(queryVec, m.embedding),
-      }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK);
-
-    return scored.map((s) => s.message);
+    return (
+      candidates
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+        .filter((m): m is typeof m & { embedding: number[] } => Array.isArray(m.embedding) && (m.embedding as any).length > 0)
+        .map((m) => ({
+          message: m,
+          score: this.cosineSimilarity(queryVec, m.embedding),
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK)
+    );
   }
 
   unload(): void {

@@ -153,13 +153,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Conversation messages
     for (const m of existingContext) {
       const role: LlmMessage['role'] = m.type === 'user' ? 'user' : m.type === 'assistant' ? 'assistant' : 'system';
-      const RAG_PREFIX = '[Context from earlier in conversation]\n';
-      const isRag = m.content.startsWith(RAG_PREFIX);
+      const isRag = m.id === '__rag_context__';
       let sourceLabel: string;
-      if (m.type === 'aiNote') {
+      if (isRag) {
+        sourceLabel = 'RAG Retrieved Context';
+      } else if (m.type === 'aiNote') {
         sourceLabel = 'AI Note';
-      } else if (isRag) {
-        sourceLabel = `RAG Retrieved ${m.type === 'user' ? 'User' : 'Assistant'} Message`;
       } else if (m.includeInContext) {
         sourceLabel = `Pinned ${m.type === 'user' ? 'User' : 'Assistant'} Message`;
       } else {
@@ -168,9 +167,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       entries.push({
         message: { role, content: m.content, reasoning_content: m.reasoning },
         sourceLabel,
-        messageId: m.id,
+        messageId: isRag ? undefined : m.id,
         messageType: m.type,
-        isConversationMessage: m.type === 'user' || m.type === 'assistant',
+        isConversationMessage: !isRag && (m.type === 'user' || m.type === 'assistant'),
         isRagRetrieved: isRag,
       });
     }
