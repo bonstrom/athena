@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from "react";
 import {
   Box,
   TextField,
@@ -14,18 +14,23 @@ import {
   FormControlLabel,
   Chip,
   LinearProgress,
-} from '@mui/material';
-import { CheckCircle as CheckCircleIcon, Add as AddIcon, CloudDownload as DownloadIcon, Delete as DeleteIcon } from '@mui/icons-material';
-import { useAuthStore } from '../store/AuthStore';
-import { BackupService } from '../services/backupService';
-import { useBackupStore } from '../store/BackupStore';
-import { llmSuggestionService, LlmProgress } from '../services/llmSuggestionService';
-import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
-import { USD_TO_SEK, DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from '../constants';
-import ThemeSelector from '../components/ThemeSelector';
-import ImportDialog from '../components/ImportDialog';
-import { PredefinedPrompt } from '../database/AthenaDb';
-import { chatModels } from '../components/ModelSelector';
+} from "@mui/material";
+import {
+  CheckCircle as CheckCircleIcon,
+  Add as AddIcon,
+  CloudDownload as DownloadIcon,
+  Delete as DeleteIcon,
+} from "@mui/icons-material";
+import { useAuthStore } from "../store/AuthStore";
+import { BackupService } from "../services/backupService";
+import { useBackupStore } from "../store/BackupStore";
+import { llmSuggestionService, LlmProgress } from "../services/llmSuggestionService";
+import { getMoonshotBalance, getDeepSeekBalance } from "../services/llmService";
+import { USD_TO_SEK, DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from "../constants";
+import ThemeSelector from "../components/ThemeSelector";
+import ImportDialog from "../components/ImportDialog";
+import { PredefinedPrompt } from "../database/AthenaDb";
+import { chatModels } from "../components/ModelSelector";
 
 const Settings: React.FC = () => {
   const {
@@ -72,13 +77,14 @@ const Settings: React.FC = () => {
     setMaxContextTokens,
   } = useAuthStore();
 
-  const [openAiInput, setOpenAiInput] = useState('');
-  const [deepSeekInput, setDeepSeekInput] = useState('');
-  const [googleInput, setGoogleInput] = useState('');
-  const [moonshotInput, setMoonshotInput] = useState('');
+  const [openAiInput, setOpenAiInput] = useState("");
+  const [deepSeekInput, setDeepSeekInput] = useState("");
+  const [googleInput, setGoogleInput] = useState("");
+  const [moonshotInput, setMoonshotInput] = useState("");
 
-  const currentModelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
-  const status = llmModelDownloadStatus[currentModelId] ?? 'not_downloaded';
+  const currentModelId: string =
+    llmModelSelected === "qwen3.5-2b" ? "onnx-community/Qwen3.5-2B-ONNX" : "onnx-community/Qwen3.5-0.8B-ONNX";
+  const status = llmModelDownloadStatus[currentModelId] ?? "not_downloaded";
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
   const [scratchpadRulesInput, setScratchpadRulesInput] = useState(scratchpadRules);
@@ -95,8 +101,8 @@ const Settings: React.FC = () => {
 
   const [showPromptForm, setShowPromptForm] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<PredefinedPrompt | null>(null);
-  const [promptNameInput, setPromptNameInput] = useState('');
-  const [promptContentInput, setPromptContentInput] = useState('');
+  const [promptNameInput, setPromptNameInput] = useState("");
+  const [promptContentInput, setPromptContentInput] = useState("");
 
   const { status: backupStatus, lastBackupTime, setStatus: setBackupStatus, setLastBackupTime } = useBackupStore();
 
@@ -116,12 +122,14 @@ const Settings: React.FC = () => {
   }, []);
 
   const handleDownloadModel = (): void => {
-    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+    const modelId: string =
+      llmModelSelected === "qwen3.5-2b" ? "onnx-community/Qwen3.5-2B-ONNX" : "onnx-community/Qwen3.5-0.8B-ONNX";
     llmSuggestionService.loadModel(modelId, true);
   };
 
   const handleDeleteModel = async (): Promise<void> => {
-    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+    const modelId: string =
+      llmModelSelected === "qwen3.5-2b" ? "onnx-community/Qwen3.5-2B-ONNX" : "onnx-community/Qwen3.5-0.8B-ONNX";
     if (!window.confirm(`Delete downloaded model "${modelId}" from local cache?`)) {
       return;
     }
@@ -131,7 +139,7 @@ const Settings: React.FC = () => {
       await llmSuggestionService.deleteModel(modelId);
       setLlmProgress(null);
     } catch (error) {
-      console.error('Failed to delete model:', error);
+      console.error("Failed to delete model:", error);
     } finally {
       setIsDeletingModel(false);
     }
@@ -188,26 +196,27 @@ const Settings: React.FC = () => {
   function handleSave(): void {
     if (isUpdatingOpenAi && openAiInput) {
       setOpenAiKey(openAiInput.trim());
-      setOpenAiInput('');
+      setOpenAiInput("");
       setIsUpdatingOpenAi(false);
     }
     if (isUpdatingDeepSeek && deepSeekInput) {
       setDeepSeekKey(deepSeekInput.trim());
-      setDeepSeekInput('');
+      setDeepSeekInput("");
       setIsUpdatingDeepSeek(false);
     }
     if (isUpdatingGoogle && googleInput) {
       setGoogleApiKey(googleInput.trim());
-      setGoogleInput('');
+      setGoogleInput("");
       setIsUpdatingGoogle(false);
     }
     if (isUpdatingMoonshot && moonshotInput) {
       setMoonshotApiKey(moonshotInput.trim());
-      setMoonshotInput('');
+      setMoonshotInput("");
       setIsUpdatingMoonshot(false);
     }
     setUserName(userNameInput.trim());
     setCustomInstructions(customInstructionsInput.trim());
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     setScratchpadRules(scratchpadRulesInput.trim() || DEFAULT_SCRATCHPAD_RULES);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -222,7 +231,7 @@ const Settings: React.FC = () => {
       await BackupService.downloadBackup();
     } catch (error) {
       console.error(error);
-      alert('Failed to export backup.');
+      alert("Failed to export backup.");
     }
   };
 
@@ -231,7 +240,7 @@ const Settings: React.FC = () => {
     if (!file) return;
     setPendingImportFile(file);
     setImportDialogOpen(true);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleImportDialogClose = (): void => {
@@ -252,13 +261,13 @@ const Settings: React.FC = () => {
         }
       } catch (error) {
         console.error(error);
-        alert('Failed to setup auto backup file.');
+        alert("Failed to setup auto backup file.");
       }
     } else {
-      if (window.confirm('Disable automatic backups? Your stored file location will be cleared.')) {
+      if (window.confirm("Disable automatic backups? Your stored file location will be cleared.")) {
         await BackupService.clearAutoBackupHandle();
         setAutoBackupEnabled(false);
-        setBackupStatus('no_handle');
+        setBackupStatus("no_handle");
         setLastBackupTime(null);
       }
     }
@@ -272,15 +281,15 @@ const Settings: React.FC = () => {
       }
     } catch (error) {
       console.error(error);
-      alert('Failed to change backup location.');
+      alert("Failed to change backup location.");
     }
   };
 
-  const validateKey = (key: string, type: 'openai' | 'deepseek' | 'google'): boolean => {
+  const validateKey = (key: string, type: "openai" | "deepseek" | "google"): boolean => {
     if (!key) return true;
     const trimmed = key.trim();
-    if (type === 'openai' || type === 'deepseek') {
-      return trimmed.startsWith('sk-') && trimmed.length > 20;
+    if (type === "openai" || type === "deepseek") {
+      return trimmed.startsWith("sk-") && trimmed.length > 20;
     }
     return trimmed.length >= 30; // Gemini keys are typically long
   };
@@ -300,45 +309,47 @@ const Settings: React.FC = () => {
       sx={{
         mb: 2,
         p: 1.5,
-        border: '1px solid',
-        borderColor: 'divider',
+        border: "1px solid",
+        borderColor: "divider",
         borderRadius: 1,
-        display: 'flex',
-        flexDirection: { xs: 'column', sm: 'row' },
-        alignItems: { xs: 'flex-start', sm: 'center' },
-        justifyContent: 'space-between',
+        display: "flex",
+        flexDirection: { xs: "column", sm: "row" },
+        alignItems: { xs: "flex-start", sm: "center" },
+        justifyContent: "space-between",
         gap: { xs: 1.5, sm: 2 },
-        bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.01)'),
-      }}
-    >
+        bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.01)"),
+      }}>
       <Box
         sx={{
-          display: 'flex',
-          alignItems: 'center',
-          flexWrap: 'wrap',
+          display: "flex",
+          alignItems: "center",
+          flexWrap: "wrap",
           gap: 1.5,
-        }}
-      >
+        }}>
         <Typography
           variant="body2"
           sx={{
-            fontWeight: 'bold',
-            color: 'text.secondary',
-            minWidth: { xs: 'auto', sm: 100 },
-          }}
-        >
+            fontWeight: "bold",
+            color: "text.secondary",
+            minWidth: { xs: "auto", sm: 100 },
+          }}>
           {label}
         </Typography>
         {isStored ? (
           <Chip
-            icon={<CheckCircleIcon sx={{ color: 'success.main !important' }} />}
+            icon={<CheckCircleIcon sx={{ color: "success.main !important" }} />}
             label="Key Configured"
             color="success"
             variant="outlined"
             size="small"
           />
         ) : (
-          <Chip label="Not Configured" color="warning" variant="outlined" size="small" />
+          <Chip
+            label="Not Configured"
+            color="warning"
+            variant="outlined"
+            size="small"
+          />
         )}
         {extraInfo}
       </Box>
@@ -347,10 +358,9 @@ const Settings: React.FC = () => {
         variant="contained"
         onClick={onUpdate}
         sx={{
-          alignSelf: { xs: 'flex-end', sm: 'center' },
-        }}
-      >
-        {isStored ? 'Update Key' : 'Add Key'}
+          alignSelf: { xs: "flex-end", sm: "center" },
+        }}>
+        {isStored ? "Update Key" : "Add Key"}
       </Button>
     </Box>
   );
@@ -358,33 +368,42 @@ const Settings: React.FC = () => {
   return (
     <Box
       sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
         mt: 4,
         px: 2,
-        height: '100%',
-        overflowY: 'auto',
+        height: "100%",
+        overflowY: "auto",
         pb: 8,
-      }}
-    >
+      }}>
       <Paper
         elevation={3}
         sx={{
           p: 3,
-          width: '100%',
+          width: "100%",
           maxWidth: 600,
           bgcolor: (theme) => theme.palette.background.paper,
-        }}
-      >
-        <Typography variant="h6" gutterBottom>
+        }}>
+        <Typography
+          variant="h6"
+          gutterBottom>
           Settings
         </Typography>
 
-        <TextField label="User Name" fullWidth value={userNameInput} onChange={(e): void => setUserNameInput(e.target.value)} sx={{ mb: 3 }} />
+        <TextField
+          label="User Name"
+          fullWidth
+          value={userNameInput}
+          onChange={(e): void => setUserNameInput(e.target.value)}
+          sx={{ mb: 3 }}
+        />
 
         <Box sx={{ mb: 4 }}>
-          <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
+          <Typography
+            variant="h6"
+            gutterBottom
+            sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1, mb: 2 }}>
             Appearance
           </Typography>
           <ThemeSelector />
@@ -395,14 +414,19 @@ const Settings: React.FC = () => {
             variant="subtitle2"
             color="text.secondary"
             gutterBottom
-            sx={{ fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}
-          >
+            sx={{ fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.7rem" }}>
             Chat Layout
           </Typography>
-          <FormControl fullWidth size="small">
+          <FormControl
+            fullWidth
+            size="small">
             <InputLabel>Max Chat Width</InputLabel>
-            <Select value={chatWidth} label="Max Chat Width" onChange={(e): void => setChatWidth(e.target.value as 'sm' | 'md' | 'lg')}>
+            <Select
+              value={chatWidth}
+              label="Max Chat Width"
+              onChange={(e): void => setChatWidth(e.target.value as "sm" | "md" | "lg" | "xl" | "full")}>
               <MenuItem value="full">Full Width</MenuItem>
+              <MenuItem value="xl">Extra Wide (1600px)</MenuItem>
               <MenuItem value="lg">Wide (1200px)</MenuItem>
               <MenuItem value="md">Standard (900px)</MenuItem>
               <MenuItem value="sm">Compact (600px)</MenuItem>
@@ -415,13 +439,17 @@ const Settings: React.FC = () => {
             variant="subtitle2"
             color="text.secondary"
             gutterBottom
-            sx={{ fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}
-          >
+            sx={{ fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.7rem" }}>
             Typography
           </Typography>
-          <FormControl fullWidth size="small">
+          <FormControl
+            fullWidth
+            size="small">
             <InputLabel>Chat Font Size</InputLabel>
-            <Select value={chatFontSize} label="Chat Font Size" onChange={(e): void => setChatFontSize(e.target.value as number)}>
+            <Select
+              value={chatFontSize}
+              label="Chat Font Size"
+              onChange={(e): void => setChatFontSize(e.target.value as number)}>
               <MenuItem value={12}>Small (12px)</MenuItem>
               <MenuItem value={14}>Compact (14px)</MenuItem>
               <MenuItem value={16}>Standard (16px)</MenuItem>
@@ -437,13 +465,17 @@ const Settings: React.FC = () => {
             variant="subtitle2"
             color="text.secondary"
             gutterBottom
-            sx={{ fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}
-          >
+            sx={{ fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.7rem" }}>
             Performance
           </Typography>
-          <FormControl fullWidth size="small">
+          <FormControl
+            fullWidth
+            size="small">
             <InputLabel>Topic Preload Count</InputLabel>
-            <Select value={topicPreloadCount} label="Topic Preload Count" onChange={(e): void => setTopicPreloadCount(e.target.value as number)}>
+            <Select
+              value={topicPreloadCount}
+              label="Topic Preload Count"
+              onChange={(e): void => setTopicPreloadCount(e.target.value as number)}>
               <MenuItem value={0}>Disabled</MenuItem>
               <MenuItem value={3}>3 topics</MenuItem>
               <MenuItem value={5}>5 topics</MenuItem>
@@ -452,13 +484,14 @@ const Settings: React.FC = () => {
               <MenuItem value={50}>50 topics</MenuItem>
             </Select>
           </FormControl>
-          <FormControl fullWidth size="small">
+          <FormControl
+            fullWidth
+            size="small">
             <InputLabel>Message Preview Length</InputLabel>
             <Select
               value={messageTruncateChars}
               label="Message Preview Length"
-              onChange={(e): void => setMessageTruncateChars(e.target.value as number)}
-            >
+              onChange={(e): void => setMessageTruncateChars(e.target.value as number)}>
               <MenuItem value={0}>Always show full messages</MenuItem>
               <MenuItem value={100}>Tiny (100 characters)</MenuItem>
               <MenuItem value={500}>Default (500 characters)</MenuItem>
@@ -469,20 +502,34 @@ const Settings: React.FC = () => {
             </Select>
           </FormControl>
           <FormControlLabel
-            control={<Switch checked={ragEnabled} onChange={(e): void => setRagEnabled(e.target.checked)} size="small" />}
+            control={
+              <Switch
+                checked={ragEnabled}
+                onChange={(e): void => setRagEnabled(e.target.checked)}
+                size="small"
+              />
+            }
             label={
               <Box>
                 <Typography variant="body2">Semantic Search (RAG)</Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography
+                  variant="caption"
+                  color="text.secondary">
                   Retrieves relevant older messages using a 23MB local model. Disable on slower devices.
                 </Typography>
               </Box>
             }
-            sx={{ mt: 1, alignItems: 'flex-start' }}
+            sx={{ mt: 1, alignItems: "flex-start" }}
           />
-          <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+          <FormControl
+            fullWidth
+            size="small"
+            sx={{ mt: 2 }}>
             <InputLabel>Max Context Tokens</InputLabel>
-            <Select value={maxContextTokens} label="Max Context Tokens" onChange={(e): void => setMaxContextTokens(e.target.value as number)}>
+            <Select
+              value={maxContextTokens}
+              label="Max Context Tokens"
+              onChange={(e): void => setMaxContextTokens(e.target.value as number)}>
               <MenuItem value={4000}>4k — Minimal (cheap)</MenuItem>
               <MenuItem value={8000}>8k — Compact</MenuItem>
               <MenuItem value={16000}>16k — Default</MenuItem>
@@ -502,12 +549,18 @@ const Settings: React.FC = () => {
             onChange={(e): void => setOpenAiInput(e.target.value)}
             placeholder="Paste new key here"
             sx={{ mb: 2 }}
-            error={openAiInput !== '' && !validateKey(openAiInput, 'openai')}
-            helperText={openAiInput !== '' && !validateKey(openAiInput, 'openai') ? 'Invalid OpenAI key format (should start with sk-)' : ''}
+            error={openAiInput !== "" && !validateKey(openAiInput, "openai")}
+            helperText={
+              openAiInput !== "" && !validateKey(openAiInput, "openai")
+                ? "Invalid OpenAI key format (should start with sk-)"
+                : ""
+            }
             InputProps={{
               endAdornment: openAiKey && (
                 <InputAdornment position="end">
-                  <Button size="small" onClick={(): void => setIsUpdatingOpenAi(false)}>
+                  <Button
+                    size="small"
+                    onClick={(): void => setIsUpdatingOpenAi(false)}>
                     Cancel
                   </Button>
                 </InputAdornment>
@@ -515,7 +568,11 @@ const Settings: React.FC = () => {
             }}
           />
         ) : (
-          <KeyConfirmation label="OpenAI" isStored={!!openAiKey} onUpdate={(): void => setIsUpdatingOpenAi(true)} />
+          <KeyConfirmation
+            label="OpenAI"
+            isStored={!!openAiKey}
+            onUpdate={(): void => setIsUpdatingOpenAi(true)}
+          />
         )}
 
         {/* DeepSeek Section */}
@@ -528,12 +585,18 @@ const Settings: React.FC = () => {
             onChange={(e): void => setDeepSeekInput(e.target.value)}
             placeholder="Paste new key here"
             sx={{ mb: 2 }}
-            error={deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek')}
-            helperText={deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek') ? 'Invalid DeepSeek key format (should start with sk-)' : ''}
+            error={deepSeekInput !== "" && !validateKey(deepSeekInput, "deepseek")}
+            helperText={
+              deepSeekInput !== "" && !validateKey(deepSeekInput, "deepseek")
+                ? "Invalid DeepSeek key format (should start with sk-)"
+                : ""
+            }
             InputProps={{
               endAdornment: deepSeekKey && (
                 <InputAdornment position="end">
-                  <Button size="small" onClick={(): void => setIsUpdatingDeepSeek(false)}>
+                  <Button
+                    size="small"
+                    onClick={(): void => setIsUpdatingDeepSeek(false)}>
                     Cancel
                   </Button>
                 </InputAdornment>
@@ -547,8 +610,12 @@ const Settings: React.FC = () => {
             onUpdate={(): void => setIsUpdatingDeepSeek(true)}
             extraInfo={
               deepSeekBalance !== null && (
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-                  Balance: {(deepSeekBalance.balance * (deepSeekBalance.currency === 'CNY' ? 1.5 : USD_TO_SEK)).toFixed(2)}
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontWeight: "bold" }}>
+                  Balance:{" "}
+                  {(deepSeekBalance.balance * (deepSeekBalance.currency === "CNY" ? 1.5 : USD_TO_SEK)).toFixed(2)}
                   kr
                 </Typography>
               )
@@ -566,12 +633,16 @@ const Settings: React.FC = () => {
             onChange={(e): void => setGoogleInput(e.target.value)}
             placeholder="Paste new key here"
             sx={{ mb: 2 }}
-            error={googleInput !== '' && !validateKey(googleInput, 'google')}
-            helperText={googleInput !== '' && !validateKey(googleInput, 'google') ? 'Invalid Google API key format' : ''}
+            error={googleInput !== "" && !validateKey(googleInput, "google")}
+            helperText={
+              googleInput !== "" && !validateKey(googleInput, "google") ? "Invalid Google API key format" : ""
+            }
             InputProps={{
               endAdornment: googleApiKey && (
                 <InputAdornment position="end">
-                  <Button size="small" onClick={(): void => setIsUpdatingGoogle(false)}>
+                  <Button
+                    size="small"
+                    onClick={(): void => setIsUpdatingGoogle(false)}>
                     Cancel
                   </Button>
                 </InputAdornment>
@@ -579,7 +650,11 @@ const Settings: React.FC = () => {
             }}
           />
         ) : (
-          <KeyConfirmation label="Google (Gemini)" isStored={!!googleApiKey} onUpdate={(): void => setIsUpdatingGoogle(true)} />
+          <KeyConfirmation
+            label="Google (Gemini)"
+            isStored={!!googleApiKey}
+            onUpdate={(): void => setIsUpdatingGoogle(true)}
+          />
         )}
 
         {/* Moonshot Section */}
@@ -592,12 +667,16 @@ const Settings: React.FC = () => {
             onChange={(e): void => setMoonshotInput(e.target.value)}
             placeholder="Paste new key here"
             sx={{ mb: 2 }}
-            error={moonshotInput !== '' && !validateKey(moonshotInput, 'openai')}
-            helperText={moonshotInput !== '' && !validateKey(moonshotInput, 'openai') ? 'Invalid Moonshot key format' : ''}
+            error={moonshotInput !== "" && !validateKey(moonshotInput, "openai")}
+            helperText={
+              moonshotInput !== "" && !validateKey(moonshotInput, "openai") ? "Invalid Moonshot key format" : ""
+            }
             InputProps={{
               endAdornment: moonshotApiKey && (
                 <InputAdornment position="end">
-                  <Button size="small" onClick={(): void => setIsUpdatingMoonshot(false)}>
+                  <Button
+                    size="small"
+                    onClick={(): void => setIsUpdatingMoonshot(false)}>
                     Cancel
                   </Button>
                 </InputAdornment>
@@ -611,7 +690,10 @@ const Settings: React.FC = () => {
             onUpdate={(): void => setIsUpdatingMoonshot(true)}
             extraInfo={
               moonshotBalance !== null && (
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontWeight: "bold" }}>
                   Balance: {(moonshotBalance * USD_TO_SEK).toFixed(2)}kr
                 </Typography>
               )
@@ -643,30 +725,42 @@ const Settings: React.FC = () => {
           sx={{ mb: 1 }}
           helperText={`Instructions sent to the LLM controlling how it uses its long-term memory scratchpad. Use {{SCRATCHPAD_LIMIT}} for the character limit (${SCRATCHPAD_LIMIT.toLocaleString()}). The current scratchpad content is always appended automatically.`}
         />
-        <Box display="flex" justifyContent="flex-end" mb={2}>
-          <Button size="small" variant="text" color="inherit" onClick={(): void => setScratchpadRulesInput(DEFAULT_SCRATCHPAD_RULES)}>
+        <Box
+          display="flex"
+          justifyContent="flex-end"
+          mb={2}>
+          <Button
+            size="small"
+            variant="text"
+            color="inherit"
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+            onClick={(): void => setScratchpadRulesInput(DEFAULT_SCRATCHPAD_RULES)}>
             Reset to default
           </Button>
         </Box>
 
-        <Box display="flex" justifyContent="flex-end">
+        <Box
+          display="flex"
+          justifyContent="flex-end">
           <Button
             variant="contained"
             color="primary"
             onClick={handleSave}
             disabled={
-              (openAiInput !== '' && !validateKey(openAiInput, 'openai')) ||
-              (deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek')) ||
-              (googleInput !== '' && !validateKey(googleInput, 'google')) ||
-              (moonshotInput !== '' && !validateKey(moonshotInput, 'openai'))
-            }
-          >
+              (openAiInput !== "" && !validateKey(openAiInput, "openai")) ||
+              (deepSeekInput !== "" && !validateKey(deepSeekInput, "deepseek")) ||
+              (googleInput !== "" && !validateKey(googleInput, "google")) ||
+              (moonshotInput !== "" && !validateKey(moonshotInput, "openai"))
+            }>
             Save
           </Button>
         </Box>
 
         {saved && (
-          <Typography variant="body2" color="success.main" mt={2}>
+          <Typography
+            variant="body2"
+            color="success.main"
+            mt={2}>
             Settings saved successfully.
           </Typography>
         )}
@@ -677,41 +771,48 @@ const Settings: React.FC = () => {
         sx={{
           p: 3,
           mt: 4,
-          width: '100%',
+          width: "100%",
           maxWidth: 600,
           bgcolor: (theme) => theme.palette.background.paper,
-        }}
-      >
+        }}>
         <Box sx={{ mb: 4 }}>
-          <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
+          <Typography
+            variant="h6"
+            gutterBottom
+            sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1, mb: 2 }}>
             Predefined Prompts
           </Typography>
-          <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+          <Typography
+            variant="body2"
+            sx={{ mb: 2, color: "text.secondary" }}>
             Create reusable prompt snippets that you can easily toggle in your conversations.
           </Typography>
 
           <Box
             sx={{
-              display: 'flex',
-              flexDirection: 'column',
+              display: "flex",
+              flexDirection: "column",
               gap: 2,
-            }}
-          >
+            }}>
             {predefinedPrompts.map((prompt) => (
               <Paper
                 key={prompt.id}
                 variant="outlined"
                 sx={{
                   p: 2,
-                  display: 'flex',
-                  flexDirection: 'column',
+                  display: "flex",
+                  flexDirection: "column",
                   gap: 1,
-                  position: 'relative',
-                  bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
-                }}
-              >
-                <Box display="flex" justifyContent="space-between" alignItems="center">
-                  <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                  position: "relative",
+                  bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)"),
+                }}>
+                <Box
+                  display="flex"
+                  justifyContent="space-between"
+                  alignItems="center">
+                  <Typography
+                    variant="subtitle2"
+                    sx={{ fontWeight: "bold" }}>
                     {prompt.name}
                   </Typography>
                   <Box>
@@ -722,8 +823,7 @@ const Settings: React.FC = () => {
                         setPromptNameInput(prompt.name);
                         setPromptContentInput(prompt.content);
                         setShowPromptForm(true);
-                      }}
-                    >
+                      }}>
                       Edit
                     </Button>
                     <Button
@@ -733,8 +833,7 @@ const Settings: React.FC = () => {
                         if (window.confirm(`Delete prompt "${prompt.name}"?`)) {
                           deletePredefinedPrompt(prompt.id);
                         }
-                      }}
-                    >
+                      }}>
                       Delete
                     </Button>
                   </Box>
@@ -742,22 +841,23 @@ const Settings: React.FC = () => {
                 <Typography
                   variant="caption"
                   sx={{
-                    whiteSpace: 'pre-wrap',
-                    display: '-webkit-box',
+                    whiteSpace: "pre-wrap",
+                    display: "-webkit-box",
                     WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                    color: 'text.secondary',
-                  }}
-                >
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    color: "text.secondary",
+                  }}>
                   {prompt.content}
                 </Typography>
               </Paper>
             ))}
 
             {showPromptForm ? (
-              <Paper variant="outlined" sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Typography variant="subtitle2">{editingPrompt ? 'Edit Prompt' : 'New Prompt'}</Typography>
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
+                <Typography variant="subtitle2">{editingPrompt ? "Edit Prompt" : "New Prompt"}</Typography>
                 <TextField
                   label="Name (e.g., Programming)"
                   size="small"
@@ -774,14 +874,16 @@ const Settings: React.FC = () => {
                   value={promptContentInput}
                   onChange={(e): void => setPromptContentInput(e.target.value)}
                 />
-                <Box display="flex" justifyContent="flex-end" gap={1}>
+                <Box
+                  display="flex"
+                  justifyContent="flex-end"
+                  gap={1}>
                   <Button
                     size="small"
                     onClick={(): void => {
                       setShowPromptForm(false);
                       setEditingPrompt(null);
-                    }}
-                  >
+                    }}>
                     Cancel
                   </Button>
                   <Button
@@ -804,16 +906,18 @@ const Settings: React.FC = () => {
                       }
                       setShowPromptForm(false);
                       setEditingPrompt(null);
-                      setPromptNameInput('');
-                      setPromptContentInput('');
-                    }}
-                  >
-                    {editingPrompt ? 'Save Changes' : 'Add Prompt'}
+                      setPromptNameInput("");
+                      setPromptContentInput("");
+                    }}>
+                    {editingPrompt ? "Save Changes" : "Add Prompt"}
                   </Button>
                 </Box>
               </Paper>
             ) : (
-              <Button variant="outlined" startIcon={<AddIcon />} onClick={(): void => setShowPromptForm(true)}>
+              <Button
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={(): void => setShowPromptForm(true)}>
                 Add Predefined Prompt
               </Button>
             )}
@@ -826,48 +930,69 @@ const Settings: React.FC = () => {
         sx={{
           p: 3,
           mt: 4,
-          width: '100%',
+          width: "100%",
           maxWidth: 600,
           bgcolor: (theme) => theme.palette.background.paper,
-        }}
-      >
-        <Typography variant="h6" gutterBottom>
+        }}>
+        <Typography
+          variant="h6"
+          gutterBottom>
           Data Management
         </Typography>
-        <Typography variant="body2" sx={{ mb: 2 }}>
+        <Typography
+          variant="body2"
+          sx={{ mb: 2 }}>
           Backup your conversations to a local JSON file, or restore them from a previous backup.
         </Typography>
 
-        <Box display="flex" flexDirection="column" gap={2}>
-          <Box display="flex" gap={2}>
+        <Box
+          display="flex"
+          flexDirection="column"
+          gap={2}>
+          <Box
+            display="flex"
+            gap={2}>
             <Button
               variant="contained"
               color="primary"
               onClick={(): void => {
                 handleExport().catch(console.error);
-              }}
-            >
+              }}>
               Export Database
             </Button>
 
-            <Button variant="contained" color="secondary" onClick={(): void => fileInputRef.current?.click()}>
+            <Button
+              variant="contained"
+              color="secondary"
+              onClick={(): void => fileInputRef.current?.click()}>
               Import Database
             </Button>
             <input
               type="file"
               accept=".json"
-              style={{ display: 'none' }}
+              style={{ display: "none" }}
               ref={fileInputRef}
               onChange={(e): void => {
                 handleImport(e);
               }}
             />
           </Box>
-          <Box display="flex" flexDirection="column" gap={2} mt={1}>
-            {'showSaveFilePicker' in window ? (
+          <Box
+            display="flex"
+            flexDirection="column"
+            gap={2}
+            mt={1}>
+            {"showSaveFilePicker" in window ? (
               <>
-                <Box display="flex" flexDirection="column" gap={1} alignItems="flex-start">
-                  <Box display="flex" alignItems="center" gap={2}>
+                <Box
+                  display="flex"
+                  flexDirection="column"
+                  gap={1}
+                  alignItems="flex-start">
+                  <Box
+                    display="flex"
+                    alignItems="center"
+                    gap={2}>
                     <FormControlLabel
                       control={
                         <Switch
@@ -887,8 +1012,7 @@ const Settings: React.FC = () => {
                         onClick={(): void => {
                           handleChangeLocation().catch(console.error);
                         }}
-                        sx={{}}
-                      >
+                        sx={{}}>
                         Change Location
                       </Button>
                     )}
@@ -896,9 +1020,14 @@ const Settings: React.FC = () => {
 
                   {autoBackupEnabled && (
                     <Box sx={{ ml: 1, mt: -0.5 }}>
-                      {backupStatus === 'permission_required' ? (
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <Typography variant="body2" color="error">
+                      {backupStatus === "permission_required" ? (
+                        <Box
+                          display="flex"
+                          alignItems="center"
+                          gap={1}>
+                          <Typography
+                            variant="body2"
+                            color="error">
                             ⚠ Action Required: Permission expired.
                           </Typography>
                           <Button
@@ -907,23 +1036,31 @@ const Settings: React.FC = () => {
                             onClick={(): void => {
                               void BackupService.performAutoBackup(true);
                             }}
-                            sx={{ py: 0 }}
-                          >
+                            sx={{ py: 0 }}>
                             Authorize Now
                           </Button>
                         </Box>
-                      ) : backupStatus === 'error' ? (
-                        <Typography variant="body2" color="error">
+                      ) : backupStatus === "error" ? (
+                        <Typography
+                          variant="body2"
+                          color="error">
                           ✕ Backup failed. Check console.
                         </Typography>
                       ) : (
-                        <Typography variant="body2" color="success.main">
-                          {backupStatus === 'in-progress' ? '… Backing up...' : '✓ Active. Database saves automatically.'}
+                        <Typography
+                          variant="body2"
+                          color="success.main">
+                          {backupStatus === "in-progress"
+                            ? "… Backing up..."
+                            : "✓ Active. Database saves automatically."}
                         </Typography>
                       )}
 
                       {lastBackupTime && (
-                        <Typography variant="caption" color="text.secondary" display="block">
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          display="block">
                           Last backup: {new Date(lastBackupTime).toLocaleString()}
                         </Typography>
                       )}
@@ -931,9 +1068,15 @@ const Settings: React.FC = () => {
                   )}
                 </Box>
 
-                <FormControl variant="outlined" size="small" sx={{ minWidth: 200, mt: 1 }}>
+                <FormControl
+                  variant="outlined"
+                  size="small"
+                  sx={{ minWidth: 200, mt: 1 }}>
                   <InputLabel>Backup Frequency</InputLabel>
-                  <Select value={backupInterval} label="Backup Frequency" onChange={(e): void => setBackupInterval(e.target.value as number)}>
+                  <Select
+                    value={backupInterval}
+                    label="Backup Frequency"
+                    onChange={(e): void => setBackupInterval(e.target.value as number)}>
                     <MenuItem value={1}>Every 1 Minute</MenuItem>
                     <MenuItem value={5}>Every 5 Minutes</MenuItem>
                     <MenuItem value={30}>Every 30 Minutes</MenuItem>
@@ -944,11 +1087,18 @@ const Settings: React.FC = () => {
               </>
             ) : (
               <Box>
-                <Typography variant="body2" color="text.secondary">
+                <Typography
+                  variant="body2"
+                  color="text.secondary">
                   (Automatic background backup is not supported in this browser.)
                 </Typography>
-                <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 0.5 }}>
-                  Brave users: You may need to enable <b>brave://flags/#file-system-access-api</b> and restart your browser.
+                <Typography
+                  variant="caption"
+                  color="warning.main"
+                  display="block"
+                  sx={{ mt: 0.5 }}>
+                  Brave users: You may need to enable <b>brave://flags/#file-system-access-api</b> and restart your
+                  browser.
                 </Typography>
               </Box>
             )}
@@ -962,36 +1112,49 @@ const Settings: React.FC = () => {
         sx={{
           p: 3,
           mt: 4,
-          width: '100%',
+          width: "100%",
           maxWidth: 600,
           bgcolor: (theme) => theme.palette.background.paper,
-        }}
-      >
-        <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
+        }}>
+        <Typography
+          variant="h6"
+          gutterBottom
+          sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1, mb: 2 }}>
           AI Suggestions (Experimental)
         </Typography>
 
         {/* Type-ahead suggestions */}
         <Box sx={{ mb: 3 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+          <Typography
+            variant="subtitle2"
+            sx={{ fontWeight: "bold", mb: 0.5 }}>
             Type-ahead Suggestions
           </Typography>
-          <Typography variant="body2" sx={{ mb: 1.5, color: 'text.secondary' }}>
+          <Typography
+            variant="body2"
+            sx={{ mb: 1.5, color: "text.secondary" }}>
             Local LLM word prediction while you type. Runs entirely in your browser. Press Tab to accept a suggestion.
           </Typography>
           <FormControlLabel
-            control={<Switch checked={llmSuggestionEnabled} onChange={(e): void => setLlmSuggestionEnabled(e.target.checked)} />}
+            control={
+              <Switch
+                checked={llmSuggestionEnabled}
+                onChange={(e): void => setLlmSuggestionEnabled(e.target.checked)}
+              />
+            }
             label="Enable type-ahead suggestions"
             sx={{ mb: 2 }}
           />
 
-          <FormControl fullWidth size="small" sx={{ mb: 3 }}>
+          <FormControl
+            fullWidth
+            size="small"
+            sx={{ mb: 3 }}>
             <InputLabel>Selected Model</InputLabel>
             <Select
               value={llmModelSelected}
               label="Selected Model"
-              onChange={(e): void => setLlmModelSelected(e.target.value as 'qwen3.5-0.8b' | 'qwen3.5-2b')}
-            >
+              onChange={(e): void => setLlmModelSelected(e.target.value as "qwen3.5-0.8b" | "qwen3.5-2b")}>
               <MenuItem value="qwen3.5-0.8b">Qwen3.5 0.8B (Recommended • ~500MB)</MenuItem>
               <MenuItem value="qwen3.5-2b">Qwen3.5 2B (~1.5GB)</MenuItem>
             </Select>
@@ -1001,27 +1164,37 @@ const Settings: React.FC = () => {
             sx={{
               p: 2,
               borderRadius: 1,
-              border: '1px solid',
-              borderColor: 'divider',
-              bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
-            }}
-          >
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={llmProgress ? 2 : 0}>
-              <Typography variant="body2" component="div">
-                {status === 'downloaded' ? (
-                  <Box display="flex" alignItems="center" gap={1}>
+              border: "1px solid",
+              borderColor: "divider",
+              bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)"),
+            }}>
+            <Box
+              display="flex"
+              justifyContent="space-between"
+              alignItems="center"
+              mb={llmProgress ? 2 : 0}>
+              <Typography
+                variant="body2"
+                component="div">
+                {status === "downloaded" ? (
+                  <Box
+                    display="flex"
+                    alignItems="center"
+                    gap={1}>
                     <CheckCircleIcon color="success" />
                     Model Downloaded
                   </Box>
-                ) : status === 'downloading' ? (
-                  'Downloading Model...'
+                ) : status === "downloading" ? (
+                  "Downloading Model..."
                 ) : (
-                  'Model not downloaded'
+                  "Model not downloaded"
                 )}
               </Typography>
 
-              <Box display="flex" gap={1}>
-                {status === 'downloaded' && (
+              <Box
+                display="flex"
+                gap={1}>
+                {status === "downloaded" && (
                   <Button
                     variant="outlined"
                     size="small"
@@ -1030,9 +1203,8 @@ const Settings: React.FC = () => {
                     disabled={isDeletingModel}
                     onClick={(): void => {
                       void handleDeleteModel();
-                    }}
-                  >
-                    {isDeletingModel ? 'Deleting...' : 'Delete Model'}
+                    }}>
+                    {isDeletingModel ? "Deleting..." : "Delete Model"}
                   </Button>
                 )}
 
@@ -1040,21 +1212,27 @@ const Settings: React.FC = () => {
                   variant="outlined"
                   size="small"
                   startIcon={<DownloadIcon />}
-                  disabled={status === 'downloading' || isDeletingModel}
+                  disabled={status === "downloading" || isDeletingModel}
                   onClick={(): void => {
                     handleDownloadModel();
-                  }}
-                >
-                  {status === 'downloaded' ? 'Re-download' : 'Download'}
+                  }}>
+                  {status === "downloaded" ? "Re-download" : "Download"}
                 </Button>
               </Box>
             </Box>
 
-            {llmProgress && status === 'downloading' && (
-              <Box sx={{ width: '100%', mt: 2 }}>
-                <LinearProgress variant="determinate" value={llmProgress.progress} />
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                  {llmProgress.progress.toFixed(1)}% ({Math.round(llmProgress.loaded / 1024 / 1024)}MB / {Math.round(llmProgress.total / 1024 / 1024)}
+            {llmProgress && status === "downloading" && (
+              <Box sx={{ width: "100%", mt: 2 }}>
+                <LinearProgress
+                  variant="determinate"
+                  value={llmProgress.progress}
+                />
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ mt: 1, display: "block" }}>
+                  {llmProgress.progress.toFixed(1)}% ({Math.round(llmProgress.loaded / 1024 / 1024)}MB /{" "}
+                  {Math.round(llmProgress.total / 1024 / 1024)}
                   MB)
                 </Typography>
               </Box>
@@ -1063,26 +1241,44 @@ const Settings: React.FC = () => {
         </Box>
 
         {/* Reply prediction */}
-        <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+        <Box sx={{ pt: 2, borderTop: "1px solid", borderColor: "divider" }}>
+          <Typography
+            variant="subtitle2"
+            sx={{ fontWeight: "bold", mb: 0.5 }}>
             Reply Prediction
           </Typography>
-          <Typography variant="body2" sx={{ mb: 1.5, color: 'text.secondary' }}>
-            After each assistant response, generate 3 suggested follow-up questions. Click a suggestion to send it instantly.
+          <Typography
+            variant="body2"
+            sx={{ mb: 1.5, color: "text.secondary" }}>
+            After each assistant response, generate 3 suggested follow-up questions. Click a suggestion to send it
+            instantly.
           </Typography>
           <FormControlLabel
-            control={<Switch checked={replyPredictionEnabled} onChange={(e): void => setReplyPredictionEnabled(e.target.checked)} />}
+            control={
+              <Switch
+                checked={replyPredictionEnabled}
+                onChange={(e): void => setReplyPredictionEnabled(e.target.checked)}
+              />
+            }
             label="Enable reply prediction"
             sx={{ mb: replyPredictionEnabled ? 2 : 0 }}
           />
           {replyPredictionEnabled && (
-            <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+            <FormControl
+              fullWidth
+              size="small"
+              sx={{ mt: 1 }}>
               <InputLabel>Prediction Model</InputLabel>
-              <Select value={replyPredictionModel} label="Prediction Model" onChange={(e): void => setReplyPredictionModel(e.target.value)}>
+              <Select
+                value={replyPredictionModel}
+                label="Prediction Model"
+                onChange={(e): void => setReplyPredictionModel(e.target.value)}>
                 <MenuItem value="same">Same as active chat model</MenuItem>
                 <MenuItem value="local">Local LLM (browser model)</MenuItem>
                 {chatModels.map((m) => (
-                  <MenuItem key={m.id} value={m.id}>
+                  <MenuItem
+                    key={m.id}
+                    value={m.id}>
                     {m.label}
                   </MenuItem>
                 ))}
@@ -1092,7 +1288,12 @@ const Settings: React.FC = () => {
         </Box>
       </Paper>
 
-      <ImportDialog open={importDialogOpen} file={pendingImportFile} onClose={handleImportDialogClose} onComplete={handleImportComplete} />
+      <ImportDialog
+        open={importDialogOpen}
+        file={pendingImportFile}
+        onClose={handleImportDialogClose}
+        onComplete={handleImportComplete}
+      />
     </Box>
   );
 };
