@@ -146,8 +146,8 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
 
   const getContentPreview = (entry: ContextEntry, expanded: boolean): string => {
     const raw = typeof entry.message.content === 'string' ? entry.message.content : '[attachment]';
-    if (expanded || raw.length <= 300) return raw;
-    return raw.slice(0, 300) + '...';
+    if (expanded || raw.length <= 500) return raw;
+    return raw.slice(0, 500) + '...';
   };
 
   const formatRole = (role: string, messageType?: string): string => {
@@ -237,7 +237,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
               const isRag = entry.isRagRetrieved === true;
               const isPreview = entry.sourceLabel.startsWith('Current User Message');
               const rawContent = typeof entry.message.content === 'string' ? entry.message.content : '';
-              const isTruncated = rawContent.length > 300;
+              const isTruncated = rawContent.length > 500;
               const dropKey = entry.messageId ?? String(globalIndex);
               const willBeDropped = droppedIds.has(dropKey);
 

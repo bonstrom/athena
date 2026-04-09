@@ -586,12 +586,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         async (toolName, argsJson) => {
           if (toolName === 'read_messages') {
             try {
-              const { messages } = JSON.parse(argsJson) as { messages: { messageId: string; startLine?: number; endLine?: number }[] };
+              const parsedArgs = JSON.parse(argsJson) as { messages?: { messageId: string; startLine?: number; endLine?: number }[] };
+              const messagesToRead = parsedArgs.messages || [];
               const results: string[] = [];
-              
+
+              if (messagesToRead.length === 0) {
+                return 'Error: No messages array provided in arguments.';
+              }
+
               const allMessagesInTopic = await athenaDb.messages.where('topicId').equals(topicId).toArray();
 
-              for (const req of messages) {
+              for (const req of messagesToRead) {
+                if (!req.messageId) continue;
                 // Find message by full ID or 8-char prefix
                 const target = allMessagesInTopic.find(m => m.id === req.messageId || m.id.startsWith(req.messageId));
                 if (!target) {

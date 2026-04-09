@@ -6,6 +6,7 @@ export const DEFAULT_SCRATCHPAD_RULES = `You have a private scratchpad for long-
 * Stated preferences, opinions, or constraints
 * Ongoing tasks, projects, or goals that span multiple sessions
 * Key decisions made together and their rationale
+* Bookmarks for critical historical messages (e.g. "[Bookmarked ID: xxxxxxxx] - pactl digital audio routing config"). ALWAYS include a concise label so you know what the ID contains without wasting space.
 * Important facts the user has shared
 
 **What NOT to store:**

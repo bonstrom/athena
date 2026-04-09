@@ -51,7 +51,7 @@ export const READ_MESSAGES_TOOL: LlmTool = {
   type: 'function',
   function: {
     name: 'read_messages',
-    description: 'Retrieve full content or specific lines of historical messages by their IDs. Use this when a snippet is not enough to understand a past message.',
+    description: 'Retrieve full content or specific lines of historical messages by their IDs. Use this when a snippet or a truncated message (typically truncated to 500 chars) is not enough. Tip: Store IDs of critical messages (like working configs) in your scratchpad for future reference.',
     parameters: {
       type: 'object',
       properties: {
@@ -577,7 +577,7 @@ export async function orchestrateLlmLoop(
     }
 
     // Handle Tool Calls Loop
-    if (result.toolCalls && result.toolCalls.length > 0 && result.finishReason === 'tool_calls') {
+    if (result.toolCalls && result.toolCalls.length > 0) {
       // Add assistant tool calls to context
       llmContext.push({
         role: 'assistant',

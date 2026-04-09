@@ -11,6 +11,7 @@ import { SCRATCHPAD_LIMIT } from '../constants';
 const RAG_TOP_K = 5;
 const RAG_MIN_SCORE = 0.3; // discard weakly-related matches
 const RAG_MAX_CHARS = 4000; // hard cap on total RAG block size
+const RAG_CONTENT_LIMIT = 500; // truncate individual RAG messages to keep context lean
 
 interface TopicState {
   topics: Topic[];
@@ -185,11 +186,24 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
     const combined = [...pinned, ...recent, ...aiNotes];
     const unique = Array.from(new Map(combined.map((m) => [m.id, m])).values());
-    const base = unique.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+    let base = unique.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
     // Message Retrieval Tool: Provide a directory of messages not in full context
     const retrievalEnabled = useAuthStore.getState().messageRetrievalEnabled;
     if (retrievalEnabled) {
+      // 1. Truncate large messages in the 'base' context to keep the window lean
+      // We keep the last 3 messages at full fidelity to preserve immediate context
+      base = base.map((m, idx) => {
+        const isVeryRecent = idx >= base.length - 3;
+        if (!isVeryRecent && (m.type === 'user' || m.type === 'assistant') && m.content.length > RAG_CONTENT_LIMIT) {
+          return {
+            ...m,
+            content: `${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, 8)} to reach full content]`,
+          };
+        }
+        return m;
+      });
+
       const includedIds = new Set(base.map((m) => m.id));
       const directoryMessages = activeSequence.filter(
         (m) => (m.type === 'user' || m.type === 'assistant') && !includedIds.has(m.id) && !m.isDeleted,
@@ -259,9 +273,21 @@ export const useTopicStore = create<TopicState>((set, get) => ({
           const budgetedMessages: Message[] = [];
           let usedChars = 0;
           for (const { messages } of pairs) {
-            const pairChars = messages.reduce((sum, m) => sum + m.content.length, 0);
+            // Truncate individual messages if they exceed the limit to save context
+            // Since we currently embed the first 512 chars, the 'match' is at the start.
+            const processedMessages = messages.map((m) => {
+              if (m.content.length > RAG_CONTENT_LIMIT) {
+                return {
+                  ...m,
+                  content: `${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, 8)} to reach full content]`,
+                };
+              }
+              return m;
+            });
+
+            const pairChars = processedMessages.reduce((sum, m) => sum + m.content.length, 0);
             if (usedChars + pairChars > RAG_MAX_CHARS) break;
-            budgetedMessages.push(...messages);
+            budgetedMessages.push(...processedMessages);
             usedChars += pairChars;
           }
 
