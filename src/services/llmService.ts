@@ -73,6 +73,19 @@ export const READ_MESSAGES_TOOL: LlmTool = {
   }
 };
 
+export const LIST_MESSAGES_TOOL: LlmTool = {
+  type: 'function',
+  function: {
+    name: 'list_messages',
+    description: 'Get a chronological directory of all messages in this topic (ID, role, and a short snippet). Use this to find relevant message IDs when the recent context is not enough.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  }
+};
+
 export interface LlmTool {
   type: 'function' | 'builtin_function';
   function: {

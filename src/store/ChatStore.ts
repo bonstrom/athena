@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { calculateCostSEK, ChatModel, getDefaultModel } from '../components/ModelSelector';
 import { useTopicStore } from './TopicStore';
-import { orchestrateLlmLoop, askLlm, LlmMessage, LlmContentPart, SCRATCHPAD_TOOL, READ_MESSAGES_TOOL } from '../services/llmService';
+import { orchestrateLlmLoop, askLlm, LlmMessage, LlmContentPart, SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL } from '../services/llmService';
 import { chatModels } from '../components/ModelSelector';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { Message, Attachment } from '../database/AthenaDb';
@@ -619,10 +619,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               return `Error reading messages: ${String(e)}`;
             }
           }
+          if (toolName === 'list_messages') {
+            try {
+              const allMessages = await athenaDb.messages.where('topicId').equals(topicId).sortBy('created');
+              const lines = allMessages
+                .filter(m => !m.isDeleted)
+                .map(m => {
+                  const snippet = m.content.substring(0, 150).replace(/\n/g, ' ').trim();
+                  return `[ID: ${m.id.slice(0, 8)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
+                });
+              return `CHRONOLOGICAL DIRECTORY OF TOPIC "${topic?.name ?? 'Untitled'}":\n\n${lines.join('\n')}\n\nUse 'read_messages' with any of these IDs to see full content.`;
+            } catch (e) {
+              return `Error listing messages: ${String(e)}`;
+            }
+          }
           return 'Tool not implemented.';
         },
         onToolLogCallback,
-        useAuthStore.getState().messageRetrievalEnabled ? [SCRATCHPAD_TOOL, READ_MESSAGES_TOOL] : [SCRATCHPAD_TOOL],
+        useAuthStore.getState().messageRetrievalEnabled ? [SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL] : [SCRATCHPAD_TOOL],
         get().webSearchEnabled,
         controller.signal,
       );

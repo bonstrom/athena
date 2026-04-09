@@ -178,7 +178,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       }
     }
 
-    const recent = activeSequence.filter((m) => m.type === 'user' || m.type === 'assistant').slice(-(topic.maxContextMessages ?? 6));
+    const recent = activeSequence.filter((m) => m.type === 'user' || m.type === 'assistant').slice(-(topic.maxContextMessages ?? 12));
 
     // Ensure only active versions are included even if pinned (user request: only active messages)
     const pinned = activeSequence.filter((m) => m.includeInContext);
@@ -192,9 +192,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     const retrievalEnabled = useAuthStore.getState().messageRetrievalEnabled;
     if (retrievalEnabled) {
       // 1. Truncate large messages in the 'base' context to keep the window lean
-      // We keep the last 3 messages at full fidelity to preserve immediate context
+      // We keep the last 2 messages at full fidelity (the previous Q&A turn)
       base = base.map((m, idx) => {
-        const isVeryRecent = idx >= base.length - 3;
+        const isVeryRecent = idx >= base.length - 2;
         if (!isVeryRecent && (m.type === 'user' || m.type === 'assistant') && m.content.length > RAG_CONTENT_LIMIT) {
           return {
             ...m,
@@ -210,7 +210,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       );
 
       if (directoryMessages.length > 0) {
-        const directoryLines = directoryMessages.map((m) => {
+        // Show only the most recent 30 missing messages in the prompt directory to save tokens
+        const visibleDirectory = directoryMessages.slice(-30);
+        const directoryLines = visibleDirectory.map((m) => {
           const snippet = m.content.substring(0, 150).replace(/\n/g, ' ').trim();
           return `[ID: ${m.id.slice(0, 8)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
         });
@@ -219,7 +221,11 @@ export const useTopicStore = create<TopicState>((set, get) => ({
           id: '__history_directory__',
           topicId,
           type: 'system',
-          content: `BEYOND RECENT CONTEXT: The following historical messages are available via the 'read_messages' tool. Use them if you need to recall specific details from earlier in the thread:\n\n${directoryLines.join('\n')}`,
+          content: `BEYOND RECENT CONTEXT: The following historical messages are available. ${
+            directoryMessages.length > visibleDirectory.length 
+              ? `(Showing last ${visibleDirectory.length} of ${directoryMessages.length} historical messages. Use 'list_messages' to see the full directory.)` 
+              : ''
+          }\n\n${directoryLines.join('\n')}`,
           isDeleted: false,
           includeInContext: false,
           created: new Date(1).toISOString(), // older than chunks but newer than 0
