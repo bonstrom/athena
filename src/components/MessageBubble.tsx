@@ -30,6 +30,7 @@ import PushPinIcon from '@mui/icons-material/PushPin';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
+import PsychologyIcon from '@mui/icons-material/Psychology';
 import { useChatStore } from '../store/ChatStore';
 import { chatModels } from './ModelSelector';
 import { Message } from '../database/AthenaDb';
@@ -76,13 +77,26 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const isLong = messageTruncateChars > 0 && message.content.length > messageTruncateChars;
   const displayContent = isLong && !isExpanded ? message.content.slice(0, messageTruncateChars) + '\u2026' : message.content;
 
+  const [wasReasoningAutoShown, setWasReasoningAutoShown] = useState(false);
+
   // Keep expanded while the message is being streamed/generated
   useEffect(() => {
-    if (isStreaming) {
-      setIsExpanded(true);
-      if (message.reasoning) setShowReasoning(true);
+    if (isAssistant) {
+      if (message.content === '') {
+        setIsExpanded(true);
+        if (message.reasoning && !wasReasoningAutoShown) {
+          setShowReasoning(true);
+          setWasReasoningAutoShown(true);
+        }
+      } else {
+        // Once content starts, if we auto-showed reasoning, hide it auto
+        if (wasReasoningAutoShown && showReasoning) {
+          setShowReasoning(false);
+          setWasReasoningAutoShown(false);
+        }
+      }
     }
-  }, [isStreaming, message.reasoning]);
+  }, [isAssistant, message.content, message.reasoning, wasReasoningAutoShown, showReasoning]);
 
   const togglePin = async (): Promise<void> => {
     try {
@@ -241,48 +255,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               }
             >
               <Box
-                onClick={message.reasoning ? (): void => setShowReasoning(!showReasoning) : undefined}
                 onMouseEnter={handleMouseEnter}
                 onMouseLeave={handleMouseLeave}
                 sx={{
-                  cursor: message.reasoning ? 'pointer' : 'default',
+                  cursor: 'default',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 0.5,
                   userSelect: 'none',
-                  '&:hover': message.reasoning
-                    ? {
-                        '& .MuiTypography-root, & .reasoning-icon': {
-                          color: 'text.primary',
-                        },
-                      }
-                    : {},
                 }}
               >
                 <Typography variant="subtitle2" color="text.secondary" sx={{ transition: 'color 0.2s', display: 'inline-block' }}>
                   {message.type === 'user' ? userName : getModelLabel(message.model)}
                 </Typography>
-                {message.reasoning && (
-                  <Box
-                    className="reasoning-icon"
-                    onClick={(e): void => {
-                      e.stopPropagation();
-                      setShowReasoning(!showReasoning);
-                    }}
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      color: 'text.secondary',
-                      transition: 'color 0.2s',
-                      ml: 0.5,
-                      cursor: 'pointer',
-                      '&:hover': { color: 'primary.main' },
-                    }}
-                  >
-                    <Typography variant="caption" sx={{ fontWeight: 'bold', mr: 0.5, letterSpacing: '0.05em' }}>THOUGHTS</Typography>
-                    {showReasoning ? <ExpandLessIcon sx={{ fontSize: '1.1rem' }} /> : <ExpandMoreIcon sx={{ fontSize: '1.1rem' }} />}
-                  </Box>
-                )}
               </Box>
             </Tooltip>
 
@@ -459,17 +444,36 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           ) : (
             <>
               <MarkdownWithCode fontSize={chatFontSize}>{displayContent}</MarkdownWithCode>
-              {isLong && (
-                <Box mt={0.5}>
-                  <Button
-                    size="small"
-                    variant="text"
-                    startIcon={isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                    onClick={(): void => setIsExpanded((v) => !v)}
-                    sx={{ textTransform: 'none', color: 'text.secondary', fontSize: '0.75rem', px: 0.5 }}
-                  >
-                    {isExpanded ? 'Show less' : 'Show more'}
-                  </Button>
+              {(isLong || message.reasoning) && (
+                <Box mt={0.5} display="flex" alignItems="center" gap={1}>
+                  {isLong && (
+                    <Button
+                      size="small"
+                      variant="text"
+                      startIcon={isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                      onClick={(): void => setIsExpanded((v) => !v)}
+                      sx={{ textTransform: 'none', color: 'text.secondary', fontSize: '0.75rem', px: 0.5 }}
+                    >
+                      {isExpanded ? 'Show less' : 'Show more'}
+                    </Button>
+                  )}
+                  {message.reasoning && (
+                    <Tooltip title={showReasoning ? "Hide thoughts" : "Show thoughts"}>
+                      <IconButton
+                        size="small"
+                        onClick={(): void => setShowReasoning(!showReasoning)}
+                        sx={{
+                          color: showReasoning ? 'primary.main' : 'text.secondary',
+                          p: 0.5,
+                          '&:hover': {
+                            bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                          }
+                        }}
+                      >
+                        <PsychologyIcon sx={{ fontSize: '1.2rem' }} />
+                      </IconButton>
+                    </Tooltip>
+                  )}
                 </Box>
               )}
             </>
@@ -556,7 +560,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           </Box>
         )}
 
-        {((showReasoning && message.reasoning) || (isAssistant && message.content === '' && !!message.reasoning)) && (
+        {(showReasoning && message.reasoning) && (
           <Box
             sx={{
               mt: 1.5,
