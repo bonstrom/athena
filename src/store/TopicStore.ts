@@ -469,12 +469,11 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       }
     }
 
-    // 3. Scratchpad System Message
-    let scratchpadSystemMsg = `You have a private scratchpad for long-term memory (max ${SCRATCHPAD_LIMIT} chars). To append a note to it, include \`<!-- persist: your note here -->\` in your response. To replace the entire scratchpad, use \`<!-- replace: your new content here -->\`. Use the scratchpad to remember key facts, character details, or state during games.`;
-    if (topic?.scratchpad) {
-      scratchpadSystemMsg += '\n\n[Current Scratchpad Content]:\n' + topic.scratchpad;
-    }
-    totalTokens += encode(`system: ${scratchpadSystemMsg}`).length;
+    // 3. Scratchpad Rules & Content (matches logic in ChatStore.ts)
+    const rawScratchpadRules = auth.scratchpadRules.replace('{{SCRATCHPAD_LIMIT}}', String(SCRATCHPAD_LIMIT));
+    // Note: We skip the model-specific "without tools" instruction here for simplicity in estimation
+    totalTokens += encode(`system: ${rawScratchpadRules}`).length;
+    totalTokens += encode(`system: ${topic?.scratchpad ?? '(Empty)'}`).length;
 
     // 4. Context Messages
     for (const msg of contextMessages) {
