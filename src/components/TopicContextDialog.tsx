@@ -42,9 +42,13 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
-  const { buildFullContext, updateMessageContext } = useChatStore();
+  const { buildFullContext, updateMessageContext, selectedModel } = useChatStore();
   const { addNotification } = useNotificationStore();
-  const { maxContextTokens } = useAuthStore();
+  const { maxContextTokens, messageRetrievalEnabled } = useAuthStore();
+
+  const effectiveBudget = useMemo(() => {
+    return Math.min(maxContextTokens, Math.floor(selectedModel.contextWindow * 0.9));
+  }, [maxContextTokens, selectedModel]);
 
   const reload = (): void => {
     if (!topicId) return;
@@ -65,27 +69,38 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, topicId, userMessagePreview]);
 
-  const tokenCount = useMemo(() => {
+  const totalTokenCount = useMemo(() => {
     if (entries.length === 0) return 0;
-    return estimateTokens(entries.map((e) => e.message)).promptTokens;
-  }, [entries]);
+    // Account for tool overhead (~200 tokens per tool block + system overhead)
+    let overhead = 50; 
+    if (selectedModel.supportsTools) overhead += 150;
+    if (messageRetrievalEnabled) overhead += 250;
+    
+    return estimateTokens(entries.map((e) => e.message)).promptTokens + overhead;
+  }, [entries, selectedModel, messageRetrievalEnabled]);
 
   // Simulate the same truncation logic as buildPayload to identify which entries would be dropped
-  const droppedIds = useMemo(() => {
-    if (tokenCount <= maxContextTokens) return new Set<string | undefined>();
-    // Walk from oldest non-system entry forward, marking drops until under budget
+  const { droppedIds, budgetedTokenCount } = useMemo(() => {
     const dropped = new Set<string | undefined>();
+    if (totalTokenCount <= effectiveBudget) {
+      return { droppedIds: dropped, budgetedTokenCount: totalTokenCount };
+    }
+
+    // Walk from oldest non-system entry forward, marking drops until under budget
     const working = entries.map((e) => e.message);
-    while (working.length > 1 && estimateTokens(working).promptTokens > maxContextTokens) {
+    while (working.length > 1 && estimateTokens(working).promptTokens > effectiveBudget) {
       const idx = working.findIndex((m) => m.role !== 'system');
       if (idx === -1) break;
+      
       // Map back to the entry to get its messageId/index
       const droppedEntry = entries.find((e) => e.message === working[idx]);
       dropped.add(droppedEntry?.messageId ?? String(droppedEntry ? entries.indexOf(droppedEntry) : -1));
       working.splice(idx, 1);
     }
-    return dropped;
-  }, [entries, tokenCount, maxContextTokens]);
+    
+    const count = estimateTokens(working).promptTokens;
+    return { droppedIds: dropped, budgetedTokenCount: count };
+  }, [entries, totalTokenCount, effectiveBudget]);
 
   const filteredEntries = useMemo(() => {
     if (!searchQuery.trim()) return entries;
@@ -170,12 +185,14 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
           <span>Context Inspector</span>
           {!loading && (
             <Stack direction="row" spacing={1} alignItems="center">
-              <Chip
-                label={`~${tokenCount.toLocaleString()} tokens`}
-                size="small"
-                variant="outlined"
-                color={tokenCount > maxContextTokens ? 'error' : tokenCount > maxContextTokens * 0.8 ? 'warning' : 'info'}
-              />
+              <Tooltip title={budgetedTokenCount < totalTokenCount ? `Total potential: ${totalTokenCount.toLocaleString()} tokens. Budgeted for next request: ${budgetedTokenCount.toLocaleString()} tokens.` : ""}>
+                <Chip
+                  label={budgetedTokenCount < totalTokenCount ? `~${budgetedTokenCount.toLocaleString()} / ${totalTokenCount.toLocaleString()} tokens` : `~${totalTokenCount.toLocaleString()} tokens`}
+                  size="small"
+                  variant="outlined"
+                  color={totalTokenCount > effectiveBudget ? 'error' : totalTokenCount > effectiveBudget * 0.8 ? 'warning' : 'info'}
+                />
+              </Tooltip>
               <Chip label={`${entries.length} messages`} size="small" variant="outlined" />
             </Stack>
           )}

@@ -77,6 +77,8 @@ const Settings: React.FC = () => {
     setMaxContextTokens,
     messageRetrievalEnabled,
     setMessageRetrievalEnabled,
+    defaultMaxContextMessages,
+    setDefaultMaxContextMessages,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState("");
@@ -557,6 +559,23 @@ const Settings: React.FC = () => {
               <MenuItem value={16000}>16k — Default</MenuItem>
               <MenuItem value={32000}>32k — Large</MenuItem>
               <MenuItem value={64000}>64k — Maximum</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl
+            fullWidth
+            size="small"
+            sx={{ mt: 2 }}>
+            <InputLabel>Default Recent Messages</InputLabel>
+            <Select
+              value={defaultMaxContextMessages}
+              label="Default Recent Messages"
+              onChange={(e): void => setDefaultMaxContextMessages(e.target.value as number)}>
+              <MenuItem value={5}>5 messages</MenuItem>
+              <MenuItem value={10}>10 messages (default)</MenuItem>
+              <MenuItem value={15}>15 messages</MenuItem>
+              <MenuItem value={20}>20 messages</MenuItem>
+              <MenuItem value={30}>30 messages</MenuItem>
+              <MenuItem value={50}>50 messages</MenuItem>
             </Select>
           </FormControl>
         </Box>

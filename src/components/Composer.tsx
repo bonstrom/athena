@@ -87,6 +87,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     llmSuggestionEnabled,
     llmModelSelected,
     llmModelDownloadStatus,
+    messageRetrievalEnabled,
+    defaultMaxContextMessages,
   } = useAuthStore();
   const { webSearchEnabled, setWebSearchEnabled } = useChatStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -712,11 +714,11 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 variant="caption"
                 color="text.secondary">
                 Recent messages:{" "}
-                {localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 6}
+                {localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? defaultMaxContextMessages}
               </Typography>
             </Box>
             <Slider
-              value={localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? 6}
+              value={localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? defaultMaxContextMessages}
               min={1}
               max={50}
               step={1}

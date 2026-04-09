@@ -178,7 +178,8 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       }
     }
 
-    const recent = activeSequence.filter((m) => m.type === 'user' || m.type === 'assistant').slice(-(topic.maxContextMessages ?? 12));
+    const defaultMessages = useAuthStore.getState().defaultMaxContextMessages || 10;
+    const recent = activeSequence.filter((m) => m.type === 'user' || m.type === 'assistant').slice(-(topic.maxContextMessages ?? defaultMessages));
 
     // Ensure only active versions are included even if pinned (user request: only active messages)
     const pinned = activeSequence.filter((m) => m.includeInContext);

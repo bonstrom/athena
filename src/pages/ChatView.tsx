@@ -14,14 +14,14 @@ const ChatView: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  const { chatWidth } = useAuthStore();
+  const { chatWidth, defaultMaxContextMessages } = useAuthStore();
   const { messagesByTopic, sending, sendMessageStream, fetchMessages, pendingSuggestions, clearSuggestions, isSuggestionsLoading } = useChatStore();
   const [displayTopicId, setDisplayTopicId] = useState<string | undefined>(topicId);
   const [isVisible, setIsVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const topic = useTopicStore((state) => state.topics.find((t) => t.id === displayTopicId));
-  const maxContextMessages = topic?.maxContextMessages ?? 6;
+  const maxContextMessages = topic?.maxContextMessages ?? defaultMaxContextMessages;
 
   const messages = displayTopicId ? (messagesByTopic[displayTopicId] ?? []) : [];
 

@@ -28,6 +28,8 @@ interface AuthState {
   ragEnabled: boolean;
   maxContextTokens: number;
   messageRetrievalEnabled: boolean;
+  defaultMaxContextMessages: number;
+  setDefaultMaxContextMessages: (count: number) => void;
   setRagEnabled: (enabled: boolean) => void;
   setMaxContextTokens: (tokens: number) => void;
   setMessageRetrievalEnabled: (enabled: boolean) => void;
@@ -84,7 +86,8 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedMessageTruncateChars = Number(localStorage.getItem("messageTruncateChars") ?? "500");
   const storedRagEnabled = localStorage.getItem("ragEnabled") !== "false"; // default true
   const storedMaxContextTokens = Number(localStorage.getItem("maxContextTokens") ?? "16000");
-  const storedMessageRetrievalEnabled = localStorage.getItem("messageRetrievalEnabled") === "true"; // default false
+  const storedMessageRetrievalEnabled = localStorage.getItem("messageRetrievalEnabled") !== "false"; // default true
+  const storedDefaultMaxContextMessages = Number(localStorage.getItem("defaultMaxContextMessages") ?? "10");
 
   return {
     openAiKey: storedOpenAiKey,
@@ -111,6 +114,7 @@ export const useAuthStore = create<AuthState>((set) => {
     ragEnabled: storedRagEnabled,
     maxContextTokens: storedMaxContextTokens,
     messageRetrievalEnabled: storedMessageRetrievalEnabled,
+    defaultMaxContextMessages: storedDefaultMaxContextMessages,
     clearAuth: (): void => {
       localStorage.removeItem("openAiKey");
       localStorage.removeItem("deepSeekKey");
@@ -139,8 +143,13 @@ export const useAuthStore = create<AuthState>((set) => {
         replyPredictionModel: "same",
         llmModelSelected: "qwen3.5-0.8b",
         llmModelDownloadStatus: {},
-        messageRetrievalEnabled: false,
+        messageRetrievalEnabled: true,
+        defaultMaxContextMessages: 10,
       });
+    },
+    setDefaultMaxContextMessages: (count: number): void => {
+      localStorage.setItem("defaultMaxContextMessages", String(count));
+      set({ defaultMaxContextMessages: count });
     },
     setLlmSuggestionEnabled: (enabled: boolean): void => {
       localStorage.setItem("llmSuggestionEnabled", String(enabled));
