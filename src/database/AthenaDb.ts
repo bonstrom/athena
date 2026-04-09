@@ -157,6 +157,7 @@ export interface Message {
   searchCount?: number;
   latencyMs?: number;
   reasoning?: string;
+  toolLogs?: string;
   parentMessageId?: string;
   activeResponseId?: string;
   attachments?: Attachment[];

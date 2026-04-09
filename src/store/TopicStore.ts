@@ -187,6 +187,37 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     const unique = Array.from(new Map(combined.map((m) => [m.id, m])).values());
     const base = unique.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
+    // Message Retrieval Tool: Provide a directory of messages not in full context
+    const retrievalEnabled = useAuthStore.getState().messageRetrievalEnabled;
+    if (retrievalEnabled) {
+      const includedIds = new Set(base.map((m) => m.id));
+      const directoryMessages = activeSequence.filter(
+        (m) => (m.type === 'user' || m.type === 'assistant') && !includedIds.has(m.id) && !m.isDeleted,
+      );
+
+      if (directoryMessages.length > 0) {
+        const directoryLines = directoryMessages.map((m) => {
+          const snippet = m.content.substring(0, 150).replace(/\n/g, ' ').trim();
+          return `[ID: ${m.id.slice(0, 8)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
+        });
+
+        const directoryMessage: Message = {
+          id: '__history_directory__',
+          topicId,
+          type: 'system',
+          content: `BEYOND RECENT CONTEXT: The following historical messages are available via the 'read_messages' tool. Use them if you need to recall specific details from earlier in the thread:\n\n${directoryLines.join('\n')}`,
+          isDeleted: false,
+          includeInContext: false,
+          created: new Date(1).toISOString(), // older than chunks but newer than 0
+          failed: false,
+          promptTokens: 0,
+          completionTokens: 0,
+          totalCost: 0,
+        };
+        base.unshift(directoryMessage);
+      }
+    }
+
     // RAG: inject semantically similar messages from outside the current window
     const ragEnabled = useAuthStore.getState().ragEnabled;
     if (ragEnabled && userQuery && embeddingService.isReady) {

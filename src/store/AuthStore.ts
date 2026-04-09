@@ -27,8 +27,10 @@ interface AuthState {
   messageTruncateChars: number;
   ragEnabled: boolean;
   maxContextTokens: number;
+  messageRetrievalEnabled: boolean;
   setRagEnabled: (enabled: boolean) => void;
   setMaxContextTokens: (tokens: number) => void;
+  setMessageRetrievalEnabled: (enabled: boolean) => void;
   setLlmSuggestionEnabled: (enabled: boolean) => void;
   setReplyPredictionEnabled: (enabled: boolean) => void;
   setReplyPredictionModel: (model: string) => void;
@@ -82,6 +84,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedMessageTruncateChars = Number(localStorage.getItem("messageTruncateChars") ?? "500");
   const storedRagEnabled = localStorage.getItem("ragEnabled") !== "false"; // default true
   const storedMaxContextTokens = Number(localStorage.getItem("maxContextTokens") ?? "16000");
+  const storedMessageRetrievalEnabled = localStorage.getItem("messageRetrievalEnabled") === "true"; // default false
 
   return {
     openAiKey: storedOpenAiKey,
@@ -107,6 +110,7 @@ export const useAuthStore = create<AuthState>((set) => {
     messageTruncateChars: storedMessageTruncateChars,
     ragEnabled: storedRagEnabled,
     maxContextTokens: storedMaxContextTokens,
+    messageRetrievalEnabled: storedMessageRetrievalEnabled,
     clearAuth: (): void => {
       localStorage.removeItem("openAiKey");
       localStorage.removeItem("deepSeekKey");
@@ -116,6 +120,7 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem("customInstructions");
       localStorage.removeItem("chatWidth");
       localStorage.removeItem("chatFontSize");
+      localStorage.removeItem("messageRetrievalEnabled");
       void athenaDb.predefinedPrompts.clear();
       set({
         openAiKey: "",
@@ -134,6 +139,7 @@ export const useAuthStore = create<AuthState>((set) => {
         replyPredictionModel: "same",
         llmModelSelected: "qwen3.5-0.8b",
         llmModelDownloadStatus: {},
+        messageRetrievalEnabled: false,
       });
     },
     setLlmSuggestionEnabled: (enabled: boolean): void => {
@@ -174,6 +180,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setMaxContextTokens: (tokens: number): void => {
       localStorage.setItem("maxContextTokens", String(tokens));
       set({ maxContextTokens: tokens });
+    },
+    setMessageRetrievalEnabled: (enabled: boolean): void => {
+      localStorage.setItem("messageRetrievalEnabled", String(enabled));
+      set({ messageRetrievalEnabled: enabled });
     },
     setOpenAiKey: (key: string): void => {
       localStorage.setItem("openAiKey", SecurityUtils.encode(key));

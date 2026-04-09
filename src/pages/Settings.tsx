@@ -75,6 +75,8 @@ const Settings: React.FC = () => {
     setRagEnabled,
     maxContextTokens,
     setMaxContextTokens,
+    messageRetrievalEnabled,
+    setMessageRetrievalEnabled,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState("");
@@ -516,6 +518,26 @@ const Settings: React.FC = () => {
                   variant="caption"
                   color="text.secondary">
                   Retrieves relevant older messages using a 23MB local model. Disable on slower devices.
+                </Typography>
+              </Box>
+            }
+            sx={{ mt: 1, alignItems: "flex-start" }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={messageRetrievalEnabled}
+                onChange={(e): void => setMessageRetrievalEnabled(e.target.checked)}
+                size="small"
+              />
+            }
+            label={
+              <Box>
+                <Typography variant="body2">Message Retrieval Tool (Experimental)</Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary">
+                  Allows the LLM to selectively retrieve older messages from this topic using IDs. Dramatically improves long-term memory while saving tokens.
                 </Typography>
               </Box>
             }

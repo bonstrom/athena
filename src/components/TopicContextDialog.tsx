@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -81,7 +81,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
       if (idx === -1) break;
       // Map back to the entry to get its messageId/index
       const droppedEntry = entries.find((e) => e.message === working[idx]);
-      dropped.add(droppedEntry?.messageId ?? String(entries.indexOf(droppedEntry!)));
+      dropped.add(droppedEntry?.messageId ?? String(droppedEntry ? entries.indexOf(droppedEntry) : -1));
       working.splice(idx, 1);
     }
     return dropped;

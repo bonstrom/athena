@@ -78,8 +78,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
 
   // Keep expanded while the message is being streamed/generated
   useEffect(() => {
-    if (isStreaming) setIsExpanded(true);
-  }, [isStreaming]);
+    if (isStreaming) {
+      setIsExpanded(true);
+      if (message.reasoning) setShowReasoning(true);
+    }
+  }, [isStreaming, message.reasoning]);
 
   const togglePin = async (): Promise<void> => {
     try {
@@ -262,14 +265,21 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 {message.reasoning && (
                   <Box
                     className="reasoning-icon"
+                    onClick={(e): void => {
+                      e.stopPropagation();
+                      setShowReasoning(!showReasoning);
+                    }}
                     sx={{
                       display: 'flex',
                       alignItems: 'center',
                       color: 'text.secondary',
                       transition: 'color 0.2s',
-                      ml: 0.25,
+                      ml: 0.5,
+                      cursor: 'pointer',
+                      '&:hover': { color: 'primary.main' },
                     }}
                   >
+                    <Typography variant="caption" sx={{ fontWeight: 'bold', mr: 0.5, letterSpacing: '0.05em' }}>THOUGHTS</Typography>
                     {showReasoning ? <ExpandLessIcon sx={{ fontSize: '1.1rem' }} /> : <ExpandMoreIcon sx={{ fontSize: '1.1rem' }} />}
                   </Box>
                 )}
@@ -555,20 +565,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               borderRadius: 2,
               bgcolor: (theme): string => (theme.palette.mode === 'dark' ? alpha('#fff', 0.05) : alpha('#000', 0.03)),
               borderLeft: (theme): string => `4px solid ${alpha(theme.palette.text.secondary, 0.2)}`,
-              maxHeight: '300px',
+              maxHeight: '400px',
               overflowY: 'auto',
             }}
           >
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', mb: 0.5, display: 'block', textTransform: 'uppercase' }}>
-              Reasoning
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', mb: 0.5, display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Thought Process
             </Typography>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ whiteSpace: 'pre-wrap', fontStyle: 'italic', fontSize: `${Math.max(12, chatFontSize - 2)}px` }}
-            >
-              {message.reasoning}
-            </Typography>
+            <Box sx={{ fontSize: `${Math.max(11, chatFontSize - 2)}px` }}>
+              <MarkdownWithCode fontSize={Math.max(11, chatFontSize - 2)}>{message.reasoning}</MarkdownWithCode>
+            </Box>
           </Box>
         )}
 

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { calculateCostSEK, ChatModel, getDefaultModel } from '../components/ModelSelector';
 import { useTopicStore } from './TopicStore';
-import { orchestrateLlmLoop, askLlm, LlmMessage, LlmContentPart } from '../services/llmService';
+import { orchestrateLlmLoop, askLlm, LlmMessage, LlmContentPart, SCRATCHPAD_TOOL, READ_MESSAGES_TOOL } from '../services/llmService';
 import { chatModels } from '../components/ModelSelector';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { Message, Attachment } from '../database/AthenaDb';
@@ -531,10 +531,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const loopStartTime = Date.now();
       let streamedContent = '';
       let lastContentRenderTime = 0;
-      let lastReasoningRenderTime = 0;
       const RENDER_THROTTLE_MS = 64; // ~15fps for smooth but efficient UI
 
-      let streamedReasoning = '';
       const onTokenCallback = (chunk: string): void => {
         streamedContent += chunk;
         const now = Date.now();
@@ -547,13 +545,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       };
 
+      let streamedThinking = '';
+      let lastThinkingRenderTime = 0;
+
       const onReasoningCallback = (token: string): void => {
-        streamedReasoning += token;
+        streamedThinking += token;
         const now = Date.now();
-        if (now - lastReasoningRenderTime > RENDER_THROTTLE_MS) {
-          get().updateMessageStateOnly(assistantId, { reasoning: streamedReasoning.trim() });
-          lastReasoningRenderTime = now;
+        if (now - lastThinkingRenderTime > RENDER_THROTTLE_MS) {
+          get().updateMessageStateOnly(assistantId, { reasoning: streamedThinking.trim() });
+          lastThinkingRenderTime = now;
         }
+      };
+
+      const onToolLogCallback = (log: string): void => {
+        streamedThinking += log;
+        get().updateMessageStateOnly(assistantId, { reasoning: streamedThinking.trim() });
       };
 
       // 4. Call the Orchestrator for the Primary Model
@@ -577,6 +583,40 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           }
           await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
         },
+        async (toolName, argsJson) => {
+          if (toolName === 'read_messages') {
+            try {
+              const { messages } = JSON.parse(argsJson) as { messages: { messageId: string; startLine?: number; endLine?: number }[] };
+              const results: string[] = [];
+              
+              const allMessagesInTopic = await athenaDb.messages.where('topicId').equals(topicId).toArray();
+
+              for (const req of messages) {
+                // Find message by full ID or 8-char prefix
+                const target = allMessagesInTopic.find(m => m.id === req.messageId || m.id.startsWith(req.messageId));
+                if (!target) {
+                  results.push(`Message ${req.messageId} not found.`);
+                  continue;
+                }
+
+                let content = target.content;
+                if (req.startLine || req.endLine) {
+                  const lines = content.split('\n');
+                  const start = (req.startLine ?? 1) - 1;
+                  const end = req.endLine ?? lines.length;
+                  content = lines.slice(start, end).join('\n');
+                }
+                results.push(`[Message ${target.id}]\n${content}`);
+              }
+              return results.join('\n\n---\n\n');
+            } catch (e) {
+              return `Error reading messages: ${String(e)}`;
+            }
+          }
+          return 'Tool not implemented.';
+        },
+        onToolLogCallback,
+        useAuthStore.getState().messageRetrievalEnabled ? [SCRATCHPAD_TOOL, READ_MESSAGES_TOOL] : [SCRATCHPAD_TOOL],
         get().webSearchEnabled,
         controller.signal,
       );
@@ -600,7 +640,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
           .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
           .trim(),
-        reasoning: finalReasoning.trim(),
+        reasoning: streamedThinking.trim(),
         completionTokens: totalCompletionTokens,
         totalCost: finalTotalCost,
         failed: false,

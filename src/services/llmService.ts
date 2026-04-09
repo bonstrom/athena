@@ -47,6 +47,32 @@ export const SCRATCHPAD_TOOL: LlmTool = {
   },
 };
 
+export const READ_MESSAGES_TOOL: LlmTool = {
+  type: 'function',
+  function: {
+    name: 'read_messages',
+    description: 'Retrieve full content or specific lines of historical messages by their IDs. Use this when a snippet is not enough to understand a past message.',
+    parameters: {
+      type: 'object',
+      properties: {
+        messages: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              messageId: { type: 'string', description: 'The ID of the message to retrieve.' },
+              startLine: { type: 'number', description: 'Optional: Start line number (1-indexed).' },
+              endLine: { type: 'number', description: 'Optional: End line number.' }
+            },
+            required: ['messageId']
+          }
+        }
+      },
+      required: ['messages']
+    }
+  }
+};
+
 export interface LlmTool {
   type: 'function' | 'builtin_function';
   function: {
@@ -512,6 +538,9 @@ export async function orchestrateLlmLoop(
   onToken?: (token: string) => void,
   onReasoning?: (token: string) => void,
   onScratchpadUpdate?: (content: string, action: 'append' | 'replace') => Promise<void>,
+  onExecuteTool?: (toolName: string, args: string) => Promise<string>,
+  onToolLog?: (log: string) => void,
+  tools: LlmTool[] = [SCRATCHPAD_TOOL],
   webSearch?: boolean,
   signal?: AbortSignal,
 ): Promise<OrchestrateResult> {
@@ -526,8 +555,12 @@ export async function orchestrateLlmLoop(
   while (loopCount < 5) {
     loopCount++;
     const result = model.streaming
-      ? await askLlmStream(model, temperature, llmContext, onToken, onReasoning, [SCRATCHPAD_TOOL], webSearch, signal)
-      : await askLlm(model, temperature, llmContext, [SCRATCHPAD_TOOL], webSearch, signal);
+      ? await askLlmStream(model, temperature, llmContext, onToken, onReasoning, tools, webSearch, signal)
+      : await askLlm(model, temperature, llmContext, tools, webSearch, signal);
+
+    if (!model.streaming && result.reasoning && onReasoning) {
+      onReasoning(result.reasoning);
+    }
 
     lastResult = result;
     totalPromptTokens += result.promptTokens;
@@ -560,11 +593,33 @@ export async function orchestrateLlmLoop(
       // Add tool results to context
       for (const tc of result.toolCalls) {
         const isWebSearch = tc.function.name === '$web_search';
+        const isScratchpad = tc.function.name === 'update_scratchpad';
+        let toolResult = 'Updated.';
+
+        if (onToolLog) {
+          onToolLog(`\n\n**Executing Tool**: \`${tc.function.name}\`\n> \`\`\`json\n> ${tc.function.arguments}\n> \`\`\`\n`);
+        }
+
+        if (isWebSearch) {
+          toolResult = tc.function.arguments;
+        } else if (!isScratchpad && onExecuteTool) {
+          try {
+            toolResult = await onExecuteTool(tc.function.name, tc.function.arguments);
+          } catch (e) {
+            toolResult = `Error executing tool: ${e instanceof Error ? e.message : String(e)}`;
+          }
+        }
+
+        if (onToolLog) {
+          const summary = toolResult.length > 500 ? toolResult.slice(0, 500) + '... (truncated)' : toolResult;
+          onToolLog(`**Tool Result**: \`${tc.function.name}\`\n> ${summary.replace(/\n/g, '\n> ')}\n\n`);
+        }
+
         llmContext.push({
           role: 'tool',
           tool_call_id: tc.id,
           name: tc.function.name,
-          content: isWebSearch ? tc.function.arguments : 'Updated.',
+          content: toolResult,
         });
       }
       continue;
