@@ -51,7 +51,8 @@ export const READ_MESSAGES_TOOL: LlmTool = {
   type: 'function',
   function: {
     name: 'read_messages',
-    description: 'Retrieve full content or specific lines of historical messages by their IDs. Use this when a snippet or a truncated message (typically truncated to 500 chars) is not enough. Tip: Store IDs of critical messages (like working configs) in your scratchpad for future reference.',
+    description:
+      'Retrieve full content or specific lines of historical messages by their IDs. Use this when a snippet or a truncated message (typically truncated to 500 chars) is not enough. Tip: Store IDs of critical messages (like working configs) in your scratchpad for future reference.',
     parameters: {
       type: 'object',
       properties: {
@@ -62,28 +63,29 @@ export const READ_MESSAGES_TOOL: LlmTool = {
             properties: {
               messageId: { type: 'string', description: 'The ID of the message to retrieve.' },
               startLine: { type: 'number', description: 'Optional: Start line number (1-indexed).' },
-              endLine: { type: 'number', description: 'Optional: End line number.' }
+              endLine: { type: 'number', description: 'Optional: End line number.' },
             },
-            required: ['messageId']
-          }
-        }
+            required: ['messageId'],
+          },
+        },
       },
-      required: ['messages']
-    }
-  }
+      required: ['messages'],
+    },
+  },
 };
 
 export const LIST_MESSAGES_TOOL: LlmTool = {
   type: 'function',
   function: {
     name: 'list_messages',
-    description: 'Get a chronological directory of all messages in this topic (ID, role, and a short snippet). Use this to find relevant message IDs when the recent context is not enough.',
+    description:
+      'Get a chronological directory of all messages in this topic (ID, role, and a short snippet). Use this to find relevant message IDs when the recent context is not enough.',
     parameters: {
       type: 'object',
       properties: {},
-      required: []
-    }
-  }
+      required: [],
+    },
+  },
 };
 
 export interface LlmTool {
@@ -623,8 +625,14 @@ export async function orchestrateLlmLoop(
           }
         }
 
+        // Cap tool result size to prevent tool output from crowding out conversation context
+        const TOOL_RESULT_CHAR_LIMIT = 8000;
+        if (toolResult.length > TOOL_RESULT_CHAR_LIMIT) {
+          toolResult = toolResult.slice(0, TOOL_RESULT_CHAR_LIMIT) + `\n\n[TRUNCATED: result exceeded ${TOOL_RESULT_CHAR_LIMIT} chars]`;
+        }
+
         if (onToolLog) {
-          const summary = toolResult.length > 500 ? toolResult.slice(0, 500) + '... (truncated)' : toolResult;
+          const summary = toolResult.length > 500 ? toolResult.slice(0, 500) + '... *(display truncated — full content sent to LLM)*' : toolResult;
           onToolLog(`**Tool Result**: \`${tc.function.name}\`\n> ${summary.replace(/\n/g, '\n> ')}\n\n`);
         }
 

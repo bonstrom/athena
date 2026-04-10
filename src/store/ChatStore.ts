@@ -1,7 +1,15 @@
 import { create } from 'zustand';
 import { calculateCostSEK, ChatModel, getDefaultModel } from '../components/ModelSelector';
 import { useTopicStore } from './TopicStore';
-import { orchestrateLlmLoop, askLlm, LlmMessage, LlmContentPart, SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL } from '../services/llmService';
+import {
+  orchestrateLlmLoop,
+  askLlm,
+  LlmMessage,
+  LlmContentPart,
+  SCRATCHPAD_TOOL,
+  READ_MESSAGES_TOOL,
+  LIST_MESSAGES_TOOL,
+} from '../services/llmService';
 import { chatModels } from '../components/ModelSelector';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { Message, Attachment } from '../database/AthenaDb';
@@ -578,7 +586,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             updatedScratchpad = currentScratchpad ? `${currentScratchpad}\n${aiNote}` : aiNote;
           }
           if (updatedScratchpad.length > SCRATCHPAD_LIMIT) {
-            updatedScratchpad = updatedScratchpad.slice(0, SCRATCHPAD_LIMIT);
+            const cutoff = updatedScratchpad.lastIndexOf('\n', SCRATCHPAD_LIMIT);
+            updatedScratchpad = updatedScratchpad.slice(0, cutoff > 0 ? cutoff : SCRATCHPAD_LIMIT);
             useNotificationStore.getState().addNotification('Scratchpad full', 'Content was trimmed to fit the character limit.');
           }
           await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
@@ -594,12 +603,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 return 'Error: No messages array provided in arguments.';
               }
 
-              const allMessagesInTopic = await athenaDb.messages.where('topicId').equals(topicId).toArray();
+              const activeForkId = topic?.activeForkId ?? 'main';
+              const allMessagesInTopic = await athenaDb.messages
+                .where('topicId')
+                .equals(topicId)
+                .and((m) => m.forkId === activeForkId)
+                .toArray();
 
               for (const req of messagesToRead) {
                 if (!req.messageId) continue;
                 // Find message by full ID or 8-char prefix
-                const target = allMessagesInTopic.find(m => m.id === req.messageId || m.id.startsWith(req.messageId));
+                const target = allMessagesInTopic.find((m) => m.id === req.messageId || m.id.startsWith(req.messageId));
                 if (!target) {
                   results.push(`Message ${req.messageId} not found.`);
                   continue;
@@ -621,10 +635,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           }
           if (toolName === 'list_messages') {
             try {
-              const allMessages = await athenaDb.messages.where('topicId').equals(topicId).sortBy('created');
+              const activeForkId = topic?.activeForkId ?? 'main';
+              const allMessages = await athenaDb.messages
+                .where('topicId')
+                .equals(topicId)
+                .and((m) => m.forkId === activeForkId)
+                .sortBy('created');
               const lines = allMessages
-                .filter(m => !m.isDeleted)
-                .map(m => {
+                .filter((m) => !m.isDeleted && (m.type === 'user' || m.type === 'assistant'))
+                .map((m) => {
                   const snippet = m.content.substring(0, 150).replace(/\n/g, ' ').trim();
                   return `[ID: ${m.id.slice(0, 8)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
                 });
