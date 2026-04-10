@@ -11,7 +11,7 @@ import { SCRATCHPAD_LIMIT } from '../constants';
 const RAG_TOP_K = 5;
 const RAG_MIN_SCORE = 0.3; // discard weakly-related matches
 const RAG_MAX_CHARS = 4000; // hard cap on total RAG block size
-const RAG_CONTENT_LIMIT = 500; // truncate individual RAG messages to keep context lean
+const RAG_CONTENT_LIMIT = 250; // truncate individual messages to keep context lean; LLM can fetch full content via read_messages
 
 interface TopicState {
   topics: Topic[];
@@ -207,11 +207,12 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     let base = unique.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
     // Truncate large messages in base to keep the window lean.
-    // We keep the last 2 messages at full fidelity (the previous Q&A turn).
+    // Only the last message (the immediate previous response) is kept at full fidelity.
+    // Everything else gets a short snippet — the LLM can fetch the full content via read_messages if needed.
     const retrievalEnabled = useAuthStore.getState().messageRetrievalEnabled;
     if (retrievalEnabled) {
       base = base.map((m, idx) => {
-        const isVeryRecent = idx >= base.length - 2;
+        const isVeryRecent = idx === base.length - 1;
         if (!isVeryRecent && (m.type === 'user' || m.type === 'assistant') && m.content.length > RAG_CONTENT_LIMIT) {
           return {
             ...m,
