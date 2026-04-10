@@ -19,7 +19,7 @@ import { BackupService } from '../services/backupService';
 import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 
-import { SCRATCHPAD_LIMIT } from '../constants';
+import { SCRATCHPAD_LIMIT, SHORT_SCRATCHPAD_RULES } from '../constants';
 
 export interface ContextEntry {
   message: LlmMessage;
@@ -129,12 +129,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     // System: Scratchpad rules + content (shown as two entries for clarity in the inspector)
-    const rawScratchpadRules = useAuthStore.getState().scratchpadRules.replace('{{SCRATCHPAD_LIMIT}}', String(SCRATCHPAD_LIMIT));
+    const rawScratchpadRules = (topic?.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
+      '{{SCRATCHPAD_LIMIT}}',
+      String(SCRATCHPAD_LIMIT),
+    );
     const scratchpadRulesOnly = selectedModel.supportsTools
       ? rawScratchpadRules
       : `${rawScratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`;
     entries.push({ message: { role: 'system', content: scratchpadRulesOnly }, sourceLabel: 'Scratchpad Rules' });
-    entries.push({ message: { role: 'system', content: topic?.scratchpad ?? '(Empty)' }, sourceLabel: 'Scratchpad Content' });
+    if (topic?.scratchpad) {
+      entries.push({ message: { role: 'system', content: topic.scratchpad }, sourceLabel: 'Scratchpad Content' });
+    }
 
     // System: Web search instructions
     if (webSearchEnabled && selectedModel.provider === 'moonshot') {
@@ -173,7 +178,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         sourceLabel = `Recent ${m.type === 'user' ? 'User' : 'Assistant'} Message`;
       }
       entries.push({
-        message: { role, content: m.content, reasoning_content: m.reasoning },
+        message: { role, content: m.content, ...(m.reasoning && { reasoning_content: m.reasoning }) },
         sourceLabel,
         messageId: isRag ? undefined : m.id,
         messageType: m.type,
@@ -431,18 +436,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             parts.push({ type: 'image_url', image_url: { url: att.data } });
           }
         }
-        return { role, content: parts, reasoning_content: m.reasoning };
+        return { role, content: parts, ...(m.reasoning && { reasoning_content: m.reasoning }) };
       }
       return {
         role,
         content: m.content,
-        reasoning_content: m.reasoning,
+        ...(m.reasoning && { reasoning_content: m.reasoning }),
       };
     });
 
     const systems: LlmMessage[] = [];
-    const rawScratchpadRules = useAuthStore.getState().scratchpadRules.replace('{{SCRATCHPAD_LIMIT}}', String(SCRATCHPAD_LIMIT));
-    const scratchpadRules = `${rawScratchpadRules}\n\n[Current Scratchpad Content]:\n${topic?.scratchpad ?? '(Empty)'}`;
+    const rawScratchpadRules = (topic?.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
+      '{{SCRATCHPAD_LIMIT}}',
+      String(SCRATCHPAD_LIMIT),
+    );
+    const scratchpadRules = topic?.scratchpad ? `${rawScratchpadRules}\n\n[Current Scratchpad Content]:\n${topic.scratchpad}` : rawScratchpadRules;
 
     if (selectedModel.supportsTools) {
       systems.push({ role: 'system', content: scratchpadRules });

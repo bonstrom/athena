@@ -566,6 +566,8 @@ export async function orchestrateLlmLoop(
   let totalSearchCount = 0;
   let finalContent = '';
   let lastResult: LlmResult | null = null;
+  // Cache tool results within this loop to avoid redundant executions across iterations
+  const toolResultCache = new Map<string, string>();
 
   while (loopCount < 5) {
     loopCount++;
@@ -618,10 +620,17 @@ export async function orchestrateLlmLoop(
         if (isWebSearch) {
           toolResult = tc.function.arguments;
         } else if (!isScratchpad && onExecuteTool) {
-          try {
-            toolResult = await onExecuteTool(tc.function.name, tc.function.arguments);
-          } catch (e) {
-            toolResult = `Error executing tool: ${e instanceof Error ? e.message : String(e)}`;
+          const cacheKey = `${tc.function.name}:${tc.function.arguments}`;
+          const cached = toolResultCache.get(cacheKey);
+          if (cached !== undefined) {
+            toolResult = cached;
+          } else {
+            try {
+              toolResult = await onExecuteTool(tc.function.name, tc.function.arguments);
+              toolResultCache.set(cacheKey, toolResult);
+            } catch (e) {
+              toolResult = `Error executing tool: ${e instanceof Error ? e.message : String(e)}`;
+            }
           }
         }
 

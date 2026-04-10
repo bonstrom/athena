@@ -179,7 +179,24 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     }
 
     const defaultMessages = useAuthStore.getState().defaultMaxContextMessages || 10;
-    const recent = activeSequence.filter((m) => m.type === 'user' || m.type === 'assistant').slice(-(topic.maxContextMessages ?? defaultMessages));
+    const maxMessages = topic.maxContextMessages ?? defaultMessages;
+    const userTokenBudget = useAuthStore.getState().maxContextTokens;
+    // Reserve ~40% for system prompts, RAG, and tool overhead; give 60% to the conversation window.
+    const windowTokenBudget = Math.floor(userTokenBudget * 0.6);
+    const conversationMessages = activeSequence.filter((m) => m.type === 'user' || m.type === 'assistant');
+    const recent: Message[] = [];
+    let windowTokens = 0;
+    for (let i = conversationMessages.length - 1; i >= 0; i--) {
+      const m = conversationMessages[i];
+      const msgTokens = encode(m.content).length + 10; // ~10 tokens per-message role overhead
+      // Always keep at least the last 2 messages (last Q&A pair); after that respect both budget and count cap.
+      if (recent.length < 2 || (recent.length < maxMessages && windowTokens + msgTokens <= windowTokenBudget)) {
+        recent.unshift(m);
+        windowTokens += msgTokens;
+      } else {
+        break;
+      }
+    }
 
     // Ensure only active versions are included even if pinned (user request: only active messages)
     const pinned = activeSequence.filter((m) => m.includeInContext);
@@ -306,19 +323,19 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         // Show only the most recent 30 missing messages in the prompt directory to save tokens
         const visibleDirectory = directoryMessages.slice(-30);
         const directoryLines = visibleDirectory.map((m) => {
-          const snippet = m.content.substring(0, 150).replace(/\n/g, ' ').trim();
-          return `[ID: ${m.id.slice(0, 8)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
+          const snippet = m.content.substring(0, 100).replace(/\n/g, ' ').trim();
+          return `${m.id.slice(0, 8)}|${m.type === 'user' ? 'U' : 'A'}|${snippet}`;
         });
 
+        const moreNote =
+          directoryMessages.length > visibleDirectory.length
+            ? ` (last ${visibleDirectory.length}/${directoryMessages.length}; use 'list_messages' for full list)`
+            : '';
         const directoryMessage: Message = {
           id: '__history_directory__',
           topicId,
           type: 'system',
-          content: `BEYOND RECENT CONTEXT: The following historical messages are available. ${
-            directoryMessages.length > visibleDirectory.length
-              ? `(Showing last ${visibleDirectory.length} of ${directoryMessages.length} historical messages. Use 'list_messages' to see the full directory.)`
-              : ''
-          }\n\n${directoryLines.join('\n')}`,
+          content: `Historical messages outside context${moreNote}. Format: ID|role|snippet (U=user, A=assistant). Use 'read_messages' to fetch full content.\n\n${directoryLines.join('\n')}`,
           isDeleted: false,
           includeInContext: false,
           created: new Date(1).toISOString(), // older than chunks but newer than 0
