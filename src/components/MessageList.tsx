@@ -55,19 +55,23 @@ const Pane: React.FC<{
 
   const lastGroup = groups.length > 0 ? groups[groups.length - 1] : undefined;
   const last = lastGroup?.msg;
-  const sig = last ? `${last.id}:${last.content.length}` : '';
+  const lastId = last?.id ?? '';
+  const lastLength = last?.content.length ?? 0;
 
-  const prevSigRef = useRef(sig);
-  const wasStickyRef = useRef<boolean>(true);
+  const prevIdRef = useRef(lastId);
 
   useEffect(() => {
-    if (sig !== prevSigRef.current && wasStickyRef.current) {
+    const isNewMessage = lastId !== prevIdRef.current;
+    const isStreaming = lastId === prevIdRef.current && lastLength > 0;
+
+    if (isNewMessage) {
       scrollToBottom({ behavior: 'smooth' });
+    } else if (isStreaming && sticky) {
+      scrollToBottom({ behavior: 'auto' });
     }
 
-    prevSigRef.current = sig;
-    wasStickyRef.current = sticky;
-  }, [sig, sticky, scrollToBottom]);
+    prevIdRef.current = lastId;
+  }, [lastId, lastLength, sticky, scrollToBottom]);
 
   // For the context window indicator, we need the active sequence
   const contextMessages = groups.map((g) => g.msg).filter((m) => m.type === 'user' || m.type === 'assistant');

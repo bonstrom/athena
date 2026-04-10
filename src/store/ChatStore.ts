@@ -213,14 +213,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { currentTopicId, messagesByTopic } = get();
     if (!currentTopicId) return;
 
+    const messages = messagesByTopic[currentTopicId] ?? [];
+    const targetIndex = messages.findIndex((m) => m.id === id);
+    const target = targetIndex >= 0 ? messages[targetIndex] : undefined;
+
     // If deleting an assistant message, clear includeInContext on its paired user message
     // to avoid sending orphaned context references to the LLM.
-    const messages = messagesByTopic[currentTopicId] ?? [];
-    const target = messages.find((m) => m.id === id);
     const pairedUserMessageId = target?.type === 'assistant' && target.parentMessageId ? target.parentMessageId : null;
 
+    // If deleting a user message, also delete the immediately following assistant reply
+    const nextMessage = targetIndex >= 0 ? messages[targetIndex + 1] : undefined;
+    const pairedAssistantId = target?.type === 'user' && nextMessage?.type === 'assistant' ? nextMessage.id : null;
+
+    const idsToDelete = [id, ...(pairedAssistantId ? [pairedAssistantId] : [])];
+
     await athenaDb.transaction('rw', athenaDb.messages, async () => {
-      await athenaDb.messages.delete(id);
+      await athenaDb.messages.bulkDelete(idsToDelete);
       if (pairedUserMessageId) {
         await athenaDb.messages.update(pairedUserMessageId, { includeInContext: false });
       }
@@ -230,7 +238,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messagesByTopic: {
         ...state.messagesByTopic,
         [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? [])
-          .filter((m) => m.id !== id)
+          .filter((m) => !idsToDelete.includes(m.id))
           .map((m) => (m.id === pairedUserMessageId ? { ...m, includeInContext: false } : m)),
       },
     }));
