@@ -20,6 +20,7 @@ import {
   Add as AddIcon,
   CloudDownload as DownloadIcon,
   Delete as DeleteIcon,
+  Close as CloseIcon,
 } from "@mui/icons-material";
 import { useAuthStore } from "../store/AuthStore";
 import { BackupService } from "../services/backupService";
@@ -77,6 +78,8 @@ const Settings: React.FC = () => {
     setMaxContextTokens,
     messageRetrievalEnabled,
     setMessageRetrievalEnabled,
+    aiSummaryEnabled,
+    setAiSummaryEnabled,
     defaultMaxContextMessages,
     setDefaultMaxContextMessages,
   } = useAuthStore();
@@ -147,6 +150,13 @@ const Settings: React.FC = () => {
     } finally {
       setIsDeletingModel(false);
     }
+  };
+  
+  const handleResetDownload = (): void => {
+    const modelId: string =
+      llmModelSelected === "qwen3.5-2b" ? "onnx-community/Qwen3.5-2B-ONNX" : "onnx-community/Qwen3.5-0.8B-ONNX";
+    llmSuggestionService.resetDownload(modelId);
+    setLlmProgress(null);
   };
 
   useEffect(() => {
@@ -540,6 +550,26 @@ const Settings: React.FC = () => {
                   variant="caption"
                   color="text.secondary">
                   Allows the LLM to selectively retrieve older messages from this topic using IDs. Dramatically improves long-term memory while saving tokens.
+                </Typography>
+              </Box>
+            }
+            sx={{ mt: 1, alignItems: "flex-start" }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={aiSummaryEnabled}
+                onChange={(e): void => setAiSummaryEnabled(e.target.checked)}
+                size="small"
+              />
+            }
+            label={
+              <Box>
+                <Typography variant="body2">AI Message Summaries</Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary">
+                  Automatically generates a short AI summary for messages exceeding 300 characters using a local LLM. These summaries provide better context when messages are truncated.
                 </Typography>
               </Box>
             }
@@ -1235,6 +1265,17 @@ const Settings: React.FC = () => {
               <Box
                 display="flex"
                 gap={1}>
+                {status === "downloading" && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    color="error"
+                    startIcon={<CloseIcon />}
+                    onClick={handleResetDownload}>
+                    Cancel/Reset
+                  </Button>
+                )}
+
                 {status === "downloaded" && (
                   <Button
                     variant="outlined"
@@ -1253,11 +1294,11 @@ const Settings: React.FC = () => {
                   variant="outlined"
                   size="small"
                   startIcon={<DownloadIcon />}
-                  disabled={status === "downloading" || isDeletingModel}
+                  disabled={isDeletingModel}
                   onClick={(): void => {
                     handleDownloadModel();
                   }}>
-                  {status === "downloaded" ? "Re-download" : "Download"}
+                  {status === "downloaded" ? "Re-download" : status === "downloading" ? "Force Retry" : "Download"}
                 </Button>
               </Box>
             </Box>

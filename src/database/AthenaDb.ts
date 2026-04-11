@@ -162,6 +162,7 @@ export interface Message {
   activeResponseId?: string;
   attachments?: Attachment[];
   embedding?: number[] | null;
+  summary?: string;
 }
 
 export interface Topic {

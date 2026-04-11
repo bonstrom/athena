@@ -187,6 +187,13 @@ class LlmSuggestionService {
     useAuthStore.getState().setLlmModelDownloadStatus(modelId, 'not_downloaded');
   }
 
+  public resetDownload(modelId: string): void {
+    if (this.loadingModelId === modelId) {
+      this.loadingModelId = null;
+    }
+    useAuthStore.getState().setLlmModelDownloadStatus(modelId, 'not_downloaded');
+  }
+
   public async getSuggestion(text: string, context?: string): Promise<string> {
     this.initWorker();
     if (!this.worker) return '';
@@ -242,8 +249,9 @@ class LlmSuggestionService {
     return new Promise<string>((resolve) => {
       this.currentCompletionResolve = resolve;
       this.currentCompletionTimeout = setTimeout(() => {
+        console.warn('LLM completion timed out after 120s');
         this.resolvePendingCompletion('');
-      }, 30000);
+      }, 120000);
       this.worker?.postMessage({ type: 'complete', prompt, maxTokens });
     });
   }

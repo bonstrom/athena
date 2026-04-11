@@ -28,8 +28,10 @@ interface AuthState {
   ragEnabled: boolean;
   maxContextTokens: number;
   messageRetrievalEnabled: boolean;
+  aiSummaryEnabled: boolean;
   defaultMaxContextMessages: number;
   setDefaultMaxContextMessages: (count: number) => void;
+  setAiSummaryEnabled: (enabled: boolean) => void;
   setRagEnabled: (enabled: boolean) => void;
   setMaxContextTokens: (tokens: number) => void;
   setMessageRetrievalEnabled: (enabled: boolean) => void;
@@ -87,6 +89,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedRagEnabled = localStorage.getItem("ragEnabled") !== "false"; // default true
   const storedMaxContextTokens = Number(localStorage.getItem("maxContextTokens") ?? "16000");
   const storedMessageRetrievalEnabled = localStorage.getItem("messageRetrievalEnabled") !== "false"; // default true
+  const storedAiSummaryEnabled = localStorage.getItem("aiSummaryEnabled") === "true";
   const storedDefaultMaxContextMessages = Number(localStorage.getItem("defaultMaxContextMessages") ?? "10");
 
   return {
@@ -114,6 +117,7 @@ export const useAuthStore = create<AuthState>((set) => {
     ragEnabled: storedRagEnabled,
     maxContextTokens: storedMaxContextTokens,
     messageRetrievalEnabled: storedMessageRetrievalEnabled,
+    aiSummaryEnabled: storedAiSummaryEnabled,
     defaultMaxContextMessages: storedDefaultMaxContextMessages,
     clearAuth: (): void => {
       localStorage.removeItem("openAiKey");
@@ -144,6 +148,7 @@ export const useAuthStore = create<AuthState>((set) => {
         llmModelSelected: "qwen3.5-0.8b",
         llmModelDownloadStatus: {},
         messageRetrievalEnabled: true,
+        aiSummaryEnabled: false,
         defaultMaxContextMessages: 10,
       });
     },
@@ -193,6 +198,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setMessageRetrievalEnabled: (enabled: boolean): void => {
       localStorage.setItem("messageRetrievalEnabled", String(enabled));
       set({ messageRetrievalEnabled: enabled });
+    },
+    setAiSummaryEnabled: (enabled: boolean): void => {
+      localStorage.setItem("aiSummaryEnabled", String(enabled));
+      set({ aiSummaryEnabled: enabled });
     },
     setOpenAiKey: (key: string): void => {
       localStorage.setItem("openAiKey", SecurityUtils.encode(key));

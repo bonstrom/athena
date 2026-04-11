@@ -197,9 +197,10 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       base = base.map((m, idx) => {
         const isVeryRecent = idx >= base.length - 2;
         if (!isVeryRecent && (m.type === 'user' || m.type === 'assistant') && m.content.length > RAG_CONTENT_LIMIT) {
+          const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
           return {
             ...m,
-            content: `${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, 8)} to reach full content]`,
+            content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, 8)} to reach full content]`,
           };
         }
         return m;
@@ -214,8 +215,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         // Show only the most recent 30 missing messages in the prompt directory to save tokens
         const visibleDirectory = directoryMessages.slice(-30);
         const directoryLines = visibleDirectory.map((m) => {
-          const snippet = m.content.substring(0, 150).replace(/\n/g, ' ').trim();
-          return `[ID: ${m.id.slice(0, 8)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
+          const summary = m.summary ? m.summary : m.content.substring(0, 150).replace(/\n/g, ' ').trim();
+          const suffix = m.summary ? '' : '...';
+          return `[ID: ${m.id.slice(0, 8)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${summary}${suffix}"`;
         });
 
         const directoryMessage: Message = {
@@ -284,9 +286,10 @@ export const useTopicStore = create<TopicState>((set, get) => ({
             // Since we currently embed the first 512 chars, the 'match' is at the start.
             const processedMessages = messages.map((m) => {
               if (m.content.length > RAG_CONTENT_LIMIT) {
+                const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
                 return {
                   ...m,
-                  content: `${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, 8)} to reach full content]`,
+                  content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, 8)} to reach full content]`,
                 };
               }
               return m;

@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import { calculateCostSEK, ChatModel, getDefaultModel } from '../components/ModelSelector';
 import { useTopicStore } from './TopicStore';
+import { useNotificationStore } from './NotificationStore';
 import { orchestrateLlmLoop, askLlm, LlmMessage, LlmContentPart, SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL } from '../services/llmService';
 import { chatModels } from '../components/ModelSelector';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { Message, Attachment } from '../database/AthenaDb';
 import { athenaDb } from '../database/AthenaDb';
-import { useNotificationStore } from './NotificationStore';
 import { BackupService } from '../services/backupService';
 import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
@@ -59,6 +59,8 @@ interface ChatStore {
   clearSuggestions: () => void;
   isSuggestionsLoading: boolean;
   preloadTopics: (topicIds: string[]) => Promise<void>;
+  maybeSummarize: (messageId: string, content: string, force?: boolean) => Promise<void>;
+  summarizingMessageIds: Set<string>;
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -74,6 +76,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   abortController: null,
   currentRequestMessageIds: null,
   pendingSuggestions: null,
+  summarizingMessageIds: new Set<string>(),
   isSuggestionsLoading: false,
 
   clearSuggestions: (): void => set({ pendingSuggestions: null, isSuggestionsLoading: false }),
@@ -287,6 +290,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       };
     });
+
+    // Fire-and-forget summarization
+    void get().maybeSummarize(id, message.content);
   },
 
   addMessages: async (messages: Message[]): Promise<void> => {
@@ -310,6 +316,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       };
     });
+
+    // Summarize new messages if needed
+    for (const msg of newMessages) {
+      void get().maybeSummarize(msg.id, msg.content);
+    }
   },
 
   updateMessage: async (id, patch): Promise<void> => {
@@ -692,6 +703,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       }));
 
+      // Fire-and-forget summarization for user and assistant messages
+      if (!isRetry) {
+        void get().maybeSummarize(userMessage.id, userMessage.content);
+      }
+      void get().maybeSummarize(assistantId, assistantPatch.content);
+
       void topicStoreState.generateTopicName(topicId, content);
 
       // Generate reply predictions if enabled
@@ -831,6 +848,80 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     set({ sending: false, abortController: null, currentRequestMessageIds: null });
     return null;
+  },
+  maybeSummarize: async (messageId: string, content: string, force = false): Promise<void> => {
+    const { aiSummaryEnabled } = useAuthStore.getState();
+    const { summarizingMessageIds } = get();
+    if (!force && (!aiSummaryEnabled || content.length <= 300)) return;
+    if (summarizingMessageIds.has(messageId)) return;
+
+    set((state) => ({
+      summarizingMessageIds: new Set(state.summarizingMessageIds).add(messageId),
+    }));
+
+    const { llmModelSelected, llmModelDownloadStatus } = useAuthStore.getState();
+    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+    
+    if (llmModelDownloadStatus[modelId] !== 'downloaded') {
+      useNotificationStore.getState().addNotification('Local LLM model not downloaded. Please go to Settings to download it.', 'warning');
+      set((state) => {
+        const next = new Set(state.summarizingMessageIds);
+        next.delete(messageId);
+        return { summarizingMessageIds: next };
+      });
+      return;
+    }
+
+    try {
+      const safeContent = content.length > 2500 ? content.slice(0, 2500) + '... (truncated)' : content;
+      const prompt = 
+        `<|im_start|>system\nYou are a helpful conversational assistant.<|im_end|>\n` +
+        `<|im_start|>user\nProvide a very short summary (max 15 words) of the following text:\n\n${safeContent}<|im_end|>\n` +
+        `<|im_start|>assistant\n`;
+      
+      const summary = await llmSuggestionService.getCompletion(prompt, 50);
+      if (summary && summary.trim()) {
+        const cleanSummary = summary.trim()
+          .replace(/^Summary:\s*/i, '')
+          .replace(/^Here is a summary:\s*/i, '')
+          .replace(/^Assistant:\s*/i, '')
+          .replace(/^"(.*)"$/, '$1')
+          .trim();
+          
+        if (cleanSummary.length < 2) {
+           useNotificationStore.getState().addNotification('Generated summary was empty or too short.', 'warning');
+           return;
+        }
+
+        await athenaDb.messages.update(messageId, { summary: cleanSummary });
+        useNotificationStore.getState().addNotification('Summary generated successfully.', 'success');
+        
+        set((state) => {
+          const { currentTopicId, messagesByTopic } = state;
+          if (!currentTopicId || !messagesByTopic[currentTopicId]) return state;
+          
+          return {
+            messagesByTopic: {
+              ...messagesByTopic,
+              [currentTopicId]: messagesByTopic[currentTopicId]!.map((m) => 
+                m.id === messageId ? { ...m, summary: cleanSummary } : m
+              ),
+            },
+          };
+        });
+      } else {
+        useNotificationStore.getState().addNotification('AI returned an empty summary. Try again.', 'warning');
+      }
+    } catch (err) {
+      console.warn('Failed to generate summary for message', messageId, err);
+      useNotificationStore.getState().addNotification('Failed to generate summary: ' + (err as Error).message, 'error');
+    } finally {
+      set((state) => {
+        const next = new Set(state.summarizingMessageIds);
+        next.delete(messageId);
+        return { summarizingMessageIds: next };
+      });
+    }
   },
   switchMessageVersion: async (userMessageId, assistantId): Promise<void> => {
     const { currentTopicId, updateMessage } = get();

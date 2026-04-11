@@ -16,6 +16,7 @@ import {
   MenuItem,
   ListItemIcon,
   ListItemText,
+  CircularProgress,
 } from '@mui/material';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
@@ -43,6 +44,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import SummarizeIcon from '@mui/icons-material/Summarize';
 
 interface MessageBubbleProps {
   message: Message;
@@ -50,10 +53,10 @@ interface MessageBubbleProps {
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble({ message, versions }) {
-  const { updateMessageContext, deleteMessage, sendMessageStream, regenerateResponse, switchMessageVersion } = useChatStore();
+  const { updateMessageContext, deleteMessage, sendMessageStream, regenerateResponse, switchMessageVersion, maybeSummarize, summarizingMessageIds } = useChatStore();
   const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
-  const { userName, chatFontSize, messageTruncateChars } = useAuthStore();
+  const { userName, chatFontSize, messageTruncateChars, aiSummaryEnabled } = useAuthStore();
   const { isMobile } = useUiStore();
 
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
@@ -226,6 +229,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             <Tooltip
               open={isMobile ? false : tooltipOpen}
               disableTouchListener={isMobile}
+              leaveDelay={300}
               title={
                 <Box>
                   <Typography variant="caption" display="block">
@@ -251,6 +255,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       </Typography>
                     </>
                   )}
+                  {message.summary && (
+                    <Box mt={1} pt={1} sx={{ borderTop: (theme): string => `1px solid ${alpha(theme.palette.divider, 0.2)}` }}>
+                      <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                        <SummarizeIcon sx={{ fontSize: '0.8rem' }} /> Summary
+                      </Typography>
+                      <Typography variant="caption" display="block" sx={{ fontStyle: 'italic', maxWidth: 220, whiteSpace: 'pre-wrap', lineHeight: 1.3 }}>
+                        {message.summary}
+                      </Typography>
+                    </Box>
+                  )}
                 </Box>
               }
             >
@@ -270,6 +284,33 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 </Typography>
               </Box>
             </Tooltip>
+
+            {(aiSummaryEnabled || message.summary) && (message.content.length > 300 || message.summary) && (
+              <Tooltip title={message.summary ? "Regenerate summary" : "Generate summary"} disableTouchListener={isMobile}>
+                <IconButton 
+                  size="small" 
+                  disabled={summarizingMessageIds.has(message.id)}
+                  onClick={(): void => {
+                    void maybeSummarize(message.id, message.content, true);
+                  }}
+                  sx={{ 
+                    ml: 0.5, 
+                    p: 0.4,
+                    color: message.summary ? 'primary.main' : 'text.disabled',
+                    '&:hover': {
+                      color: 'primary.main',
+                      bgcolor: (theme): string => alpha(theme.palette.primary.main, 0.1),
+                    }
+                  }}
+                >
+                  {summarizingMessageIds.has(message.id) ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <AutoAwesomeIcon sx={{ fontSize: '1rem' }} />
+                  )}
+                </IconButton>
+              </Tooltip>
+            )}
 
             {isAssistant && versions && versions.length > 1 && (
               <Box

@@ -165,10 +165,9 @@ async function generateCompletion(prompt: string, maxTokens: number): Promise<vo
     return;
   }
   try {
-    const safePrompt = prompt.length > 2048 ? prompt.slice(-2048) : prompt;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const output = await (generator as unknown as (input: string, options: Record<string, unknown>) => Promise<{ generated_text: string }[]>)(
-      safePrompt,
+      prompt,
       {
         max_new_tokens: maxTokens,
         do_sample: true,
