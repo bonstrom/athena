@@ -2,7 +2,15 @@ import { create } from 'zustand';
 import { calculateCostSEK, ChatModel, getDefaultModel } from '../components/ModelSelector';
 import { useTopicStore } from './TopicStore';
 import { useNotificationStore } from './NotificationStore';
-import { orchestrateLlmLoop, askLlm, LlmMessage, LlmContentPart, SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL } from '../services/llmService';
+import {
+  orchestrateLlmLoop,
+  askLlm,
+  LlmMessage,
+  LlmContentPart,
+  SCRATCHPAD_TOOL,
+  READ_MESSAGES_TOOL,
+  LIST_MESSAGES_TOOL,
+} from '../services/llmService';
 import { chatModels } from '../components/ModelSelector';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { Message, Attachment } from '../database/AthenaDb';
@@ -11,7 +19,7 @@ import { BackupService } from '../services/backupService';
 import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 
-import { SCRATCHPAD_LIMIT } from '../constants';
+import { SCRATCHPAD_LIMIT, SHORT_SCRATCHPAD_RULES } from '../constants';
 
 export interface ContextEntry {
   message: LlmMessage;
@@ -124,12 +132,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     // System: Scratchpad rules + content (shown as two entries for clarity in the inspector)
-    const rawScratchpadRules = useAuthStore.getState().scratchpadRules.replace('{{SCRATCHPAD_LIMIT}}', String(SCRATCHPAD_LIMIT));
+    const rawScratchpadRules = (topic?.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
+      '{{SCRATCHPAD_LIMIT}}',
+      String(SCRATCHPAD_LIMIT),
+    );
     const scratchpadRulesOnly = selectedModel.supportsTools
       ? rawScratchpadRules
       : `${rawScratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`;
     entries.push({ message: { role: 'system', content: scratchpadRulesOnly }, sourceLabel: 'Scratchpad Rules' });
-    entries.push({ message: { role: 'system', content: topic?.scratchpad ?? '(Empty)' }, sourceLabel: 'Scratchpad Content' });
+    if (topic?.scratchpad) {
+      entries.push({ message: { role: 'system', content: topic.scratchpad }, sourceLabel: 'Scratchpad Content' });
+    }
 
     // System: Web search instructions
     if (webSearchEnabled && selectedModel.provider === 'moonshot') {
@@ -168,7 +181,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         sourceLabel = `Recent ${m.type === 'user' ? 'User' : 'Assistant'} Message`;
       }
       entries.push({
-        message: { role, content: m.content, reasoning_content: m.reasoning },
+        message: { role, content: m.content, ...(m.reasoning && { reasoning_content: m.reasoning }) },
         sourceLabel,
         messageId: isRag ? undefined : m.id,
         messageType: m.type,
@@ -208,14 +221,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { currentTopicId, messagesByTopic } = get();
     if (!currentTopicId) return;
 
+    const messages = messagesByTopic[currentTopicId] ?? [];
+    const targetIndex = messages.findIndex((m) => m.id === id);
+    const target = targetIndex >= 0 ? messages[targetIndex] : undefined;
+
     // If deleting an assistant message, clear includeInContext on its paired user message
     // to avoid sending orphaned context references to the LLM.
-    const messages = messagesByTopic[currentTopicId] ?? [];
-    const target = messages.find((m) => m.id === id);
     const pairedUserMessageId = target?.type === 'assistant' && target.parentMessageId ? target.parentMessageId : null;
 
+    // If deleting a user message, also delete the immediately following assistant reply
+    const nextMessage = targetIndex >= 0 ? messages[targetIndex + 1] : undefined;
+    const pairedAssistantId = target?.type === 'user' && nextMessage?.type === 'assistant' ? nextMessage.id : null;
+
+    const idsToDelete = [id, ...(pairedAssistantId ? [pairedAssistantId] : [])];
+
     await athenaDb.transaction('rw', athenaDb.messages, async () => {
-      await athenaDb.messages.delete(id);
+      await athenaDb.messages.bulkDelete(idsToDelete);
       if (pairedUserMessageId) {
         await athenaDb.messages.update(pairedUserMessageId, { includeInContext: false });
       }
@@ -225,7 +246,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       messagesByTopic: {
         ...state.messagesByTopic,
         [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? [])
-          .filter((m) => m.id !== id)
+          .filter((m) => !idsToDelete.includes(m.id))
           .map((m) => (m.id === pairedUserMessageId ? { ...m, includeInContext: false } : m)),
       },
     }));
@@ -426,18 +447,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             parts.push({ type: 'image_url', image_url: { url: att.data } });
           }
         }
-        return { role, content: parts, reasoning_content: m.reasoning };
+        return { role, content: parts, ...(m.reasoning && { reasoning_content: m.reasoning }) };
       }
       return {
         role,
         content: m.content,
-        reasoning_content: m.reasoning,
+        ...(m.reasoning && { reasoning_content: m.reasoning }),
       };
     });
 
     const systems: LlmMessage[] = [];
-    const rawScratchpadRules = useAuthStore.getState().scratchpadRules.replace('{{SCRATCHPAD_LIMIT}}', String(SCRATCHPAD_LIMIT));
-    const scratchpadRules = `${rawScratchpadRules}\n\n[Current Scratchpad Content]:\n${topic?.scratchpad ?? '(Empty)'}`;
+    const rawScratchpadRules = (topic?.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
+      '{{SCRATCHPAD_LIMIT}}',
+      String(SCRATCHPAD_LIMIT),
+    );
+    const scratchpadRules = topic?.scratchpad ? `${rawScratchpadRules}\n\n[Current Scratchpad Content]:\n${topic.scratchpad}` : rawScratchpadRules;
 
     if (selectedModel.supportsTools) {
       systems.push({ role: 'system', content: scratchpadRules });
@@ -589,7 +613,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             updatedScratchpad = currentScratchpad ? `${currentScratchpad}\n${aiNote}` : aiNote;
           }
           if (updatedScratchpad.length > SCRATCHPAD_LIMIT) {
-            updatedScratchpad = updatedScratchpad.slice(0, SCRATCHPAD_LIMIT);
+            const cutoff = updatedScratchpad.lastIndexOf('\n', SCRATCHPAD_LIMIT);
+            updatedScratchpad = updatedScratchpad.slice(0, cutoff > 0 ? cutoff : SCRATCHPAD_LIMIT);
             useNotificationStore.getState().addNotification('Scratchpad full', 'Content was trimmed to fit the character limit.');
           }
           await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
@@ -605,12 +630,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 return 'Error: No messages array provided in arguments.';
               }
 
-              const allMessagesInTopic = await athenaDb.messages.where('topicId').equals(topicId).toArray();
+              const activeForkId = topic?.activeForkId ?? 'main';
+              const allMessagesInTopic = await athenaDb.messages
+                .where('topicId')
+                .equals(topicId)
+                .and((m) => m.forkId === activeForkId)
+                .toArray();
 
               for (const req of messagesToRead) {
                 if (!req.messageId) continue;
                 // Find message by full ID or 8-char prefix
-                const target = allMessagesInTopic.find(m => m.id === req.messageId || m.id.startsWith(req.messageId));
+                const target = allMessagesInTopic.find((m) => m.id === req.messageId || m.id.startsWith(req.messageId));
                 if (!target) {
                   results.push(`Message ${req.messageId} not found.`);
                   continue;
@@ -632,10 +662,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           }
           if (toolName === 'list_messages') {
             try {
-              const allMessages = await athenaDb.messages.where('topicId').equals(topicId).sortBy('created');
+              const activeForkId = topic?.activeForkId ?? 'main';
+              const allMessages = await athenaDb.messages
+                .where('topicId')
+                .equals(topicId)
+                .and((m) => m.forkId === activeForkId)
+                .sortBy('created');
               const lines = allMessages
-                .filter(m => !m.isDeleted)
-                .map(m => {
+                .filter((m) => !m.isDeleted && (m.type === 'user' || m.type === 'assistant'))
+                .map((m) => {
                   const snippet = m.content.substring(0, 150).replace(/\n/g, ' ').trim();
                   return `[ID: ${m.id.slice(0, 8)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
                 });

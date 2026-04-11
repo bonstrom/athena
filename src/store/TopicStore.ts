@@ -11,7 +11,7 @@ import { SCRATCHPAD_LIMIT } from '../constants';
 const RAG_TOP_K = 5;
 const RAG_MIN_SCORE = 0.3; // discard weakly-related matches
 const RAG_MAX_CHARS = 4000; // hard cap on total RAG block size
-const RAG_CONTENT_LIMIT = 500; // truncate individual RAG messages to keep context lean
+const RAG_CONTENT_LIMIT = 250; // truncate individual messages to keep context lean; LLM can fetch full content via read_messages
 
 interface TopicState {
   topics: Topic[];
@@ -179,7 +179,24 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     }
 
     const defaultMessages = useAuthStore.getState().defaultMaxContextMessages || 10;
-    const recent = activeSequence.filter((m) => m.type === 'user' || m.type === 'assistant').slice(-(topic.maxContextMessages ?? defaultMessages));
+    const maxMessages = topic.maxContextMessages ?? defaultMessages;
+    const userTokenBudget = useAuthStore.getState().maxContextTokens;
+    // Reserve ~40% for system prompts, RAG, and tool overhead; give 60% to the conversation window.
+    const windowTokenBudget = Math.floor(userTokenBudget * 0.6);
+    const conversationMessages = activeSequence.filter((m) => m.type === 'user' || m.type === 'assistant');
+    const recent: Message[] = [];
+    let windowTokens = 0;
+    for (let i = conversationMessages.length - 1; i >= 0; i--) {
+      const m = conversationMessages[i];
+      const msgTokens = encode(m.content).length + 10; // ~10 tokens per-message role overhead
+      // Always keep at least the last 2 messages (last Q&A pair); after that respect both budget and count cap.
+      if (recent.length < 2 || (recent.length < maxMessages && windowTokens + msgTokens <= windowTokenBudget)) {
+        recent.unshift(m);
+        windowTokens += msgTokens;
+      } else {
+        break;
+      }
+    }
 
     // Ensure only active versions are included even if pinned (user request: only active messages)
     const pinned = activeSequence.filter((m) => m.includeInContext);
@@ -189,13 +206,13 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     const unique = Array.from(new Map(combined.map((m) => [m.id, m])).values());
     let base = unique.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
-    // Message Retrieval Tool: Provide a directory of messages not in full context
+    // Truncate large messages in base to keep the window lean.
+    // Only the last message (the immediate previous response) is kept at full fidelity.
+    // Everything else gets a short snippet — the LLM can fetch the full content via read_messages if needed.
     const retrievalEnabled = useAuthStore.getState().messageRetrievalEnabled;
     if (retrievalEnabled) {
-      // 1. Truncate large messages in the 'base' context to keep the window lean
-      // We keep the last 2 messages at full fidelity (the previous Q&A turn)
       base = base.map((m, idx) => {
-        const isVeryRecent = idx >= base.length - 2;
+        const isVeryRecent = idx === base.length - 1;
         if (!isVeryRecent && (m.type === 'user' || m.type === 'assistant') && m.content.length > RAG_CONTENT_LIMIT) {
           const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
           return {
@@ -206,47 +223,19 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         return m;
       });
 
-      const includedIds = new Set(base.map((m) => m.id));
-      const directoryMessages = activeSequence.filter(
-        (m) => (m.type === 'user' || m.type === 'assistant') && !includedIds.has(m.id) && !m.isDeleted,
-      );
-
-      if (directoryMessages.length > 0) {
-        // Show only the most recent 30 missing messages in the prompt directory to save tokens
-        const visibleDirectory = directoryMessages.slice(-30);
-        const directoryLines = visibleDirectory.map((m) => {
-          const summary = m.summary ? m.summary : m.content.substring(0, 150).replace(/\n/g, ' ').trim();
-          const suffix = m.summary ? '' : '...';
-          return `[ID: ${m.id.slice(0, 8)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${summary}${suffix}"`;
-        });
-
-        const directoryMessage: Message = {
-          id: '__history_directory__',
-          topicId,
-          type: 'system',
-          content: `BEYOND RECENT CONTEXT: The following historical messages are available. ${
-            directoryMessages.length > visibleDirectory.length 
-              ? `(Showing last ${visibleDirectory.length} of ${directoryMessages.length} historical messages. Use 'list_messages' to see the full directory.)` 
-              : ''
-          }\n\n${directoryLines.join('\n')}`,
-          isDeleted: false,
-          includeInContext: false,
-          created: new Date(1).toISOString(), // older than chunks but newer than 0
-          failed: false,
-          promptTokens: 0,
-          completionTokens: 0,
-          totalCost: 0,
-        };
-        base.unshift(directoryMessage);
-      }
     }
 
-    // RAG: inject semantically similar messages from outside the current window
+    // RAG: inject semantically similar messages from outside the current window.
+    // Run BEFORE building the history directory so RAG-retrieved IDs can be excluded
+    // from the directory, preventing duplicates.
     const ragEnabled = useAuthStore.getState().ragEnabled;
+    let ragMessage: Message | null = null;
+    const ragInjectedIds = new Set<string>();
+
     if (ragEnabled && userQuery && embeddingService.isReady) {
-      const includedIds = new Set(base.map((m) => m.id));
+      const baseIds = new Set(base.map((m) => m.id));
       const candidates = activeSequence.filter(
-        (m) => !includedIds.has(m.id) && (m.type === 'user' || m.type === 'assistant') && m.embedding && m.embedding.length > 0,
+        (m) => !baseIds.has(m.id) && (m.type === 'user' || m.type === 'assistant') && m.embedding && m.embedding.length > 0,
       );
 
       try {
@@ -267,7 +256,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
             if (m.type === 'user') {
               const assistantVersions = assistantByParent.get(m.id) ?? [];
               const activeId = m.activeResponseId ?? (assistantVersions.length > 0 ? assistantVersions[assistantVersions.length - 1].id : null);
-              if (activeId && !includedIds.has(activeId)) {
+              if (activeId && !baseIds.has(activeId) && !seenIds.has(activeId)) {
                 const reply = allCandidatesById.get(activeId);
                 if (reply) {
                   pair.push(reply);
@@ -302,10 +291,13 @@ export const useTopicStore = create<TopicState>((set, get) => ({
           }
 
           if (budgetedMessages.length > 0) {
+            // Track injected IDs so the history directory can exclude them
+            for (const m of budgetedMessages) ragInjectedIds.add(m.id);
+
             // Sort chronologically for readable context
             const sorted = budgetedMessages.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
             const ragContent = sorted.map((m) => `[${m.type === 'user' ? 'User' : 'Assistant'}]: ${m.content}`).join('\n\n');
-            const ragMessage: Message = {
+            ragMessage = {
               id: '__rag_context__',
               topicId,
               type: 'system',
@@ -318,12 +310,50 @@ export const useTopicStore = create<TopicState>((set, get) => ({
               completionTokens: 0,
               totalCost: 0,
             };
-            return [ragMessage, ...base];
           }
         }
       } catch (err) {
         console.warn('RAG retrieval failed, falling back to base context:', err);
       }
+    }
+
+    // Message Retrieval Tool: Provide a directory of messages not in full context.
+    // Excludes messages already present via RAG to avoid duplicates.
+    if (retrievalEnabled) {
+      const includedIds = new Set([...base.map((m) => m.id), ...ragInjectedIds]);
+      const directoryMessages = activeSequence.filter((m) => (m.type === 'user' || m.type === 'assistant') && !includedIds.has(m.id) && !m.isDeleted);
+
+      if (directoryMessages.length > 0) {
+        // Show only the most recent 30 missing messages in the prompt directory to save tokens
+        const visibleDirectory = directoryMessages.slice(-30);
+        const directoryLines = visibleDirectory.map((m) => {
+          const snippet = m.content.substring(0, 100).replace(/\n/g, ' ').trim();
+          return `${m.id.slice(0, 8)}|${m.type === 'user' ? 'U' : 'A'}|${snippet}`;
+        });
+
+        const moreNote =
+          directoryMessages.length > visibleDirectory.length
+            ? ` (last ${visibleDirectory.length}/${directoryMessages.length}; use 'list_messages' for full list)`
+            : '';
+        const directoryMessage: Message = {
+          id: '__history_directory__',
+          topicId,
+          type: 'system',
+          content: `Historical messages outside context${moreNote}. Format: ID|role|snippet (U=user, A=assistant). Use 'read_messages' to fetch full content.\n\n${directoryLines.join('\n')}`,
+          isDeleted: false,
+          includeInContext: false,
+          created: new Date(1).toISOString(), // older than chunks but newer than 0
+          failed: false,
+          promptTokens: 0,
+          completionTokens: 0,
+          totalCost: 0,
+        };
+        base.unshift(directoryMessage);
+      }
+    }
+
+    if (ragMessage) {
+      return [ragMessage, ...base];
     }
 
     return base;

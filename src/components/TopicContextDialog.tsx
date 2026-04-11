@@ -26,6 +26,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 
 import { useChatStore, ContextEntry } from '../store/ChatStore';
 import { estimateTokens } from '../services/estimateTokens';
+import { SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL } from '../services/llmService';
 import { useNotificationStore } from '../store/NotificationStore';
 import { useAuthStore } from '../store/AuthStore';
 
@@ -69,15 +70,18 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, topicId, userMessagePreview]);
 
+  // Compute tool schema token cost from the actual tool definitions rather than a static guess
+  const toolSchemaTokens = useMemo(() => {
+    if (!selectedModel.supportsTools) return 0;
+    const tools = messageRetrievalEnabled ? [SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL] : [SCRATCHPAD_TOOL];
+    // Treat serialised tool JSON as a pseudo-message so estimateTokens can count it
+    return estimateTokens([{ role: 'system', content: JSON.stringify(tools) }]).promptTokens;
+  }, [selectedModel.supportsTools, messageRetrievalEnabled]);
+
   const totalTokenCount = useMemo(() => {
     if (entries.length === 0) return 0;
-    // Account for tool overhead (~200 tokens per tool block + system overhead)
-    let overhead = 50; 
-    if (selectedModel.supportsTools) overhead += 150;
-    if (messageRetrievalEnabled) overhead += 250;
-    
-    return estimateTokens(entries.map((e) => e.message)).promptTokens + overhead;
-  }, [entries, selectedModel, messageRetrievalEnabled]);
+    return estimateTokens(entries.map((e) => e.message)).promptTokens + toolSchemaTokens;
+  }, [entries, toolSchemaTokens]);
 
   // Simulate the same truncation logic as buildPayload to identify which entries would be dropped
   const { droppedIds, budgetedTokenCount } = useMemo(() => {
@@ -91,13 +95,13 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
     while (working.length > 1 && estimateTokens(working).promptTokens > effectiveBudget) {
       const idx = working.findIndex((m) => m.role !== 'system');
       if (idx === -1) break;
-      
+
       // Map back to the entry to get its messageId/index
       const droppedEntry = entries.find((e) => e.message === working[idx]);
       dropped.add(droppedEntry?.messageId ?? String(droppedEntry ? entries.indexOf(droppedEntry) : -1));
       working.splice(idx, 1);
     }
-    
+
     const count = estimateTokens(working).promptTokens;
     return { droppedIds: dropped, budgetedTokenCount: count };
   }, [entries, totalTokenCount, effectiveBudget]);
@@ -185,9 +189,19 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
           <span>Context Inspector</span>
           {!loading && (
             <Stack direction="row" spacing={1} alignItems="center">
-              <Tooltip title={budgetedTokenCount < totalTokenCount ? `Total potential: ${totalTokenCount.toLocaleString()} tokens. Budgeted for next request: ${budgetedTokenCount.toLocaleString()} tokens.` : ""}>
+              <Tooltip
+                title={
+                  budgetedTokenCount < totalTokenCount
+                    ? `Total potential: ${totalTokenCount.toLocaleString()} tokens. Budgeted for next request: ${budgetedTokenCount.toLocaleString()} tokens.`
+                    : ''
+                }
+              >
                 <Chip
-                  label={budgetedTokenCount < totalTokenCount ? `~${budgetedTokenCount.toLocaleString()} / ${totalTokenCount.toLocaleString()} tokens` : `~${totalTokenCount.toLocaleString()} tokens`}
+                  label={
+                    budgetedTokenCount < totalTokenCount
+                      ? `~${budgetedTokenCount.toLocaleString()} / ${totalTokenCount.toLocaleString()} tokens`
+                      : `~${totalTokenCount.toLocaleString()} tokens`
+                  }
                   size="small"
                   variant="outlined"
                   color={totalTokenCount > effectiveBudget ? 'error' : totalTokenCount > effectiveBudget * 0.8 ? 'warning' : 'info'}
