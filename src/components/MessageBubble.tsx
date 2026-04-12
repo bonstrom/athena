@@ -3,6 +3,7 @@ import {
   IconButton,
   Paper,
   Tooltip,
+  Popover,
   Typography,
   Button,
   Dialog,
@@ -21,7 +22,7 @@ import {
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { useState, useRef, memo, useEffect } from 'react';
+import { useState, memo, useEffect } from 'react';
 import { useAuthStore } from '../store/AuthStore';
 import MarkdownWithCode from './MarkdownWithCode';
 import TypingIndicator from './TypingIndicator';
@@ -53,27 +54,27 @@ interface MessageBubbleProps {
 }
 
 const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble({ message, versions }) {
-  const { updateMessageContext, deleteMessage, sendMessageStream, regenerateResponse, switchMessageVersion, maybeSummarize, summarizingMessageIds } = useChatStore();
+  const {
+    updateMessageContext,
+    deleteMessage,
+    sendMessageStream,
+    regenerateResponse,
+    switchMessageVersion,
+    maybeSummarize,
+    summarizingMessageIds,
+    failedSummaryMessageIds,
+  } = useChatStore();
   const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
   const { userName, chatFontSize, messageTruncateChars, aiSummaryEnabled } = useAuthStore();
   const { isMobile } = useUiStore();
 
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
-  const [tooltipOpen, setTooltipOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [infoAnchorEl, setInfoAnchorEl] = useState<null | HTMLElement>(null);
   const [isExpanded, setIsExpanded] = useState(() => messageTruncateChars === 0 || message.content.length <= messageTruncateChars);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, []);
 
   const isAssistant = message.type === 'assistant';
   const isStreaming = isAssistant && message.content === '';
@@ -139,18 +140,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
     return chatModels.find((m) => m.id === id)?.label ?? id;
   };
 
-  const handleMouseEnter = (): void => {
-    timeoutRef.current = setTimeout(() => {
-      setTooltipOpen(true);
-    }, 700);
+  const handleInfoClick = (event: React.MouseEvent<HTMLElement>): void => {
+    setInfoAnchorEl(infoAnchorEl ? null : event.currentTarget);
   };
 
-  const handleMouseLeave = (): void => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    setTooltipOpen(false);
+  const handleInfoClose = (): void => {
+    setInfoAnchorEl(null);
   };
 
   const handleCopy = async (): Promise<void> => {
@@ -226,91 +221,107 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
       <Box sx={{ width: '100%' }}>
         <Box display="flex" justifyContent="space-between" mb={0.5}>
           <Box display="flex" alignItems="center">
-            <Tooltip
-              open={isMobile ? false : tooltipOpen}
-              disableTouchListener={isMobile}
-              leaveDelay={300}
-              title={
-                <Box>
-                  <Typography variant="caption" display="block">
-                    {new Intl.DateTimeFormat('sv-SE', {
-                      year: 'numeric',
-                      month: '2-digit',
-                      day: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      hour12: false,
-                    }).format(new Date(message.created))}
-                  </Typography>
-                  <Typography variant="caption" display="block">
-                    {`${message.totalCost.toFixed(3)} kr`}
-                  </Typography>
-                  {message.latencyMs && (
-                    <>
-                      <Typography variant="caption" display="block">
-                        {`Time: ${(message.latencyMs / 1000).toFixed(1)} s`}
-                      </Typography>
-                      <Typography variant="caption" display="block">
-                        {`Speed: ${((message.promptTokens + message.completionTokens) / (message.latencyMs / 1000)).toFixed(1)} TPS`}
-                      </Typography>
-                    </>
-                  )}
-                  {message.summary && (
-                    <Box mt={1} pt={1} sx={{ borderTop: (theme): string => `1px solid ${alpha(theme.palette.divider, 0.2)}` }}>
-                      <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-                        <SummarizeIcon sx={{ fontSize: '0.8rem' }} /> Summary
-                      </Typography>
-                      <Typography variant="caption" display="block" sx={{ fontStyle: 'italic', maxWidth: 220, whiteSpace: 'pre-wrap', lineHeight: 1.3 }}>
-                        {message.summary}
-                      </Typography>
-                    </Box>
-                  )}
-                </Box>
-              }
-            >
+            <>
               <Box
-                onMouseEnter={handleMouseEnter}
-                onMouseLeave={handleMouseLeave}
+                onClick={handleInfoClick}
                 sx={{
-                  cursor: 'default',
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 0.5,
                   userSelect: 'none',
+                  '&:hover': { opacity: 0.7 },
                 }}
               >
                 <Typography variant="subtitle2" color="text.secondary" sx={{ transition: 'color 0.2s', display: 'inline-block' }}>
                   {message.type === 'user' ? userName : getModelLabel(message.model)}
                 </Typography>
               </Box>
-            </Tooltip>
+              <Popover
+                open={Boolean(infoAnchorEl)}
+                anchorEl={infoAnchorEl}
+                onClose={handleInfoClose}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                slotProps={{ paper: { sx: { p: 1.5, maxWidth: 300, userSelect: 'text' } } }}
+              >
+                <Typography variant="caption" display="block">
+                  {new Intl.DateTimeFormat('sv-SE', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                  }).format(new Date(message.created))}
+                </Typography>
+                <Typography variant="caption" display="block">
+                  {`${message.totalCost.toFixed(3)} kr`}
+                </Typography>
+                {message.latencyMs && (
+                  <>
+                    <Typography variant="caption" display="block">
+                      {`Time: ${(message.latencyMs / 1000).toFixed(1)} s`}
+                    </Typography>
+                    <Typography variant="caption" display="block">
+                      {`Speed: ${((message.promptTokens + message.completionTokens) / (message.latencyMs / 1000)).toFixed(1)} TPS`}
+                    </Typography>
+                  </>
+                )}
+                {message.summary && (
+                  <Box mt={1} pt={1} sx={{ borderTop: (theme): string => `1px solid ${alpha(theme.palette.divider, 0.2)}` }}>
+                    <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                      <SummarizeIcon sx={{ fontSize: '0.8rem' }} /> Summary
+                    </Typography>
+                    <Typography variant="caption" display="block" sx={{ fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.3 }}>
+                      {message.summary}
+                    </Typography>
+                  </Box>
+                )}
+              </Popover>
+            </>
 
-            {(aiSummaryEnabled || message.summary) && (message.content.length > 300 || message.summary) && (
-              <Tooltip title={message.summary ? "Regenerate summary" : "Generate summary"} disableTouchListener={isMobile}>
-                <IconButton 
-                  size="small" 
-                  disabled={summarizingMessageIds.has(message.id)}
-                  onClick={(): void => {
-                    void maybeSummarize(message.id, message.content, true);
-                  }}
-                  sx={{ 
-                    ml: 0.5, 
-                    p: 0.4,
-                    color: message.summary ? 'primary.main' : 'text.disabled',
-                    '&:hover': {
-                      color: 'primary.main',
-                      bgcolor: (theme): string => alpha(theme.palette.primary.main, 0.1),
-                    }
-                  }}
+            {(aiSummaryEnabled || message.summary || failedSummaryMessageIds.has(message.id)) &&
+              (message.type === 'user' || message.type === 'assistant') &&
+              (message.content.length > 250 ||
+                message.content.includes('[TRUNCATED:') ||
+                !!message.summary ||
+                failedSummaryMessageIds.has(message.id)) && (
+                <Tooltip
+                  title={
+                    failedSummaryMessageIds.has(message.id)
+                      ? 'Summary failed — click to retry'
+                      : message.summary
+                        ? 'Regenerate summary'
+                        : 'Generate summary'
+                  }
+                  disableTouchListener={isMobile}
                 >
-                  {summarizingMessageIds.has(message.id) ? (
-                    <CircularProgress size={16} color="inherit" />
-                  ) : (
-                    <AutoAwesomeIcon sx={{ fontSize: '1rem' }} />
-                  )}
-                </IconButton>
-              </Tooltip>
-            )}
+                  <IconButton
+                    size="small"
+                    disabled={summarizingMessageIds.has(message.id)}
+                    onClick={(): void => {
+                      void maybeSummarize(message.id, message.content, true);
+                    }}
+                    sx={{
+                      ml: 0.5,
+                      p: 0.4,
+                      color: failedSummaryMessageIds.has(message.id) ? 'error.main' : message.summary ? 'primary.main' : 'text.disabled',
+                      '&:hover': {
+                        color: failedSummaryMessageIds.has(message.id) ? 'error.main' : 'primary.main',
+                        bgcolor: (theme): string =>
+                          failedSummaryMessageIds.has(message.id) ? alpha(theme.palette.error.main, 0.1) : alpha(theme.palette.primary.main, 0.1),
+                      },
+                    }}
+                  >
+                    {summarizingMessageIds.has(message.id) ? (
+                      <CircularProgress size={16} color="inherit" />
+                    ) : (
+                      <AutoAwesomeIcon sx={{ fontSize: '1rem' }} />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              )}
 
             {isAssistant && versions && versions.length > 1 && (
               <Box
@@ -499,7 +510,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     </Button>
                   )}
                   {message.reasoning && (
-                    <Tooltip title={showReasoning ? "Hide thoughts" : "Show thoughts"}>
+                    <Tooltip title={showReasoning ? 'Hide thoughts' : 'Show thoughts'}>
                       <IconButton
                         size="small"
                         onClick={(): void => setShowReasoning(!showReasoning)}
@@ -508,7 +519,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                           p: 0.5,
                           '&:hover': {
                             bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                          }
+                          },
                         }}
                       >
                         <PsychologyIcon sx={{ fontSize: '1.2rem' }} />
@@ -601,7 +612,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           </Box>
         )}
 
-        {(showReasoning && message.reasoning) && (
+        {showReasoning && message.reasoning && (
           <Box
             sx={{
               mt: 1.5,
@@ -614,7 +625,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               overflowY: 'auto',
             }}
           >
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold', mb: 0.5, display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: 'bold', mb: 0.5, display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+            >
               Thought Process
             </Typography>
             <Box sx={{ fontSize: `${Math.max(11, chatFontSize - 2)}px` }}>

@@ -175,11 +175,11 @@ function buildPayload(
     })),
     stream,
     ...(model.supportsTemperature && {
-      temperature: webSearch && model.id === 'kimi-k2.5' ? 0.6 : temperature,
+      temperature: !stream && model.id === 'kimi-k2.5' ? 0.6 : temperature,
     }),
     ...(stream && { stream_options: { include_usage: true } }),
     ...(model.supportsTools && finalTools.length > 0 && { tools: finalTools }),
-    ...(webSearch && model.provider === 'moonshot' && { thinking: { type: 'disabled' } }),
+    ...(!stream && model.provider === 'moonshot' && { thinking: { type: 'disabled' } }),
   };
 }
 
@@ -304,7 +304,11 @@ export async function askLlm(
       .trim(),
     promptTokens: data.usage.prompt_tokens,
     completionTokens: data.usage.completion_tokens,
-    promptTokensDetails: (data.usage as { prompt_tokens_details?: { cached_tokens?: number } }).prompt_tokens_details,
+    promptTokensDetails:
+      (data.usage as { prompt_tokens_details?: { cached_tokens?: number }; prompt_cache_hit_tokens?: number }).prompt_tokens_details ??
+      ((data.usage as { prompt_cache_hit_tokens?: number }).prompt_cache_hit_tokens != null
+        ? { cached_tokens: (data.usage as { prompt_cache_hit_tokens?: number }).prompt_cache_hit_tokens }
+        : undefined),
     completionTokensDetails: (data.usage as { completion_tokens_details?: { reasoning_tokens?: number } }).completion_tokens_details,
     aiNote,
     aiNoteAction,

@@ -67,9 +67,15 @@ interface ChatStore {
   clearSuggestions: () => void;
   isSuggestionsLoading: boolean;
   preloadTopics: (topicIds: string[]) => Promise<void>;
-  maybeSummarize: (messageId: string, content: string, force?: boolean) => Promise<void>;
+  maybeSummarize: (messageId: string, content: string, force?: boolean, contextMessages?: LlmMessage[]) => Promise<void>;
+  _runSummarize: (messageId: string, content: string, contextMessages?: LlmMessage[]) => Promise<void>;
   summarizingMessageIds: Set<string>;
+  failedSummaryMessageIds: Set<string>;
 }
+
+// Serialize summarization requests — llmSuggestionService has a single completion slot
+// so concurrent calls would overwrite each other's resolve callback and hang.
+let summarizeQueue: Promise<void> = Promise.resolve();
 
 export const useChatStore = create<ChatStore>((set, get) => ({
   messagesByTopic: {},
@@ -85,6 +91,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   currentRequestMessageIds: null,
   pendingSuggestions: null,
   summarizingMessageIds: new Set<string>(),
+  failedSummaryMessageIds: new Set<string>(),
   isSuggestionsLoading: false,
 
   clearSuggestions: (): void => set({ pendingSuggestions: null, isSuggestionsLoading: false }),
@@ -694,6 +701,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const lastResult = primaryResult.lastResult;
       const finalTotalCost = calculateCostSEK(selectedModel, totalPromptTokens, totalCompletionTokens, lastResult.promptTokensDetails);
 
+      // ── Verification: Main chat stream ──
+      if (!finalContent.trim()) console.warn('[verify:chat] Assistant response was empty');
+      if (totalPromptTokens === 0) console.warn('[verify:chat] promptTokens is 0 — possible usage tracking issue');
+      if (totalCompletionTokens === 0) console.warn('[verify:chat] completionTokens is 0 — possible usage tracking issue');
+      if (finalTotalCost <= 0) console.warn('[verify:chat] Calculated cost is 0 — model:', selectedModel.id);
+      console.debug(
+        '[verify:chat] model=%s prompt=%d completion=%d cost=%f latency=%dms context_messages=%d',
+        selectedModel.id,
+        totalPromptTokens,
+        totalCompletionTokens,
+        finalTotalCost,
+        Date.now() - loopStartTime,
+        llmContext.length,
+      );
+
       // 5. Finalize DB Updates in atomic transaction
       const latencyMs = Date.now() - loopStartTime;
       const userPatch = {
@@ -742,7 +764,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (!isRetry) {
         void get().maybeSummarize(userMessage.id, userMessage.content);
       }
-      void get().maybeSummarize(assistantId, assistantPatch.content);
+      void get().maybeSummarize(assistantId, assistantPatch.content, undefined, [
+        ...llmContext,
+        { role: 'assistant', content: assistantPatch.content },
+      ]);
 
       void topicStoreState.generateTopicName(topicId, content);
 
@@ -752,15 +777,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         set({ isSuggestionsLoading: true });
         void (async (): Promise<void> => {
           try {
-            const suggestionContext: LlmMessage[] = [
-              { role: 'user', content },
-              { role: 'assistant', content: assistantPatch.content },
-              {
-                role: 'user',
-                content:
-                  'Based on this conversation, suggest exactly 3 short follow-up questions the user might want to ask next. Reply with ONLY a JSON array of 3 strings. No explanation, no markdown, just the raw JSON array.',
-              },
-            ];
+            const suggestionContext: LlmMessage[] =
+              replyPredictionModel === 'same'
+                ? [
+                    ...llmContext,
+                    { role: 'assistant', content: assistantPatch.content },
+                    {
+                      role: 'user',
+                      content:
+                        'Based on this conversation, suggest exactly 3 short follow-up questions the user might want to ask next. Reply with ONLY a JSON array of 3 strings. No explanation, no markdown, just the raw JSON array.',
+                    },
+                  ]
+                : [
+                    { role: 'user', content },
+                    { role: 'assistant', content: assistantPatch.content },
+                    {
+                      role: 'user',
+                      content:
+                        'Based on this conversation, suggest exactly 3 short follow-up questions the user might want to ask next. Reply with ONLY a JSON array of 3 strings. No explanation, no markdown, just the raw JSON array.',
+                    },
+                  ];
 
             let suggestions: string[] | null = null;
 
@@ -770,7 +806,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 `<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n` +
                 `<|im_start|>user\nConversation summary:\nUser: ${content.slice(-300)}\nAssistant: ${assistantPatch.content.slice(-300)}\n\n` +
                 `List exactly 3 short follow-up questions the user might ask next. Reply with ONLY a JSON array of 3 strings, e.g. ["Q1","Q2","Q3"].<|im_end|>\n` +
-                `<|im_start|>assistant\n`;
+                `<|im_start|>assistant\n<think>\n</think>\n`;
               const raw = await (llmSuggestionService.getCompletion as (p: string, t: number) => Promise<string>)(prompt, 150);
               if (raw.trim()) {
                 const jsonMatch = raw.match(/\[[\s\S]*?\]/);
@@ -805,6 +841,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                   suggestions = (parsed as string[]).slice(0, 3);
                 }
               }
+
+              // ── Verification: Reply prediction ──
+              if (!jsonMatch) console.warn('[verify:replies] Failed to parse JSON array from response:', raw.slice(0, 200));
+              else if (!suggestions || suggestions.length === 0)
+                console.warn('[verify:replies] Parsed JSON but got 0 suggestions:', raw.slice(0, 200));
+              else if (suggestions.length < 3) console.warn('[verify:replies] Expected 3 suggestions, got %d', suggestions.length);
+              console.debug(
+                '[verify:replies] model=%s prompt_tokens=%d context_messages=%d',
+                targetModel.id,
+                result.promptTokens,
+                suggestionContext.length,
+              );
             }
 
             if (suggestions && suggestions.length > 0) {
@@ -884,72 +932,132 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({ sending: false, abortController: null, currentRequestMessageIds: null });
     return null;
   },
-  maybeSummarize: async (messageId: string, content: string, force = false): Promise<void> => {
+  maybeSummarize: async (messageId: string, content: string, force = false, contextMessages?: LlmMessage[]): Promise<void> => {
     const { aiSummaryEnabled } = useAuthStore.getState();
     const { summarizingMessageIds } = get();
-    if (!force && (!aiSummaryEnabled || content.length <= 300)) return;
+    if (!force && (!aiSummaryEnabled || content.length <= 250)) return;
     if (summarizingMessageIds.has(messageId)) return;
 
     set((state) => ({
       summarizingMessageIds: new Set(state.summarizingMessageIds).add(messageId),
     }));
 
-    const { llmModelSelected, llmModelDownloadStatus } = useAuthStore.getState();
-    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
-    
-    if (llmModelDownloadStatus[modelId] !== 'downloaded') {
-      useNotificationStore.getState().addNotification('Local LLM model not downloaded. Please go to Settings to download it.', 'warning');
-      set((state) => {
-        const next = new Set(state.summarizingMessageIds);
-        next.delete(messageId);
-        return { summarizingMessageIds: next };
-      });
-      return;
+    // Clear any previous failure state when retrying
+    set((state) => {
+      const next = new Set(state.failedSummaryMessageIds);
+      next.delete(messageId);
+      return { failedSummaryMessageIds: next };
+    });
+    summarizeQueue = summarizeQueue.then(() => get()._runSummarize(messageId, content, contextMessages));
+    await summarizeQueue;
+  },
+
+  _runSummarize: async (messageId: string, content: string, contextMessages?: LlmMessage[]): Promise<void> => {
+    const { llmModelSelected, llmModelDownloadStatus, summaryModel } = useAuthStore.getState();
+    const isLocal = summaryModel === 'local';
+    const { selectedModel } = get();
+    const useCacheContext = !isLocal && contextMessages != null;
+
+    if (isLocal) {
+      const localModelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+      if (llmModelDownloadStatus[localModelId] !== 'downloaded') {
+        useNotificationStore.getState().addNotification('Local LLM model not downloaded. Please go to Settings to download it.', 'warning');
+        set((state) => {
+          const next = new Set(state.summarizingMessageIds);
+          next.delete(messageId);
+          return { summarizingMessageIds: next };
+        });
+        return;
+      }
     }
 
     try {
-      const safeContent = content.length > 2500 ? content.slice(0, 2500) + '... (truncated)' : content;
-      const prompt = 
-        `<|im_start|>system\nYou are a helpful conversational assistant.<|im_end|>\n` +
-        `<|im_start|>user\nProvide a very short summary (max 15 words) of the following text:\n\n${safeContent}<|im_end|>\n` +
-        `<|im_start|>assistant\n`;
-      
-      const summary = await llmSuggestionService.getCompletion(prompt, 50);
-      if (summary && summary.trim()) {
-        const cleanSummary = summary.trim()
+      // Always read from DB to get full content — message.content in context may be truncated
+      const dbMessage = await athenaDb.messages.get(messageId);
+      const fullContent = dbMessage?.content ?? content;
+      const safeContent = fullContent.length > 1500 ? fullContent.slice(0, 1500) + '... (truncated)' : fullContent;
+
+      const summaryWordLimit = Math.max(8, Math.min(30, Math.floor(fullContent.length / 20)));
+
+      let rawSummary: string;
+
+      if (isLocal) {
+        // Pre-fill the assistant turn with an empty <think> block to force Qwen3
+        // into non-thinking mode, skipping the reasoning phase entirely.
+        const prompt =
+          `<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n` +
+          `<|im_start|>user\nProvide a short summary (about ${summaryWordLimit} words) of the following text:\n\n${safeContent}<|im_end|>\n` +
+          `<|im_start|>assistant\n<think>\n</think>\n`;
+        rawSummary = await llmSuggestionService.getCompletion(prompt, 50);
+        // Strip Qwen3 <think>...</think> reasoning blocks from the output
+        rawSummary = rawSummary
+          .replace(/<think>[\s\S]*?<\/think>/gi, '')
+          .replace(/<think>[\s\S]*/gi, '')
+          .trim();
+      } else {
+        const cloudModel = selectedModel;
+        const messages: LlmMessage[] = useCacheContext
+          ? [
+              ...contextMessages,
+              { role: 'user', content: `Summarize your last reply in about ${summaryWordLimit} words. Just the summary, no explanation.` },
+            ]
+          : [
+              { role: 'system', content: `Reply with a short summary of about ${summaryWordLimit} words. No explanation, just the summary.` },
+              { role: 'user', content: `Summarize this:\n\n${safeContent}` },
+            ];
+        const result = await askLlm(cloudModel, 0.3, messages);
+        rawSummary = result.content;
+
+        // ── Verification: Summary generation ──
+        if (!rawSummary.trim()) console.warn('[verify:summary] Cloud summary returned empty for message:', messageId);
+        else if (rawSummary.trim().split(/\s+/).length > summaryWordLimit * 2)
+          console.warn(
+            '[verify:summary] Summary too long (%d words, limit was %d):',
+            rawSummary.trim().split(/\s+/).length,
+            summaryWordLimit,
+            rawSummary,
+          );
+        if (useCacheContext) {
+          console.debug('[verify:summary] Cache path — prompt_tokens=%d context_messages=%d', result.promptTokens, messages.length);
+        } else {
+          console.debug('[verify:summary] Standalone path — prompt_tokens=%d', result.promptTokens);
+        }
+      }
+
+      if (rawSummary && rawSummary.trim()) {
+        const cleanSummary = rawSummary
+          .trim()
           .replace(/^Summary:\s*/i, '')
           .replace(/^Here is a summary:\s*/i, '')
           .replace(/^Assistant:\s*/i, '')
           .replace(/^"(.*)"$/, '$1')
           .trim();
-          
+
         if (cleanSummary.length < 2) {
-           useNotificationStore.getState().addNotification('Generated summary was empty or too short.', 'warning');
-           return;
+          useNotificationStore.getState().addNotification('Generated summary was empty or too short.', 'warning');
+          return;
         }
 
         await athenaDb.messages.update(messageId, { summary: cleanSummary });
-        useNotificationStore.getState().addNotification('Summary generated successfully.', 'success');
-        
+
         set((state) => {
           const { currentTopicId, messagesByTopic } = state;
           if (!currentTopicId || !messagesByTopic[currentTopicId]) return state;
-          
+
           return {
             messagesByTopic: {
               ...messagesByTopic,
-              [currentTopicId]: messagesByTopic[currentTopicId]!.map((m) => 
-                m.id === messageId ? { ...m, summary: cleanSummary } : m
-              ),
+              [currentTopicId]: messagesByTopic[currentTopicId]!.map((m) => (m.id === messageId ? { ...m, summary: cleanSummary } : m)),
             },
           };
         });
       } else {
         useNotificationStore.getState().addNotification('AI returned an empty summary. Try again.', 'warning');
+        set((state) => ({ failedSummaryMessageIds: new Set(state.failedSummaryMessageIds).add(messageId) }));
       }
     } catch (err) {
       console.warn('Failed to generate summary for message', messageId, err);
-      useNotificationStore.getState().addNotification('Failed to generate summary: ' + (err as Error).message, 'error');
+      set((state) => ({ failedSummaryMessageIds: new Set(state.failedSummaryMessageIds).add(messageId) }));
     } finally {
       set((state) => {
         const next = new Set(state.summarizingMessageIds);

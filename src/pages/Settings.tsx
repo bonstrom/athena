@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   TextField,
@@ -14,24 +14,24 @@ import {
   FormControlLabel,
   Chip,
   LinearProgress,
-} from "@mui/material";
+} from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
   Add as AddIcon,
   CloudDownload as DownloadIcon,
   Delete as DeleteIcon,
   Close as CloseIcon,
-} from "@mui/icons-material";
-import { useAuthStore } from "../store/AuthStore";
-import { BackupService } from "../services/backupService";
-import { useBackupStore } from "../store/BackupStore";
-import { llmSuggestionService, LlmProgress } from "../services/llmSuggestionService";
-import { getMoonshotBalance, getDeepSeekBalance } from "../services/llmService";
-import { USD_TO_SEK, DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from "../constants";
-import ThemeSelector from "../components/ThemeSelector";
-import ImportDialog from "../components/ImportDialog";
-import { PredefinedPrompt } from "../database/AthenaDb";
-import { chatModels } from "../components/ModelSelector";
+} from '@mui/icons-material';
+import { useAuthStore } from '../store/AuthStore';
+import { BackupService } from '../services/backupService';
+import { useBackupStore } from '../store/BackupStore';
+import { llmSuggestionService, LlmProgress } from '../services/llmSuggestionService';
+import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
+import { USD_TO_SEK, DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from '../constants';
+import ThemeSelector from '../components/ThemeSelector';
+import ImportDialog from '../components/ImportDialog';
+import { PredefinedPrompt } from '../database/AthenaDb';
+import { chatModels } from '../components/ModelSelector';
 
 const Settings: React.FC = () => {
   const {
@@ -80,18 +80,30 @@ const Settings: React.FC = () => {
     setMessageRetrievalEnabled,
     aiSummaryEnabled,
     setAiSummaryEnabled,
+    summaryModel,
+    setSummaryModel,
     defaultMaxContextMessages,
     setDefaultMaxContextMessages,
   } = useAuthStore();
 
-  const [openAiInput, setOpenAiInput] = useState("");
-  const [deepSeekInput, setDeepSeekInput] = useState("");
-  const [googleInput, setGoogleInput] = useState("");
-  const [moonshotInput, setMoonshotInput] = useState("");
+  const [openAiInput, setOpenAiInput] = useState('');
+  const [deepSeekInput, setDeepSeekInput] = useState('');
+  const [googleInput, setGoogleInput] = useState('');
+  const [moonshotInput, setMoonshotInput] = useState('');
 
-  const currentModelId: string =
-    llmModelSelected === "qwen3.5-2b" ? "onnx-community/Qwen3.5-2B-ONNX" : "onnx-community/Qwen3.5-0.8B-ONNX";
-  const status = llmModelDownloadStatus[currentModelId] ?? "not_downloaded";
+  const currentModelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+  const status = llmModelDownloadStatus[currentModelId] ?? 'not_downloaded';
+
+  // Models available for background tasks (summaries, reply prediction):
+  // must have an API key configured and be cost-effective (output < $5/1M tokens)
+  const availableAffordableModels = chatModels.filter(
+    (m) =>
+      m.output < 5 &&
+      ((m.provider === 'openai' && openAiKey) ||
+        (m.provider === 'deepseek' && deepSeekKey) ||
+        (m.provider === 'google' && googleApiKey) ||
+        (m.provider === 'moonshot' && moonshotApiKey)),
+  );
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
   const [scratchpadRulesInput, setScratchpadRulesInput] = useState(scratchpadRules);
@@ -108,8 +120,8 @@ const Settings: React.FC = () => {
 
   const [showPromptForm, setShowPromptForm] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<PredefinedPrompt | null>(null);
-  const [promptNameInput, setPromptNameInput] = useState("");
-  const [promptContentInput, setPromptContentInput] = useState("");
+  const [promptNameInput, setPromptNameInput] = useState('');
+  const [promptContentInput, setPromptContentInput] = useState('');
 
   const { status: backupStatus, lastBackupTime, setStatus: setBackupStatus, setLastBackupTime } = useBackupStore();
 
@@ -129,14 +141,12 @@ const Settings: React.FC = () => {
   }, []);
 
   const handleDownloadModel = (): void => {
-    const modelId: string =
-      llmModelSelected === "qwen3.5-2b" ? "onnx-community/Qwen3.5-2B-ONNX" : "onnx-community/Qwen3.5-0.8B-ONNX";
+    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
     llmSuggestionService.loadModel(modelId, true);
   };
 
   const handleDeleteModel = async (): Promise<void> => {
-    const modelId: string =
-      llmModelSelected === "qwen3.5-2b" ? "onnx-community/Qwen3.5-2B-ONNX" : "onnx-community/Qwen3.5-0.8B-ONNX";
+    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
     if (!window.confirm(`Delete downloaded model "${modelId}" from local cache?`)) {
       return;
     }
@@ -146,15 +156,14 @@ const Settings: React.FC = () => {
       await llmSuggestionService.deleteModel(modelId);
       setLlmProgress(null);
     } catch (error) {
-      console.error("Failed to delete model:", error);
+      console.error('Failed to delete model:', error);
     } finally {
       setIsDeletingModel(false);
     }
   };
-  
+
   const handleResetDownload = (): void => {
-    const modelId: string =
-      llmModelSelected === "qwen3.5-2b" ? "onnx-community/Qwen3.5-2B-ONNX" : "onnx-community/Qwen3.5-0.8B-ONNX";
+    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
     llmSuggestionService.resetDownload(modelId);
     setLlmProgress(null);
   };
@@ -210,22 +219,22 @@ const Settings: React.FC = () => {
   function handleSave(): void {
     if (isUpdatingOpenAi && openAiInput) {
       setOpenAiKey(openAiInput.trim());
-      setOpenAiInput("");
+      setOpenAiInput('');
       setIsUpdatingOpenAi(false);
     }
     if (isUpdatingDeepSeek && deepSeekInput) {
       setDeepSeekKey(deepSeekInput.trim());
-      setDeepSeekInput("");
+      setDeepSeekInput('');
       setIsUpdatingDeepSeek(false);
     }
     if (isUpdatingGoogle && googleInput) {
       setGoogleApiKey(googleInput.trim());
-      setGoogleInput("");
+      setGoogleInput('');
       setIsUpdatingGoogle(false);
     }
     if (isUpdatingMoonshot && moonshotInput) {
       setMoonshotApiKey(moonshotInput.trim());
-      setMoonshotInput("");
+      setMoonshotInput('');
       setIsUpdatingMoonshot(false);
     }
     setUserName(userNameInput.trim());
@@ -245,7 +254,7 @@ const Settings: React.FC = () => {
       await BackupService.downloadBackup();
     } catch (error) {
       console.error(error);
-      alert("Failed to export backup.");
+      alert('Failed to export backup.');
     }
   };
 
@@ -254,7 +263,7 @@ const Settings: React.FC = () => {
     if (!file) return;
     setPendingImportFile(file);
     setImportDialogOpen(true);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleImportDialogClose = (): void => {
@@ -275,13 +284,13 @@ const Settings: React.FC = () => {
         }
       } catch (error) {
         console.error(error);
-        alert("Failed to setup auto backup file.");
+        alert('Failed to setup auto backup file.');
       }
     } else {
-      if (window.confirm("Disable automatic backups? Your stored file location will be cleared.")) {
+      if (window.confirm('Disable automatic backups? Your stored file location will be cleared.')) {
         await BackupService.clearAutoBackupHandle();
         setAutoBackupEnabled(false);
-        setBackupStatus("no_handle");
+        setBackupStatus('no_handle');
         setLastBackupTime(null);
       }
     }
@@ -295,15 +304,15 @@ const Settings: React.FC = () => {
       }
     } catch (error) {
       console.error(error);
-      alert("Failed to change backup location.");
+      alert('Failed to change backup location.');
     }
   };
 
-  const validateKey = (key: string, type: "openai" | "deepseek" | "google"): boolean => {
+  const validateKey = (key: string, type: 'openai' | 'deepseek' | 'google'): boolean => {
     if (!key) return true;
     const trimmed = key.trim();
-    if (type === "openai" || type === "deepseek") {
-      return trimmed.startsWith("sk-") && trimmed.length > 20;
+    if (type === 'openai' || type === 'deepseek') {
+      return trimmed.startsWith('sk-') && trimmed.length > 20;
     }
     return trimmed.length >= 30; // Gemini keys are typically long
   };
@@ -323,47 +332,45 @@ const Settings: React.FC = () => {
       sx={{
         mb: 2,
         p: 1.5,
-        border: "1px solid",
-        borderColor: "divider",
+        border: '1px solid',
+        borderColor: 'divider',
         borderRadius: 1,
-        display: "flex",
-        flexDirection: { xs: "column", sm: "row" },
-        alignItems: { xs: "flex-start", sm: "center" },
-        justifyContent: "space-between",
+        display: 'flex',
+        flexDirection: { xs: 'column', sm: 'row' },
+        alignItems: { xs: 'flex-start', sm: 'center' },
+        justifyContent: 'space-between',
         gap: { xs: 1.5, sm: 2 },
-        bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.01)"),
-      }}>
+        bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.01)'),
+      }}
+    >
       <Box
         sx={{
-          display: "flex",
-          alignItems: "center",
-          flexWrap: "wrap",
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
           gap: 1.5,
-        }}>
+        }}
+      >
         <Typography
           variant="body2"
           sx={{
-            fontWeight: "bold",
-            color: "text.secondary",
-            minWidth: { xs: "auto", sm: 100 },
-          }}>
+            fontWeight: 'bold',
+            color: 'text.secondary',
+            minWidth: { xs: 'auto', sm: 100 },
+          }}
+        >
           {label}
         </Typography>
         {isStored ? (
           <Chip
-            icon={<CheckCircleIcon sx={{ color: "success.main !important" }} />}
+            icon={<CheckCircleIcon sx={{ color: 'success.main !important' }} />}
             label="Key Configured"
             color="success"
             variant="outlined"
             size="small"
           />
         ) : (
-          <Chip
-            label="Not Configured"
-            color="warning"
-            variant="outlined"
-            size="small"
-          />
+          <Chip label="Not Configured" color="warning" variant="outlined" size="small" />
         )}
         {extraInfo}
       </Box>
@@ -372,9 +379,10 @@ const Settings: React.FC = () => {
         variant="contained"
         onClick={onUpdate}
         sx={{
-          alignSelf: { xs: "flex-end", sm: "center" },
-        }}>
-        {isStored ? "Update Key" : "Add Key"}
+          alignSelf: { xs: 'flex-end', sm: 'center' },
+        }}
+      >
+        {isStored ? 'Update Key' : 'Add Key'}
       </Button>
     </Box>
   );
@@ -382,63 +390,49 @@ const Settings: React.FC = () => {
   return (
     <Box
       sx={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
         mt: 4,
         px: 2,
-        height: "100%",
-        overflowY: "auto",
+        height: '100%',
+        overflowY: 'auto',
         pb: 8,
-      }}>
-      <Paper
-        elevation={3}
-        sx={{
-          p: 3,
-          width: "100%",
-          maxWidth: 600,
-          bgcolor: (theme) => theme.palette.background.paper,
-        }}>
-        <Typography
-          variant="h6"
-          gutterBottom>
+      }}
+    >
+      {/* ── 1. GENERAL ── */}
+      <Paper elevation={3} sx={{ p: 3, width: '100%', maxWidth: 600, bgcolor: (theme) => theme.palette.background.paper }}>
+        <Typography variant="h6" gutterBottom>
           Settings
         </Typography>
 
-        <TextField
-          label="User Name"
-          fullWidth
-          value={userNameInput}
-          onChange={(e): void => setUserNameInput(e.target.value)}
-          sx={{ mb: 3 }}
-        />
+        <TextField label="User Name" fullWidth value={userNameInput} onChange={(e): void => setUserNameInput(e.target.value)} sx={{ mb: 3 }} />
 
-        <Box sx={{ mb: 4 }}>
-          <Typography
-            variant="h6"
-            gutterBottom
-            sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1, mb: 2 }}>
+        {/* Appearance */}
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
             Appearance
           </Typography>
           <ThemeSelector />
         </Box>
 
-        <Box sx={{ mb: 4 }}>
+        {/* Chat Layout */}
+        <Box sx={{ mb: 3 }}>
           <Typography
             variant="subtitle2"
             color="text.secondary"
             gutterBottom
-            sx={{ fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.7rem" }}>
+            sx={{ fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}
+          >
             Chat Layout
           </Typography>
-          <FormControl
-            fullWidth
-            size="small">
+          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
             <InputLabel>Max Chat Width</InputLabel>
             <Select
               value={chatWidth}
               label="Max Chat Width"
-              onChange={(e): void => setChatWidth(e.target.value as "sm" | "md" | "lg" | "xl" | "full")}>
+              onChange={(e): void => setChatWidth(e.target.value as 'sm' | 'md' | 'lg' | 'xl' | 'full')}
+            >
               <MenuItem value="full">Full Width</MenuItem>
               <MenuItem value="xl">Extra Wide (1600px)</MenuItem>
               <MenuItem value="lg">Wide (1200px)</MenuItem>
@@ -446,24 +440,9 @@ const Settings: React.FC = () => {
               <MenuItem value="sm">Compact (600px)</MenuItem>
             </Select>
           </FormControl>
-        </Box>
-
-        <Box sx={{ mb: 4 }}>
-          <Typography
-            variant="subtitle2"
-            color="text.secondary"
-            gutterBottom
-            sx={{ fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.7rem" }}>
-            Typography
-          </Typography>
-          <FormControl
-            fullWidth
-            size="small">
+          <FormControl fullWidth size="small">
             <InputLabel>Chat Font Size</InputLabel>
-            <Select
-              value={chatFontSize}
-              label="Chat Font Size"
-              onChange={(e): void => setChatFontSize(e.target.value as number)}>
+            <Select value={chatFontSize} label="Chat Font Size" onChange={(e): void => setChatFontSize(e.target.value as number)}>
               <MenuItem value={12}>Small (12px)</MenuItem>
               <MenuItem value={14}>Compact (14px)</MenuItem>
               <MenuItem value={16}>Standard (16px)</MenuItem>
@@ -474,116 +453,336 @@ const Settings: React.FC = () => {
           </FormControl>
         </Box>
 
-        <Box sx={{ mb: 4 }}>
-          <Typography
-            variant="subtitle2"
-            color="text.secondary"
-            gutterBottom
-            sx={{ fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em", fontSize: "0.7rem" }}>
-            Performance
+        {/* Custom Instructions */}
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
+            Instructions
           </Typography>
-          <FormControl
+          <TextField
+            label="Custom Instructions (System Prompt)"
             fullWidth
-            size="small">
-            <InputLabel>Topic Preload Count</InputLabel>
-            <Select
-              value={topicPreloadCount}
-              label="Topic Preload Count"
-              onChange={(e): void => setTopicPreloadCount(e.target.value as number)}>
-              <MenuItem value={0}>Disabled</MenuItem>
-              <MenuItem value={3}>3 topics</MenuItem>
-              <MenuItem value={5}>5 topics</MenuItem>
-              <MenuItem value={10}>10 topics</MenuItem>
-              <MenuItem value={20}>20 topics</MenuItem>
-              <MenuItem value={50}>50 topics</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl
+            multiline
+            minRows={3}
+            maxRows={10}
+            value={customInstructionsInput}
+            onChange={(e): void => setCustomInstructionsInput(e.target.value)}
+            placeholder="E.g., Always respond in the style of a pirate, keep answers concise, etc."
+            sx={{ mb: 2 }}
+            helperText="These instructions will be prepended to the system prompt for all new messages."
+          />
+          <TextField
+            label="Scratchpad Rules (System Prompt)"
             fullWidth
-            size="small">
-            <InputLabel>Message Preview Length</InputLabel>
-            <Select
-              value={messageTruncateChars}
-              label="Message Preview Length"
-              onChange={(e): void => setMessageTruncateChars(e.target.value as number)}>
-              <MenuItem value={0}>Always show full messages</MenuItem>
-              <MenuItem value={100}>Tiny (100 characters)</MenuItem>
-              <MenuItem value={500}>Default (500 characters)</MenuItem>
-              <MenuItem value={800}>Medium (800 characters)</MenuItem>
-              <MenuItem value={1200}>Long (1200 characters)</MenuItem>
-              <MenuItem value={2000}>Very long (2000 characters)</MenuItem>
-              <MenuItem value={4000}>Maximum (4000 characters)</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={ragEnabled}
-                onChange={(e): void => setRagEnabled(e.target.checked)}
-                size="small"
-              />
+            multiline
+            minRows={5}
+            maxRows={15}
+            value={scratchpadRulesInput}
+            onChange={(e): void => setScratchpadRulesInput(e.target.value)}
+            sx={{ mb: 1 }}
+            helperText={`Instructions sent to the LLM controlling how it uses its long-term memory scratchpad. Use {{SCRATCHPAD_LIMIT}} for the character limit (${SCRATCHPAD_LIMIT.toLocaleString()}). The current scratchpad content is always appended automatically.`}
+          />
+          <Box display="flex" justifyContent="flex-end" mb={1}>
+            <Button
+              size="small"
+              variant="text"
+              color="inherit"
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+              onClick={(): void => setScratchpadRulesInput(DEFAULT_SCRATCHPAD_RULES)}
+            >
+              Reset to default
+            </Button>
+          </Box>
+        </Box>
+
+        {/* API Keys */}
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
+            API Keys
+          </Typography>
+
+          {isUpdatingOpenAi ? (
+            <TextField
+              label="OpenAI API Key"
+              type="password"
+              fullWidth
+              value={openAiInput}
+              onChange={(e): void => setOpenAiInput(e.target.value)}
+              placeholder="Paste new key here"
+              sx={{ mb: 2 }}
+              error={openAiInput !== '' && !validateKey(openAiInput, 'openai')}
+              helperText={openAiInput !== '' && !validateKey(openAiInput, 'openai') ? 'Invalid OpenAI key format (should start with sk-)' : ''}
+              InputProps={{
+                endAdornment: openAiKey && (
+                  <InputAdornment position="end">
+                    <Button size="small" onClick={(): void => setIsUpdatingOpenAi(false)}>
+                      Cancel
+                    </Button>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          ) : (
+            <KeyConfirmation label="OpenAI" isStored={!!openAiKey} onUpdate={(): void => setIsUpdatingOpenAi(true)} />
+          )}
+
+          {isUpdatingDeepSeek ? (
+            <TextField
+              label="DeepSeek API Key"
+              type="password"
+              fullWidth
+              value={deepSeekInput}
+              onChange={(e): void => setDeepSeekInput(e.target.value)}
+              placeholder="Paste new key here"
+              sx={{ mb: 2 }}
+              error={deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek')}
+              helperText={
+                deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek') ? 'Invalid DeepSeek key format (should start with sk-)' : ''
+              }
+              InputProps={{
+                endAdornment: deepSeekKey && (
+                  <InputAdornment position="end">
+                    <Button size="small" onClick={(): void => setIsUpdatingDeepSeek(false)}>
+                      Cancel
+                    </Button>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          ) : (
+            <KeyConfirmation
+              label="DeepSeek"
+              isStored={!!deepSeekKey}
+              onUpdate={(): void => setIsUpdatingDeepSeek(true)}
+              extraInfo={
+                deepSeekBalance !== null && (
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+                    Balance: {(deepSeekBalance.balance * (deepSeekBalance.currency === 'CNY' ? 1.5 : USD_TO_SEK)).toFixed(2)}
+                    kr
+                  </Typography>
+                )
+              }
+            />
+          )}
+
+          {isUpdatingGoogle ? (
+            <TextField
+              label="Google API Key"
+              type="password"
+              fullWidth
+              value={googleInput}
+              onChange={(e): void => setGoogleInput(e.target.value)}
+              placeholder="Paste new key here"
+              sx={{ mb: 2 }}
+              error={googleInput !== '' && !validateKey(googleInput, 'google')}
+              helperText={googleInput !== '' && !validateKey(googleInput, 'google') ? 'Invalid Google API key format' : ''}
+              InputProps={{
+                endAdornment: googleApiKey && (
+                  <InputAdornment position="end">
+                    <Button size="small" onClick={(): void => setIsUpdatingGoogle(false)}>
+                      Cancel
+                    </Button>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          ) : (
+            <KeyConfirmation label="Google (Gemini)" isStored={!!googleApiKey} onUpdate={(): void => setIsUpdatingGoogle(true)} />
+          )}
+
+          {isUpdatingMoonshot ? (
+            <TextField
+              label="Moonshot API Key (Kimi)"
+              type="password"
+              fullWidth
+              value={moonshotInput}
+              onChange={(e): void => setMoonshotInput(e.target.value)}
+              placeholder="Paste new key here"
+              sx={{ mb: 2 }}
+              error={moonshotInput !== '' && !validateKey(moonshotInput, 'openai')}
+              helperText={moonshotInput !== '' && !validateKey(moonshotInput, 'openai') ? 'Invalid Moonshot key format' : ''}
+              InputProps={{
+                endAdornment: moonshotApiKey && (
+                  <InputAdornment position="end">
+                    <Button size="small" onClick={(): void => setIsUpdatingMoonshot(false)}>
+                      Cancel
+                    </Button>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          ) : (
+            <KeyConfirmation
+              label="Moonshot"
+              isStored={!!moonshotApiKey}
+              onUpdate={(): void => setIsUpdatingMoonshot(true)}
+              extraInfo={
+                moonshotBalance !== null && (
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+                    Balance: {(moonshotBalance * USD_TO_SEK).toFixed(2)}kr
+                  </Typography>
+                )
+              }
+            />
+          )}
+        </Box>
+
+        <Box display="flex" justifyContent="flex-end">
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleSave}
+            disabled={
+              (openAiInput !== '' && !validateKey(openAiInput, 'openai')) ||
+              (deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek')) ||
+              (googleInput !== '' && !validateKey(googleInput, 'google')) ||
+              (moonshotInput !== '' && !validateKey(moonshotInput, 'openai'))
             }
+          >
+            Save
+          </Button>
+        </Box>
+        {saved && (
+          <Typography variant="body2" color="success.main" mt={2}>
+            Settings saved successfully.
+          </Typography>
+        )}
+      </Paper>
+
+      {/* ── 2. LOCAL BROWSER MODEL ── */}
+      <Paper elevation={3} sx={{ p: 3, mt: 4, width: '100%', maxWidth: 600, bgcolor: (theme) => theme.palette.background.paper }}>
+        <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 1 }}>
+          Local Browser Model
+        </Typography>
+        <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+          A small language model that runs entirely in your browser — no API key required. Used for type-ahead suggestions, AI summaries, and reply
+          prediction.
+        </Typography>
+
+        <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+          <InputLabel>Model</InputLabel>
+          <Select value={llmModelSelected} label="Model" onChange={(e): void => setLlmModelSelected(e.target.value as 'qwen3.5-0.8b' | 'qwen3.5-2b')}>
+            <MenuItem value="qwen3.5-0.8b">Qwen3.5 0.8B (Recommended • ~500MB)</MenuItem>
+            <MenuItem value="qwen3.5-2b">Qwen3.5 2B (~1.5GB)</MenuItem>
+          </Select>
+        </FormControl>
+
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
+            mb: 3,
+          }}
+        >
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={llmProgress ? 2 : 0}>
+            <Typography variant="body2" component="div">
+              {status === 'downloaded' ? (
+                <Box display="flex" alignItems="center" gap={1}>
+                  <CheckCircleIcon color="success" />
+                  Model Downloaded
+                </Box>
+              ) : status === 'downloading' ? (
+                'Downloading Model...'
+              ) : (
+                'Model not downloaded'
+              )}
+            </Typography>
+            <Box display="flex" gap={1}>
+              {status === 'downloading' && (
+                <Button variant="outlined" size="small" color="error" startIcon={<CloseIcon />} onClick={handleResetDownload}>
+                  Cancel/Reset
+                </Button>
+              )}
+              {status === 'downloaded' && (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  color="error"
+                  startIcon={<DeleteIcon />}
+                  disabled={isDeletingModel}
+                  onClick={(): void => {
+                    void handleDeleteModel();
+                  }}
+                >
+                  {isDeletingModel ? 'Deleting...' : 'Delete Model'}
+                </Button>
+              )}
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<DownloadIcon />}
+                disabled={isDeletingModel}
+                onClick={(): void => {
+                  handleDownloadModel();
+                }}
+              >
+                {status === 'downloaded' ? 'Re-download' : status === 'downloading' ? 'Force Retry' : 'Download'}
+              </Button>
+            </Box>
+          </Box>
+          {llmProgress && status === 'downloading' && (
+            <Box sx={{ width: '100%', mt: 2 }}>
+              <LinearProgress variant="determinate" value={llmProgress.progress} />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                {llmProgress.progress.toFixed(1)}% ({Math.round(llmProgress.loaded / 1024 / 1024)}MB / {Math.round(llmProgress.total / 1024 / 1024)}
+                MB)
+              </Typography>
+            </Box>
+          )}
+        </Box>
+
+        {/* Type-ahead suggestions */}
+        <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+            Type-ahead Suggestions
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1, color: 'text.secondary' }}>
+            Word prediction while you type. Press Tab to accept a suggestion.
+          </Typography>
+          <FormControlLabel
+            control={<Switch checked={llmSuggestionEnabled} onChange={(e): void => setLlmSuggestionEnabled(e.target.checked)} />}
+            label="Enable type-ahead suggestions"
+          />
+        </Box>
+
+        {/* Semantic Search */}
+        <Box sx={{ pt: 2, mt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+          <FormControlLabel
+            control={<Switch checked={ragEnabled} onChange={(e): void => setRagEnabled(e.target.checked)} size="small" />}
             label={
               <Box>
                 <Typography variant="body2">Semantic Search (RAG)</Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary">
+                <Typography variant="caption" color="text.secondary">
                   Retrieves relevant older messages using a 23MB local model. Disable on slower devices.
                 </Typography>
               </Box>
             }
-            sx={{ mt: 1, alignItems: "flex-start" }}
+            sx={{ alignItems: 'flex-start' }}
           />
-          <FormControlLabel
-            control={
-              <Switch
-                checked={messageRetrievalEnabled}
-                onChange={(e): void => setMessageRetrievalEnabled(e.target.checked)}
-                size="small"
-              />
-            }
-            label={
-              <Box>
-                <Typography variant="body2">Message Retrieval Tool (Experimental)</Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary">
-                  Allows the LLM to selectively retrieve older messages from this topic using IDs. Dramatically improves long-term memory while saving tokens.
-                </Typography>
-              </Box>
-            }
-            sx={{ mt: 1, alignItems: "flex-start" }}
-          />
-          <FormControlLabel
-            control={
-              <Switch
-                checked={aiSummaryEnabled}
-                onChange={(e): void => setAiSummaryEnabled(e.target.checked)}
-                size="small"
-              />
-            }
-            label={
-              <Box>
-                <Typography variant="body2">AI Message Summaries</Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary">
-                  Automatically generates a short AI summary for messages exceeding 300 characters using a local LLM. These summaries provide better context when messages are truncated.
-                </Typography>
-              </Box>
-            }
-            sx={{ mt: 1, alignItems: "flex-start" }}
-          />
-          <FormControl
-            fullWidth
-            size="small"
-            sx={{ mt: 2 }}>
+        </Box>
+      </Paper>
+
+      {/* ── 3. AI FEATURES ── */}
+      <Paper elevation={3} sx={{ p: 3, mt: 4, width: '100%', maxWidth: 600, bgcolor: (theme) => theme.palette.background.paper }}>
+        <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
+          AI Features
+        </Typography>
+
+        {/* Context window */}
+        <Box sx={{ mb: 3 }}>
+          <Typography
+            variant="subtitle2"
+            color="text.secondary"
+            gutterBottom
+            sx={{ fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.7rem' }}
+          >
+            Context Window
+          </Typography>
+          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
             <InputLabel>Max Context Tokens</InputLabel>
-            <Select
-              value={maxContextTokens}
-              label="Max Context Tokens"
-              onChange={(e): void => setMaxContextTokens(e.target.value as number)}>
+            <Select value={maxContextTokens} label="Max Context Tokens" onChange={(e): void => setMaxContextTokens(e.target.value as number)}>
               <MenuItem value={4000}>4k — Minimal (cheap)</MenuItem>
               <MenuItem value={8000}>8k — Compact</MenuItem>
               <MenuItem value={16000}>16k — Default</MenuItem>
@@ -591,15 +790,13 @@ const Settings: React.FC = () => {
               <MenuItem value={64000}>64k — Maximum</MenuItem>
             </Select>
           </FormControl>
-          <FormControl
-            fullWidth
-            size="small"
-            sx={{ mt: 2 }}>
+          <FormControl fullWidth size="small">
             <InputLabel>Default Recent Messages</InputLabel>
             <Select
               value={defaultMaxContextMessages}
               label="Default Recent Messages"
-              onChange={(e): void => setDefaultMaxContextMessages(e.target.value as number)}>
+              onChange={(e): void => setDefaultMaxContextMessages(e.target.value as number)}
+            >
               <MenuItem value={5}>5 messages</MenuItem>
               <MenuItem value={10}>10 messages (default)</MenuItem>
               <MenuItem value={15}>15 messages</MenuItem>
@@ -610,460 +807,278 @@ const Settings: React.FC = () => {
           </FormControl>
         </Box>
 
-        {/* OpenAI Section */}
-        {isUpdatingOpenAi ? (
-          <TextField
-            label="OpenAI API Key"
-            type="password"
-            fullWidth
-            value={openAiInput}
-            onChange={(e): void => setOpenAiInput(e.target.value)}
-            placeholder="Paste new key here"
-            sx={{ mb: 2 }}
-            error={openAiInput !== "" && !validateKey(openAiInput, "openai")}
-            helperText={
-              openAiInput !== "" && !validateKey(openAiInput, "openai")
-                ? "Invalid OpenAI key format (should start with sk-)"
-                : ""
-            }
-            InputProps={{
-              endAdornment: openAiKey && (
-                <InputAdornment position="end">
-                  <Button
-                    size="small"
-                    onClick={(): void => setIsUpdatingOpenAi(false)}>
-                    Cancel
-                  </Button>
-                </InputAdornment>
-              ),
-            }}
-          />
-        ) : (
-          <KeyConfirmation
-            label="OpenAI"
-            isStored={!!openAiKey}
-            onUpdate={(): void => setIsUpdatingOpenAi(true)}
-          />
-        )}
-
-        {/* DeepSeek Section */}
-        {isUpdatingDeepSeek ? (
-          <TextField
-            label="DeepSeek API Key"
-            type="password"
-            fullWidth
-            value={deepSeekInput}
-            onChange={(e): void => setDeepSeekInput(e.target.value)}
-            placeholder="Paste new key here"
-            sx={{ mb: 2 }}
-            error={deepSeekInput !== "" && !validateKey(deepSeekInput, "deepseek")}
-            helperText={
-              deepSeekInput !== "" && !validateKey(deepSeekInput, "deepseek")
-                ? "Invalid DeepSeek key format (should start with sk-)"
-                : ""
-            }
-            InputProps={{
-              endAdornment: deepSeekKey && (
-                <InputAdornment position="end">
-                  <Button
-                    size="small"
-                    onClick={(): void => setIsUpdatingDeepSeek(false)}>
-                    Cancel
-                  </Button>
-                </InputAdornment>
-              ),
-            }}
-          />
-        ) : (
-          <KeyConfirmation
-            label="DeepSeek"
-            isStored={!!deepSeekKey}
-            onUpdate={(): void => setIsUpdatingDeepSeek(true)}
-            extraInfo={
-              deepSeekBalance !== null && (
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ fontWeight: "bold" }}>
-                  Balance:{" "}
-                  {(deepSeekBalance.balance * (deepSeekBalance.currency === "CNY" ? 1.5 : USD_TO_SEK)).toFixed(2)}
-                  kr
+        {/* Message Retrieval */}
+        <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider', mb: 2 }}>
+          <FormControlLabel
+            control={<Switch checked={messageRetrievalEnabled} onChange={(e): void => setMessageRetrievalEnabled(e.target.checked)} size="small" />}
+            label={
+              <Box>
+                <Typography variant="body2">Message Retrieval Tool</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Allows the LLM to selectively retrieve older messages from this topic using IDs. Dramatically improves long-term memory while saving
+                  tokens.
                 </Typography>
-              )
+              </Box>
             }
+            sx={{ alignItems: 'flex-start' }}
           />
-        )}
-
-        {/* Google Section */}
-        {isUpdatingGoogle ? (
-          <TextField
-            label="Google API Key"
-            type="password"
-            fullWidth
-            value={googleInput}
-            onChange={(e): void => setGoogleInput(e.target.value)}
-            placeholder="Paste new key here"
-            sx={{ mb: 2 }}
-            error={googleInput !== "" && !validateKey(googleInput, "google")}
-            helperText={
-              googleInput !== "" && !validateKey(googleInput, "google") ? "Invalid Google API key format" : ""
-            }
-            InputProps={{
-              endAdornment: googleApiKey && (
-                <InputAdornment position="end">
-                  <Button
-                    size="small"
-                    onClick={(): void => setIsUpdatingGoogle(false)}>
-                    Cancel
-                  </Button>
-                </InputAdornment>
-              ),
-            }}
-          />
-        ) : (
-          <KeyConfirmation
-            label="Google (Gemini)"
-            isStored={!!googleApiKey}
-            onUpdate={(): void => setIsUpdatingGoogle(true)}
-          />
-        )}
-
-        {/* Moonshot Section */}
-        {isUpdatingMoonshot ? (
-          <TextField
-            label="Moonshot API Key (Kimi)"
-            type="password"
-            fullWidth
-            value={moonshotInput}
-            onChange={(e): void => setMoonshotInput(e.target.value)}
-            placeholder="Paste new key here"
-            sx={{ mb: 2 }}
-            error={moonshotInput !== "" && !validateKey(moonshotInput, "openai")}
-            helperText={
-              moonshotInput !== "" && !validateKey(moonshotInput, "openai") ? "Invalid Moonshot key format" : ""
-            }
-            InputProps={{
-              endAdornment: moonshotApiKey && (
-                <InputAdornment position="end">
-                  <Button
-                    size="small"
-                    onClick={(): void => setIsUpdatingMoonshot(false)}>
-                    Cancel
-                  </Button>
-                </InputAdornment>
-              ),
-            }}
-          />
-        ) : (
-          <KeyConfirmation
-            label="Moonshot"
-            isStored={!!moonshotApiKey}
-            onUpdate={(): void => setIsUpdatingMoonshot(true)}
-            extraInfo={
-              moonshotBalance !== null && (
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ fontWeight: "bold" }}>
-                  Balance: {(moonshotBalance * USD_TO_SEK).toFixed(2)}kr
-                </Typography>
-              )
-            }
-          />
-        )}
-
-        <TextField
-          label="Custom Instructions (System Prompt)"
-          fullWidth
-          multiline
-          minRows={3}
-          maxRows={10}
-          value={customInstructionsInput}
-          onChange={(e): void => setCustomInstructionsInput(e.target.value)}
-          placeholder="E.g., Always respond in the style of a pirate, keep answers concise, etc."
-          sx={{ mb: 2 }}
-          helperText="These instructions will be prepended to the system prompt for all new messages."
-        />
-
-        <TextField
-          label="Scratchpad Rules (System Prompt)"
-          fullWidth
-          multiline
-          minRows={5}
-          maxRows={15}
-          value={scratchpadRulesInput}
-          onChange={(e): void => setScratchpadRulesInput(e.target.value)}
-          sx={{ mb: 1 }}
-          helperText={`Instructions sent to the LLM controlling how it uses its long-term memory scratchpad. Use {{SCRATCHPAD_LIMIT}} for the character limit (${SCRATCHPAD_LIMIT.toLocaleString()}). The current scratchpad content is always appended automatically.`}
-        />
-        <Box
-          display="flex"
-          justifyContent="flex-end"
-          mb={2}>
-          <Button
-            size="small"
-            variant="text"
-            color="inherit"
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            onClick={(): void => setScratchpadRulesInput(DEFAULT_SCRATCHPAD_RULES)}>
-            Reset to default
-          </Button>
         </Box>
 
-        <Box
-          display="flex"
-          justifyContent="flex-end">
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleSave}
-            disabled={
-              (openAiInput !== "" && !validateKey(openAiInput, "openai")) ||
-              (deepSeekInput !== "" && !validateKey(deepSeekInput, "deepseek")) ||
-              (googleInput !== "" && !validateKey(googleInput, "google")) ||
-              (moonshotInput !== "" && !validateKey(moonshotInput, "openai"))
-            }>
-            Save
-          </Button>
+        {/* AI Summaries */}
+        <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider', mb: 2 }}>
+          <FormControlLabel
+            control={<Switch checked={aiSummaryEnabled} onChange={(e): void => setAiSummaryEnabled(e.target.checked)} size="small" />}
+            label={
+              <Box>
+                <Typography variant="body2">AI Message Summaries</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Automatically generates a short AI summary for messages exceeding 300 characters. These summaries provide better context when
+                  messages are truncated.
+                </Typography>
+              </Box>
+            }
+            sx={{ alignItems: 'flex-start' }}
+          />
+          {aiSummaryEnabled && (
+            <FormControl fullWidth size="small" sx={{ mt: 1.5 }}>
+              <InputLabel>Summary Model</InputLabel>
+              <Select value={summaryModel} label="Summary Model" onChange={(e): void => setSummaryModel(e.target.value)}>
+                <MenuItem value="same">Same as active chat model</MenuItem>
+                <MenuItem value="local">Local LLM (browser model)</MenuItem>
+              </Select>
+            </FormControl>
+          )}
         </Box>
 
-        {saved && (
-          <Typography
-            variant="body2"
-            color="success.main"
-            mt={2}>
-            Settings saved successfully.
+        {/* Reply Prediction */}
+        <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+            Reply Prediction
           </Typography>
-        )}
+          <Typography variant="body2" sx={{ mb: 1.5, color: 'text.secondary' }}>
+            After each assistant response, generate 3 suggested follow-up questions. Click a suggestion to send it instantly.
+          </Typography>
+          <FormControlLabel
+            control={<Switch checked={replyPredictionEnabled} onChange={(e): void => setReplyPredictionEnabled(e.target.checked)} />}
+            label="Enable reply prediction"
+            sx={{ mb: replyPredictionEnabled ? 2 : 0 }}
+          />
+          {replyPredictionEnabled && (
+            <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+              <InputLabel>Prediction Model</InputLabel>
+              <Select value={replyPredictionModel} label="Prediction Model" onChange={(e): void => setReplyPredictionModel(e.target.value)}>
+                <MenuItem value="same">Same as active chat model</MenuItem>
+                <MenuItem value="local">Local LLM (browser model)</MenuItem>
+              </Select>
+            </FormControl>
+          )}
+        </Box>
       </Paper>
 
-      <Paper
-        elevation={3}
-        sx={{
-          p: 3,
-          mt: 4,
-          width: "100%",
-          maxWidth: 600,
-          bgcolor: (theme) => theme.palette.background.paper,
-        }}>
-        <Box sx={{ mb: 4 }}>
-          <Typography
-            variant="h6"
-            gutterBottom
-            sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1, mb: 2 }}>
-            Predefined Prompts
-          </Typography>
-          <Typography
-            variant="body2"
-            sx={{ mb: 2, color: "text.secondary" }}>
-            Create reusable prompt snippets that you can easily toggle in your conversations.
-          </Typography>
+      {/* ── 4. DISPLAY & PERFORMANCE ── */}
+      <Paper elevation={3} sx={{ p: 3, mt: 4, width: '100%', maxWidth: 600, bgcolor: (theme) => theme.palette.background.paper }}>
+        <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
+          Display &amp; Performance
+        </Typography>
+        <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+          <InputLabel>Topic Preload Count</InputLabel>
+          <Select value={topicPreloadCount} label="Topic Preload Count" onChange={(e): void => setTopicPreloadCount(e.target.value as number)}>
+            <MenuItem value={0}>Disabled</MenuItem>
+            <MenuItem value={3}>3 topics</MenuItem>
+            <MenuItem value={5}>5 topics</MenuItem>
+            <MenuItem value={10}>10 topics</MenuItem>
+            <MenuItem value={20}>20 topics</MenuItem>
+            <MenuItem value={50}>50 topics</MenuItem>
+          </Select>
+        </FormControl>
+        <FormControl fullWidth size="small">
+          <InputLabel>Message Preview Length</InputLabel>
+          <Select
+            value={messageTruncateChars}
+            label="Message Preview Length"
+            onChange={(e): void => setMessageTruncateChars(e.target.value as number)}
+          >
+            <MenuItem value={0}>Always show full messages</MenuItem>
+            <MenuItem value={100}>Tiny (100 characters)</MenuItem>
+            <MenuItem value={500}>Default (500 characters)</MenuItem>
+            <MenuItem value={800}>Medium (800 characters)</MenuItem>
+            <MenuItem value={1200}>Long (1200 characters)</MenuItem>
+            <MenuItem value={2000}>Very long (2000 characters)</MenuItem>
+            <MenuItem value={4000}>Maximum (4000 characters)</MenuItem>
+          </Select>
+        </FormControl>
+      </Paper>
 
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            }}>
-            {predefinedPrompts.map((prompt) => (
-              <Paper
-                key={prompt.id}
-                variant="outlined"
-                sx={{
-                  p: 2,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 1,
-                  position: "relative",
-                  bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)"),
-                }}>
-                <Box
-                  display="flex"
-                  justifyContent="space-between"
-                  alignItems="center">
-                  <Typography
-                    variant="subtitle2"
-                    sx={{ fontWeight: "bold" }}>
-                    {prompt.name}
-                  </Typography>
-                  <Box>
-                    <Button
-                      size="small"
-                      onClick={(): void => {
-                        setEditingPrompt(prompt);
-                        setPromptNameInput(prompt.name);
-                        setPromptContentInput(prompt.content);
-                        setShowPromptForm(true);
-                      }}>
-                      Edit
-                    </Button>
-                    <Button
-                      size="small"
-                      color="error"
-                      onClick={(): void => {
-                        if (window.confirm(`Delete prompt "${prompt.name}"?`)) {
-                          deletePredefinedPrompt(prompt.id);
-                        }
-                      }}>
-                      Delete
-                    </Button>
-                  </Box>
-                </Box>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    whiteSpace: "pre-wrap",
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
-                    color: "text.secondary",
-                  }}>
-                  {prompt.content}
+      {/* ── 5. PREDEFINED PROMPTS ── */}
+      <Paper elevation={3} sx={{ p: 3, mt: 4, width: '100%', maxWidth: 600, bgcolor: (theme) => theme.palette.background.paper }}>
+        <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
+          Predefined Prompts
+        </Typography>
+        <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+          Create reusable prompt snippets that you can easily toggle in your conversations.
+        </Typography>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {predefinedPrompts.map((prompt) => (
+            <Paper
+              key={prompt.id}
+              variant="outlined"
+              sx={{
+                p: 2,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                position: 'relative',
+                bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
+              }}
+            >
+              <Box display="flex" justifyContent="space-between" alignItems="center">
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                  {prompt.name}
                 </Typography>
-              </Paper>
-            ))}
-
-            {showPromptForm ? (
-              <Paper
-                variant="outlined"
-                sx={{ p: 2, display: "flex", flexDirection: "column", gap: 2 }}>
-                <Typography variant="subtitle2">{editingPrompt ? "Edit Prompt" : "New Prompt"}</Typography>
-                <TextField
-                  label="Name (e.g., Programming)"
-                  size="small"
-                  fullWidth
-                  value={promptNameInput}
-                  onChange={(e): void => setPromptNameInput(e.target.value)}
-                />
-                <TextField
-                  label="Context / Instructions"
-                  placeholder="The context or instructions to add..."
-                  multiline
-                  minRows={3}
-                  fullWidth
-                  value={promptContentInput}
-                  onChange={(e): void => setPromptContentInput(e.target.value)}
-                />
-                <Box
-                  display="flex"
-                  justifyContent="flex-end"
-                  gap={1}>
+                <Box>
                   <Button
                     size="small"
                     onClick={(): void => {
-                      setShowPromptForm(false);
-                      setEditingPrompt(null);
-                    }}>
-                    Cancel
+                      setEditingPrompt(prompt);
+                      setPromptNameInput(prompt.name);
+                      setPromptContentInput(prompt.content);
+                      setShowPromptForm(true);
+                    }}
+                  >
+                    Edit
                   </Button>
                   <Button
                     size="small"
-                    variant="contained"
-                    disabled={!promptNameInput.trim() || !promptContentInput.trim()}
+                    color="error"
                     onClick={(): void => {
-                      if (editingPrompt) {
-                        updatePredefinedPrompt({
-                          ...editingPrompt,
-                          name: promptNameInput.trim(),
-                          content: promptContentInput.trim(),
-                        });
-                      } else {
-                        addPredefinedPrompt({
-                          id: crypto.randomUUID(),
-                          name: promptNameInput.trim(),
-                          content: promptContentInput.trim(),
-                        });
+                      if (window.confirm(`Delete prompt "${prompt.name}"?`)) {
+                        deletePredefinedPrompt(prompt.id);
                       }
-                      setShowPromptForm(false);
-                      setEditingPrompt(null);
-                      setPromptNameInput("");
-                      setPromptContentInput("");
-                    }}>
-                    {editingPrompt ? "Save Changes" : "Add Prompt"}
+                    }}
+                  >
+                    Delete
                   </Button>
                 </Box>
-              </Paper>
-            ) : (
-              <Button
-                variant="outlined"
-                startIcon={<AddIcon />}
-                onClick={(): void => setShowPromptForm(true)}>
-                Add Predefined Prompt
-              </Button>
-            )}
-          </Box>
+              </Box>
+              <Typography
+                variant="caption"
+                sx={{
+                  whiteSpace: 'pre-wrap',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  color: 'text.secondary',
+                }}
+              >
+                {prompt.content}
+              </Typography>
+            </Paper>
+          ))}
+
+          {showPromptForm ? (
+            <Paper variant="outlined" sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="subtitle2">{editingPrompt ? 'Edit Prompt' : 'New Prompt'}</Typography>
+              <TextField
+                label="Name (e.g., Programming)"
+                size="small"
+                fullWidth
+                value={promptNameInput}
+                onChange={(e): void => setPromptNameInput(e.target.value)}
+              />
+              <TextField
+                label="Context / Instructions"
+                placeholder="The context or instructions to add..."
+                multiline
+                minRows={3}
+                fullWidth
+                value={promptContentInput}
+                onChange={(e): void => setPromptContentInput(e.target.value)}
+              />
+              <Box display="flex" justifyContent="flex-end" gap={1}>
+                <Button
+                  size="small"
+                  onClick={(): void => {
+                    setShowPromptForm(false);
+                    setEditingPrompt(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={!promptNameInput.trim() || !promptContentInput.trim()}
+                  onClick={(): void => {
+                    if (editingPrompt) {
+                      updatePredefinedPrompt({
+                        ...editingPrompt,
+                        name: promptNameInput.trim(),
+                        content: promptContentInput.trim(),
+                      });
+                    } else {
+                      addPredefinedPrompt({
+                        id: crypto.randomUUID(),
+                        name: promptNameInput.trim(),
+                        content: promptContentInput.trim(),
+                      });
+                    }
+                    setShowPromptForm(false);
+                    setEditingPrompt(null);
+                    setPromptNameInput('');
+                    setPromptContentInput('');
+                  }}
+                >
+                  {editingPrompt ? 'Save Changes' : 'Add Prompt'}
+                </Button>
+              </Box>
+            </Paper>
+          ) : (
+            <Button variant="outlined" startIcon={<AddIcon />} onClick={(): void => setShowPromptForm(true)}>
+              Add Predefined Prompt
+            </Button>
+          )}
         </Box>
       </Paper>
 
-      <Paper
-        elevation={3}
-        sx={{
-          p: 3,
-          mt: 4,
-          width: "100%",
-          maxWidth: 600,
-          bgcolor: (theme) => theme.palette.background.paper,
-        }}>
-        <Typography
-          variant="h6"
-          gutterBottom>
+      {/* ── 6. DATA MANAGEMENT ── */}
+      <Paper elevation={3} sx={{ p: 3, mt: 4, width: '100%', maxWidth: 600, bgcolor: (theme) => theme.palette.background.paper }}>
+        <Typography variant="h6" gutterBottom>
           Data Management
         </Typography>
-        <Typography
-          variant="body2"
-          sx={{ mb: 2 }}>
+        <Typography variant="body2" sx={{ mb: 2 }}>
           Backup your conversations to a local JSON file, or restore them from a previous backup.
         </Typography>
 
-        <Box
-          display="flex"
-          flexDirection="column"
-          gap={2}>
-          <Box
-            display="flex"
-            gap={2}>
+        <Box display="flex" flexDirection="column" gap={2}>
+          <Box display="flex" gap={2}>
             <Button
               variant="contained"
               color="primary"
               onClick={(): void => {
                 handleExport().catch(console.error);
-              }}>
+              }}
+            >
               Export Database
             </Button>
-
-            <Button
-              variant="contained"
-              color="secondary"
-              onClick={(): void => fileInputRef.current?.click()}>
+            <Button variant="contained" color="secondary" onClick={(): void => fileInputRef.current?.click()}>
               Import Database
             </Button>
             <input
               type="file"
               accept=".json"
-              style={{ display: "none" }}
+              style={{ display: 'none' }}
               ref={fileInputRef}
               onChange={(e): void => {
                 handleImport(e);
               }}
             />
           </Box>
-          <Box
-            display="flex"
-            flexDirection="column"
-            gap={2}
-            mt={1}>
-            {"showSaveFilePicker" in window ? (
+          <Box display="flex" flexDirection="column" gap={2} mt={1}>
+            {'showSaveFilePicker' in window ? (
               <>
-                <Box
-                  display="flex"
-                  flexDirection="column"
-                  gap={1}
-                  alignItems="flex-start">
-                  <Box
-                    display="flex"
-                    alignItems="center"
-                    gap={2}>
+                <Box display="flex" flexDirection="column" gap={1} alignItems="flex-start">
+                  <Box display="flex" alignItems="center" gap={2}>
                     <FormControlLabel
                       control={
                         <Switch
@@ -1083,7 +1098,7 @@ const Settings: React.FC = () => {
                         onClick={(): void => {
                           handleChangeLocation().catch(console.error);
                         }}
-                        sx={{}}>
+                      >
                         Change Location
                       </Button>
                     )}
@@ -1091,14 +1106,9 @@ const Settings: React.FC = () => {
 
                   {autoBackupEnabled && (
                     <Box sx={{ ml: 1, mt: -0.5 }}>
-                      {backupStatus === "permission_required" ? (
-                        <Box
-                          display="flex"
-                          alignItems="center"
-                          gap={1}>
-                          <Typography
-                            variant="body2"
-                            color="error">
+                      {backupStatus === 'permission_required' ? (
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Typography variant="body2" color="error">
                             ⚠ Action Required: Permission expired.
                           </Typography>
                           <Button
@@ -1107,31 +1117,23 @@ const Settings: React.FC = () => {
                             onClick={(): void => {
                               void BackupService.performAutoBackup(true);
                             }}
-                            sx={{ py: 0 }}>
+                            sx={{ py: 0 }}
+                          >
                             Authorize Now
                           </Button>
                         </Box>
-                      ) : backupStatus === "error" ? (
-                        <Typography
-                          variant="body2"
-                          color="error">
+                      ) : backupStatus === 'error' ? (
+                        <Typography variant="body2" color="error">
                           ✕ Backup failed. Check console.
                         </Typography>
                       ) : (
-                        <Typography
-                          variant="body2"
-                          color="success.main">
-                          {backupStatus === "in-progress"
-                            ? "… Backing up..."
-                            : "✓ Active. Database saves automatically."}
+                        <Typography variant="body2" color="success.main">
+                          {backupStatus === 'in-progress' ? '… Backing up...' : '✓ Active. Database saves automatically.'}
                         </Typography>
                       )}
 
                       {lastBackupTime && (
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          display="block">
+                        <Typography variant="caption" color="text.secondary" display="block">
                           Last backup: {new Date(lastBackupTime).toLocaleString()}
                         </Typography>
                       )}
@@ -1139,15 +1141,9 @@ const Settings: React.FC = () => {
                   )}
                 </Box>
 
-                <FormControl
-                  variant="outlined"
-                  size="small"
-                  sx={{ minWidth: 200, mt: 1 }}>
+                <FormControl variant="outlined" size="small" sx={{ minWidth: 200, mt: 1 }}>
                   <InputLabel>Backup Frequency</InputLabel>
-                  <Select
-                    value={backupInterval}
-                    label="Backup Frequency"
-                    onChange={(e): void => setBackupInterval(e.target.value as number)}>
+                  <Select value={backupInterval} label="Backup Frequency" onChange={(e): void => setBackupInterval(e.target.value as number)}>
                     <MenuItem value={1}>Every 1 Minute</MenuItem>
                     <MenuItem value={5}>Every 5 Minutes</MenuItem>
                     <MenuItem value={30}>Every 30 Minutes</MenuItem>
@@ -1158,18 +1154,11 @@ const Settings: React.FC = () => {
               </>
             ) : (
               <Box>
-                <Typography
-                  variant="body2"
-                  color="text.secondary">
+                <Typography variant="body2" color="text.secondary">
                   (Automatic background backup is not supported in this browser.)
                 </Typography>
-                <Typography
-                  variant="caption"
-                  color="warning.main"
-                  display="block"
-                  sx={{ mt: 0.5 }}>
-                  Brave users: You may need to enable <b>brave://flags/#file-system-access-api</b> and restart your
-                  browser.
+                <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 0.5 }}>
+                  Brave users: You may need to enable <b>brave://flags/#file-system-access-api</b> and restart your browser.
                 </Typography>
               </Box>
             )}
@@ -1177,205 +1166,7 @@ const Settings: React.FC = () => {
         </Box>
       </Paper>
 
-      {/* AI Suggestions Section */}
-      <Paper
-        elevation={3}
-        sx={{
-          p: 3,
-          mt: 4,
-          width: "100%",
-          maxWidth: 600,
-          bgcolor: (theme) => theme.palette.background.paper,
-        }}>
-        <Typography
-          variant="h6"
-          gutterBottom
-          sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1, mb: 2 }}>
-          AI Suggestions (Experimental)
-        </Typography>
-
-        {/* Type-ahead suggestions */}
-        <Box sx={{ mb: 3 }}>
-          <Typography
-            variant="subtitle2"
-            sx={{ fontWeight: "bold", mb: 0.5 }}>
-            Type-ahead Suggestions
-          </Typography>
-          <Typography
-            variant="body2"
-            sx={{ mb: 1.5, color: "text.secondary" }}>
-            Local LLM word prediction while you type. Runs entirely in your browser. Press Tab to accept a suggestion.
-          </Typography>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={llmSuggestionEnabled}
-                onChange={(e): void => setLlmSuggestionEnabled(e.target.checked)}
-              />
-            }
-            label="Enable type-ahead suggestions"
-            sx={{ mb: 2 }}
-          />
-
-          <FormControl
-            fullWidth
-            size="small"
-            sx={{ mb: 3 }}>
-            <InputLabel>Selected Model</InputLabel>
-            <Select
-              value={llmModelSelected}
-              label="Selected Model"
-              onChange={(e): void => setLlmModelSelected(e.target.value as "qwen3.5-0.8b" | "qwen3.5-2b")}>
-              <MenuItem value="qwen3.5-0.8b">Qwen3.5 0.8B (Recommended • ~500MB)</MenuItem>
-              <MenuItem value="qwen3.5-2b">Qwen3.5 2B (~1.5GB)</MenuItem>
-            </Select>
-          </FormControl>
-
-          <Box
-            sx={{
-              p: 2,
-              borderRadius: 1,
-              border: "1px solid",
-              borderColor: "divider",
-              bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)"),
-            }}>
-            <Box
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
-              mb={llmProgress ? 2 : 0}>
-              <Typography
-                variant="body2"
-                component="div">
-                {status === "downloaded" ? (
-                  <Box
-                    display="flex"
-                    alignItems="center"
-                    gap={1}>
-                    <CheckCircleIcon color="success" />
-                    Model Downloaded
-                  </Box>
-                ) : status === "downloading" ? (
-                  "Downloading Model..."
-                ) : (
-                  "Model not downloaded"
-                )}
-              </Typography>
-
-              <Box
-                display="flex"
-                gap={1}>
-                {status === "downloading" && (
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    color="error"
-                    startIcon={<CloseIcon />}
-                    onClick={handleResetDownload}>
-                    Cancel/Reset
-                  </Button>
-                )}
-
-                {status === "downloaded" && (
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    color="error"
-                    startIcon={<DeleteIcon />}
-                    disabled={isDeletingModel}
-                    onClick={(): void => {
-                      void handleDeleteModel();
-                    }}>
-                    {isDeletingModel ? "Deleting..." : "Delete Model"}
-                  </Button>
-                )}
-
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<DownloadIcon />}
-                  disabled={isDeletingModel}
-                  onClick={(): void => {
-                    handleDownloadModel();
-                  }}>
-                  {status === "downloaded" ? "Re-download" : status === "downloading" ? "Force Retry" : "Download"}
-                </Button>
-              </Box>
-            </Box>
-
-            {llmProgress && status === "downloading" && (
-              <Box sx={{ width: "100%", mt: 2 }}>
-                <LinearProgress
-                  variant="determinate"
-                  value={llmProgress.progress}
-                />
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ mt: 1, display: "block" }}>
-                  {llmProgress.progress.toFixed(1)}% ({Math.round(llmProgress.loaded / 1024 / 1024)}MB /{" "}
-                  {Math.round(llmProgress.total / 1024 / 1024)}
-                  MB)
-                </Typography>
-              </Box>
-            )}
-          </Box>
-        </Box>
-
-        {/* Reply prediction */}
-        <Box sx={{ pt: 2, borderTop: "1px solid", borderColor: "divider" }}>
-          <Typography
-            variant="subtitle2"
-            sx={{ fontWeight: "bold", mb: 0.5 }}>
-            Reply Prediction
-          </Typography>
-          <Typography
-            variant="body2"
-            sx={{ mb: 1.5, color: "text.secondary" }}>
-            After each assistant response, generate 3 suggested follow-up questions. Click a suggestion to send it
-            instantly.
-          </Typography>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={replyPredictionEnabled}
-                onChange={(e): void => setReplyPredictionEnabled(e.target.checked)}
-              />
-            }
-            label="Enable reply prediction"
-            sx={{ mb: replyPredictionEnabled ? 2 : 0 }}
-          />
-          {replyPredictionEnabled && (
-            <FormControl
-              fullWidth
-              size="small"
-              sx={{ mt: 1 }}>
-              <InputLabel>Prediction Model</InputLabel>
-              <Select
-                value={replyPredictionModel}
-                label="Prediction Model"
-                onChange={(e): void => setReplyPredictionModel(e.target.value)}>
-                <MenuItem value="same">Same as active chat model</MenuItem>
-                <MenuItem value="local">Local LLM (browser model)</MenuItem>
-                {chatModels.map((m) => (
-                  <MenuItem
-                    key={m.id}
-                    value={m.id}>
-                    {m.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
-        </Box>
-      </Paper>
-
-      <ImportDialog
-        open={importDialogOpen}
-        file={pendingImportFile}
-        onClose={handleImportDialogClose}
-        onComplete={handleImportComplete}
-      />
+      <ImportDialog open={importDialogOpen} file={pendingImportFile} onClose={handleImportDialogClose} onComplete={handleImportComplete} />
     </Box>
   );
 };

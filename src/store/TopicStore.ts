@@ -222,7 +222,6 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         }
         return m;
       });
-
     }
 
     // RAG: inject semantically similar messages from outside the current window.
@@ -327,8 +326,8 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         // Show only the most recent 30 missing messages in the prompt directory to save tokens
         const visibleDirectory = directoryMessages.slice(-30);
         const directoryLines = visibleDirectory.map((m) => {
-          const snippet = m.content.substring(0, 100).replace(/\n/g, ' ').trim();
-          return `${m.id.slice(0, 8)}|${m.type === 'user' ? 'U' : 'A'}|${snippet}`;
+          const preview = m.summary ? `[S] ${m.summary}` : m.content.substring(0, 100).replace(/\n/g, ' ').trim();
+          return `${m.id.slice(0, 8)}|${m.type === 'user' ? 'U' : 'A'}|${preview}`;
         });
 
         const moreNote =
@@ -339,7 +338,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
           id: '__history_directory__',
           topicId,
           type: 'system',
-          content: `Historical messages outside context${moreNote}. Format: ID|role|snippet (U=user, A=assistant). Use 'read_messages' to fetch full content.\n\n${directoryLines.join('\n')}`,
+          content: `Historical messages outside context${moreNote}. Format: ID|role|preview (U=user, A=assistant; [S] = AI summary). Use 'read_messages' to fetch full content.\n\n${directoryLines.join('\n')}`,
           isDeleted: false,
           includeInContext: false,
           created: new Date(1).toISOString(), // older than chunks but newer than 0
@@ -390,6 +389,12 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       ]);
 
       const name = result.content.trim().replace(/^"|"$/g, '');
+
+      // ── Verification: Topic name ──
+      if (!name) console.warn('[verify:topic-name] LLM returned empty topic name for topic:', topicId);
+      else if (name.split(/\s+/).length > 8) console.warn('[verify:topic-name] Name too long (%d words):', name.split(/\s+/).length, name);
+      console.debug('[verify:topic-name] model=%s name="%s" prompt_tokens=%d', model.id, name, result.promptTokens);
+
       if (name) {
         await renameTopic(topicId, name);
       }

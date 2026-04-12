@@ -5,6 +5,13 @@ import ScrollToBottom, { useScrollToBottom, useSticky } from 'react-scroll-to-bo
 import { css } from '@emotion/css';
 import { useParams } from 'react-router-dom';
 
+// Suppress noisy internal warning from react-scroll-to-bottom about missing "behavior"
+const _origWarn = console.warn.bind(console);
+console.warn = (...args: unknown[]): void => {
+  if (typeof args[0] === 'string' && args[0].includes('react-scroll-to-bottom') && args[0].includes('behavior')) return;
+  _origWarn(...args);
+};
+
 import { useChatStore } from '../store/ChatStore';
 import { useUiStore } from '../store/UiStore';
 import MessageBubble from './MessageBubble';
