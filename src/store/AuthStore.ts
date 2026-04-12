@@ -9,6 +9,7 @@ interface AuthState {
   deepSeekKey: string;
   googleApiKey: string;
   moonshotApiKey: string;
+  minimaxKey: string;
   userName: string;
   backupInterval: number;
   customInstructions: string;
@@ -49,6 +50,7 @@ interface AuthState {
   setDeepSeekKey: (key: string) => void;
   setGoogleApiKey: (key: string) => void;
   setMoonshotApiKey: (key: string) => void;
+  setMinimaxKey: (key: string) => void;
   setUserName: (name: string) => void;
   setBackupInterval: (minutes: number) => void;
   setCustomInstructions: (instructions: string) => void;
@@ -68,6 +70,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedDeepSeekKey = SecurityUtils.decode(localStorage.getItem('deepSeekKey') ?? '');
   const storedGoogleApiKey = SecurityUtils.decode(localStorage.getItem('googleApiKey') ?? '');
   const storedMoonshotApiKey = SecurityUtils.decode(localStorage.getItem('moonshotApiKey') ?? '');
+  const storedMinimaxKey = SecurityUtils.decode(localStorage.getItem('minimaxKey') ?? '');
   const userName = localStorage.getItem('userName') ?? '';
   const storedBackupInterval = Number(localStorage.getItem('backupInterval') ?? '30');
   const storedCustomInstructions = localStorage.getItem('customInstructions') ?? '';
@@ -99,6 +102,7 @@ export const useAuthStore = create<AuthState>((set) => {
     deepSeekKey: storedDeepSeekKey,
     googleApiKey: storedGoogleApiKey,
     moonshotApiKey: storedMoonshotApiKey,
+    minimaxKey: storedMinimaxKey,
     userName: userName,
     backupInterval: storedBackupInterval,
     customInstructions: storedCustomInstructions,
@@ -127,6 +131,7 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem('deepSeekKey');
       localStorage.removeItem('googleApiKey');
       localStorage.removeItem('moonshotApiKey');
+      localStorage.removeItem('minimaxKey');
       localStorage.removeItem('userName');
       localStorage.removeItem('customInstructions');
       localStorage.removeItem('chatWidth');
@@ -138,6 +143,7 @@ export const useAuthStore = create<AuthState>((set) => {
         deepSeekKey: '',
         googleApiKey: '',
         moonshotApiKey: '',
+        minimaxKey: '',
         userName: undefined,
         customInstructions: '',
         chatWidth: 'lg',
@@ -225,6 +231,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setMoonshotApiKey: (key: string): void => {
       localStorage.setItem('moonshotApiKey', SecurityUtils.encode(key));
       set({ moonshotApiKey: key });
+    },
+    setMinimaxKey: (key: string): void => {
+      localStorage.setItem('minimaxKey', SecurityUtils.encode(key));
+      set({ minimaxKey: key });
     },
     setUserName: (userName: string): void => {
       localStorage.setItem('userName', userName);

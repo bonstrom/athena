@@ -39,6 +39,7 @@ const Settings: React.FC = () => {
     deepSeekKey,
     googleApiKey,
     moonshotApiKey,
+    minimaxKey,
     userName,
     backupInterval,
     customInstructions,
@@ -49,6 +50,7 @@ const Settings: React.FC = () => {
     setDeepSeekKey,
     setGoogleApiKey,
     setMoonshotApiKey,
+    setMinimaxKey,
     setUserName,
     setBackupInterval,
     setCustomInstructions,
@@ -90,6 +92,7 @@ const Settings: React.FC = () => {
   const [deepSeekInput, setDeepSeekInput] = useState('');
   const [googleInput, setGoogleInput] = useState('');
   const [moonshotInput, setMoonshotInput] = useState('');
+  const [minimaxInput, setMinimaxInput] = useState('');
 
   const currentModelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
   const status = llmModelDownloadStatus[currentModelId] ?? 'not_downloaded';
@@ -102,7 +105,8 @@ const Settings: React.FC = () => {
       ((m.provider === 'openai' && openAiKey) ||
         (m.provider === 'deepseek' && deepSeekKey) ||
         (m.provider === 'google' && googleApiKey) ||
-        (m.provider === 'moonshot' && moonshotApiKey)),
+        (m.provider === 'moonshot' && moonshotApiKey) ||
+        (m.provider === 'minimax' && minimaxKey)),
   );
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
@@ -112,6 +116,7 @@ const Settings: React.FC = () => {
   const [isUpdatingDeepSeek, setIsUpdatingDeepSeek] = useState(!deepSeekKey);
   const [isUpdatingGoogle, setIsUpdatingGoogle] = useState(!googleApiKey);
   const [isUpdatingMoonshot, setIsUpdatingMoonshot] = useState(!moonshotApiKey);
+  const [isUpdatingMinimax, setIsUpdatingMinimax] = useState(!minimaxKey);
 
   const [saved, setSaved] = useState(false);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
@@ -191,6 +196,10 @@ const Settings: React.FC = () => {
   }, [moonshotApiKey]);
 
   useEffect(() => {
+    setIsUpdatingMinimax(!minimaxKey);
+  }, [minimaxKey]);
+
+  useEffect(() => {
     if (moonshotApiKey) {
       void getMoonshotBalance().then((data) => {
         if (data) setMoonshotBalance(data.available_balance);
@@ -236,6 +245,11 @@ const Settings: React.FC = () => {
       setMoonshotApiKey(moonshotInput.trim());
       setMoonshotInput('');
       setIsUpdatingMoonshot(false);
+    }
+    if (isUpdatingMinimax && minimaxInput) {
+      setMinimaxKey(minimaxInput.trim());
+      setMinimaxInput('');
+      setIsUpdatingMinimax(false);
     }
     setUserName(userNameInput.trim());
     setCustomInstructions(customInstructionsInput.trim());
@@ -624,6 +638,29 @@ const Settings: React.FC = () => {
               }
             />
           )}
+
+          {isUpdatingMinimax ? (
+            <TextField
+              label="Minimax API Key"
+              type="password"
+              fullWidth
+              value={minimaxInput}
+              onChange={(e): void => setMinimaxInput(e.target.value)}
+              placeholder="Paste new key here"
+              sx={{ mb: 2 }}
+              InputProps={{
+                endAdornment: minimaxKey && (
+                  <InputAdornment position="end">
+                    <Button size="small" onClick={(): void => setIsUpdatingMinimax(false)}>
+                      Cancel
+                    </Button>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          ) : (
+            <KeyConfirmation label="Minimax" isStored={!!minimaxKey} onUpdate={(): void => setIsUpdatingMinimax(true)} />
+          )}
         </Box>
 
         <Box display="flex" justifyContent="flex-end">
@@ -635,7 +672,8 @@ const Settings: React.FC = () => {
               (openAiInput !== '' && !validateKey(openAiInput, 'openai')) ||
               (deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek')) ||
               (googleInput !== '' && !validateKey(googleInput, 'google')) ||
-              (moonshotInput !== '' && !validateKey(moonshotInput, 'openai'))
+              (moonshotInput !== '' && !validateKey(moonshotInput, 'openai')) ||
+              (minimaxInput !== '' && minimaxInput.trim().length < 10) // Basic length check
             }
           >
             Save

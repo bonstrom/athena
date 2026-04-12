@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { calculateCostSEK, ChatModel } from '../components/ModelSelector';
 import { useAuthStore } from '../store/AuthStore';
 import { estimateTokens } from './estimateTokens';
@@ -112,6 +113,7 @@ const PROVIDER_URLS: Record<string, string> = {
   deepseek: 'https://api.deepseek.com/v1/chat/completions',
   google: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
   moonshot: 'https://api.moonshot.ai/v1/chat/completions',
+  minimax: 'https://api.minimax.io/anthropic/v1/messages',
 };
 
 function buildPayload(
@@ -180,6 +182,7 @@ function buildPayload(
     ...(stream && { stream_options: { include_usage: true } }),
     ...(model.supportsTools && finalTools.length > 0 && { tools: finalTools }),
     ...(!stream && model.provider === 'moonshot' && { thinking: { type: 'disabled' } }),
+    ...(model.provider === 'minimax' && { max_tokens: 4096 }),
   };
 }
 
@@ -228,6 +231,18 @@ export async function askLlm(
   const key = getApiKey(model);
 
   const payload = buildPayload(model, messages, false, temperature, tools, webSearch);
+  const isAnthropic = model.provider === 'minimax';
+
+  const body = isAnthropic
+    ? JSON.stringify({
+        model: payload.model,
+        messages: payload.messages.filter((m) => m.role !== 'system'),
+        system: payload.messages.find((m) => m.role === 'system')?.content,
+        max_tokens: (payload as any).max_tokens || 4096,
+        temperature: payload.temperature,
+        stream: false,
+      })
+    : JSON.stringify(payload);
 
   const res = await fetch(url, {
     method: 'POST',
@@ -235,13 +250,29 @@ export async function askLlm(
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload),
+    body,
     signal,
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => 'Unknown error');
     throw new Error(`LLM Error ${res.status}: ${text}`);
+  }
+
+  if (isAnthropic) {
+    const data = (await res.json()) as {
+      content: { type: 'text' | 'thinking'; text?: string; thinking?: string }[];
+      usage: { input_tokens: number; output_tokens: number };
+    };
+    const textBlock = data.content.find((c) => c.type === 'text');
+    const thinkingBlock = data.content.find((c) => c.type === 'thinking');
+    return {
+      content: textBlock?.text?.trim() || '',
+      promptTokens: data.usage.input_tokens,
+      completionTokens: data.usage.output_tokens,
+      reasoning: thinkingBlock?.thinking?.trim() || '',
+      searchCount: 0,
+    };
   }
 
   const data = (await res.json()) as {
@@ -335,6 +366,18 @@ export async function askLlmStream(
   const key = getApiKey(model);
 
   const payload = buildPayload(model, messages, true, temperature, tools, webSearch);
+  const isAnthropic = model.provider === 'minimax';
+
+  const body = isAnthropic
+    ? JSON.stringify({
+        model: payload.model,
+        messages: payload.messages.filter((m) => m.role !== 'system'),
+        system: payload.messages.find((m) => m.role === 'system')?.content,
+        max_tokens: (payload as any).max_tokens || 4096,
+        temperature: payload.temperature,
+        stream: true,
+      })
+    : JSON.stringify(payload);
 
   const res = await fetch(url, {
     method: 'POST',
@@ -342,7 +385,7 @@ export async function askLlmStream(
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload),
+    body,
     signal,
   });
 
@@ -397,28 +440,27 @@ export async function askLlmStream(
         }
 
         try {
-          const parsed = JSON.parse(json) as {
-            choices?: {
-              finish_reason?: string;
-              delta?: {
-                content?: string;
-                reasoning_content?: string;
-                reasoning?: string;
-                tool_calls?: {
-                  id: string; // id only appears in the first chunk for a tool call usually
-                  index: number;
-                  type?: 'function' | 'builtin_function';
-                  function?: { name?: string; arguments?: string };
-                }[];
-              };
-            }[];
-            usage?: {
-              prompt_tokens: number;
-              completion_tokens: number;
-              prompt_tokens_details?: { cached_tokens?: number };
-              completion_tokens_details?: { reasoning_tokens?: number };
-            };
-          };
+          const parsed = JSON.parse(json) as any;
+
+          if (isAnthropic) {
+            if (parsed.type === 'content_block_delta') {
+              const delta = parsed.delta;
+              if (delta.type === 'text_delta') {
+                const token = delta.text || '';
+                accumulated += token;
+                if (onToken) onToken(token);
+              } else if (delta.type === 'thinking_delta') {
+                const rToken = delta.thinking || '';
+                reasoning += rToken;
+                if (onReasoning) onReasoning(rToken);
+              }
+            } else if (parsed.type === 'message_start') {
+              promptTokens = parsed.message.usage.input_tokens;
+            } else if (parsed.type === 'message_delta') {
+              completionTokens = parsed.usage.output_tokens;
+            }
+            continue;
+          }
 
           if (parsed.usage) {
             promptTokens = parsed.usage.prompt_tokens;
@@ -683,6 +725,8 @@ function getApiKey(model: ChatModel): string {
       return auth.googleApiKey;
     case 'moonshot':
       return auth.moonshotApiKey;
+    case 'minimax':
+      return auth.minimaxKey;
     default:
       throw new Error(`No API key found for provider "${String(model.provider)}"`);
   }

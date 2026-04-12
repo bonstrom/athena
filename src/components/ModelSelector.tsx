@@ -9,7 +9,7 @@ export interface ChatModel {
   input: number;
   cachedInput: number;
   output: number;
-  provider: 'openai' | 'deepseek' | 'google' | 'moonshot';
+  provider: 'openai' | 'deepseek' | 'google' | 'moonshot' | 'minimax';
   streaming: boolean;
   supportsTemperature: boolean;
   supportsTools: boolean;
@@ -131,6 +131,20 @@ export const chatModels: ChatModel[] = [
     supportsFiles: true,
     contextWindow: 128_000,
   },
+  {
+    id: 'MiniMax-M2.7',
+    label: 'MiniMax M2.7',
+    input: 0.3,
+    cachedInput: 0.06,
+    output: 1.2,
+    provider: 'minimax',
+    streaming: true,
+    supportsTemperature: true,
+    supportsTools: true,
+    supportsVision: false,
+    supportsFiles: false,
+    contextWindow: 128_000,
+  },
 ];
 
 export function calculateCostUSD(model: ChatModel, prompt: number, completion: number, promptDetails?: { cached_tokens?: number }): number {
@@ -150,14 +164,15 @@ interface Props {
 }
 
 const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
-  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore();
+  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey, minimaxKey } = useAuthStore();
 
   const availableModels = chatModels.filter(
     (model) =>
       (model.provider === 'openai' && openAiKey) ||
       (model.provider === 'deepseek' && deepSeekKey) ||
       (model.provider === 'google' && googleApiKey) ||
-      (model.provider === 'moonshot' && moonshotApiKey),
+      (model.provider === 'moonshot' && moonshotApiKey) ||
+      (model.provider === 'minimax' && minimaxKey),
   );
 
   if (availableModels.length === 0) {
@@ -207,25 +222,27 @@ export function getDefaultModel(): ChatModel {
     if (savedModel) return savedModel;
   }
 
-  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore.getState();
+  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey, minimaxKey } = useAuthStore.getState();
   const available = chatModels.filter(
     (m) =>
       (m.provider === 'openai' && openAiKey) ||
       (m.provider === 'deepseek' && deepSeekKey) ||
       (m.provider === 'google' && googleApiKey) ||
-      (m.provider === 'moonshot' && moonshotApiKey),
+      (m.provider === 'moonshot' && moonshotApiKey) ||
+      (m.provider === 'minimax' && minimaxKey),
   );
   return available[0] ?? chatModels[0];
 }
 
 export function getDefaultTopicNameModel(): ChatModel {
-  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore.getState();
+  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey, minimaxKey } = useAuthStore.getState();
   const available = chatModels.filter(
     (m) =>
       (m.provider === 'openai' && openAiKey) ||
       (m.provider === 'deepseek' && deepSeekKey) ||
       (m.provider === 'google' && googleApiKey) ||
-      (m.provider === 'moonshot' && moonshotApiKey),
+      (m.provider === 'moonshot' && moonshotApiKey) ||
+      (m.provider === 'minimax' && minimaxKey),
   );
   const bestModel = available.find((m) => m.id.includes('nano') || m.id.includes('flash'));
   return bestModel ?? (available.length > 0 ? available[0] : chatModels[0]);
