@@ -5,6 +5,8 @@ import { useNotificationStore } from './NotificationStore';
 import {
   orchestrateLlmLoop,
   askLlm,
+  generateMinimaxImage,
+  generateMinimaxMusic,
   LlmMessage,
   LlmContentPart,
   SCRATCHPAD_TOOL,
@@ -39,7 +41,11 @@ interface ChatStore {
   selectedModel: ChatModel;
   visibleMessageCount: number;
   webSearchEnabled: boolean;
+  imageGenerationEnabled: boolean;
+  musicGenerationEnabled: boolean;
   setWebSearchEnabled: (value: boolean) => void;
+  setImageGenerationEnabled: (value: boolean) => void;
+  setMusicGenerationEnabled: (value: boolean) => void;
   setSending: (value: boolean) => void;
   fetchMessages: (topicId: string, forkId?: string) => Promise<void>;
   increaseVisibleMessageCount: () => void;
@@ -87,6 +93,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   selectedModel: getDefaultModel(),
   temperature: 1.0,
   webSearchEnabled: false,
+  imageGenerationEnabled: false,
+  musicGenerationEnabled: false,
   abortController: null,
   currentRequestMessageIds: null,
   pendingSuggestions: null,
@@ -123,6 +131,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   setWebSearchEnabled: (value: boolean): void => set({ webSearchEnabled: value }),
+  setImageGenerationEnabled: (value: boolean): void => set({ imageGenerationEnabled: value }),
+  setMusicGenerationEnabled: (value: boolean): void => set({ musicGenerationEnabled: value }),
 
   buildFullContext: async (topicId: string, userMessagePreview?: string): Promise<ContextEntry[]> => {
     const { selectedModel, webSearchEnabled } = get();
@@ -529,6 +539,144 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       totalCost: 0,
       parentMessageId: userMessage.id,
     };
+
+    if (get().imageGenerationEnabled) {
+      try {
+        await athenaDb.transaction('rw', athenaDb.messages, async () => {
+          if (isRetry) {
+            await athenaDb.messages.update(userMessage.id, { failed: false });
+          } else {
+            await athenaDb.messages.add(userMessage);
+          }
+          await athenaDb.messages.add(assistantMessage);
+        });
+
+        set((state) => {
+          const existing = state.messagesByTopic[topicId] ?? [];
+          const updated = [...existing];
+          if (!isRetry) updated.push(userMessage);
+          updated.push(assistantMessage);
+          return {
+            messagesByTopic: { ...state.messagesByTopic, [topicId]: sortMessages(updated) },
+            currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId },
+          };
+        });
+
+        const imageResult = await generateMinimaxImage(content, controller.signal);
+        const imageAttachment: Attachment = {
+          id: crypto.randomUUID(),
+          name: 'generated-image.png',
+          type: 'image/png',
+          size: 0,
+          data: `data:image/png;base64,${imageResult.base64}`,
+          previewUrl: `data:image/png;base64,${imageResult.base64}`,
+        };
+
+        const finalizedAssistant: Partial<Message> = {
+          content: 'Here is your generated image:',
+          attachments: [imageAttachment],
+          model: 'image-01',
+          failed: false,
+        };
+
+        await athenaDb.messages.update(assistantId, finalizedAssistant);
+        get().updateMessageStateOnly(assistantId, finalizedAssistant);
+        set({ imageGenerationEnabled: false }); // Auto-disable after use
+      } catch (err) {
+        console.error('Image generation failed:', err);
+        const errorPatch = { content: `Error: ${err instanceof Error ? err.message : String(err)}`, failed: true };
+        await athenaDb.messages.update(assistantId, errorPatch);
+        get().updateMessageStateOnly(assistantId, errorPatch);
+      } finally {
+        set({ sending: false, abortController: null });
+      }
+      return;
+    }
+
+    if (get().musicGenerationEnabled) {
+      try {
+        await athenaDb.transaction('rw', athenaDb.messages, async () => {
+          if (isRetry) {
+            await athenaDb.messages.update(userMessage.id, { failed: false });
+          } else {
+            await athenaDb.messages.add(userMessage);
+          }
+          await athenaDb.messages.add(assistantMessage);
+        });
+
+        set((state) => {
+          const existing = state.messagesByTopic[topicId] ?? [];
+          const updated = [...existing];
+          if (!isRetry) updated.push(userMessage);
+          updated.push(assistantMessage);
+          return {
+            messagesByTopic: { ...state.messagesByTopic, [topicId]: sortMessages(updated) },
+            currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId },
+          };
+        });
+
+        // Split content into prompt and lyrics
+        let musicPrompt = content.trim();
+        let lyrics = '';
+        const lines = content.split('\n');
+        if (lines.length > 1) {
+          // Check if there is a clear separator like --- or if it looks like lyrics
+          const separatorIndex = lines.findIndex((l) => l.trim() === '---');
+          if (separatorIndex !== -1) {
+            musicPrompt = lines.slice(0, separatorIndex).join('\n').trim();
+            lyrics = lines.slice(separatorIndex + 1).join('\n').trim();
+          } else if (content.includes('[') && content.includes(']')) {
+            // Heuristic: everything before the first bracketed section is prompt
+            const firstBracketIndex = content.indexOf('[');
+            musicPrompt = content.slice(0, firstBracketIndex).trim();
+            lyrics = content.slice(firstBracketIndex).trim();
+          }
+        }
+
+        const musicResult = await generateMinimaxMusic(musicPrompt, lyrics, controller.signal);
+        const { audioHex } = musicResult;
+
+        // Convert hex to base64
+        const bytes = new Uint8Array(audioHex.length / 2);
+        for (let i = 0; i < audioHex.length / 2; i++) {
+          bytes[i] = parseInt(audioHex.substring(i * 2, i * 2 + 2), 16);
+        }
+
+        const audioBlob = new Blob([bytes], { type: 'audio/mpeg' });
+        const base64Data = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(audioBlob);
+        });
+
+        const musicAttachment: Attachment = {
+          id: crypto.randomUUID(),
+          name: 'generated-music.mp3',
+          type: 'audio/mpeg',
+          size: audioBlob.size,
+          data: base64Data,
+        };
+
+        const finalizedAssistant: Partial<Message> = {
+          content: 'Here is your generated music:',
+          attachments: [musicAttachment],
+          model: 'music-2.6',
+          failed: false,
+        };
+
+        await athenaDb.messages.update(assistantId, finalizedAssistant);
+        get().updateMessageStateOnly(assistantId, finalizedAssistant);
+        set({ musicGenerationEnabled: false });
+      } catch (err) {
+        console.error('Music generation failed:', err);
+        const errorPatch = { content: `Error: ${err instanceof Error ? err.message : String(err)}`, failed: true };
+        await athenaDb.messages.update(assistantId, errorPatch);
+        get().updateMessageStateOnly(assistantId, errorPatch);
+      } finally {
+        set({ sending: false, abortController: null });
+      }
+      return;
+    }
 
     try {
       // Create initial DB state in a single transaction

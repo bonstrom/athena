@@ -219,6 +219,87 @@ export function filterMessagesForModel(model: ChatModel, messages: LlmMessage[])
   return filtered;
 }
 
+export async function generateMinimaxImage(prompt: string, signal?: AbortSignal): Promise<{ base64: string }> {
+  const url = 'https://api.minimax.io/v1/image_generation';
+  const key = useAuthStore.getState().minimaxKey;
+
+  const payload = {
+    model: 'image-01',
+    prompt: prompt,
+    aspect_ratio: '1:1',
+    response_format: 'base64',
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => 'Unknown error');
+    throw new Error(`Minimax Image Error ${res.status}: ${text}`);
+  }
+
+  const data = (await res.json()) as { data: { image_base64: string[] } };
+  return { base64: data.data.image_base64[0] };
+}
+
+export async function generateMinimaxMusic(
+  prompt: string,
+  lyrics: string = '',
+  signal?: AbortSignal,
+): Promise<{ audioHex: string }> {
+  const url = 'https://api.minimax.io/v1/music_generation';
+  const key = useAuthStore.getState().minimaxKey;
+
+  const payload = {
+    model: 'music-2.6',
+    prompt: prompt,
+    lyrics: lyrics,
+    audio_setting: {
+      sample_rate: 44100,
+      bitrate: 256000,
+      format: 'mp3',
+    },
+    output_format: 'hex',
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => 'Unknown error');
+    throw new Error(`Minimax Music Error ${res.status}: ${text}`);
+  }
+
+  const data = (await res.json()) as any;
+  console.debug('[Minimax Music] API Response:', data);
+
+  if (data.base_resp?.status_code !== 0) {
+    throw new Error(`Minimax API Error: ${String(data.base_resp?.status_msg || 'Unknown error')}`);
+  }
+
+  const audioHex = data.data?.audio || data.audio;
+
+  if (!audioHex) {
+    throw new Error(`Minimax Music Error: No audio data found in response. Data: ${JSON.stringify(data)}`);
+  }
+
+  return { audioHex };
+}
+
 export async function askLlm(
   model: ChatModel,
   temperature: number,

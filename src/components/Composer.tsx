@@ -41,6 +41,8 @@ import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import LanguageIcon from "@mui/icons-material/Language";
+import BrushIcon from "@mui/icons-material/Brush";
+import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import TopicContextDialog from "./TopicContextDialog";
 import ScratchpadDialog from "./ScratchpadDialog";
 import { useAuthStore } from "../store/AuthStore";
@@ -83,6 +85,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     deepSeekKey,
     googleApiKey,
     moonshotApiKey,
+    minimaxKey,
     predefinedPrompts,
     llmSuggestionEnabled,
     llmModelSelected,
@@ -90,7 +93,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     messageRetrievalEnabled,
     defaultMaxContextMessages,
   } = useAuthStore();
-  const { webSearchEnabled, setWebSearchEnabled } = useChatStore();
+  const {
+    webSearchEnabled,
+    setWebSearchEnabled,
+    imageGenerationEnabled,
+    setImageGenerationEnabled,
+    musicGenerationEnabled,
+    setMusicGenerationEnabled,
+  } = useChatStore();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
@@ -998,26 +1008,85 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </Tooltip>
             )}
 
-            <Tooltip
-              title={`Web Search (${webSearchEnabled ? "Enabled" : "Disabled"})`}
-              disableTouchListener={isMobile}>
-              <span>
-                <IconButton
-                  onClick={(): void => {
-                    const nextState = !webSearchEnabled;
-                    if (nextState && selectedModel.id !== "kimi-k2.5") {
-                      const kimi = chatModels.find((m) => m.id === "kimi-k2.5");
-                      if (kimi) setSelectedModel(kimi);
-                    }
-                    setWebSearchEnabled(nextState);
-                  }}
-                  disabled={sending}
-                  color={webSearchEnabled ? "primary" : "default"}
-                  aria-label="Toggle Web Search">
-                  <LanguageIcon />
-                </IconButton>
-              </span>
-            </Tooltip>
+            {moonshotApiKey && (
+              <Tooltip
+                title={`Web Search (${webSearchEnabled ? "Enabled" : "Disabled"})`}
+                disableTouchListener={isMobile}>
+                <span>
+                  <IconButton
+                    onClick={(): void => {
+                      const nextState = !webSearchEnabled;
+                      if (nextState) {
+                        setImageGenerationEnabled(false);
+                        setMusicGenerationEnabled(false);
+                        if (selectedModel.id !== "kimi-k2.5") {
+                          const kimi = chatModels.find((m) => m.id === "kimi-k2.5");
+                          if (kimi) setSelectedModel(kimi);
+                        }
+                      }
+                      setWebSearchEnabled(nextState);
+                    }}
+                    disabled={sending}
+                    color={webSearchEnabled ? "primary" : "default"}
+                    aria-label="Toggle Web Search">
+                    <LanguageIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+
+            {minimaxKey && (
+              <Tooltip
+                title={`Image Generation (${imageGenerationEnabled ? "Enabled" : "Disabled"})`}
+                disableTouchListener={isMobile}>
+                <span>
+                  <IconButton
+                    onClick={(): void => {
+                      const nextState = !imageGenerationEnabled;
+                      if (nextState) {
+                        setWebSearchEnabled(false);
+                        setMusicGenerationEnabled(false);
+                        if (selectedModel.id !== "MiniMax-M2.7") {
+                          const minimax = chatModels.find((m) => m.id === "MiniMax-M2.7");
+                          if (minimax) setSelectedModel(minimax);
+                        }
+                      }
+                      setImageGenerationEnabled(nextState);
+                    }}
+                    disabled={sending}
+                    color={imageGenerationEnabled ? "secondary" : "default"}
+                    aria-label="Toggle Image Generation">
+                    <BrushIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+            {minimaxKey && (
+              <Tooltip
+                title={`Music Generation (${musicGenerationEnabled ? "Enabled" : "Disabled"})`}
+                disableTouchListener={isMobile}>
+                <span>
+                  <IconButton
+                    onClick={(): void => {
+                      const nextState = !musicGenerationEnabled;
+                      if (nextState) {
+                        setWebSearchEnabled(false);
+                        setImageGenerationEnabled(false);
+                        if (selectedModel.id !== "MiniMax-M2.7") {
+                          const minimax = chatModels.find((m) => m.id === "MiniMax-M2.7");
+                          if (minimax) setSelectedModel(minimax);
+                        }
+                      }
+                      setMusicGenerationEnabled(nextState);
+                    }}
+                    disabled={sending}
+                    color={musicGenerationEnabled ? "secondary" : "default"}
+                    aria-label="Toggle Music Generation">
+                    <MusicNoteIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
 
             <Tooltip
               title="Predefined Prompts"
