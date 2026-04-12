@@ -562,7 +562,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           };
         });
 
-        const imageResult = await generateMinimaxImage(content, controller.signal);
+        // Parse aspect ratio from prompt if present (e.g., Ratio: 16:9)
+        let imagePrompt = content.trim();
+        let aspectRatio = '1:1';
+        const ratioMatch = content.match(/Ratio:\s*(\d+:\d+)/i);
+        if (ratioMatch) {
+          aspectRatio = ratioMatch[1];
+          imagePrompt = content.replace(ratioMatch[0], '').trim();
+        }
+
+        const imageResult = await generateMinimaxImage(imagePrompt, aspectRatio, controller.signal);
         const imageAttachment: Attachment = {
           id: crypto.randomUUID(),
           name: 'generated-image.png',

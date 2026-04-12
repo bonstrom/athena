@@ -219,14 +219,18 @@ export function filterMessagesForModel(model: ChatModel, messages: LlmMessage[])
   return filtered;
 }
 
-export async function generateMinimaxImage(prompt: string, signal?: AbortSignal): Promise<{ base64: string }> {
+export async function generateMinimaxImage(
+  prompt: string,
+  aspectRatio: string = '1:1',
+  signal?: AbortSignal,
+): Promise<{ base64: string }> {
   const url = 'https://api.minimax.io/v1/image_generation';
   const key = useAuthStore.getState().minimaxKey;
 
   const payload = {
     model: 'image-01',
     prompt: prompt,
-    aspect_ratio: '1:1',
+    aspect_ratio: aspectRatio,
     response_format: 'base64',
   };
 

@@ -56,6 +56,36 @@ import { useNotificationStore } from "../store/NotificationStore";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+const MUSIC_TEMPLATE = `Genre: Soulful Blues
+Mood: Melancholic, Rainy Night
+Instrumentation: Electric Guitar, Soft Drums
+Tempo: Slow
+---
+[Intro]
+
+[Verse 1]
+
+[Chorus]
+
+[Verse 2]
+
+[Chorus]
+
+[Bridge]
+
+[Chorus]
+
+[Outro]`;
+
+const IMAGE_TEMPLATE = `Subject: 
+Action: 
+Background: 
+Style: 
+Lighting: 
+Camera: 
+Ratio: 16:9`;
+
+
 interface ComposerProps {
   sending: boolean;
   onSend: (content: string, attachments?: Attachment[]) => void;
@@ -1050,6 +1080,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                           const minimax = chatModels.find((m) => m.id === "MiniMax-M2.7");
                           if (minimax) setSelectedModel(minimax);
                         }
+                        // Populate template if empty
+                        if (!inputValue.trim()) {
+                          setInputValue(IMAGE_TEMPLATE);
+                        }
                       }
                       setImageGenerationEnabled(nextState);
                     }}
@@ -1075,6 +1109,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                         if (selectedModel.id !== "MiniMax-M2.7") {
                           const minimax = chatModels.find((m) => m.id === "MiniMax-M2.7");
                           if (minimax) setSelectedModel(minimax);
+                        }
+                        // Populate template if empty
+                        if (!inputValue.trim()) {
+                          setInputValue(MUSIC_TEMPLATE);
                         }
                       }
                       setMusicGenerationEnabled(nextState);
