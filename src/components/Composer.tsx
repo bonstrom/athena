@@ -50,7 +50,7 @@ import { llmSuggestionService } from "../services/llmSuggestionService";
 import { useChatStore } from "../store/ChatStore";
 import { useTopicStore } from "../store/TopicStore";
 import { chatModels } from "./ModelSelector";
-import { SCRATCHPAD_LIMIT, USD_TO_SEK } from "../constants";
+import { USD_TO_SEK } from "../constants";
 import { Attachment } from "../database/AthenaDb";
 import { useNotificationStore } from "../store/NotificationStore";
 
@@ -790,43 +790,117 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             Chat Tools
           </ListSubheader>
 
-          <MenuItem
-            onClick={(): void => {
-              setShowContextDialog(true);
-              handleTempClose();
-            }}
-            disabled={!currentTopicId}
-            sx={{ py: 1.5, px: 2, borderRadius: 1.5, mx: 1, mb: 1 }}>
-            <MenuBookOutlinedIcon
-              fontSize="small"
-              sx={{ mr: 2, color: "text.secondary" }}
-            />
-            <ListItemText
-              primary="Inspect Context"
-              secondary="View the full LLM context payload"
-              primaryTypographyProps={{ variant: "body2", fontWeight: 500 }}
-              secondaryTypographyProps={{ variant: "caption" }}
-            />
-          </MenuItem>
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 1,
+              px: 2,
+              pb: 2,
+              pt: 1,
+            }}>
+            <Tooltip title="Inspect the full LLM context payload">
+              <IconButton
+                onClick={(): void => {
+                  setShowContextDialog(true);
+                  handleTempClose();
+                }}
+                disabled={!currentTopicId}
+                sx={{
+                  borderRadius: 2,
+                  flexDirection: "column",
+                  gap: 0.5,
+                  py: 1,
+                  border: (theme) => `1px solid ${theme.palette.divider}`,
+                }}>
+                <MenuBookOutlinedIcon fontSize="small" />
+                <Typography variant="caption" sx={{ fontSize: "0.65rem", fontWeight: 600 }}>Inspect</Typography>
+              </IconButton>
+            </Tooltip>
 
-          <MenuItem
-            onClick={(): void => {
-              setShowScratchpadDialog(true);
-              handleTempClose();
-            }}
-            disabled={!currentTopicId}
-            sx={{ py: 1.5, px: 2, borderRadius: 1.5, mx: 1, mb: 1 }}>
-            <EditNoteIcon
-              fontSize="small"
-              sx={{ mr: 2, color: "text.secondary" }}
-            />
-            <ListItemText
-              primary="View Scratchpad"
-              secondary={`AI persistent memory (${(topicStore.topics.find((t) => t.id === currentTopicId)?.scratchpad?.length ?? 0).toLocaleString()} / ${SCRATCHPAD_LIMIT.toLocaleString()})`}
-              primaryTypographyProps={{ variant: "body2", fontWeight: 500 }}
-              secondaryTypographyProps={{ variant: "caption" }}
-            />
-          </MenuItem>
+            <Tooltip title="View AI persistent memory">
+              <IconButton
+                onClick={(): void => {
+                  setShowScratchpadDialog(true);
+                  handleTempClose();
+                }}
+                disabled={!currentTopicId}
+                sx={{
+                  borderRadius: 2,
+                  flexDirection: "column",
+                  gap: 0.5,
+                  py: 1,
+                  border: (theme) => `1px solid ${theme.palette.divider}`,
+                }}>
+                <EditNoteIcon fontSize="small" />
+                <Typography variant="caption" sx={{ fontSize: "0.65rem", fontWeight: 600 }}>Scratchpad</Typography>
+              </IconButton>
+            </Tooltip>
+
+            {minimaxKey && (
+              <Tooltip title={imageGenerationEnabled ? "Image Gen: Active" : "Image Gen: Inactive"}>
+                <IconButton
+                  onClick={(): void => {
+                    const nextState = !imageGenerationEnabled;
+                    if (nextState) {
+                      setWebSearchEnabled(false);
+                      setMusicGenerationEnabled(false);
+                      if (selectedModel.id !== "MiniMax-M2.7") {
+                        const minimax = chatModels.find((m) => m.id === "MiniMax-M2.7");
+                        if (minimax) setSelectedModel(minimax);
+                      }
+                      if (!inputValue.trim()) setInputValue(IMAGE_TEMPLATE);
+                    }
+                    setImageGenerationEnabled(nextState);
+                  }}
+                  disabled={sending}
+                  sx={{
+                    borderRadius: 2,
+                    flexDirection: "column",
+                    gap: 0.5,
+                    py: 1,
+                    border: (theme) => `1px solid ${imageGenerationEnabled ? alpha(theme.palette.secondary.main, 0.5) : theme.palette.divider}`,
+                    bgcolor: (theme) => imageGenerationEnabled ? alpha(theme.palette.secondary.main, 0.08) : "transparent",
+                    color: imageGenerationEnabled ? "secondary.main" : "text.secondary",
+                  }}>
+                  <BrushIcon fontSize="small" />
+                  <Typography variant="caption" sx={{ fontSize: "0.65rem", fontWeight: 600 }}>Images</Typography>
+                </IconButton>
+              </Tooltip>
+            )}
+
+            {minimaxKey && (
+              <Tooltip title={musicGenerationEnabled ? "Music Gen: Active" : "Music Gen: Inactive"}>
+                <IconButton
+                  onClick={(): void => {
+                    const nextState = !musicGenerationEnabled;
+                    if (nextState) {
+                      setWebSearchEnabled(false);
+                      setImageGenerationEnabled(false);
+                      if (selectedModel.id !== "MiniMax-M2.7") {
+                        const minimax = chatModels.find((m) => m.id === "MiniMax-M2.7");
+                        if (minimax) setSelectedModel(minimax);
+                      }
+                      if (!inputValue.trim()) setInputValue(MUSIC_TEMPLATE);
+                    }
+                    setMusicGenerationEnabled(nextState);
+                  }}
+                  disabled={sending}
+                  sx={{
+                    borderRadius: 2,
+                    flexDirection: "column",
+                    gap: 0.5,
+                    py: 1,
+                    border: (theme) => `1px solid ${musicGenerationEnabled ? alpha(theme.palette.secondary.main, 0.5) : theme.palette.divider}`,
+                    bgcolor: (theme) => musicGenerationEnabled ? alpha(theme.palette.secondary.main, 0.08) : "transparent",
+                    color: musicGenerationEnabled ? "secondary.main" : "text.secondary",
+                  }}>
+                  <MusicNoteIcon fontSize="small" />
+                  <Typography variant="caption" sx={{ fontSize: "0.65rem", fontWeight: 600 }}>Music</Typography>
+                </IconButton>
+              </Tooltip>
+            )}
+          </Box>
         </Menu>
 
         {currentTopicId && showContextDialog && (
@@ -1065,66 +1139,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </Tooltip>
             )}
 
-            {minimaxKey && (
-              <Tooltip
-                title={`Image Generation (${imageGenerationEnabled ? "Enabled" : "Disabled"})`}
-                disableTouchListener={isMobile}>
-                <span>
-                  <IconButton
-                    onClick={(): void => {
-                      const nextState = !imageGenerationEnabled;
-                      if (nextState) {
-                        setWebSearchEnabled(false);
-                        setMusicGenerationEnabled(false);
-                        if (selectedModel.id !== "MiniMax-M2.7") {
-                          const minimax = chatModels.find((m) => m.id === "MiniMax-M2.7");
-                          if (minimax) setSelectedModel(minimax);
-                        }
-                        // Populate template if empty
-                        if (!inputValue.trim()) {
-                          setInputValue(IMAGE_TEMPLATE);
-                        }
-                      }
-                      setImageGenerationEnabled(nextState);
-                    }}
-                    disabled={sending}
-                    color={imageGenerationEnabled ? "secondary" : "default"}
-                    aria-label="Toggle Image Generation">
-                    <BrushIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            )}
-            {minimaxKey && (
-              <Tooltip
-                title={`Music Generation (${musicGenerationEnabled ? "Enabled" : "Disabled"})`}
-                disableTouchListener={isMobile}>
-                <span>
-                  <IconButton
-                    onClick={(): void => {
-                      const nextState = !musicGenerationEnabled;
-                      if (nextState) {
-                        setWebSearchEnabled(false);
-                        setImageGenerationEnabled(false);
-                        if (selectedModel.id !== "MiniMax-M2.7") {
-                          const minimax = chatModels.find((m) => m.id === "MiniMax-M2.7");
-                          if (minimax) setSelectedModel(minimax);
-                        }
-                        // Populate template if empty
-                        if (!inputValue.trim()) {
-                          setInputValue(MUSIC_TEMPLATE);
-                        }
-                      }
-                      setMusicGenerationEnabled(nextState);
-                    }}
-                    disabled={sending}
-                    color={musicGenerationEnabled ? "secondary" : "default"}
-                    aria-label="Toggle Music Generation">
-                    <MusicNoteIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            )}
+
 
             <Tooltip
               title="Predefined Prompts"

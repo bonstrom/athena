@@ -170,7 +170,8 @@ function buildPayload(
     messages: finalMessages.map((m) => ({
       role: m.role,
       content: m.content as string | (LlmContentPart & { type: 'text' | 'image_url' })[] | null,
-      ...(m.reasoning_content && { reasoning_content: m.reasoning_content }),
+      ...(m.role === 'assistant' && { reasoning_content: m.reasoning_content || 'Thinking process hidden or not provided.' }),
+      ...(m.role !== 'assistant' && m.reasoning_content !== undefined && { reasoning_content: m.reasoning_content }),
       ...(m.tool_calls && { tool_calls: m.tool_calls }),
       ...(m.tool_call_id && { tool_call_id: m.tool_call_id }),
       ...(m.name && { name: m.name }),
@@ -564,7 +565,7 @@ export async function askLlmStream(
           accumulated += token;
           if (onToken && token) onToken(token);
 
-          if (delta?.reasoning_content || delta?.reasoning) {
+          if (delta && (delta.reasoning_content !== undefined || delta.reasoning !== undefined)) {
             const rToken = delta.reasoning_content ?? delta.reasoning ?? '';
             reasoning += rToken;
             if (onReasoning && rToken) onReasoning(rToken);
@@ -730,7 +731,7 @@ export async function orchestrateLlmLoop(
       llmContext.push({
         role: 'assistant',
         content: result.content || null,
-        ...(result.reasoning && { reasoning_content: result.reasoning }),
+        reasoning_content: result.reasoning || 'Thinking process hidden or not provided.',
         tool_calls: result.toolCalls.map((tc) => ({
           id: tc.id,
           type: tc.type,

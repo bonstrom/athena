@@ -198,7 +198,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         sourceLabel = `Recent ${m.type === 'user' ? 'User' : 'Assistant'} Message`;
       }
       entries.push({
-        message: { role, content: m.content, ...(m.reasoning && { reasoning_content: m.reasoning }) },
+        message: { 
+          role, 
+          content: m.content, 
+          ...(role === 'assistant' ? { reasoning_content: m.reasoning || 'Thinking process hidden or not provided.' } : (m.reasoning !== undefined && { reasoning_content: m.reasoning }))
+        },
         sourceLabel,
         messageId: isRag ? undefined : m.id,
         messageType: m.type,
@@ -464,12 +468,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             parts.push({ type: 'image_url', image_url: { url: att.data } });
           }
         }
-        return { role, content: parts, ...(m.reasoning && { reasoning_content: m.reasoning }) };
+        return { 
+          role, 
+          content: parts, 
+          ...(role === 'assistant' ? { reasoning_content: m.reasoning || 'Thinking process hidden or not provided.' } : (m.reasoning !== undefined && { reasoning_content: m.reasoning }))
+        };
       }
       return {
         role,
         content: m.content,
-        ...(m.reasoning && { reasoning_content: m.reasoning }),
+        ...(role === 'assistant' ? { reasoning_content: m.reasoning || 'Thinking process hidden or not provided.' } : (m.reasoning !== undefined && { reasoning_content: m.reasoning })),
       };
     });
 
