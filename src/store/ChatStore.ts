@@ -586,6 +586,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await athenaDb.messages.update(assistantId, finalizedAssistant);
         get().updateMessageStateOnly(assistantId, finalizedAssistant);
         set({ imageGenerationEnabled: false }); // Auto-disable after use
+
+        // Finalize topic state (naming and summarization)
+        if (!isRetry) {
+          void get().maybeSummarize(userMessage.id, userMessage.content);
+        }
+        void get().maybeSummarize(assistantId, finalizedAssistant.content ?? '', undefined, [
+          ...llmContext,
+          { role: 'assistant', content: finalizedAssistant.content ?? '' },
+        ]);
+        void topicStoreState.generateTopicName(topicId, content);
       } catch (err) {
         console.error('Image generation failed:', err);
         const errorPatch = { content: `Error: ${err instanceof Error ? err.message : String(err)}`, failed: true };
@@ -630,6 +640,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await athenaDb.messages.update(assistantId, finalizedAssistant);
         get().updateMessageStateOnly(assistantId, finalizedAssistant);
         set({ musicGenerationEnabled: false });
+
+        // Finalize topic state (naming and summarization)
+        if (!isRetry) {
+          void get().maybeSummarize(userMessage.id, userMessage.content);
+        }
+        void get().maybeSummarize(assistantId, finalizedAssistant.content ?? '', undefined, [
+          ...llmContext,
+          { role: 'assistant', content: finalizedAssistant.content ?? '' },
+        ]);
+        void topicStoreState.generateTopicName(topicId, content);
       } catch (err) {
         console.error('Music generation failed:', err);
         const errorPatch = { content: `Error: ${err instanceof Error ? err.message : String(err)}`, failed: true };

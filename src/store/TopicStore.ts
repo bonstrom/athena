@@ -99,8 +99,11 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
   renameTopic: async (id, name): Promise<void> => {
     try {
-      await athenaDb.topics.update(id, { name });
-      get().updateTopicName(id, name);
+      const now = new Date().toISOString();
+      await athenaDb.topics.update(id, { name, updatedOn: now });
+      set((state) => ({
+        topics: state.topics.map((t) => (t.id === id ? { ...t, name, updatedOn: now } : t)),
+      }));
     } catch (err) {
       console.error('Failed to rename topic', err);
       const message = err instanceof Error ? err.message : String(err);
@@ -361,7 +364,16 @@ export const useTopicStore = create<TopicState>((set, get) => ({
   generateTopicName: async (topicId: string, userMessage: string): Promise<void> => {
     const { topics, renameTopic } = get();
     const topic = topics.find((t) => t.id === topicId);
-    if (!topic || topic.name !== 'New Topic') return;
+    if (!topic) return;
+
+    // Always update the 'updatedOn' timestamp to bump the topic to the top of the sidebar
+    const now = new Date().toISOString();
+    await athenaDb.topics.update(topicId, { updatedOn: now });
+    set((state) => ({
+      topics: state.topics.map((t) => (t.id === topicId ? { ...t, updatedOn: now } : t)),
+    }));
+
+    if (topic.name !== 'New Topic') return;
 
     const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore.getState();
     const hasAnyKey = !!(openAiKey || deepSeekKey || googleApiKey || moonshotApiKey);
