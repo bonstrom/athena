@@ -29,6 +29,7 @@ interface TopicState {
   deleteTopic: (id: string) => Promise<void>;
   getTopicContext(topicId: string, excludeAfterId?: string, userQuery?: string): Promise<Message[]>;
   updateTopicScratchpad: (id: string, scratchpad: string) => Promise<void>;
+  updateTopicTimestamp: (id: string) => Promise<void>;
   forkTopic: (topicId: string, messageId: string) => Promise<void>;
   switchFork: (topicId: string, forkId: string) => Promise<void>;
   deleteFork: (topicId: string, forkId: string) => Promise<void>;
@@ -102,7 +103,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       const now = new Date().toISOString();
       await athenaDb.topics.update(id, { name, updatedOn: now });
       set((state) => ({
-        topics: state.topics.map((t) => (t.id === id ? { ...t, name, updatedOn: now } : t)),
+        topics: state.topics
+          .map((t) => (t.id === id ? { ...t, name, updatedOn: now } : t))
+          .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
       }));
     } catch (err) {
       console.error('Failed to rename topic', err);
@@ -113,14 +116,31 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
   updateTopicScratchpad: async (id, scratchpad): Promise<void> => {
     try {
-      await athenaDb.topics.update(id, { scratchpad });
+      const now = new Date().toISOString();
+      await athenaDb.topics.update(id, { scratchpad, updatedOn: now });
       set((state) => ({
-        topics: state.topics.map((t) => (t.id === id ? { ...t, scratchpad } : t)),
+        topics: state.topics
+          .map((t) => (t.id === id ? { ...t, scratchpad, updatedOn: now } : t))
+          .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
       }));
     } catch (err) {
       console.error('Failed to update topic scratchpad', err);
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification('Failed to update scratchpad', message);
+    }
+  },
+
+  updateTopicTimestamp: async (id: string): Promise<void> => {
+    try {
+      const now = new Date().toISOString();
+      await athenaDb.topics.update(id, { updatedOn: now });
+      set((state) => ({
+        topics: state.topics
+          .map((t) => (t.id === id ? { ...t, updatedOn: now } : t))
+          .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
+      }));
+    } catch (err) {
+      console.error('Failed to update topic timestamp', err);
     }
   },
 
@@ -370,7 +390,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     const now = new Date().toISOString();
     await athenaDb.topics.update(topicId, { updatedOn: now });
     set((state) => ({
-      topics: state.topics.map((t) => (t.id === topicId ? { ...t, updatedOn: now } : t)),
+      topics: state.topics
+        .map((t) => (t.id === topicId ? { ...t, updatedOn: now } : t))
+        .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
     }));
 
     if (topic.name !== 'New Topic') return;
@@ -515,8 +537,11 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
       // 3. Update Zustand state — this triggers ChatView's useEffect which now
       //    safely calls fetchMessages with data already present in the DB.
+      const now = new Date().toISOString();
       set((state) => ({
-        topics: state.topics.map((t) => (t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newForkId } : t)),
+        topics: state.topics
+          .map((t) => (t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newForkId, updatedOn: now } : t))
+          .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
       }));
     } catch (err) {
       console.error('Failed to fork topic', err);
@@ -538,14 +563,17 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         newActiveForkId = updatedForks[0].id;
       }
 
+      const now = new Date().toISOString();
       await athenaDb.topics.update(topicId, {
         forks: updatedForks,
         activeForkId: newActiveForkId,
-        updatedOn: new Date().toISOString(),
+        updatedOn: now,
       });
 
       set((state) => ({
-        topics: state.topics.map((t) => (t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newActiveForkId } : t)),
+        topics: state.topics
+          .map((t) => (t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newActiveForkId, updatedOn: now } : t))
+          .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
       }));
 
       // Delete messages unique to this fork

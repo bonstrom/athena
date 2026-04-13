@@ -32,6 +32,7 @@ export const TopicList = (): JSX.Element => {
         {grouped.map((group) => (
           <React.Fragment key={group.label}>
             <ListSubheader
+              disableSticky
               sx={{
                 fontSize: '0.65rem',
                 letterSpacing: '0.08em',

@@ -575,6 +575,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           };
         });
 
+        void topicStoreState.updateTopicTimestamp(topicId);
+
         const { content: resultContent, attachment, model: resultModel } = await generateImage(content, controller.signal);
         const finalizedAssistant: Partial<Message> = {
           content: resultContent,
@@ -628,6 +630,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId },
           };
         });
+
+        void topicStoreState.updateTopicTimestamp(topicId);
 
         const { content: resultContent, attachment, model: resultModel } = await generateMusic(content, controller.signal);
         const finalizedAssistant: Partial<Message> = {
@@ -700,6 +704,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId },
         };
       });
+
+      void topicStoreState.updateTopicTimestamp(topicId);
 
       const loopStartTime = Date.now();
       let streamedContent = '';
