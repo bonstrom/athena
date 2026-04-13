@@ -75,6 +75,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [infoAnchorEl, setInfoAnchorEl] = useState<null | HTMLElement>(null);
   const [isExpanded, setIsExpanded] = useState(() => messageTruncateChars === 0 || message.content.length <= messageTruncateChars);
+  const [expandedImage, setExpandedImage] = useState<{ url: string, name: string, data: string } | null>(null);
 
   const isAssistant = message.type === 'assistant';
   const isLong = messageTruncateChars > 0 && message.content.length > messageTruncateChars;
@@ -537,6 +538,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               <Box
                 key={att.id}
                 sx={{
+                  position: 'relative',
                   borderRadius: 2,
                   overflow: 'hidden',
                   border: (theme) => `1px solid ${alpha(theme.palette.divider, 0.1)}`,
@@ -544,25 +546,46 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 }}
               >
                 {att.previewUrl ? (
-                  <Box
-                    component="img"
-                    src={att.previewUrl}
-                    alt={att.name}
-                    sx={{
-                      maxWidth: '100%',
-                      maxHeight: 300,
-                      display: 'block',
-                      cursor: 'pointer',
-                      transition: 'opacity 0.2s',
-                      '&:hover': { opacity: 0.9 },
-                    }}
-                    onClick={(): void => {
-                      const link = document.createElement('a');
-                      link.href = att.data;
-                      link.download = att.name;
-                      link.click();
-                    }}
-                  />
+                  <>
+                    <Box
+                      component="img"
+                      src={att.previewUrl}
+                      alt={att.name}
+                      sx={{
+                        maxWidth: '100%',
+                        maxHeight: 300,
+                        display: 'block',
+                        cursor: 'pointer',
+                        transition: 'opacity 0.2s',
+                        '&:hover': { opacity: 0.9 },
+                      }}
+                      onClick={(): void => {
+                        setExpandedImage({ url: att.previewUrl!, name: att.name, data: att.data });
+                      }}
+                    />
+                    <IconButton
+                      size="small"
+                      onClick={(e): void => {
+                        e.stopPropagation();
+                        const link = document.createElement('a');
+                        link.href = att.data;
+                        link.download = att.name;
+                        link.click();
+                      }}
+                      sx={{
+                        position: 'absolute',
+                        bottom: 8,
+                        right: 8,
+                        backgroundColor: 'rgba(0,0,0,0.5)',
+                        color: 'white',
+                        '&:hover': {
+                          backgroundColor: 'rgba(0,0,0,0.7)',
+                        }
+                      }}
+                    >
+                      <DownloadIcon fontSize="small" />
+                    </IconButton>
+                  </>
                 ) : (
                   <Button
                     startIcon={<AttachFileIcon />}
@@ -687,6 +710,43 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             Delete
           </Button>
         </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(expandedImage)}
+        onClose={(): void => setExpandedImage(null)}
+        maxWidth="xl"
+      >
+        <Box sx={{ position: 'relative' }}>
+          <Box
+            component="img"
+            src={expandedImage?.url}
+            alt={expandedImage?.name}
+            sx={{ maxWidth: '100%', maxHeight: '90vh', display: 'block' }}
+          />
+          <IconButton
+            onClick={(): void => {
+              if (expandedImage) {
+                const link = document.createElement('a');
+                link.href = expandedImage.data;
+                link.download = expandedImage.name;
+                link.click();
+              }
+            }}
+            sx={{
+              position: 'absolute',
+              bottom: 16,
+              right: 16,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              color: 'white',
+              '&:hover': {
+                backgroundColor: 'rgba(0,0,0,0.7)',
+              }
+            }}
+          >
+            <DownloadIcon />
+          </IconButton>
+        </Box>
       </Dialog>
     </Paper>
   );
