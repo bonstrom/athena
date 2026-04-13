@@ -116,6 +116,65 @@ const PROVIDER_URLS: Record<string, string> = {
   minimax: 'https://api.minimax.io/anthropic/v1/messages',
 };
 
+// ── Anthropic-format helpers ──────────────────────────────────────────────────
+
+/** Convert internal OpenAI-style tool definitions to Anthropic's schema. */
+function toAnthropicTools(tools: LlmTool[]): { name: string; description?: string; input_schema: Record<string, unknown> }[] {
+  return tools.map((t) => ({
+    name: t.function.name,
+    description: t.function.description,
+    input_schema: (t.function.parameters as Record<string, unknown>) ?? { type: 'object', properties: {} },
+  }));
+}
+
+/**
+ * Convert messages that contain OpenAI-style tool calls / tool results
+ * into the Anthropic content-block format expected by `/anthropic/v1/messages`.
+ * Non-system messages that had `role: 'tool'` become `role: 'user'` with a
+ * `tool_result` content block; assistant messages with `tool_calls` get their
+ * calls expressed as `tool_use` content blocks.
+ */
+function toAnthropicMessages(messages: LlmMessage[]): { role: 'user' | 'assistant'; content: unknown }[] {
+  return messages
+    .filter((m) => m.role !== 'system')
+    .map((m) => {
+      if (m.role === 'tool') {
+        return {
+          role: 'user' as const,
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: m.tool_call_id,
+              content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+            },
+          ],
+        };
+      }
+      if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+        const blocks: unknown[] = [];
+        if (m.content) {
+          blocks.push({ type: 'text', text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) });
+        }
+        for (const tc of m.tool_calls) {
+          let input: unknown = {};
+          try {
+            input = JSON.parse(tc.function.arguments);
+          } catch {
+            input = {};
+          }
+          blocks.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input });
+        }
+        return { role: 'assistant' as const, content: blocks };
+      }
+      return {
+        role: m.role as 'user' | 'assistant',
+        content: m.content as string,
+      };
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function buildPayload(
   model: ChatModel,
   messages: LlmMessage[],
@@ -170,7 +229,7 @@ function buildPayload(
     messages: finalMessages.map((m) => ({
       role: m.role,
       content: m.content as string | (LlmContentPart & { type: 'text' | 'image_url' })[] | null,
-      ...(m.role === 'assistant' && { reasoning_content: m.reasoning_content || 'Thinking process hidden or not provided.' }),
+      ...(m.role === 'assistant' && m.reasoning_content && { reasoning_content: m.reasoning_content }),
       ...(m.role !== 'assistant' && m.reasoning_content !== undefined && { reasoning_content: m.reasoning_content }),
       ...(m.tool_calls && { tool_calls: m.tool_calls }),
       ...(m.tool_call_id && { tool_call_id: m.tool_call_id }),
@@ -220,11 +279,7 @@ export function filterMessagesForModel(model: ChatModel, messages: LlmMessage[])
   return filtered;
 }
 
-export async function generateMinimaxImage(
-  prompt: string,
-  aspectRatio: string = '1:1',
-  signal?: AbortSignal,
-): Promise<{ base64: string }> {
+export async function generateMinimaxImage(prompt: string, aspectRatio: string = '1:1', signal?: AbortSignal): Promise<{ base64: string }> {
   const url = 'https://api.minimax.io/v1/image_generation';
   const key = useAuthStore.getState().minimaxKey;
 
@@ -254,11 +309,7 @@ export async function generateMinimaxImage(
   return { base64: data.data.image_base64[0] };
 }
 
-export async function generateMinimaxMusic(
-  prompt: string,
-  lyrics: string = '',
-  signal?: AbortSignal,
-): Promise<{ audioHex: string }> {
+export async function generateMinimaxMusic(prompt: string, lyrics: string = '', signal?: AbortSignal): Promise<{ audioHex: string }> {
   const url = 'https://api.minimax.io/v1/music_generation';
   const key = useAuthStore.getState().minimaxKey;
 
@@ -319,14 +370,16 @@ export async function askLlm(
   const payload = buildPayload(model, messages, false, temperature, tools, webSearch);
   const isAnthropic = model.provider === 'minimax';
 
+  const anthropicMessages = isAnthropic ? toAnthropicMessages(payload.messages) : [];
   const body = isAnthropic
     ? JSON.stringify({
         model: payload.model,
-        messages: payload.messages.filter((m) => m.role !== 'system'),
+        messages: anthropicMessages,
         system: payload.messages.find((m) => m.role === 'system')?.content,
         max_tokens: (payload as any).max_tokens || 4096,
         temperature: payload.temperature,
         stream: false,
+        ...(payload.tools && payload.tools.length > 0 && { tools: toAnthropicTools(payload.tools) }),
       })
     : JSON.stringify(payload);
 
@@ -347,16 +400,45 @@ export async function askLlm(
 
   if (isAnthropic) {
     const data = (await res.json()) as {
-      content: { type: 'text' | 'thinking'; text?: string; thinking?: string }[];
+      content: { type: string; text?: string; thinking?: string; id?: string; name?: string; input?: Record<string, unknown> }[];
       usage: { input_tokens: number; output_tokens: number };
     };
     const textBlock = data.content.find((c) => c.type === 'text');
     const thinkingBlock = data.content.find((c) => c.type === 'thinking');
+    const toolUseBlocks = data.content.filter((c) => c.type === 'tool_use');
+
+    let aiNote: string | null = null;
+    let aiNoteAction: 'append' | 'replace' | undefined;
+    const toolCalls =
+      toolUseBlocks.length > 0
+        ? toolUseBlocks.map((b) => ({
+            id: b.id ?? '',
+            type: 'function' as const,
+            function: { name: b.name ?? '', arguments: JSON.stringify(b.input ?? {}) },
+          }))
+        : undefined;
+
+    if (toolCalls) {
+      const scratchpadTool = toolCalls.find((tc) => tc.function.name === 'update_scratchpad');
+      if (scratchpadTool) {
+        try {
+          const args = JSON.parse(scratchpadTool.function.arguments) as { content: string; action: 'append' | 'replace' };
+          aiNote = args.content;
+          aiNoteAction = args.action;
+        } catch (e) {
+          console.warn('Failed to parse tool call arguments:', e);
+        }
+      }
+    }
+
     return {
       content: textBlock?.text?.trim() || '',
       promptTokens: data.usage.input_tokens,
       completionTokens: data.usage.output_tokens,
       reasoning: thinkingBlock?.thinking?.trim() || '',
+      aiNote,
+      aiNoteAction,
+      toolCalls,
       searchCount: 0,
     };
   }
@@ -417,7 +499,7 @@ export async function askLlm(
   const result = {
     content: content
       .replace(/<!--\s*persist:\s*[\s\S]*?\s*-->/gi, '')
-      .replace(/<!--\s*replace:\s*[\s\S]*?\s*-->/gi, '')
+      .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
       .trim(),
     promptTokens: data.usage.prompt_tokens,
     completionTokens: data.usage.completion_tokens,
@@ -454,14 +536,16 @@ export async function askLlmStream(
   const payload = buildPayload(model, messages, true, temperature, tools, webSearch);
   const isAnthropic = model.provider === 'minimax';
 
+  const anthropicMessages = isAnthropic ? toAnthropicMessages(payload.messages) : [];
   const body = isAnthropic
     ? JSON.stringify({
         model: payload.model,
-        messages: payload.messages.filter((m) => m.role !== 'system'),
+        messages: anthropicMessages,
         system: payload.messages.find((m) => m.role === 'system')?.content,
         max_tokens: (payload as any).max_tokens || 4096,
         temperature: payload.temperature,
         stream: true,
+        ...(payload.tools && payload.tools.length > 0 && { tools: toAnthropicTools(payload.tools) }),
       })
     : JSON.stringify(payload);
 
@@ -529,7 +613,13 @@ export async function askLlmStream(
           const parsed = JSON.parse(json) as any;
 
           if (isAnthropic) {
-            if (parsed.type === 'content_block_delta') {
+            if (parsed.type === 'content_block_start') {
+              const block = parsed.content_block;
+              if (block.type === 'tool_use') {
+                if (!toolCalls) toolCalls = [];
+                toolCalls[parsed.index] = { id: block.id ?? '', type: 'function', function: { name: block.name ?? '', arguments: '' } };
+              }
+            } else if (parsed.type === 'content_block_delta') {
               const delta = parsed.delta;
               if (delta.type === 'text_delta') {
                 const token = delta.text || '';
@@ -539,6 +629,11 @@ export async function askLlmStream(
                 const rToken = delta.thinking || '';
                 reasoning += rToken;
                 if (onReasoning) onReasoning(rToken);
+              } else if (delta.type === 'input_json_delta') {
+                const idx: number = parsed.index ?? 0;
+                if (toolCalls?.[idx]) {
+                  toolCalls[idx].function.arguments += delta.partial_json ?? '';
+                }
               }
             } else if (parsed.type === 'message_start') {
               promptTokens = parsed.message.usage.input_tokens;
@@ -727,17 +822,41 @@ export async function orchestrateLlmLoop(
 
     // Handle Tool Calls Loop
     if (result.toolCalls && result.toolCalls.length > 0) {
+      const isAnthropic = model.provider === 'minimax';
+
       // Add assistant tool calls to context
-      llmContext.push({
-        role: 'assistant',
-        content: result.content || null,
-        reasoning_content: result.reasoning || 'Thinking process hidden or not provided.',
-        tool_calls: result.toolCalls.map((tc) => ({
-          id: tc.id,
-          type: tc.type,
-          function: tc.function,
-        })),
-      });
+      if (isAnthropic) {
+        const blocks: unknown[] = [];
+        if (result.content) blocks.push({ type: 'text', text: result.content });
+        for (const tc of result.toolCalls) {
+          let input: unknown = {};
+          try {
+            input = JSON.parse(tc.function.arguments);
+          } catch {
+            input = {};
+          }
+          blocks.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input });
+        }
+        llmContext.push({
+          role: 'assistant',
+          content: blocks as any,
+          ...(result.reasoning && { reasoning_content: result.reasoning }),
+        });
+      } else {
+        // Moonshot (Kimi) requires reasoning_content to be present in assistant
+        // tool-call messages when thinking is enabled — use a fallback if empty.
+        const needsReasoningFallback = model.provider === 'moonshot';
+        llmContext.push({
+          role: 'assistant',
+          content: result.content || null,
+          reasoning_content: result.reasoning || (needsReasoningFallback ? 'Thinking process hidden or not provided.' : undefined),
+          tool_calls: result.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: tc.type,
+            function: tc.function,
+          })),
+        });
+      }
 
       // Add tool results to context
       for (const tc of result.toolCalls) {
@@ -750,6 +869,8 @@ export async function orchestrateLlmLoop(
         }
 
         if (isWebSearch) {
+          // $web_search is a Moonshot builtin — echo the query back as the tool
+          // result so the API can fulfil the search and continue the response.
           toolResult = tc.function.arguments;
         } else if (!isScratchpad && onExecuteTool) {
           const cacheKey = `${tc.function.name}:${tc.function.arguments}`;
@@ -777,12 +898,19 @@ export async function orchestrateLlmLoop(
           onToolLog(`**Tool Result**: \`${tc.function.name}\`\n> ${summary.replace(/\n/g, '\n> ')}\n\n`);
         }
 
-        llmContext.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          name: tc.function.name,
-          content: toolResult,
-        });
+        if (isAnthropic) {
+          llmContext.push({
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: tc.id, content: toolResult }] as any,
+          });
+        } else {
+          llmContext.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            name: tc.function.name,
+            content: toolResult,
+          });
+        }
       }
       continue;
     }
