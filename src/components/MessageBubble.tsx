@@ -586,6 +586,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       <DownloadIcon fontSize="small" />
                     </IconButton>
                   </>
+                ) : att.name?.toLowerCase().match(/\.(mp3|wav|ogg)$/) ? (
+                  <>
+                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                    <audio controls src={att.data} style={{ display: 'block', outline: 'none' }} />
+                  </>
                 ) : (
                   <Button
                     startIcon={<AttachFileIcon />}
