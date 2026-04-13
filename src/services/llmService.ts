@@ -687,7 +687,7 @@ export async function generateMinimaxMusic(prompt: string, lyrics = '', signal?:
 function buildLlmResult(parsed: ParsedResponse): LlmResult {
   let aiNote: string | null = null;
   let aiNoteAction: 'append' | 'replace' | undefined;
-  const { toolCalls } = parsed;
+  const toolCalls = parsed.toolCalls?.filter((tc): tc is ToolCall => !!(tc && tc.function));
 
   if (toolCalls && toolCalls.length > 0) {
     const scratchpadTool = toolCalls.find((tc) => tc.function.name === 'update_scratchpad');
@@ -907,6 +907,13 @@ export async function orchestrateLlmLoop(
       finalContent = finalContent ? `${finalContent}\n\n${result.content}` : result.content;
     } // Process AI Note (Scratchpad)
     if (result.aiNote && onScratchpadUpdate) {
+      // If the update came from the regex fallback (not a native tool call), log it so the user sees visual feedback
+      const isNativeToolCall = result.toolCalls?.some((tc) => tc.function.name === 'update_scratchpad');
+      if (!isNativeToolCall && onToolLog) {
+        onToolLog(
+          `\n\n**Executing Tool**: \`update_scratchpad\` *(via fallback syntax)*\n> \`\`\`json\n> ${JSON.stringify({ content: result.aiNote, action: result.aiNoteAction ?? 'append' }, null, 2).replace(/\n/g, '\n> ')}\n> \`\`\`\n`,
+        );
+      }
       await onScratchpadUpdate(result.aiNote, result.aiNoteAction ?? 'append');
     }
 

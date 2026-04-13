@@ -56,10 +56,10 @@ import { useNotificationStore } from '../store/NotificationStore';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
-const MUSIC_TEMPLATE = `Genre: Soulful Blues
-Mood: Melancholic, Rainy Night
-Instrumentation: Electric Guitar, Soft Drums
-Tempo: Slow
+const MUSIC_TEMPLATE = `Genre:
+Mood:
+Instrumentation:
+Tempo:
 ---
 [Intro]
 
@@ -77,13 +77,8 @@ Tempo: Slow
 
 [Outro]`;
 
-const IMAGE_TEMPLATE = `Subject: 
-Action: 
-Background: 
-Style: 
-Lighting: 
-Camera: 
-Ratio: 16:9`;
+const IMAGE_TEMPLATE = `Ratio: 16:9
+Description:`;
 
 interface ComposerProps {
   sending: boolean;
@@ -149,7 +144,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       (model.provider === 'openai' && openAiKey) ||
       (model.provider === 'deepseek' && deepSeekKey) ||
       (model.provider === 'google' && googleApiKey) ||
-      (model.provider === 'moonshot' && moonshotApiKey),
+      (model.provider === 'moonshot' && moonshotApiKey) ||
+      (model.provider === 'minimax' && minimaxKey),
   );
   const openTempMenu = Boolean(anchorEl);
 
