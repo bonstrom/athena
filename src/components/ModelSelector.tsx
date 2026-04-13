@@ -2,6 +2,7 @@ import React from 'react';
 import { FormControl, InputLabel, MenuItem, Select, Box, Typography } from '@mui/material';
 import { useAuthStore } from '../store/AuthStore';
 import { USD_TO_SEK } from '../constants';
+import { ProviderId } from '../services/llmService';
 
 export interface ChatModel {
   id: string;
@@ -9,7 +10,7 @@ export interface ChatModel {
   input: number;
   cachedInput: number;
   output: number;
-  provider: 'openai' | 'deepseek' | 'google' | 'moonshot' | 'minimax';
+  provider: ProviderId;
   streaming: boolean;
   supportsTemperature: boolean;
   supportsTools: boolean;

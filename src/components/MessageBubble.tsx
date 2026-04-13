@@ -77,7 +77,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const [isExpanded, setIsExpanded] = useState(() => messageTruncateChars === 0 || message.content.length <= messageTruncateChars);
 
   const isAssistant = message.type === 'assistant';
-  const isStreaming = isAssistant && message.content === '';
   const isLong = messageTruncateChars > 0 && message.content.length > messageTruncateChars;
   const displayContent = isLong && !isExpanded ? message.content.slice(0, messageTruncateChars) + '\u2026' : message.content;
 

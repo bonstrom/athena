@@ -1,4 +1,3 @@
-/* eslint-disable */
 import { calculateCostSEK, ChatModel } from '../components/ModelSelector';
 import { useAuthStore } from '../store/AuthStore';
 import { estimateTokens } from './estimateTokens';
@@ -106,14 +105,99 @@ interface LlmPayload {
   stream_options?: { include_usage: boolean };
   tools?: LlmTool[];
   thinking?: { type: 'enabled' | 'disabled' };
+  max_tokens?: number;
 }
 
-const PROVIDER_URLS: Record<string, string> = {
-  openai: 'https://api.openai.com/v1/chat/completions',
-  deepseek: 'https://api.deepseek.com/v1/chat/completions',
-  google: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-  moonshot: 'https://api.moonshot.ai/v1/chat/completions',
-  minimax: 'https://api.minimax.io/anthropic/v1/messages',
+// ── Provider Registry ────────────────────────────────────────────────────────
+export type ProviderId = 'openai' | 'deepseek' | 'google' | 'moonshot' | 'minimax';
+
+const MAX_TOOL_LOOP_ITERATIONS = 5;
+
+type AuthState = ReturnType<typeof useAuthStore.getState>;
+
+interface ProviderConfig {
+  url: string;
+  messageFormat: 'openai' | 'anthropic';
+  getApiKey: (auth: AuthState) => string;
+  /** Whether this provider supports a web-search builtin tool. */
+  supportsWebSearch?: boolean;
+  /** Whether assistant tool-call messages require a reasoning_content fallback. */
+  requiresReasoningFallback?: boolean;
+  /** Extra fields merged into the payload (may differ by stream mode). */
+  payloadOverrides?: (stream: boolean) => Partial<LlmPayload>;
+}
+
+const PROVIDERS: Partial<Record<string, ProviderConfig>> = {
+  openai: {
+    url: 'https://api.openai.com/v1/chat/completions',
+    messageFormat: 'openai',
+    getApiKey: (auth) => auth.openAiKey,
+  },
+  deepseek: {
+    url: 'https://api.deepseek.com/v1/chat/completions',
+    messageFormat: 'openai',
+    getApiKey: (auth) => auth.deepSeekKey,
+  },
+  google: {
+    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    messageFormat: 'openai',
+    getApiKey: (auth) => auth.googleApiKey,
+  },
+  moonshot: {
+    url: 'https://api.moonshot.ai/v1/chat/completions',
+    messageFormat: 'openai',
+    getApiKey: (auth) => auth.moonshotApiKey,
+    supportsWebSearch: true,
+    requiresReasoningFallback: true,
+    payloadOverrides: (stream) => (!stream ? { thinking: { type: 'disabled' } } : {}),
+  },
+  minimax: {
+    url: 'https://api.minimax.io/anthropic/v1/messages',
+    messageFormat: 'anthropic',
+    getApiKey: (auth) => auth.minimaxKey,
+    payloadOverrides: () => ({ max_tokens: 4096 }),
+  },
+};
+
+// ── Model-specific overrides ──────────────────────────────────────────────────
+interface ModelOverrides {
+  /** Override temperature; receives the user-supplied value and stream flag. */
+  temperatureOverride?: (temperature: number, stream: boolean) => number;
+  /** Filter/validate messages before sending to the API. */
+  filterMessages?: (messages: LlmMessage[]) => LlmMessage[];
+}
+
+const MODEL_OVERRIDES: Partial<Record<string, ModelOverrides>> = {
+  'kimi-k2.5': {
+    temperatureOverride: (temp, stream) => (!stream ? 0.6 : temp),
+  },
+  'deepseek-reasoner': {
+    filterMessages: (messages) => {
+      const filtered: LlmMessage[] = [];
+      let foundUser = false;
+      let lastRole: 'user' | 'assistant' | 'tool' | null = null;
+
+      for (const msg of messages) {
+        if (msg.role === 'system') {
+          filtered.push(msg);
+        } else if (!foundUser && msg.role === 'user') {
+          foundUser = true;
+          lastRole = 'user';
+          filtered.push(msg);
+        } else if (foundUser) {
+          if (msg.role === lastRole) continue;
+          filtered.push(msg);
+          if (msg.role === 'user' || msg.role === 'assistant') lastRole = msg.role;
+        }
+      }
+
+      const firstContent = filtered.find((m) => m.role !== 'system');
+      if (!firstContent || firstContent.role !== 'user') {
+        throw new Error('Deepseek Reasoner requires the first non-system message to be from the user.');
+      }
+      return filtered;
+    },
+  },
 };
 
 // ── Anthropic-format helpers ──────────────────────────────────────────────────
@@ -123,7 +207,7 @@ function toAnthropicTools(tools: LlmTool[]): { name: string; description?: strin
   return tools.map((t) => ({
     name: t.function.name,
     description: t.function.description,
-    input_schema: (t.function.parameters as Record<string, unknown>) ?? { type: 'object', properties: {} },
+    input_schema: t.function.parameters ?? { type: 'object', properties: {} },
   }));
 }
 
@@ -173,6 +257,276 @@ function toAnthropicMessages(messages: LlmMessage[]): { role: 'user' | 'assistan
     });
 }
 
+// ── Message Format Adapters ───────────────────────────────────────────────────
+interface ToolCall {
+  id: string;
+  type: 'function' | 'builtin_function';
+  function: { name: string; arguments: string };
+}
+
+interface OpenAiStreamChunk {
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+    completion_tokens_details?: { reasoning_tokens?: number };
+  };
+  choices?: {
+    finish_reason?: string;
+    delta?: {
+      content?: string;
+      reasoning_content?: string;
+      reasoning?: string;
+      tool_calls?: {
+        index?: number;
+        id?: string;
+        type?: 'function' | 'builtin_function';
+        function?: { name?: string; arguments?: string };
+      }[];
+    };
+  }[];
+}
+
+interface AnthropicStreamChunk {
+  type: string;
+  index?: number;
+  content_block?: { type: string; id?: string; name?: string };
+  delta?: { type: string; text?: string; thinking?: string; partial_json?: string };
+  message?: { usage: { input_tokens: number } };
+  usage?: { output_tokens: number };
+}
+
+interface ParsedResponse {
+  content: string;
+  reasoning: string;
+  promptTokens: number;
+  completionTokens: number;
+  promptTokensDetails?: { cached_tokens?: number };
+  completionTokensDetails?: { reasoning_tokens?: number };
+  toolCalls?: ToolCall[];
+  finishReason?: string;
+}
+
+interface StreamState {
+  accumulated: string;
+  reasoning: string;
+  promptTokens: number;
+  completionTokens: number;
+  promptTokensDetails?: { cached_tokens?: number };
+  completionTokensDetails?: { reasoning_tokens?: number };
+  toolCalls?: ToolCall[];
+  finishReason?: string;
+  done: boolean;
+}
+
+interface IMessageAdapter {
+  buildBody(payload: LlmPayload, stream: boolean): string;
+  parseResponse(data: unknown): ParsedResponse;
+  handleStreamChunk(parsed: unknown, state: StreamState, onToken?: (t: string) => void, onReasoning?: (t: string) => void): void;
+  buildAssistantContextMsg(result: LlmResult, config: ProviderConfig): LlmMessage;
+  buildToolResultContextMsg(tc: ToolCall, toolResult: string): LlmMessage;
+}
+
+const OpenAiAdapter: IMessageAdapter = {
+  buildBody(payload, _stream): string {
+    return JSON.stringify(payload);
+  },
+
+  parseResponse(data: unknown): ParsedResponse {
+    const d = data as {
+      choices: {
+        finish_reason?: string;
+        message: {
+          content: string;
+          reasoning_content?: string;
+          reasoning?: string;
+          tool_calls?: { id?: string; type?: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[];
+        };
+      }[];
+      usage: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        prompt_tokens_details?: { cached_tokens?: number };
+        prompt_cache_hit_tokens?: number;
+        completion_tokens_details?: { reasoning_tokens?: number };
+      };
+    };
+    const message = d.choices[0].message;
+    const finishReason = d.choices[0].finish_reason;
+    const toolCalls = message.tool_calls?.map((tc, i) => ({
+      id: tc.id ?? `call_${i}`,
+      type: tc.type ?? 'function',
+      function: tc.function,
+    }));
+    const content = toolCalls && toolCalls.length > 0 ? message.content : message.content.trim();
+    const reasoning = (message.reasoning_content ?? message.reasoning ?? '').trim();
+    return {
+      content,
+      reasoning,
+      promptTokens: d.usage.prompt_tokens,
+      completionTokens: d.usage.completion_tokens,
+      promptTokensDetails:
+        d.usage.prompt_tokens_details ?? (d.usage.prompt_cache_hit_tokens != null ? { cached_tokens: d.usage.prompt_cache_hit_tokens } : undefined),
+      completionTokensDetails: d.usage.completion_tokens_details,
+      toolCalls,
+      finishReason,
+    };
+  },
+
+  handleStreamChunk(parsed: unknown, state: StreamState, onToken, onReasoning): void {
+    const p = parsed as OpenAiStreamChunk;
+    if (p.usage) {
+      state.promptTokens = p.usage.prompt_tokens;
+      state.completionTokens = p.usage.completion_tokens;
+      state.promptTokensDetails = p.usage.prompt_tokens_details;
+      state.completionTokensDetails = p.usage.completion_tokens_details;
+    }
+    const choice = p.choices?.[0];
+    if (choice?.finish_reason) state.finishReason = choice.finish_reason;
+    const delta = choice?.delta;
+    const token = delta?.content ?? '';
+    state.accumulated += token;
+    if (onToken && token) onToken(token);
+    if (delta && (delta.reasoning_content !== undefined || delta.reasoning !== undefined)) {
+      const rToken = delta.reasoning_content ?? delta.reasoning ?? '';
+      state.reasoning += rToken;
+      if (onReasoning && rToken) onReasoning(rToken);
+    }
+    if (delta?.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index ?? 0;
+        if (!state.toolCalls) state.toolCalls = [];
+        let existing: ToolCall | undefined = state.toolCalls[idx];
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (!existing) {
+          existing = { id: tc.id ?? '', type: tc.type ?? 'function', function: { name: '', arguments: '' } };
+          state.toolCalls[idx] = existing;
+        }
+        if (tc.id) existing.id = tc.id;
+        if (tc.type) existing.type = tc.type;
+        if (tc.function?.name) existing.function.name += tc.function.name;
+        if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+      }
+    }
+  },
+
+  buildAssistantContextMsg(result: LlmResult, config: ProviderConfig): LlmMessage {
+    return {
+      role: 'assistant',
+      content: result.content || null,
+      reasoning_content: result.reasoning || (config.requiresReasoningFallback ? 'Thinking process hidden or not provided.' : undefined), // eslint-disable-line @typescript-eslint/prefer-nullish-coalescing
+      tool_calls: result.toolCalls?.map((tc) => ({ id: tc.id, type: tc.type, function: tc.function })),
+    };
+  },
+
+  buildToolResultContextMsg(tc: ToolCall, toolResult: string): LlmMessage {
+    return { role: 'tool', tool_call_id: tc.id, name: tc.function.name, content: toolResult };
+  },
+};
+
+const AnthropicAdapter: IMessageAdapter = {
+  buildBody(payload, stream): string {
+    const anthropicMessages = toAnthropicMessages(payload.messages);
+    return JSON.stringify({
+      model: payload.model,
+      messages: anthropicMessages,
+      system: payload.messages.find((m) => m.role === 'system')?.content,
+      max_tokens: payload.max_tokens ?? 4096,
+      temperature: payload.temperature,
+      stream,
+      ...(payload.tools && payload.tools.length > 0 && { tools: toAnthropicTools(payload.tools) }),
+    });
+  },
+
+  parseResponse(data: unknown): ParsedResponse {
+    const d = data as {
+      content: { type: string; text?: string; thinking?: string; id?: string; name?: string; input?: Record<string, unknown> }[];
+      usage: { input_tokens: number; output_tokens: number };
+    };
+    const textBlock = d.content.find((c) => c.type === 'text');
+    const thinkingBlock = d.content.find((c) => c.type === 'thinking');
+    const toolUseBlocks = d.content.filter((c) => c.type === 'tool_use');
+    const toolCalls =
+      toolUseBlocks.length > 0
+        ? toolUseBlocks.map((b) => ({
+            id: b.id ?? '',
+            type: 'function' as const,
+            function: { name: b.name ?? '', arguments: JSON.stringify(b.input ?? {}) },
+          }))
+        : undefined;
+    return {
+      content: textBlock?.text?.trim() ?? '',
+      reasoning: thinkingBlock?.thinking?.trim() ?? '',
+      promptTokens: d.usage.input_tokens,
+      completionTokens: d.usage.output_tokens,
+      toolCalls,
+    };
+  },
+
+  handleStreamChunk(parsed: unknown, state: StreamState, onToken, onReasoning): void {
+    const p = parsed as AnthropicStreamChunk;
+    if (p.type === 'content_block_start') {
+      const block = p.content_block;
+      if (block?.type === 'tool_use') {
+        if (!state.toolCalls) state.toolCalls = [];
+        state.toolCalls[p.index ?? 0] = { id: block.id ?? '', type: 'function', function: { name: block.name ?? '', arguments: '' } };
+      }
+    } else if (p.type === 'content_block_delta') {
+      const delta = p.delta;
+      if (delta?.type === 'text_delta') {
+        const token = delta.text ?? '';
+        state.accumulated += token;
+        if (onToken) onToken(token);
+      } else if (delta?.type === 'thinking_delta') {
+        const rToken = delta.thinking ?? '';
+        state.reasoning += rToken;
+        if (onReasoning) onReasoning(rToken);
+      } else if (delta?.type === 'input_json_delta') {
+        const idx: number = p.index ?? 0;
+        if (state.toolCalls?.[idx]) {
+          state.toolCalls[idx].function.arguments += delta.partial_json ?? '';
+        }
+      }
+    } else if (p.type === 'message_start') {
+      state.promptTokens = p.message?.usage.input_tokens ?? 0;
+    } else if (p.type === 'message_delta') {
+      state.completionTokens = p.usage?.output_tokens ?? 0;
+    }
+  },
+
+  buildAssistantContextMsg(result: LlmResult, _config: ProviderConfig): LlmMessage {
+    const blocks: unknown[] = [];
+    if (result.content) blocks.push({ type: 'text', text: result.content });
+    for (const tc of result.toolCalls ?? []) {
+      let input: unknown = {};
+      try {
+        input = JSON.parse(tc.function.arguments);
+      } catch {
+        input = {};
+      }
+      blocks.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input });
+    }
+    return {
+      role: 'assistant',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      content: blocks as any,
+      ...(result.reasoning && { reasoning_content: result.reasoning }),
+    };
+  },
+
+  buildToolResultContextMsg(tc: ToolCall, toolResult: string): LlmMessage {
+    return {
+      role: 'user',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      content: [{ type: 'tool_result', tool_use_id: tc.id, content: toolResult }] as any,
+    };
+  },
+};
+
+function getAdapter(provider: ProviderId): IMessageAdapter {
+  return PROVIDERS[provider]?.messageFormat === 'anthropic' ? AnthropicAdapter : OpenAiAdapter;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 function buildPayload(
@@ -183,7 +537,9 @@ function buildPayload(
   tools?: LlmTool[],
   webSearch?: boolean,
 ): LlmPayload {
-  const filtered = filterMessagesForModel(model, messages);
+  const providerConfig = PROVIDERS[model.provider];
+  const modelOverrides = MODEL_OVERRIDES[model.id];
+  const filtered = modelOverrides?.filterMessages ? modelOverrides.filterMessages(messages) : messages;
   const auth = useAuthStore.getState();
   const customInstructions = auth.customInstructions.trim();
 
@@ -214,7 +570,7 @@ function buildPayload(
   }
 
   const finalTools = [...(tools ?? [])];
-  if (webSearch && model.provider === 'moonshot') {
+  if (webSearch && providerConfig?.supportsWebSearch) {
     finalTools.push({
       type: 'builtin_function',
       function: {
@@ -223,6 +579,8 @@ function buildPayload(
       },
     });
   }
+
+  const resolvedTemperature = modelOverrides?.temperatureOverride ? modelOverrides.temperatureOverride(temperature, stream) : temperature;
 
   return {
     model: model.id,
@@ -236,50 +594,19 @@ function buildPayload(
       ...(m.name && { name: m.name }),
     })),
     stream,
-    ...(model.supportsTemperature && {
-      temperature: !stream && model.id === 'kimi-k2.5' ? 0.6 : temperature,
-    }),
+    ...(model.supportsTemperature && { temperature: resolvedTemperature }),
     ...(stream && { stream_options: { include_usage: true } }),
     ...(model.supportsTools && finalTools.length > 0 && { tools: finalTools }),
-    ...(!stream && model.provider === 'moonshot' && { thinking: { type: 'disabled' } }),
-    ...(model.provider === 'minimax' && { max_tokens: 4096 }),
+    ...(providerConfig?.payloadOverrides?.(stream) ?? {}),
   };
 }
 
 export function filterMessagesForModel(model: ChatModel, messages: LlmMessage[]): LlmMessage[] {
-  if (model.id !== 'deepseek-reasoner') return messages;
-
-  const filtered: LlmMessage[] = [];
-  let foundUser = false;
-  let lastRole: 'user' | 'assistant' | 'tool' | null = null;
-
-  for (const msg of messages) {
-    if (msg.role === 'system') {
-      filtered.push(msg);
-    } else if (!foundUser && msg.role === 'user') {
-      foundUser = true;
-      lastRole = 'user';
-      filtered.push(msg);
-    } else if (foundUser) {
-      if (msg.role === lastRole) {
-        continue;
-      }
-      filtered.push(msg);
-      if (msg.role === 'user' || msg.role === 'assistant') {
-        lastRole = msg.role;
-      }
-    }
-  }
-
-  const firstContent = filtered.find((m) => m.role !== 'system');
-  if (!firstContent || firstContent.role !== 'user') {
-    throw new Error('Deepseek Reasoner requires the first non-system message to be from the user.');
-  }
-
-  return filtered;
+  const overrides = MODEL_OVERRIDES[model.id];
+  return overrides?.filterMessages?.(messages) ?? messages;
 }
 
-export async function generateMinimaxImage(prompt: string, aspectRatio: string = '1:1', signal?: AbortSignal): Promise<{ base64: string }> {
+export async function generateMinimaxImage(prompt: string, aspectRatio = '1:1', signal?: AbortSignal): Promise<{ base64: string }> {
   const url = 'https://api.minimax.io/v1/image_generation';
   const key = useAuthStore.getState().minimaxKey;
 
@@ -309,7 +636,7 @@ export async function generateMinimaxImage(prompt: string, aspectRatio: string =
   return { base64: data.data.image_base64[0] };
 }
 
-export async function generateMinimaxMusic(prompt: string, lyrics: string = '', signal?: AbortSignal): Promise<{ audioHex: string }> {
+export async function generateMinimaxMusic(prompt: string, lyrics = '', signal?: AbortSignal): Promise<{ audioHex: string }> {
   const url = 'https://api.minimax.io/v1/music_generation';
   const key = useAuthStore.getState().minimaxKey;
 
@@ -340,14 +667,14 @@ export async function generateMinimaxMusic(prompt: string, lyrics: string = '', 
     throw new Error(`Minimax Music Error ${res.status}: ${text}`);
   }
 
-  const data = (await res.json()) as any;
+  const data = (await res.json()) as { base_resp?: { status_code: number; status_msg?: string }; data?: { audio?: string }; audio?: string };
   console.debug('[Minimax Music] API Response:', data);
 
   if (data.base_resp?.status_code !== 0) {
-    throw new Error(`Minimax API Error: ${String(data.base_resp?.status_msg || 'Unknown error')}`);
+    throw new Error(`Minimax API Error: ${String(data.base_resp?.status_msg ?? 'Unknown error')}`);
   }
 
-  const audioHex = data.data?.audio || data.audio;
+  const audioHex = data.data?.audio ?? data.audio;
 
   if (!audioHex) {
     throw new Error(`Minimax Music Error: No audio data found in response. Data: ${JSON.stringify(data)}`);
@@ -356,122 +683,12 @@ export async function generateMinimaxMusic(prompt: string, lyrics: string = '', 
   return { audioHex };
 }
 
-export async function askLlm(
-  model: ChatModel,
-  temperature: number,
-  messages: LlmMessage[],
-  tools?: LlmTool[],
-  webSearch?: boolean,
-  signal?: AbortSignal,
-): Promise<LlmResult> {
-  const url = PROVIDER_URLS[model.provider];
-  const key = getApiKey(model);
-
-  const payload = buildPayload(model, messages, false, temperature, tools, webSearch);
-  const isAnthropic = model.provider === 'minimax';
-
-  const anthropicMessages = isAnthropic ? toAnthropicMessages(payload.messages) : [];
-  const body = isAnthropic
-    ? JSON.stringify({
-        model: payload.model,
-        messages: anthropicMessages,
-        system: payload.messages.find((m) => m.role === 'system')?.content,
-        max_tokens: (payload as any).max_tokens || 4096,
-        temperature: payload.temperature,
-        stream: false,
-        ...(payload.tools && payload.tools.length > 0 && { tools: toAnthropicTools(payload.tools) }),
-      })
-    : JSON.stringify(payload);
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body,
-    signal,
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => 'Unknown error');
-    throw new Error(`LLM Error ${res.status}: ${text}`);
-  }
-
-  if (isAnthropic) {
-    const data = (await res.json()) as {
-      content: { type: string; text?: string; thinking?: string; id?: string; name?: string; input?: Record<string, unknown> }[];
-      usage: { input_tokens: number; output_tokens: number };
-    };
-    const textBlock = data.content.find((c) => c.type === 'text');
-    const thinkingBlock = data.content.find((c) => c.type === 'thinking');
-    const toolUseBlocks = data.content.filter((c) => c.type === 'tool_use');
-
-    let aiNote: string | null = null;
-    let aiNoteAction: 'append' | 'replace' | undefined;
-    const toolCalls =
-      toolUseBlocks.length > 0
-        ? toolUseBlocks.map((b) => ({
-            id: b.id ?? '',
-            type: 'function' as const,
-            function: { name: b.name ?? '', arguments: JSON.stringify(b.input ?? {}) },
-          }))
-        : undefined;
-
-    if (toolCalls) {
-      const scratchpadTool = toolCalls.find((tc) => tc.function.name === 'update_scratchpad');
-      if (scratchpadTool) {
-        try {
-          const args = JSON.parse(scratchpadTool.function.arguments) as { content: string; action: 'append' | 'replace' };
-          aiNote = args.content;
-          aiNoteAction = args.action;
-        } catch (e) {
-          console.warn('Failed to parse tool call arguments:', e);
-        }
-      }
-    }
-
-    return {
-      content: textBlock?.text?.trim() || '',
-      promptTokens: data.usage.input_tokens,
-      completionTokens: data.usage.output_tokens,
-      reasoning: thinkingBlock?.thinking?.trim() || '',
-      aiNote,
-      aiNoteAction,
-      toolCalls,
-      searchCount: 0,
-    };
-  }
-
-  const data = (await res.json()) as {
-    choices: {
-      message: {
-        content: string;
-        reasoning_content?: string;
-        reasoning?: string;
-        tool_calls?: { id?: string; type?: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[];
-      };
-    }[];
-    usage: { prompt_tokens: number; completion_tokens: number };
-  };
-  const message = data.choices[0].message;
-  const finishReason = (data.choices[0] as { finish_reason?: string }).finish_reason;
-  const toolCallsData = message.tool_calls;
-  const toolCalls = toolCallsData?.map((tc, index) => ({
-    id: tc.id ?? `call_${index}`,
-    type: tc.type ?? 'function',
-    function: tc.function,
-  }));
-  const content = (toolCalls && toolCalls.length > 0 ? message.content : message.content.trim()) || '';
-  const reasoning = message.reasoning_content ?? message.reasoning ?? '';
-
-  const persistMatch = /<!--\s*persist:\s*([\s\S]*?)\s*-->/i.exec(content);
-  const replaceMatch = /<!--\s*replace:\s*([\s\S]*?)\s*-->/i.exec(content);
-
-  let aiNote = null;
+// ── Shared result builder ─────────────────────────────────────────────────────
+function buildLlmResult(parsed: ParsedResponse): LlmResult {
+  let aiNote: string | null = null;
   let aiNoteAction: 'append' | 'replace' | undefined;
+  const { toolCalls } = parsed;
 
-  // Handle Tool Calls
   if (toolCalls && toolCalls.length > 0) {
     const scratchpadTool = toolCalls.find((tc) => tc.function.name === 'update_scratchpad');
     if (scratchpadTool) {
@@ -485,7 +702,9 @@ export async function askLlm(
     }
   }
 
-  // Fallback to regex if no tool call was processed
+  const persistMatch = /<!--\s*persist:\s*([\s\S]*?)\s*-->/i.exec(parsed.content);
+  const replaceMatch = /<!--\s*replace:\s*([\s\S]*?)\s*-->/i.exec(parsed.content);
+
   if (!aiNote) {
     if (replaceMatch) {
       aiNote = replaceMatch[1].trim();
@@ -496,28 +715,54 @@ export async function askLlm(
     }
   }
 
-  const result = {
-    content: content
+  return {
+    content: parsed.content
       .replace(/<!--\s*persist:\s*[\s\S]*?\s*-->/gi, '')
       .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
       .trim(),
-    promptTokens: data.usage.prompt_tokens,
-    completionTokens: data.usage.completion_tokens,
-    promptTokensDetails:
-      (data.usage as { prompt_tokens_details?: { cached_tokens?: number }; prompt_cache_hit_tokens?: number }).prompt_tokens_details ??
-      ((data.usage as { prompt_cache_hit_tokens?: number }).prompt_cache_hit_tokens != null
-        ? { cached_tokens: (data.usage as { prompt_cache_hit_tokens?: number }).prompt_cache_hit_tokens }
-        : undefined),
-    completionTokensDetails: (data.usage as { completion_tokens_details?: { reasoning_tokens?: number } }).completion_tokens_details,
+    promptTokens: parsed.promptTokens,
+    completionTokens: parsed.completionTokens,
+    promptTokensDetails: parsed.promptTokensDetails,
+    completionTokensDetails: parsed.completionTokensDetails,
+    reasoning: parsed.reasoning.trim(),
     aiNote,
     aiNoteAction,
     toolCalls,
-    searchCount: toolCalls?.filter((tc) => tc.function.name === '$web_search').length ?? 0,
-    finishReason,
-    reasoning: reasoning.trim(),
+    searchCount: toolCalls?.filter((tc) => tc.function.name === '$web_search').length ?? 0, // toolCalls may be undefined
+    finishReason: parsed.finishReason,
   };
+}
 
-  return result;
+export async function askLlm(
+  model: ChatModel,
+  temperature: number,
+  messages: LlmMessage[],
+  tools?: LlmTool[],
+  webSearch?: boolean,
+  signal?: AbortSignal,
+): Promise<LlmResult> {
+  const providerConfig = PROVIDERS[model.provider];
+  if (!providerConfig) throw new Error(`Unknown provider: ${model.provider}`);
+
+  const payload = buildPayload(model, messages, false, temperature, tools, webSearch);
+  const adapter = getAdapter(model.provider);
+
+  const res = await fetch(providerConfig.url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${providerConfig.getApiKey(useAuthStore.getState())}`,
+      'Content-Type': 'application/json',
+    },
+    body: adapter.buildBody(payload, false),
+    signal,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => 'Unknown error');
+    throw new Error(`LLM Error ${res.status}: ${text}`);
+  }
+
+  return buildLlmResult(adapter.parseResponse(await res.json()));
 }
 
 export async function askLlmStream(
@@ -530,32 +775,19 @@ export async function askLlmStream(
   webSearch?: boolean,
   signal?: AbortSignal,
 ): Promise<LlmResult> {
-  const url = PROVIDER_URLS[model.provider];
-  const key = getApiKey(model);
+  const providerConfig = PROVIDERS[model.provider];
+  if (!providerConfig) throw new Error(`Unknown provider: ${model.provider}`);
 
   const payload = buildPayload(model, messages, true, temperature, tools, webSearch);
-  const isAnthropic = model.provider === 'minimax';
+  const adapter = getAdapter(model.provider);
 
-  const anthropicMessages = isAnthropic ? toAnthropicMessages(payload.messages) : [];
-  const body = isAnthropic
-    ? JSON.stringify({
-        model: payload.model,
-        messages: anthropicMessages,
-        system: payload.messages.find((m) => m.role === 'system')?.content,
-        max_tokens: (payload as any).max_tokens || 4096,
-        temperature: payload.temperature,
-        stream: true,
-        ...(payload.tools && payload.tools.length > 0 && { tools: toAnthropicTools(payload.tools) }),
-      })
-    : JSON.stringify(payload);
-
-  const res = await fetch(url, {
+  const res = await fetch(providerConfig.url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${key}`,
+      Authorization: `Bearer ${providerConfig.getApiKey(useAuthStore.getState())}`,
       'Content-Type': 'application/json',
     },
-    body,
+    body: adapter.buildBody(payload, true),
     signal,
   });
 
@@ -567,16 +799,7 @@ export async function askLlmStream(
   const reader = res.body.getReader();
   const decoder = new TextDecoder('utf-8');
 
-  let promptTokens = 0;
-  let completionTokens = 0;
-  let promptTokensDetails: { cached_tokens?: number } | undefined;
-  let completionTokensDetails: { reasoning_tokens?: number } | undefined;
-  let accumulated = '';
-  let toolCallStarted = false;
-  let toolCalls: { id: string; type: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[] | undefined;
-  let finishReason: string | undefined;
-  let reasoning = '';
-  let done = false;
+  const state: StreamState = { accumulated: '', reasoning: '', promptTokens: 0, completionTokens: 0, done: false };
 
   const onAbort = (): void => {
     reader.cancel().catch((err) => {
@@ -586,118 +809,23 @@ export async function askLlmStream(
   signal?.addEventListener('abort', onAbort);
 
   try {
-    while (!done) {
-      if (signal?.aborted) {
-        break;
-      }
-      const result = await reader.read();
-      done = result.done;
-      if (done) break;
+    while (!state.done) {
+      if (signal?.aborted) break;
+      const { done: readerDone, value } = await reader.read();
+      if (readerDone) break;
+      if (signal?.aborted) break;
 
-      if (signal?.aborted) {
-        break;
-      }
-
-      const chunk = decoder.decode(result.value);
+      const chunk = decoder.decode(value);
       for (const line of chunk.split('\n')) {
         const trimmed = line.trim();
         if (!trimmed.startsWith('data: ')) continue;
-
         const json = trimmed.slice(6);
         if (json === '[DONE]') {
-          done = true;
+          state.done = true;
           break;
         }
-
         try {
-          const parsed = JSON.parse(json) as any;
-
-          if (isAnthropic) {
-            if (parsed.type === 'content_block_start') {
-              const block = parsed.content_block;
-              if (block.type === 'tool_use') {
-                if (!toolCalls) toolCalls = [];
-                toolCalls[parsed.index] = { id: block.id ?? '', type: 'function', function: { name: block.name ?? '', arguments: '' } };
-              }
-            } else if (parsed.type === 'content_block_delta') {
-              const delta = parsed.delta;
-              if (delta.type === 'text_delta') {
-                const token = delta.text || '';
-                accumulated += token;
-                if (onToken) onToken(token);
-              } else if (delta.type === 'thinking_delta') {
-                const rToken = delta.thinking || '';
-                reasoning += rToken;
-                if (onReasoning) onReasoning(rToken);
-              } else if (delta.type === 'input_json_delta') {
-                const idx: number = parsed.index ?? 0;
-                if (toolCalls?.[idx]) {
-                  toolCalls[idx].function.arguments += delta.partial_json ?? '';
-                }
-              }
-            } else if (parsed.type === 'message_start') {
-              promptTokens = parsed.message.usage.input_tokens;
-            } else if (parsed.type === 'message_delta') {
-              completionTokens = parsed.usage.output_tokens;
-            }
-            continue;
-          }
-
-          if (parsed.usage) {
-            promptTokens = parsed.usage.prompt_tokens;
-            completionTokens = parsed.usage.completion_tokens;
-            promptTokensDetails = parsed.usage.prompt_tokens_details;
-            completionTokensDetails = parsed.usage.completion_tokens_details;
-          }
-
-          const choice = parsed.choices?.[0];
-          if (choice?.finish_reason) {
-            finishReason = choice.finish_reason;
-          }
-
-          const delta = choice?.delta;
-          const token = delta?.content ?? '';
-          accumulated += token;
-          if (onToken && token) onToken(token);
-
-          if (delta && (delta.reasoning_content !== undefined || delta.reasoning !== undefined)) {
-            const rToken = delta.reasoning_content ?? delta.reasoning ?? '';
-            reasoning += rToken;
-            if (onReasoning && rToken) onReasoning(rToken);
-          }
-
-          if (delta?.tool_calls) {
-            if (!toolCallStarted) {
-              toolCallStarted = true;
-            }
-            for (const tc of delta.tool_calls) {
-              // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-              const idx = tc.index ?? 0;
-              if (!toolCalls) toolCalls = [];
-              let existing:
-                | {
-                    id: string;
-                    type: 'function' | 'builtin_function';
-                    function: { name: string; arguments: string };
-                  }
-                | undefined = toolCalls[idx];
-              // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-              if (!existing) {
-                existing = { id: tc.id || '', type: tc.type ?? 'function', function: { name: '', arguments: '' } };
-                toolCalls[idx] = existing;
-              }
-              if (tc.id) {
-                existing.id = tc.id;
-              }
-              if (tc.type) {
-                existing.type = tc.type;
-              }
-              if (tc.function?.name) existing.function.name += tc.function.name;
-              if (tc.function?.arguments) {
-                existing.function.arguments += tc.function.arguments;
-              }
-            }
-          }
+          adapter.handleStreamChunk(JSON.parse(json) as unknown, state, onToken, onReasoning);
         } catch (e) {
           console.warn('Invalid stream chunk:', trimmed, e);
         }
@@ -709,60 +837,22 @@ export async function askLlmStream(
   }
 
   // Fallback to estimation if usage was not provided in the stream
-  if (promptTokens === 0 && completionTokens === 0) {
-    const estimated = estimateStreamedTokens(model, messages, accumulated);
-    promptTokens = estimated.promptTokens;
-    completionTokens = estimated.completionTokens;
+  if (state.promptTokens === 0 && state.completionTokens === 0) {
+    const estimated = estimateStreamedTokens(model, messages, state.accumulated);
+    state.promptTokens = estimated.promptTokens;
+    state.completionTokens = estimated.completionTokens;
   }
 
-  let aiNote: string | null = null;
-  let aiNoteAction: 'append' | 'replace' | undefined;
-
-  if (toolCalls && toolCalls.length > 0) {
-    const scratchpadTool = toolCalls.find((tc) => tc.function.name === 'update_scratchpad');
-    if (scratchpadTool?.function.arguments) {
-      try {
-        const args = JSON.parse(scratchpadTool.function.arguments) as { content: string; action: 'append' | 'replace' };
-        aiNote = args.content;
-        aiNoteAction = args.action;
-      } catch (e) {
-        console.warn('Failed to parse streamed tool call arguments:', e);
-      }
-    }
-  }
-
-  const persistMatch = /<!--\s*persist:\s*([\s\S]*?)\s*-->/i.exec(accumulated);
-  const replaceMatch = /<!--\s*replace:\s*([\s\S]*?)\s*-->/i.exec(accumulated);
-
-  // Fallback to regex
-  if (!aiNote) {
-    if (replaceMatch) {
-      aiNote = replaceMatch[1].trim();
-      aiNoteAction = 'replace';
-    } else if (persistMatch) {
-      aiNote = persistMatch[1].trim();
-      aiNoteAction = 'append';
-    }
-  }
-
-  const result: LlmResult = {
-    content: accumulated
-      .replace(/<!--\s*persist:\s*[\s\S]*?\s*-->/gi, '')
-      .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
-      .trim(),
-    promptTokens,
-    completionTokens,
-    promptTokensDetails,
-    completionTokensDetails,
-    aiNote,
-    aiNoteAction,
-    toolCalls,
-    searchCount: toolCalls?.filter((tc) => tc.function.name === '$web_search').length ?? 0,
-    finishReason,
-    reasoning: reasoning.trim(),
-  };
-
-  return result;
+  return buildLlmResult({
+    content: state.accumulated,
+    reasoning: state.reasoning,
+    promptTokens: state.promptTokens,
+    completionTokens: state.completionTokens,
+    promptTokensDetails: state.promptTokensDetails,
+    completionTokensDetails: state.completionTokensDetails,
+    toolCalls: state.toolCalls,
+    finishReason: state.finishReason,
+  });
 }
 
 export interface OrchestrateResult {
@@ -796,7 +886,7 @@ export async function orchestrateLlmLoop(
   // Cache tool results within this loop to avoid redundant executions across iterations
   const toolResultCache = new Map<string, string>();
 
-  while (loopCount < 5) {
+  while (loopCount < MAX_TOOL_LOOP_ITERATIONS) {
     loopCount++;
     const result = model.streaming
       ? await askLlmStream(model, temperature, llmContext, onToken, onReasoning, tools, webSearch, signal)
@@ -822,41 +912,12 @@ export async function orchestrateLlmLoop(
 
     // Handle Tool Calls Loop
     if (result.toolCalls && result.toolCalls.length > 0) {
-      const isAnthropic = model.provider === 'minimax';
+      const adapter = getAdapter(model.provider);
+      const providerConfig = PROVIDERS[model.provider];
+      if (!providerConfig) throw new Error(`Unknown provider: ${model.provider}`);
 
       // Add assistant tool calls to context
-      if (isAnthropic) {
-        const blocks: unknown[] = [];
-        if (result.content) blocks.push({ type: 'text', text: result.content });
-        for (const tc of result.toolCalls) {
-          let input: unknown = {};
-          try {
-            input = JSON.parse(tc.function.arguments);
-          } catch {
-            input = {};
-          }
-          blocks.push({ type: 'tool_use', id: tc.id, name: tc.function.name, input });
-        }
-        llmContext.push({
-          role: 'assistant',
-          content: blocks as any,
-          ...(result.reasoning && { reasoning_content: result.reasoning }),
-        });
-      } else {
-        // Moonshot (Kimi) requires reasoning_content to be present in assistant
-        // tool-call messages when thinking is enabled — use a fallback if empty.
-        const needsReasoningFallback = model.provider === 'moonshot';
-        llmContext.push({
-          role: 'assistant',
-          content: result.content || null,
-          reasoning_content: result.reasoning || (needsReasoningFallback ? 'Thinking process hidden or not provided.' : undefined),
-          tool_calls: result.toolCalls.map((tc) => ({
-            id: tc.id,
-            type: tc.type,
-            function: tc.function,
-          })),
-        });
-      }
+      llmContext.push(adapter.buildAssistantContextMsg(result, providerConfig));
 
       // Add tool results to context
       for (const tc of result.toolCalls) {
@@ -898,19 +959,7 @@ export async function orchestrateLlmLoop(
           onToolLog(`**Tool Result**: \`${tc.function.name}\`\n> ${summary.replace(/\n/g, '\n> ')}\n\n`);
         }
 
-        if (isAnthropic) {
-          llmContext.push({
-            role: 'user',
-            content: [{ type: 'tool_result', tool_use_id: tc.id, content: toolResult }] as any,
-          });
-        } else {
-          llmContext.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            name: tc.function.name,
-            content: toolResult,
-          });
-        }
+        llmContext.push(adapter.buildToolResultContextMsg(tc, toolResult));
       }
       continue;
     }
@@ -926,24 +975,6 @@ export async function orchestrateLlmLoop(
     totalSearchCount,
     lastResult,
   };
-}
-
-function getApiKey(model: ChatModel): string {
-  const auth = useAuthStore.getState();
-  switch (model.provider) {
-    case 'openai':
-      return auth.openAiKey;
-    case 'deepseek':
-      return auth.deepSeekKey;
-    case 'google':
-      return auth.googleApiKey;
-    case 'moonshot':
-      return auth.moonshotApiKey;
-    case 'minimax':
-      return auth.minimaxKey;
-    default:
-      throw new Error(`No API key found for provider "${String(model.provider)}"`);
-  }
 }
 
 export function estimateStreamedTokens(

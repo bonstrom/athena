@@ -31,7 +31,6 @@ import { USD_TO_SEK, DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from '../const
 import ThemeSelector from '../components/ThemeSelector';
 import ImportDialog from '../components/ImportDialog';
 import { PredefinedPrompt } from '../database/AthenaDb';
-import { chatModels } from '../components/ModelSelector';
 
 const Settings: React.FC = () => {
   const {
@@ -97,17 +96,6 @@ const Settings: React.FC = () => {
   const currentModelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
   const status = llmModelDownloadStatus[currentModelId] ?? 'not_downloaded';
 
-  // Models available for background tasks (summaries, reply prediction):
-  // must have an API key configured and be cost-effective (output < $5/1M tokens)
-  const availableAffordableModels = chatModels.filter(
-    (m) =>
-      m.output < 5 &&
-      ((m.provider === 'openai' && openAiKey) ||
-        (m.provider === 'deepseek' && deepSeekKey) ||
-        (m.provider === 'google' && googleApiKey) ||
-        (m.provider === 'moonshot' && moonshotApiKey) ||
-        (m.provider === 'minimax' && minimaxKey)),
-  );
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
   const [scratchpadRulesInput, setScratchpadRulesInput] = useState(scratchpadRules);

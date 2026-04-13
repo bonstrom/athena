@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Box,
   IconButton,
@@ -22,37 +22,37 @@ import {
   Chip,
   InputAdornment,
   CircularProgress,
-} from "@mui/material";
-import { Theme } from "@mui/material/styles";
-import SendIcon from "@mui/icons-material/Send";
-import StopCircleIcon from "@mui/icons-material/StopCircle";
-import AddIcon from "@mui/icons-material/Add";
-import CloseIcon from "@mui/icons-material/Close";
-import TuneIcon from "@mui/icons-material/Tune";
-import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
-import CodeIcon from "@mui/icons-material/Code";
-import AnalyticsIcon from "@mui/icons-material/Analytics";
-import ForumIcon from "@mui/icons-material/Forum";
-import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
-import PsychologyIcon from "@mui/icons-material/Psychology";
-import EditNoteIcon from "@mui/icons-material/EditNote";
-import OpenInFullIcon from "@mui/icons-material/OpenInFull";
-import CloseFullscreenIcon from "@mui/icons-material/CloseFullscreen";
-import AttachFileIcon from "@mui/icons-material/AttachFile";
-import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
-import LanguageIcon from "@mui/icons-material/Language";
-import BrushIcon from "@mui/icons-material/Brush";
-import MusicNoteIcon from "@mui/icons-material/MusicNote";
-import TopicContextDialog from "./TopicContextDialog";
-import ScratchpadDialog from "./ScratchpadDialog";
-import { useAuthStore } from "../store/AuthStore";
-import { llmSuggestionService } from "../services/llmSuggestionService";
-import { useChatStore } from "../store/ChatStore";
-import { useTopicStore } from "../store/TopicStore";
-import { chatModels } from "./ModelSelector";
-import { USD_TO_SEK } from "../constants";
-import { Attachment } from "../database/AthenaDb";
-import { useNotificationStore } from "../store/NotificationStore";
+} from '@mui/material';
+import { Theme } from '@mui/material/styles';
+import SendIcon from '@mui/icons-material/Send';
+import StopCircleIcon from '@mui/icons-material/StopCircle';
+import AddIcon from '@mui/icons-material/Add';
+import CloseIcon from '@mui/icons-material/Close';
+import TuneIcon from '@mui/icons-material/Tune';
+import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
+import CodeIcon from '@mui/icons-material/Code';
+import AnalyticsIcon from '@mui/icons-material/Analytics';
+import ForumIcon from '@mui/icons-material/Forum';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import PsychologyIcon from '@mui/icons-material/Psychology';
+import EditNoteIcon from '@mui/icons-material/EditNote';
+import OpenInFullIcon from '@mui/icons-material/OpenInFull';
+import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
+import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
+import LanguageIcon from '@mui/icons-material/Language';
+import BrushIcon from '@mui/icons-material/Brush';
+import MusicNoteIcon from '@mui/icons-material/MusicNote';
+import TopicContextDialog from './TopicContextDialog';
+import ScratchpadDialog from './ScratchpadDialog';
+import { useAuthStore } from '../store/AuthStore';
+import { llmSuggestionService } from '../services/llmSuggestionService';
+import { useChatStore } from '../store/ChatStore';
+import { useTopicStore } from '../store/TopicStore';
+import { chatModels } from './ModelSelector';
+import { USD_TO_SEK } from '../constants';
+import { Attachment } from '../database/AthenaDb';
+import { useNotificationStore } from '../store/NotificationStore';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -85,7 +85,6 @@ Lighting:
 Camera: 
 Ratio: 16:9`;
 
-
 interface ComposerProps {
   sending: boolean;
   onSend: (content: string, attachments?: Attachment[]) => void;
@@ -101,10 +100,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const questionRef = useRef("");
+  const questionRef = useRef('');
   const topicStore = useTopicStore();
-  const { selectedModel, setSelectedModel, temperature, setTemperature, currentTopicId, stopSending, messagesByTopic } =
-    useChatStore();
+  const { selectedModel, setSelectedModel, temperature, setTemperature, currentTopicId, stopSending, messagesByTopic } = useChatStore();
   const { addNotification } = useNotificationStore();
   const {
     chatWidth,
@@ -120,7 +118,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     llmSuggestionEnabled,
     llmModelSelected,
     llmModelDownloadStatus,
-    messageRetrievalEnabled,
     defaultMaxContextMessages,
   } = useAuthStore();
   const {
@@ -135,13 +132,13 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [pages, setPages] = useState<Page[]>([{ id: crypto.randomUUID(), title: "Page 1", content: "" }]);
+  const [pages, setPages] = useState<Page[]>([{ id: crypto.randomUUID(), title: 'Page 1', content: '' }]);
   const [activePageIndex, setActivePageIndex] = useState(0);
   const [localMaxContext, setLocalMaxContext] = useState<number | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [promptAnchorEl, setPromptAnchorEl] = useState<null | HTMLElement>(null);
-  const [inputValue, setInputValue] = useState("");
-  const [suggestion, setSuggestion] = useState("");
+  const [inputValue, setInputValue] = useState('');
+  const [suggestion, setSuggestion] = useState('');
   const [isSuggesting, setIsSuggesting] = useState(false);
   const suggestionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -149,10 +146,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
   const availableModels = chatModels.filter(
     (model) =>
-      (model.provider === "openai" && openAiKey) ||
-      (model.provider === "deepseek" && deepSeekKey) ||
-      (model.provider === "google" && googleApiKey) ||
-      (model.provider === "moonshot" && moonshotApiKey),
+      (model.provider === 'openai' && openAiKey) ||
+      (model.provider === 'deepseek' && deepSeekKey) ||
+      (model.provider === 'google' && googleApiKey) ||
+      (model.provider === 'moonshot' && moonshotApiKey),
   );
   const openTempMenu = Boolean(anchorEl);
 
@@ -174,15 +171,15 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     const combinedContent = updatedPages
       .filter((p) => p.content.trim())
       .map((p) => p.content.trim())
-      .join("\n\n---\n\n");
+      .join('\n\n---\n\n');
 
     if (!combinedContent && attachments.length === 0) return;
 
     onSend(combinedContent, attachments);
-    questionRef.current = "";
-    setInputValue("");
+    questionRef.current = '';
+    setInputValue('');
     setIsExpanded(false);
-    setPages([{ id: crypto.randomUUID(), title: "Page 1", content: "" }]);
+    setPages([{ id: crypto.randomUUID(), title: 'Page 1', content: '' }]);
     setActivePageIndex(0);
     setAttachments([]);
     // Defer blur so it runs after React re-renders – needed to dismiss the Android keyboard
@@ -208,14 +205,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       const newPage: Page = {
         id: crypto.randomUUID(),
         title: `Page ${updatedPrev.length + 1}`,
-        content: "",
+        content: '',
       };
       return [...updatedPrev, newPage];
     });
 
     setActivePageIndex(pages.length);
-    setInputValue("");
-    questionRef.current = "";
+    setInputValue('');
+    questionRef.current = '';
   };
 
   const deletePage = (index: number, e: React.MouseEvent): void => {
@@ -246,7 +243,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const handleStop = async (): Promise<void> => {
     const restoredContent = await stopSending();
     if (restoredContent) {
-      setPages([{ id: crypto.randomUUID(), title: "Page 1", content: restoredContent }]);
+      setPages([{ id: crypto.randomUUID(), title: 'Page 1', content: restoredContent }]);
       setActivePageIndex(0);
       setInputValue(restoredContent);
       questionRef.current = restoredContent;
@@ -261,7 +258,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
     for (const file of Array.from(files)) {
       if (file.size > MAX_FILE_SIZE) {
-        addNotification("File too large", `${file.name} exceeds the 10MB limit.`);
+        addNotification('File too large', `${file.name} exceeds the 10MB limit.`);
         continue;
       }
 
@@ -270,10 +267,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           const reader = new FileReader();
           reader.onload = (): void => {
             const result = reader.result;
-            if (typeof result === "string") {
+            if (typeof result === 'string') {
               resolve(result);
             } else {
-              reject(new Error("Unexpected FileReader result type"));
+              reject(new Error('Unexpected FileReader result type'));
             }
           };
           reader.onerror = reject;
@@ -286,17 +283,17 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           type: file.type,
           size: file.size,
           data: data,
-          previewUrl: file.type.startsWith("image/") ? data : undefined,
+          previewUrl: file.type.startsWith('image/') ? data : undefined,
         });
       } catch (err) {
-        console.error("Failed to read file:", err);
-        addNotification("Upload failed", `Could not read ${file.name}`);
+        console.error('Failed to read file:', err);
+        addNotification('Upload failed', `Could not read ${file.name}`);
       }
     }
 
     setAttachments((prev) => [...prev, ...newAttachments]);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (cameraInputRef.current) cameraInputRef.current.value = "";
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
   };
 
   const removeAttachment = (id: string): void => {
@@ -322,42 +319,38 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
   // Load model into memory if enabled
   useEffect(() => {
-    const modelId: string =
-      llmModelSelected === "qwen3.5-2b" ? "onnx-community/Qwen3.5-2B-ONNX" : "onnx-community/Qwen3.5-0.8B-ONNX";
-    const status = llmModelDownloadStatus[modelId] ?? "not_downloaded";
+    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+    const status = llmModelDownloadStatus[modelId] ?? 'not_downloaded';
 
-    if (llmSuggestionEnabled && status === "downloaded") {
+    if (llmSuggestionEnabled && status === 'downloaded') {
       llmSuggestionService.loadModel(modelId, true, true);
     }
   }, [llmSuggestionEnabled, llmModelSelected, llmModelDownloadStatus]);
 
   const fetchSuggestion = useCallback(
     async (text: string) => {
-      const modelId: string =
-        llmModelSelected === "qwen3.5-2b" ? "onnx-community/Qwen3.5-2B-ONNX" : "onnx-community/Qwen3.5-0.8B-ONNX";
-      if (!llmSuggestionEnabled || llmModelDownloadStatus[modelId] !== "downloaded" || !text.trim()) {
-        setSuggestion("");
+      const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+      if (!llmSuggestionEnabled || llmModelDownloadStatus[modelId] !== 'downloaded' || !text.trim()) {
+        setSuggestion('');
         return;
       }
 
       const currentMessages = currentTopicId ? (messagesByTopic[currentTopicId] ?? []) : [];
-      const lastAssistantMessage = [...currentMessages]
-        .reverse()
-        .find((message) => message.type === "assistant" && !message.isDeleted);
+      const lastAssistantMessage = [...currentMessages].reverse().find((message) => message.type === 'assistant' && !message.isDeleted);
 
       setIsSuggesting(true);
       try {
         const result = await llmSuggestionService.getSuggestion(text, lastAssistantMessage?.content);
         if (result && result.length > 0) {
-          const cleaned = result.replace(/^\n+/, "");
-          const firstLine = cleaned.split("\n")[0];
+          const cleaned = result.replace(/^\n+/, '');
+          const firstLine = cleaned.split('\n')[0];
           setSuggestion(firstLine);
         } else {
-          setSuggestion("");
+          setSuggestion('');
         }
       } catch (err) {
-        console.error("Suggestion error:", err);
-        setSuggestion("");
+        console.error('Suggestion error:', err);
+        setSuggestion('');
       } finally {
         setIsSuggesting(false);
       }
@@ -373,13 +366,13 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     llmSuggestionService.cancelSuggestion();
 
     if (!inputValue.trim()) {
-      setSuggestion("");
+      setSuggestion('');
       return;
     }
 
     // Only fetch suggestion if the user has typed a space or newline (finished a word)
-    if (!inputValue.endsWith(" ") && !inputValue.endsWith("\n")) {
-      setSuggestion("");
+    if (!inputValue.endsWith(' ') && !inputValue.endsWith('\n')) {
+      setSuggestion('');
       return;
     }
 
@@ -395,15 +388,15 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   }, [inputValue, fetchSuggestion]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
-    if (e.key === "Tab" && suggestion) {
+    if (e.key === 'Tab' && suggestion) {
       e.preventDefault();
       const newValue = inputValue + suggestion;
       setInputValue(newValue);
       questionRef.current = newValue;
-      setSuggestion("");
+      setSuggestion('');
     }
 
-    if (!isMobile && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (!isMobile && e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       handleSend();
       e.preventDefault();
     }
@@ -420,60 +413,57 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       justifyContent="center"
       sx={{
         backgroundColor: (theme) => alpha(theme.palette.background.default, 0.85),
-        backdropFilter: "blur(12px)",
+        backdropFilter: 'blur(12px)',
         borderTop: (theme) => `1px solid ${theme.palette.divider}`,
-        boxShadow: (theme) =>
-          theme.palette.mode === "dark" ? "0 -4px 16px rgba(0,0,0,0.4)" : "0 -4px 16px rgba(0,0,0,0.05)",
-        position: "relative",
+        boxShadow: (theme) => (theme.palette.mode === 'dark' ? '0 -4px 16px rgba(0,0,0,0.4)' : '0 -4px 16px rgba(0,0,0,0.05)'),
+        position: 'relative',
         flexShrink: 0,
         zIndex: 10,
-        maxHeight: "100%",
-        display: "flex",
-        flexDirection: "column",
-      }}>
+        maxHeight: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
       <Box
         width="100%"
         sx={{
-          maxWidth:
-            chatWidth === "full"
-              ? "100%"
-              : (theme: Theme): string => `calc(${theme.breakpoints.values[chatWidth]}px + 408px)`,
+          maxWidth: chatWidth === 'full' ? '100%' : (theme: Theme): string => `calc(${theme.breakpoints.values[chatWidth]}px + 408px)`,
         }}
         display="flex"
         flexDirection="column"
         alignItems="stretch"
-        gap={1}>
+        gap={1}
+      >
         <Menu
           anchorEl={anchorEl}
           open={openTempMenu}
           onClose={handleTempClose}
-          transformOrigin={{ vertical: "bottom", horizontal: "left" }}
-          anchorOrigin={{ vertical: "top", horizontal: "left" }}
+          transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+          anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
           PaperProps={{
             sx: {
               minWidth: 260,
               mt: -1,
               border: (theme) => `1px solid ${theme.palette.divider}`,
-              boxShadow: (theme) =>
-                theme.palette.mode === "dark" ? "0 8px 32px rgba(0,0,0,0.4)" : "0 8px 32px rgba(0,0,0,0.1)",
-              bgcolor: "background.paper",
+              boxShadow: (theme) => (theme.palette.mode === 'dark' ? '0 8px 32px rgba(0,0,0,0.4)' : '0 8px 32px rgba(0,0,0,0.1)'),
+              bgcolor: 'background.paper',
             },
-          }}>
+          }}
+        >
           <ListSubheader
             sx={{
-              lineHeight: "36px",
-              fontWeight: "bold",
-              fontSize: "0.75rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              bgcolor: "transparent",
-            }}>
+              lineHeight: '36px',
+              fontWeight: 'bold',
+              fontSize: '0.75rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              bgcolor: 'transparent',
+            }}
+          >
             Active Model
           </ListSubheader>
           <Box sx={{ px: 2, pb: 1 }}>
-            <FormControl
-              fullWidth
-              size="small">
+            <FormControl fullWidth size="small">
               <Select
                 value={selectedModel.id}
                 onChange={(e: SelectChangeEvent): void => {
@@ -481,29 +471,21 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   if (selected) setSelectedModel(selected);
                 }}
                 sx={{
-                  fontSize: "0.85rem",
-                  "& .MuiSelect-select": {
+                  fontSize: '0.85rem',
+                  '& .MuiSelect-select': {
                     py: 1,
                   },
                 }}
                 renderValue={(selected): React.ReactNode => {
                   const model = chatModels.find((m) => m.id === selected);
                   return model ? model.label : selected;
-                }}>
+                }}
+              >
                 {availableModels.map((m) => (
-                  <MenuItem
-                    key={m.id}
-                    value={m.id}>
-                    <Box
-                      display="flex"
-                      justifyContent="space-between"
-                      width="100%"
-                      alignItems="center">
+                  <MenuItem key={m.id} value={m.id}>
+                    <Box display="flex" justifyContent="space-between" width="100%" alignItems="center">
                       <Typography variant="body2">{m.label}</Typography>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        ml={2}>
+                      <Typography variant="caption" color="text.secondary" ml={2}>
                         {`${(m.input * USD_TO_SEK).toFixed(0)}kr | ${(m.output * USD_TO_SEK).toFixed(0)}kr / 1M`}
                       </Typography>
                     </Box>
@@ -517,24 +499,23 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
           <ListSubheader
             sx={{
-              lineHeight: "36px",
-              fontWeight: "bold",
-              fontSize: "0.75rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              bgcolor: "transparent",
-            }}>
+              lineHeight: '36px',
+              fontWeight: 'bold',
+              fontSize: '0.75rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              bgcolor: 'transparent',
+            }}
+          >
             Temperature Presets
             {!selectedModel.supportsTemperature && (
-              <Box
-                component="span"
-                sx={{ color: "error.main", ml: 1 }}>
+              <Box component="span" sx={{ color: 'error.main', ml: 1 }}>
                 (Not supported)
               </Box>
             )}
           </ListSubheader>
 
-          <Box sx={{ px: 2, pb: 1, display: "flex", justifyContent: "center" }}>
+          <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
             <MuiToggleButtonGroup
               value={temperature}
               exclusive
@@ -545,51 +526,44 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               size="small"
               fullWidth
               sx={{
-                bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"),
+                bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
                 p: 0.5,
-                "& .MuiToggleButton-root": {
-                  border: "none",
-                  borderRadius: "8px !important",
+                '& .MuiToggleButton-root': {
+                  border: 'none',
+                  borderRadius: '8px !important',
                   mx: 0.25,
                   px: 1,
                   py: 0.5,
-                  fontSize: "0.75rem",
-                  fontWeight: "bold",
-                  color: "text.secondary",
-                  "&.Mui-selected": {
-                    bgcolor: "primary.main",
-                    color: "primary.contrastText",
-                    "&:hover": {
-                      bgcolor: "primary.dark",
+                  fontSize: '0.75rem',
+                  fontWeight: 'bold',
+                  color: 'text.secondary',
+                  '&.Mui-selected': {
+                    bgcolor: 'primary.main',
+                    color: 'primary.contrastText',
+                    '&:hover': {
+                      bgcolor: 'primary.dark',
                     },
                   },
                 },
-              }}>
+              }}
+            >
               <MuiToggleButton value={0.0}>
-                <Tooltip
-                  title="Coding / Math (0.0)"
-                  disableTouchListener={isMobile}>
+                <Tooltip title="Coding / Math (0.0)" disableTouchListener={isMobile}>
                   <CodeIcon fontSize="small" />
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value={1.0}>
-                <Tooltip
-                  title="Data Analysis (1.0)"
-                  disableTouchListener={isMobile}>
+                <Tooltip title="Data Analysis (1.0)" disableTouchListener={isMobile}>
                   <AnalyticsIcon fontSize="small" />
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value={1.3}>
-                <Tooltip
-                  title="General Chat (1.3)"
-                  disableTouchListener={isMobile}>
+                <Tooltip title="General Chat (1.3)" disableTouchListener={isMobile}>
                   <ForumIcon fontSize="small" />
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value={1.5}>
-                <Tooltip
-                  title="Creative Writing (1.5)"
-                  disableTouchListener={isMobile}>
+                <Tooltip title="Creative Writing (1.5)" disableTouchListener={isMobile}>
                   <AutoAwesomeIcon fontSize="small" />
                 </Tooltip>
               </MuiToggleButton>
@@ -600,78 +574,70 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
           <ListSubheader
             sx={{
-              lineHeight: "36px",
-              fontWeight: "bold",
-              fontSize: "0.75rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              bgcolor: "transparent",
-            }}>
+              lineHeight: '36px',
+              fontWeight: 'bold',
+              fontSize: '0.75rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              bgcolor: 'transparent',
+            }}
+          >
             Layout Width
           </ListSubheader>
 
-          <Box sx={{ px: 2, pb: 1, display: "flex", justifyContent: "center" }}>
+          <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
             <MuiToggleButtonGroup
               value={chatWidth}
               exclusive
-              onChange={(_, value: "sm" | "md" | "lg" | "xl" | "full" | null): void => {
+              onChange={(_, value: 'sm' | 'md' | 'lg' | 'xl' | 'full' | null): void => {
                 if (value) setChatWidth(value);
               }}
               size="small"
               fullWidth
               sx={{
-                bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"),
+                bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
                 p: 0.5,
-                "& .MuiToggleButton-root": {
-                  border: "none",
-                  borderRadius: "8px !important",
+                '& .MuiToggleButton-root': {
+                  border: 'none',
+                  borderRadius: '8px !important',
                   mx: 0.25,
                   px: 1.5,
                   py: 0.5,
-                  fontSize: "0.75rem",
-                  fontWeight: "bold",
-                  color: "text.secondary",
-                  "&.Mui-selected": {
-                    bgcolor: "primary.main",
-                    color: "primary.contrastText",
-                    "&:hover": {
-                      bgcolor: "primary.dark",
+                  fontSize: '0.75rem',
+                  fontWeight: 'bold',
+                  color: 'text.secondary',
+                  '&.Mui-selected': {
+                    bgcolor: 'primary.main',
+                    color: 'primary.contrastText',
+                    '&:hover': {
+                      bgcolor: 'primary.dark',
                     },
                   },
                 },
-              }}>
+              }}
+            >
               <MuiToggleButton value="sm">
-                <Tooltip
-                  title="Compact (600px)"
-                  disableTouchListener={isMobile}>
+                <Tooltip title="Compact (600px)" disableTouchListener={isMobile}>
                   <span>S</span>
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value="md">
-                <Tooltip
-                  title="Standard (900px)"
-                  disableTouchListener={isMobile}>
+                <Tooltip title="Standard (900px)" disableTouchListener={isMobile}>
                   <span>M</span>
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value="lg">
-                <Tooltip
-                  title="Wide (1200px)"
-                  disableTouchListener={isMobile}>
+                <Tooltip title="Wide (1200px)" disableTouchListener={isMobile}>
                   <span>L</span>
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value="xl">
-                <Tooltip
-                  title="Extra Wide (1500px)"
-                  disableTouchListener={isMobile}>
+                <Tooltip title="Extra Wide (1500px)" disableTouchListener={isMobile}>
                   <span>XL</span>
                 </Tooltip>
               </MuiToggleButton>
               <MuiToggleButton value="full">
-                <Tooltip
-                  title="Full Width"
-                  disableTouchListener={isMobile}>
+                <Tooltip title="Full Width" disableTouchListener={isMobile}>
                   <span>Full</span>
                 </Tooltip>
               </MuiToggleButton>
@@ -682,17 +648,18 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
           <ListSubheader
             sx={{
-              lineHeight: "36px",
-              fontWeight: "bold",
-              fontSize: "0.75rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              bgcolor: "transparent",
-            }}>
+              lineHeight: '36px',
+              fontWeight: 'bold',
+              fontSize: '0.75rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              bgcolor: 'transparent',
+            }}
+          >
             Font Size
           </ListSubheader>
 
-          <Box sx={{ px: 2, pb: 1, display: "flex", justifyContent: "center" }}>
+          <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
             <MuiToggleButtonGroup
               value={chatFontSize}
               exclusive
@@ -702,30 +669,29 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               size="small"
               fullWidth
               sx={{
-                bgcolor: (theme) => (theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"),
+                bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
                 p: 0.5,
-                "& .MuiToggleButton-root": {
-                  border: "none",
-                  borderRadius: "8px !important",
+                '& .MuiToggleButton-root': {
+                  border: 'none',
+                  borderRadius: '8px !important',
                   mx: 0.25,
                   px: 1,
                   py: 0.5,
-                  fontSize: "0.75rem",
-                  fontWeight: "bold",
-                  color: "text.secondary",
-                  "&.Mui-selected": {
-                    bgcolor: "primary.main",
-                    color: "primary.contrastText",
-                    "&:hover": {
-                      bgcolor: "primary.dark",
+                  fontSize: '0.75rem',
+                  fontWeight: 'bold',
+                  color: 'text.secondary',
+                  '&.Mui-selected': {
+                    bgcolor: 'primary.main',
+                    color: 'primary.contrastText',
+                    '&:hover': {
+                      bgcolor: 'primary.dark',
                     },
                   },
                 },
-              }}>
+              }}
+            >
               {[12, 14, 16, 18, 20, 24].map((size) => (
-                <MuiToggleButton
-                  key={size}
-                  value={size}>
+                <MuiToggleButton key={size} value={size}>
                   {size}
                 </MuiToggleButton>
               ))}
@@ -736,24 +702,20 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
           <ListSubheader
             sx={{
-              lineHeight: "36px",
-              fontWeight: "bold",
-              fontSize: "0.75rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              bgcolor: "transparent",
-            }}>
+              lineHeight: '36px',
+              fontWeight: 'bold',
+              fontSize: '0.75rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              bgcolor: 'transparent',
+            }}
+          >
             Context Limit
           </ListSubheader>
           <Box sx={{ px: 3, py: 1 }}>
-            <Box
-              display="flex"
-              justifyContent="space-between"
-              mb={1}>
-              <Typography
-                variant="caption"
-                color="text.secondary">
-                Recent messages:{" "}
+            <Box display="flex" justifyContent="space-between" mb={1}>
+              <Typography variant="caption" color="text.secondary">
+                Recent messages:{' '}
                 {localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? defaultMaxContextMessages}
               </Typography>
             </Box>
@@ -780,25 +742,27 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
           <ListSubheader
             sx={{
-              lineHeight: "36px",
-              fontWeight: "bold",
-              fontSize: "0.75rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              bgcolor: "transparent",
-            }}>
+              lineHeight: '36px',
+              fontWeight: 'bold',
+              fontSize: '0.75rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              bgcolor: 'transparent',
+            }}
+          >
             Chat Tools
           </ListSubheader>
 
           <Box
             sx={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
               gap: 1,
               px: 2,
               pb: 2,
               pt: 1,
-            }}>
+            }}
+          >
             <Tooltip title="Inspect the full LLM context payload">
               <IconButton
                 onClick={(): void => {
@@ -808,13 +772,16 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 disabled={!currentTopicId}
                 sx={{
                   borderRadius: 2,
-                  flexDirection: "column",
+                  flexDirection: 'column',
                   gap: 0.5,
                   py: 1,
                   border: (theme) => `1px solid ${theme.palette.divider}`,
-                }}>
+                }}
+              >
                 <MenuBookOutlinedIcon fontSize="small" />
-                <Typography variant="caption" sx={{ fontSize: "0.65rem", fontWeight: 600 }}>Inspect</Typography>
+                <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
+                  Inspect
+                </Typography>
               </IconButton>
             </Tooltip>
 
@@ -827,26 +794,29 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 disabled={!currentTopicId}
                 sx={{
                   borderRadius: 2,
-                  flexDirection: "column",
+                  flexDirection: 'column',
                   gap: 0.5,
                   py: 1,
                   border: (theme) => `1px solid ${theme.palette.divider}`,
-                }}>
+                }}
+              >
                 <EditNoteIcon fontSize="small" />
-                <Typography variant="caption" sx={{ fontSize: "0.65rem", fontWeight: 600 }}>Scratchpad</Typography>
+                <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
+                  Scratchpad
+                </Typography>
               </IconButton>
             </Tooltip>
 
             {minimaxKey && (
-              <Tooltip title={imageGenerationEnabled ? "Image Gen: Active" : "Image Gen: Inactive"}>
+              <Tooltip title={imageGenerationEnabled ? 'Image Gen: Active' : 'Image Gen: Inactive'}>
                 <IconButton
                   onClick={(): void => {
                     const nextState = !imageGenerationEnabled;
                     if (nextState) {
                       setWebSearchEnabled(false);
                       setMusicGenerationEnabled(false);
-                      if (selectedModel.id !== "MiniMax-M2.7") {
-                        const minimax = chatModels.find((m) => m.id === "MiniMax-M2.7");
+                      if (selectedModel.id !== 'MiniMax-M2.7') {
+                        const minimax = chatModels.find((m) => m.id === 'MiniMax-M2.7');
                         if (minimax) setSelectedModel(minimax);
                       }
                       if (!inputValue.trim()) setInputValue(IMAGE_TEMPLATE);
@@ -856,29 +826,32 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   disabled={sending}
                   sx={{
                     borderRadius: 2,
-                    flexDirection: "column",
+                    flexDirection: 'column',
                     gap: 0.5,
                     py: 1,
                     border: (theme) => `1px solid ${imageGenerationEnabled ? alpha(theme.palette.secondary.main, 0.5) : theme.palette.divider}`,
-                    bgcolor: (theme) => imageGenerationEnabled ? alpha(theme.palette.secondary.main, 0.08) : "transparent",
-                    color: imageGenerationEnabled ? "secondary.main" : "text.secondary",
-                  }}>
+                    bgcolor: (theme) => (imageGenerationEnabled ? alpha(theme.palette.secondary.main, 0.08) : 'transparent'),
+                    color: imageGenerationEnabled ? 'secondary.main' : 'text.secondary',
+                  }}
+                >
                   <BrushIcon fontSize="small" />
-                  <Typography variant="caption" sx={{ fontSize: "0.65rem", fontWeight: 600 }}>Images</Typography>
+                  <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
+                    Images
+                  </Typography>
                 </IconButton>
               </Tooltip>
             )}
 
             {minimaxKey && (
-              <Tooltip title={musicGenerationEnabled ? "Music Gen: Active" : "Music Gen: Inactive"}>
+              <Tooltip title={musicGenerationEnabled ? 'Music Gen: Active' : 'Music Gen: Inactive'}>
                 <IconButton
                   onClick={(): void => {
                     const nextState = !musicGenerationEnabled;
                     if (nextState) {
                       setWebSearchEnabled(false);
                       setImageGenerationEnabled(false);
-                      if (selectedModel.id !== "MiniMax-M2.7") {
-                        const minimax = chatModels.find((m) => m.id === "MiniMax-M2.7");
+                      if (selectedModel.id !== 'MiniMax-M2.7') {
+                        const minimax = chatModels.find((m) => m.id === 'MiniMax-M2.7');
                         if (minimax) setSelectedModel(minimax);
                       }
                       if (!inputValue.trim()) setInputValue(MUSIC_TEMPLATE);
@@ -888,15 +861,18 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   disabled={sending}
                   sx={{
                     borderRadius: 2,
-                    flexDirection: "column",
+                    flexDirection: 'column',
                     gap: 0.5,
                     py: 1,
                     border: (theme) => `1px solid ${musicGenerationEnabled ? alpha(theme.palette.secondary.main, 0.5) : theme.palette.divider}`,
-                    bgcolor: (theme) => musicGenerationEnabled ? alpha(theme.palette.secondary.main, 0.08) : "transparent",
-                    color: musicGenerationEnabled ? "secondary.main" : "text.secondary",
-                  }}>
+                    bgcolor: (theme) => (musicGenerationEnabled ? alpha(theme.palette.secondary.main, 0.08) : 'transparent'),
+                    color: musicGenerationEnabled ? 'secondary.main' : 'text.secondary',
+                  }}
+                >
                   <MusicNoteIcon fontSize="small" />
-                  <Typography variant="caption" sx={{ fontSize: "0.65rem", fontWeight: 600 }}>Music</Typography>
+                  <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
+                    Music
+                  </Typography>
                 </IconButton>
               </Tooltip>
             )}
@@ -912,17 +888,13 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           />
         )}
         {currentTopicId && showScratchpadDialog && (
-          <ScratchpadDialog
-            open={showScratchpadDialog}
-            topicId={currentTopicId}
-            onClose={(): void => setShowScratchpadDialog(false)}
-          />
+          <ScratchpadDialog open={showScratchpadDialog} topicId={currentTopicId} onClose={(): void => setShowScratchpadDialog(false)} />
         )}
 
         <input
           type="file"
           ref={fileInputRef}
-          style={{ display: "none" }}
+          style={{ display: 'none' }}
           multiple
           accept="image/*"
           onChange={(e): void => {
@@ -932,7 +904,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         <input
           type="file"
           ref={cameraInputRef}
-          style={{ display: "none" }}
+          style={{ display: 'none' }}
           accept="image/*"
           capture="environment"
           onChange={(e): void => {
@@ -940,32 +912,15 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           }}
         />
 
-        <Box
-          display="flex"
-          flexDirection="column"
-          width="100%"
-          gap={isExpanded ? 0.5 : 0}
-          mb={attachments.length > 0 ? 0.5 : 0}>
+        <Box display="flex" flexDirection="column" width="100%" gap={isExpanded ? 0.5 : 0} mb={attachments.length > 0 ? 0.5 : 0}>
           {isExpanded && (
-            <Box
-              display="flex"
-              alignItems="center"
-              gap={1}
-              sx={{ borderBottom: 1, borderColor: "divider", mb: 0.5 }}>
-              <Tabs
-                value={activePageIndex}
-                onChange={handleTabChange}
-                variant="scrollable"
-                scrollButtons="auto"
-                sx={{ minHeight: 32, height: 32 }}>
+            <Box display="flex" alignItems="center" gap={1} sx={{ borderBottom: 1, borderColor: 'divider', mb: 0.5 }}>
+              <Tabs value={activePageIndex} onChange={handleTabChange} variant="scrollable" scrollButtons="auto" sx={{ minHeight: 32, height: 32 }}>
                 {pages.map((page, index) => (
                   <Tab
                     key={page.id}
                     label={
-                      <Box
-                        display="flex"
-                        alignItems="center"
-                        gap={0.5}>
+                      <Box display="flex" alignItems="center" gap={0.5}>
                         {page.title}
                         {pages.length > 1 && (
                           <IconButton
@@ -973,57 +928,42 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                             size="small"
                             aria-label={`Delete page ${page.title}`}
                             onClick={(e): void => deletePage(index, e)}
-                            sx={{ p: 0.25 }}>
+                            sx={{ p: 0.25 }}
+                          >
                             <CloseIcon sx={{ fontSize: 12 }} />
                           </IconButton>
                         )}
                       </Box>
                     }
-                    sx={{ minHeight: 32, height: 32, textTransform: "none", fontSize: "0.75rem" }}
+                    sx={{ minHeight: 32, height: 32, textTransform: 'none', fontSize: '0.75rem' }}
                   />
                 ))}
               </Tabs>
-              <IconButton
-                size="small"
-                aria-label="Add page"
-                onClick={addPage}
-                sx={{ ml: 0.5, p: 0.5 }}>
+              <IconButton size="small" aria-label="Add page" onClick={addPage} sx={{ ml: 0.5, p: 0.5 }}>
                 <AddIcon sx={{ fontSize: 16 }} />
               </IconButton>
             </Box>
           )}
 
           {attachments.length > 0 && (
-            <Box
-              display="flex"
-              flexWrap="wrap"
-              gap={0.5}
-              mb={0.5}
-              px={1}>
+            <Box display="flex" flexWrap="wrap" gap={0.5} mb={0.5} px={1}>
               {attachments.map((att) => (
                 <Box
                   key={att.id}
                   sx={{
-                    position: "relative",
+                    position: 'relative',
                     width: 50,
                     height: 50,
                     borderRadius: 1,
-                    overflow: "hidden",
+                    overflow: 'hidden',
                     border: (theme) => `1px solid ${theme.palette.divider}`,
-                    bgcolor: "background.paper",
-                  }}>
+                    bgcolor: 'background.paper',
+                  }}
+                >
                   {att.previewUrl ? (
-                    <img
-                      src={att.previewUrl}
-                      alt={att.name}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
+                    <img src={att.previewUrl} alt={att.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
-                    <Box
-                      display="flex"
-                      alignItems="center"
-                      justifyContent="center"
-                      height="100%">
+                    <Box display="flex" alignItems="center" justifyContent="center" height="100%">
                       <AttachFileIcon fontSize="small" />
                     </Box>
                   )}
@@ -1032,14 +972,15 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     aria-label={`Remove attachment ${att.name}`}
                     onClick={(): void => removeAttachment(att.id)}
                     sx={{
-                      position: "absolute",
+                      position: 'absolute',
                       top: 0,
                       right: 0,
                       p: 0.1,
-                      bgcolor: "rgba(0,0,0,0.5)",
-                      color: "white",
-                      "&:hover": { bgcolor: "rgba(0,0,0,0.7)" },
-                    }}>
+                      bgcolor: 'rgba(0,0,0,0.5)',
+                      color: 'white',
+                      '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' },
+                    }}
+                  >
                     <CloseIcon sx={{ fontSize: 10 }} />
                   </IconButton>
                 </Box>
@@ -1050,62 +991,54 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
         <Box
           sx={{
-            width: "100%",
-            display: "flex",
-            flexDirection: "row",
-            flexWrap: "wrap",
-            alignItems: "flex-end",
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
             columnGap: { xs: 0.5, md: 1 },
             rowGap: 0,
-          }}>
+          }}
+        >
           {/* Left Actions (Icons) */}
           <Box
             sx={{
-              display: "flex",
-              alignItems: "center",
+              display: 'flex',
+              alignItems: 'center',
               order: { xs: 2, md: 1 },
               flexShrink: 0,
               gap: 0,
               mb: { xs: 0, md: 0.25 },
-              width: { xs: "auto", md: 220 },
-              justifyContent: { xs: "flex-start", md: "flex-end" },
+              width: { xs: 'auto', md: 220 },
+              justifyContent: { xs: 'flex-start', md: 'flex-end' },
               flexGrow: { xs: 1, md: 0 },
-            }}>
-            <Tooltip
-              title="Parameters"
-              disableTouchListener={isMobile}>
+            }}
+          >
+            <Tooltip title="Parameters" disableTouchListener={isMobile}>
               <span>
                 <IconButton
                   onClick={handleTempClick}
                   disabled={sending}
-                  color={topic?.maxContextMessages !== undefined ? "primary" : "default"}
-                  aria-label="Adjust parameters">
+                  color={topic?.maxContextMessages !== undefined ? 'primary' : 'default'}
+                  aria-label="Adjust parameters"
+                >
                   <TuneIcon />
                 </IconButton>
               </span>
             </Tooltip>
 
-            <Tooltip
-              title="Attach File"
-              disableTouchListener={isMobile}>
+            <Tooltip title="Attach File" disableTouchListener={isMobile}>
               <span>
-                <IconButton
-                  onClick={(): void => fileInputRef.current?.click()}
-                  disabled={sending}
-                  aria-label="Attach file">
+                <IconButton onClick={(): void => fileInputRef.current?.click()} disabled={sending} aria-label="Attach file">
                   <AttachFileIcon />
                 </IconButton>
               </span>
             </Tooltip>
 
             {!isMobile && (
-              <Tooltip
-                title="Camera"
-                disableTouchListener={isMobile}>
+              <Tooltip title="Camera" disableTouchListener={isMobile}>
                 <span>
-                  <IconButton
-                    disabled={sending}
-                    aria-label="Camera">
+                  <IconButton disabled={sending} aria-label="Camera">
                     <PhotoCameraIcon />
                   </IconButton>
                 </span>
@@ -1113,9 +1046,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             )}
 
             {moonshotApiKey && (
-              <Tooltip
-                title={`Web Search (${webSearchEnabled ? "Enabled" : "Disabled"})`}
-                disableTouchListener={isMobile}>
+              <Tooltip title={`Web Search (${webSearchEnabled ? 'Enabled' : 'Disabled'})`} disableTouchListener={isMobile}>
                 <span>
                   <IconButton
                     onClick={(): void => {
@@ -1123,32 +1054,26 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                       if (nextState) {
                         setImageGenerationEnabled(false);
                         setMusicGenerationEnabled(false);
-                        if (selectedModel.id !== "kimi-k2.5") {
-                          const kimi = chatModels.find((m) => m.id === "kimi-k2.5");
+                        if (selectedModel.id !== 'kimi-k2.5') {
+                          const kimi = chatModels.find((m) => m.id === 'kimi-k2.5');
                           if (kimi) setSelectedModel(kimi);
                         }
                       }
                       setWebSearchEnabled(nextState);
                     }}
                     disabled={sending}
-                    color={webSearchEnabled ? "primary" : "default"}
-                    aria-label="Toggle Web Search">
+                    color={webSearchEnabled ? 'primary' : 'default'}
+                    aria-label="Toggle Web Search"
+                  >
                     <LanguageIcon />
                   </IconButton>
                 </span>
               </Tooltip>
             )}
 
-
-
-            <Tooltip
-              title="Predefined Prompts"
-              disableTouchListener={isMobile}>
+            <Tooltip title="Predefined Prompts" disableTouchListener={isMobile}>
               <span>
-                <IconButton
-                  onClick={handlePromptClick}
-                  disabled={sending || predefinedPrompts.length === 0}
-                  aria-label="Predefined Prompts">
+                <IconButton onClick={handlePromptClick} disabled={sending || predefinedPrompts.length === 0} aria-label="Predefined Prompts">
                   <PsychologyIcon />
                 </IconButton>
               </span>
@@ -1164,8 +1089,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   maxHeight: 400,
                   mt: -1,
                 },
-              }}>
-              <ListSubheader sx={{ bgcolor: "transparent", fontWeight: "bold" }}>Predefined Prompts</ListSubheader>
+              }}
+            >
+              <ListSubheader sx={{ bgcolor: 'transparent', fontWeight: 'bold' }}>Predefined Prompts</ListSubheader>
               {predefinedPrompts.map((prompt) => {
                 const topic = topicStore.topics.find((t) => t.id === currentTopicId);
                 const isSelected = topic?.selectedPromptIds?.includes(prompt.id) ?? false;
@@ -1175,20 +1101,19 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     onClick={(): void => {
                       if (!currentTopicId) return;
                       const currentIds = topic?.selectedPromptIds ?? [];
-                      const newIds = isSelected
-                        ? currentIds.filter((id) => id !== prompt.id)
-                        : [...currentIds, prompt.id];
+                      const newIds = isSelected ? currentIds.filter((id) => id !== prompt.id) : [...currentIds, prompt.id];
                       void topicStore.updateTopicPromptSelection(currentTopicId, newIds);
-                    }}>
+                    }}
+                  >
                     <ListItemText primary={prompt.name} />
                     <Box
                       sx={{
                         ml: 2,
                         width: 8,
                         height: 8,
-                        borderRadius: "50%",
-                        bgcolor: isSelected ? "primary.main" : "transparent",
-                        border: (theme) => `1px solid ${isSelected ? "primary.main" : theme.palette.divider}`,
+                        borderRadius: '50%',
+                        bgcolor: isSelected ? 'primary.main' : 'transparent',
+                        border: (theme) => `1px solid ${isSelected ? 'primary.main' : theme.palette.divider}`,
                       }}
                     />
                   </MenuItem>
@@ -1206,21 +1131,23 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           <Box
             sx={{
               flexGrow: { xs: 0, md: 1 },
-              width: { xs: "100%", md: "auto" },
+              width: { xs: '100%', md: 'auto' },
               order: { xs: 1, md: 2 },
-              display: "flex",
-              flexDirection: "column",
+              display: 'flex',
+              flexDirection: 'column',
               mb: 0,
-            }}>
+            }}
+          >
             {attachments.length > 0 && (
               <Box
                 sx={{
-                  display: "flex",
-                  flexWrap: "wrap",
+                  display: 'flex',
+                  flexWrap: 'wrap',
                   gap: 1,
                   mb: 1,
                   px: 1,
-                }}>
+                }}
+              >
                 {attachments.map((file, idx) => (
                   <Chip
                     key={idx}
@@ -1235,16 +1162,15 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             )}
             <Box
               sx={{
-                position: "relative",
-                width: "100%",
+                position: 'relative',
+                width: '100%',
                 borderRadius: 3,
-                backgroundColor: (theme) =>
-                  theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
-                "&:hover": {
-                  backgroundColor: (theme) =>
-                    theme.palette.mode === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)",
+                backgroundColor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                '&:hover': {
+                  backgroundColor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
                 },
-              }}>
+              }}
+            >
               {/* Suggestion overlay moved to InputProps */}
               <TextField
                 fullWidth
@@ -1252,12 +1178,12 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 inputRef={textFieldRef}
                 maxRows={isExpanded ? (isMobile ? 25 : 40) : 10}
                 minRows={isExpanded ? (isMobile ? 15 : 30) : 1}
-                placeholder={isMobile ? "Message..." : "Type your message..."}
+                placeholder={isMobile ? 'Message...' : 'Type your message...'}
                 value={inputValue}
                 onChange={(e): void => {
                   setInputValue(e.target.value);
                   questionRef.current = e.target.value;
-                  setSuggestion(""); // Clear suggestion immediately on change
+                  setSuggestion(''); // Clear suggestion immediately on change
                 }}
                 onKeyDown={handleKeyDown}
                 disabled={sending}
@@ -1265,26 +1191,27 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   startAdornment: suggestion ? (
                     <Box
                       sx={{
-                        position: "absolute",
-                        top: "1px",
-                        left: "1px",
-                        right: "1px",
-                        bottom: "1px",
-                        pt: "6px",
-                        pb: "6px",
-                        pl: "14px",
-                        pr: "50px",
-                        pointerEvents: "none",
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-word",
+                        position: 'absolute',
+                        top: '1px',
+                        left: '1px',
+                        right: '1px',
+                        bottom: '1px',
+                        pt: '6px',
+                        pb: '6px',
+                        pl: '14px',
+                        pr: '50px',
+                        pointerEvents: 'none',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
                         fontSize: `${chatFontSize}px !important`,
-                        fontFamily: "var(--font-family, inherit)",
-                        color: "transparent",
-                        lineHeight: "1.5 !important",
-                        overflow: "hidden",
-                        display: "block",
+                        fontFamily: 'var(--font-family, inherit)',
+                        color: 'transparent',
+                        lineHeight: '1.5 !important',
+                        overflow: 'hidden',
+                        display: 'block',
                         zIndex: 1,
-                      }}>
+                      }}
+                    >
                       <span>{inputValue}</span>
                       <Box
                         component="span"
@@ -1294,7 +1221,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                           const newValue = inputValue + suggestion;
                           setInputValue(newValue);
                           questionRef.current = newValue;
-                          setSuggestion("");
+                          setSuggestion('');
                           setTimeout(() => {
                             if (textFieldRef.current) {
                               textFieldRef.current.focus();
@@ -1304,24 +1231,26 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                           }, 0);
                         }}
                         sx={{
-                          color: "rgba(128, 128, 128, 0.5)",
-                          pointerEvents: "auto",
-                          cursor: "pointer",
-                          "&:hover": { color: "rgba(128, 128, 128, 0.8)" },
-                        }}>
+                          color: 'rgba(128, 128, 128, 0.5)',
+                          pointerEvents: 'auto',
+                          cursor: 'pointer',
+                          '&:hover': { color: 'rgba(128, 128, 128, 0.8)' },
+                        }}
+                      >
                         {suggestion}
                         <Typography
                           component="span"
                           variant="caption"
                           sx={{
                             ml: 1,
-                            bgcolor: "rgba(128, 128, 128, 0.1)",
+                            bgcolor: 'rgba(128, 128, 128, 0.1)',
                             px: 0.5,
                             borderRadius: 0.5,
-                            fontSize: "0.6rem",
-                            verticalAlign: "middle",
-                          }}>
-                          {isMobile ? "Tap to apply" : "Tab"}
+                            fontSize: '0.6rem',
+                            verticalAlign: 'middle',
+                          }}
+                        >
+                          {isMobile ? 'Tap to apply' : 'Tab'}
                         </Typography>
                       </Box>
                     </Box>
@@ -1330,36 +1259,31 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     <InputAdornment
                       position="end"
                       sx={{
-                        alignSelf: "flex-end",
+                        alignSelf: 'flex-end',
                         mb: 0,
                         mr: 0.5,
-                        display: "flex",
-                        alignItems: "center",
+                        display: 'flex',
+                        alignItems: 'center',
                         gap: 0.5,
-                      }}>
-                      {isSuggesting && (
-                        <CircularProgress
-                          size={16}
-                          sx={{ mr: 1 }}
-                        />
-                      )}
-                      <Tooltip
-                        title={isExpanded ? "Collapse" : "Expand"}
-                        disableTouchListener={isMobile}>
+                      }}
+                    >
+                      {isSuggesting && <CircularProgress size={16} sx={{ mr: 1 }} />}
+                      <Tooltip title={isExpanded ? 'Collapse' : 'Expand'} disableTouchListener={isMobile}>
                         <span>
                           <IconButton
                             onClick={(): void => setIsExpanded(!isExpanded)}
                             disabled={sending}
                             size="small"
-                            aria-label={isExpanded ? "Collapse message composer" : "Expand message composer"}
+                            aria-label={isExpanded ? 'Collapse message composer' : 'Expand message composer'}
                             sx={{
                               opacity: 0.4,
-                              transition: "opacity 0.2s",
-                              "&:hover": {
+                              transition: 'opacity 0.2s',
+                              '&:hover': {
                                 opacity: 1,
                                 backgroundColor: (theme: Theme) => alpha(theme.palette.action.active, 0.05),
                               },
-                            }}>
+                            }}
+                          >
                             {isExpanded ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
                           </IconButton>
                         </span>
@@ -1368,22 +1292,22 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   ),
                 }}
                 sx={{
-                  "& .MuiOutlinedInput-root": {
+                  '& .MuiOutlinedInput-root': {
                     borderRadius: 3,
-                    paddingTop: "6px !important",
-                    paddingBottom: "6px !important",
+                    paddingTop: '6px !important',
+                    paddingBottom: '6px !important',
                     fontSize: `${chatFontSize}px !important`,
-                    lineHeight: "1.5 !important",
-                    backgroundColor: "transparent",
-                    transition: "background-color 0.2s",
-                    "& fieldset": {
+                    lineHeight: '1.5 !important',
+                    backgroundColor: 'transparent',
+                    transition: 'background-color 0.2s',
+                    '& fieldset': {
                       borderColor: (theme: Theme) => alpha(theme.palette.divider, 0.5),
                     },
                   },
-                  "& .MuiInputBase-input": {
+                  '& .MuiInputBase-input': {
                     fontSize: `${chatFontSize}px !important`,
-                    fontFamily: "var(--font-family, inherit)",
-                    lineHeight: "1.5 !important",
+                    fontFamily: 'var(--font-family, inherit)',
+                    lineHeight: '1.5 !important',
                   },
                 }}
               />
@@ -1395,27 +1319,27 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             sx={{
               order: 3,
               flexShrink: 0,
-              display: "flex",
-              alignItems: "center",
-              width: { xs: "auto", md: 220 },
-              justifyContent: { xs: "flex-end", md: "flex-start" },
-            }}>
-            <Tooltip
-              title={sending ? "Stop Generation" : isMobile ? "Send Message" : "Send Message (Enter)"}
-              disableTouchListener={isMobile}>
+              display: 'flex',
+              alignItems: 'center',
+              width: { xs: 'auto', md: 220 },
+              justifyContent: { xs: 'flex-end', md: 'flex-start' },
+            }}
+          >
+            <Tooltip title={sending ? 'Stop Generation' : isMobile ? 'Send Message' : 'Send Message (Enter)'} disableTouchListener={isMobile}>
               <span>
                 <IconButton
                   color="primary"
-                  aria-label={sending ? "Stop Generation" : "Send Message"}
+                  aria-label={sending ? 'Stop Generation' : 'Send Message'}
                   onClick={sending ? handleStop : handleSend}
                   disabled={!inputValue.trim() && !attachments.length && !sending}
                   sx={{
                     width: 52,
                     height: 52,
-                    "&.Mui-disabled": {
-                      backgroundColor: "transparent",
+                    '&.Mui-disabled': {
+                      backgroundColor: 'transparent',
                     },
-                  }}>
+                  }}
+                >
                   {sending ? <StopCircleIcon /> : <SendIcon />}
                 </IconButton>
               </span>

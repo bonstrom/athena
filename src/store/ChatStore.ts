@@ -5,14 +5,13 @@ import { useNotificationStore } from './NotificationStore';
 import {
   orchestrateLlmLoop,
   askLlm,
-  generateMinimaxImage,
-  generateMinimaxMusic,
   LlmMessage,
   LlmContentPart,
   SCRATCHPAD_TOOL,
   READ_MESSAGES_TOOL,
   LIST_MESSAGES_TOOL,
 } from '../services/llmService';
+import { generateImage, generateMusic } from '../services/mediaService';
 import { chatModels } from '../components/ModelSelector';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { Message, Attachment } from '../database/AthenaDb';
@@ -198,10 +197,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         sourceLabel = `Recent ${m.type === 'user' ? 'User' : 'Assistant'} Message`;
       }
       entries.push({
-        message: { 
-          role, 
-          content: m.content, 
-          ...(role === 'assistant' ? { reasoning_content: m.reasoning || 'Thinking process hidden or not provided.' } : (m.reasoning !== undefined && { reasoning_content: m.reasoning }))
+        message: {
+          role,
+          content: m.content,
+          ...(role === 'assistant'
+            ? { reasoning_content: m.reasoning ?? 'Thinking process hidden or not provided.' }
+            : m.reasoning !== undefined && { reasoning_content: m.reasoning }),
         },
         sourceLabel,
         messageId: isRag ? undefined : m.id,
@@ -468,16 +469,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             parts.push({ type: 'image_url', image_url: { url: att.data } });
           }
         }
-        return { 
-          role, 
-          content: parts, 
-          ...(role === 'assistant' ? { reasoning_content: m.reasoning || 'Thinking process hidden or not provided.' } : (m.reasoning !== undefined && { reasoning_content: m.reasoning }))
+        return {
+          role,
+          content: parts,
+          ...(role === 'assistant'
+            ? { reasoning_content: m.reasoning ?? 'Thinking process hidden or not provided.' }
+            : m.reasoning !== undefined && { reasoning_content: m.reasoning }),
         };
       }
       return {
         role,
         content: m.content,
-        ...(role === 'assistant' ? { reasoning_content: m.reasoning || 'Thinking process hidden or not provided.' } : (m.reasoning !== undefined && { reasoning_content: m.reasoning })),
+        ...(role === 'assistant'
+          ? { reasoning_content: m.reasoning ?? 'Thinking process hidden or not provided.' }
+          : m.reasoning !== undefined && { reasoning_content: m.reasoning }),
       };
     });
 
@@ -570,29 +575,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           };
         });
 
-        // Parse aspect ratio from prompt if present (e.g., Ratio: 16:9)
-        let imagePrompt = content.trim();
-        let aspectRatio = '1:1';
-        const ratioMatch = content.match(/Ratio:\s*(\d+:\d+)/i);
-        if (ratioMatch) {
-          aspectRatio = ratioMatch[1];
-          imagePrompt = content.replace(ratioMatch[0], '').trim();
-        }
-
-        const imageResult = await generateMinimaxImage(imagePrompt, aspectRatio, controller.signal);
-        const imageAttachment: Attachment = {
-          id: crypto.randomUUID(),
-          name: 'generated-image.png',
-          type: 'image/png',
-          size: 0,
-          data: `data:image/png;base64,${imageResult.base64}`,
-          previewUrl: `data:image/png;base64,${imageResult.base64}`,
-        };
-
+        const { content: resultContent, attachment, model: resultModel } = await generateImage(content, controller.signal);
         const finalizedAssistant: Partial<Message> = {
-          content: 'Here is your generated image:',
-          attachments: [imageAttachment],
-          model: 'image-01',
+          content: resultContent,
+          attachments: [attachment],
+          model: resultModel,
           failed: false,
         };
 
@@ -632,52 +619,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           };
         });
 
-        // Split content into prompt and lyrics
-        let musicPrompt = content.trim();
-        let lyrics = '';
-        const lines = content.split('\n');
-        if (lines.length > 1) {
-          // Check if there is a clear separator like --- or if it looks like lyrics
-          const separatorIndex = lines.findIndex((l) => l.trim() === '---');
-          if (separatorIndex !== -1) {
-            musicPrompt = lines.slice(0, separatorIndex).join('\n').trim();
-            lyrics = lines.slice(separatorIndex + 1).join('\n').trim();
-          } else if (content.includes('[') && content.includes(']')) {
-            // Heuristic: everything before the first bracketed section is prompt
-            const firstBracketIndex = content.indexOf('[');
-            musicPrompt = content.slice(0, firstBracketIndex).trim();
-            lyrics = content.slice(firstBracketIndex).trim();
-          }
-        }
-
-        const musicResult = await generateMinimaxMusic(musicPrompt, lyrics, controller.signal);
-        const { audioHex } = musicResult;
-
-        // Convert hex to base64
-        const bytes = new Uint8Array(audioHex.length / 2);
-        for (let i = 0; i < audioHex.length / 2; i++) {
-          bytes[i] = parseInt(audioHex.substring(i * 2, i * 2 + 2), 16);
-        }
-
-        const audioBlob = new Blob([bytes], { type: 'audio/mpeg' });
-        const base64Data = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(audioBlob);
-        });
-
-        const musicAttachment: Attachment = {
-          id: crypto.randomUUID(),
-          name: 'generated-music.mp3',
-          type: 'audio/mpeg',
-          size: audioBlob.size,
-          data: base64Data,
-        };
-
+        const { content: resultContent, attachment, model: resultModel } = await generateMusic(content, controller.signal);
         const finalizedAssistant: Partial<Message> = {
-          content: 'Here is your generated music:',
-          attachments: [musicAttachment],
-          model: 'music-2.6',
+          content: resultContent,
+          attachments: [attachment],
+          model: resultModel,
           failed: false,
         };
 
@@ -795,7 +741,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           if (toolName === 'read_messages') {
             try {
               const parsedArgs = JSON.parse(argsJson) as { messages?: { messageId: string; startLine?: number; endLine?: number }[] };
-              const messagesToRead = parsedArgs.messages || [];
+              const messagesToRead = parsedArgs.messages ?? [];
               const results: string[] = [];
 
               if (messagesToRead.length === 0) {
@@ -860,7 +806,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       );
 
       const finalContent = primaryResult.finalContent;
-      const finalReasoning = primaryResult.lastResult.reasoning ?? '';
       const totalPromptTokens = primaryResult.totalPromptTokens;
       const totalCompletionTokens = primaryResult.totalCompletionTokens;
       const lastResult = primaryResult.lastResult;
@@ -1189,7 +1134,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      if (rawSummary && rawSummary.trim()) {
+      if (rawSummary.trim()) {
         const cleanSummary = rawSummary
           .trim()
           .replace(/^Summary:\s*/i, '')
@@ -1212,7 +1157,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           return {
             messagesByTopic: {
               ...messagesByTopic,
-              [currentTopicId]: messagesByTopic[currentTopicId]!.map((m) => (m.id === messageId ? { ...m, summary: cleanSummary } : m)),
+              [currentTopicId]: (messagesByTopic[currentTopicId] ?? []).map((m) => (m.id === messageId ? { ...m, summary: cleanSummary } : m)),
             },
           };
         });
