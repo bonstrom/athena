@@ -46,7 +46,7 @@ export const Sidebar = (): JSX.Element => {
         </Button>
       </Box>
 
-      <Box flexGrow={1} overflow="auto" px={1} mt={1}>
+      <Box id="sidebar-scroll-container" flexGrow={1} overflow="auto" px={1} mt={1}>
         <TopicList />
       </Box>
 

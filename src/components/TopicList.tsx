@@ -21,6 +21,14 @@ export const TopicList = (): JSX.Element => {
     });
   }, [loadTopics, preloadTopics, topicPreloadCount]);
 
+  useEffect(() => {
+    // If the top element's time or ID shifts (e.g. bumped to top), smoothly scroll into view
+    const container = document.getElementById('sidebar-scroll-container');
+    if (container) {
+      container.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [topics[0]?.updatedOn, topics[0]?.id]);
+
   const visibleTopics = topics.slice(0, visibleTopicCount);
   const grouped = groupTopicsByDate(visibleTopics);
 
