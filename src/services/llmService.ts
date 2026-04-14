@@ -358,7 +358,7 @@ const OpenAiAdapter: IMessageAdapter = {
       type: tc.type ?? 'function',
       function: tc.function,
     }));
-    const content = toolCalls && toolCalls.length > 0 ? message.content : message.content.trim();
+    const content = toolCalls && toolCalls.length > 0 ? (message.content ?? '') : (message.content ?? '').trim();
     const reasoning = (message.reasoning_content ?? message.reasoning ?? '').trim();
     return {
       content,
