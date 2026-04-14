@@ -137,7 +137,23 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem('chatWidth');
       localStorage.removeItem('chatFontSize');
       localStorage.removeItem('messageRetrievalEnabled');
-      void athenaDb.predefinedPrompts.clear();
+      localStorage.removeItem('backupInterval');
+      localStorage.removeItem('scratchpadRules');
+      localStorage.removeItem('llmSuggestionEnabled');
+      localStorage.removeItem('replyPredictionEnabled');
+      localStorage.removeItem('replyPredictionModel');
+      localStorage.removeItem('llmModelSelected');
+      localStorage.removeItem('llmModelDownloadStatus');
+      localStorage.removeItem('topicPreloadCount');
+      localStorage.removeItem('messageTruncateChars');
+      localStorage.removeItem('ragEnabled');
+      localStorage.removeItem('maxContextTokens');
+      localStorage.removeItem('aiSummaryEnabled');
+      localStorage.removeItem('summaryModel');
+      localStorage.removeItem('defaultMaxContextMessages');
+      void athenaDb.predefinedPrompts.clear().catch((err: unknown) => {
+        console.error('Failed to clear predefined prompts:', err);
+      });
       set({
         openAiKey: '',
         deepSeekKey: '',
@@ -273,27 +289,38 @@ export const useAuthStore = create<AuthState>((set) => {
     },
     addPredefinedPrompt: (prompt: PredefinedPrompt): void => {
       set((state) => ({ predefinedPrompts: [...state.predefinedPrompts, prompt] }));
-      void athenaDb.predefinedPrompts.add(prompt);
+      void athenaDb.predefinedPrompts.add(prompt).catch((err: unknown) => {
+        console.error('Failed to add predefined prompt:', err);
+      });
     },
     updatePredefinedPrompt: (prompt: PredefinedPrompt): void => {
       set((state) => ({
         predefinedPrompts: state.predefinedPrompts.map((p) => (p.id === prompt.id ? prompt : p)),
       }));
-      void athenaDb.predefinedPrompts.put(prompt);
+      void athenaDb.predefinedPrompts.put(prompt).catch((err: unknown) => {
+        console.error('Failed to update predefined prompt:', err);
+      });
     },
     deletePredefinedPrompt: (id: string): void => {
       set((state) => ({
         predefinedPrompts: state.predefinedPrompts.filter((p) => p.id !== id),
       }));
-      void athenaDb.predefinedPrompts.delete(id);
+      void athenaDb.predefinedPrompts.delete(id).catch((err: unknown) => {
+        console.error('Failed to delete predefined prompt:', err);
+      });
     },
   };
 });
 
 // Load predefined prompts from DB on init
-void athenaDb.predefinedPrompts.toArray().then((prompts) => {
-  useAuthStore.getState().setPredefinedPrompts(prompts);
-});
+void athenaDb.predefinedPrompts
+  .toArray()
+  .then((prompts) => {
+    useAuthStore.getState().setPredefinedPrompts(prompts);
+  })
+  .catch((err: unknown) => {
+    console.error('Failed to load predefined prompts:', err);
+  });
 
 export const useLogout = (): (() => void) => {
   const navigate = useNavigate();

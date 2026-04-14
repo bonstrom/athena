@@ -6,12 +6,7 @@ import { useAuthStore } from './AuthStore';
 import { askLlm } from '../services/llmService';
 import { embeddingService, ScoredMessage } from '../services/embeddingService';
 import { getDefaultTopicNameModel } from '../components/ModelSelector';
-import { SCRATCHPAD_LIMIT } from '../constants';
-
-const RAG_TOP_K = 5;
-const RAG_MIN_SCORE = 0.3; // discard weakly-related matches
-const RAG_MAX_CHARS = 4000; // hard cap on total RAG block size
-const RAG_CONTENT_LIMIT = 250; // truncate individual messages to keep context lean; LLM can fetch full content via read_messages
+import { SCRATCHPAD_LIMIT, RAG_TOP_K, RAG_MIN_SCORE, RAG_MAX_CHARS, RAG_CONTENT_LIMIT } from '../constants';
 
 interface TopicState {
   topics: Topic[];
@@ -422,7 +417,11 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         },
       ]);
 
-      const name = result.content.trim().replace(/^"|"$/g, '');
+      const name = result.content
+        .trim()
+        .replace(/^"|"$/g, '')
+        .slice(0, 60) // enforce a hard max length regardless of LLM output
+        .trim();
 
       // ── Verification: Topic name ──
       if (!name) console.warn('[verify:topic-name] LLM returned empty topic name for topic:', topicId);

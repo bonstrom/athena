@@ -251,18 +251,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // to avoid sending orphaned context references to the LLM.
     const pairedUserMessageId = target?.type === 'assistant' && target.parentMessageId ? target.parentMessageId : null;
 
-    // If deleting a user message, also delete the immediately following assistant reply
-    const nextMessage = targetIndex >= 0 ? messages[targetIndex + 1] : undefined;
-    const pairedAssistantId = target?.type === 'user' && nextMessage?.type === 'assistant' ? nextMessage.id : null;
+    // If deleting a user message, also delete its active assistant reply (looked up by
+    // parentMessageId rather than array position, to correctly handle aiNote/system
+    // messages that may appear between the user and assistant messages).
+    const pairedAssistantId = target?.type === 'user' ? (messages.find((m) => m.type === 'assistant' && m.parentMessageId === id)?.id ?? null) : null;
 
     const idsToDelete = [id, ...(pairedAssistantId ? [pairedAssistantId] : [])];
 
-    await athenaDb.transaction('rw', athenaDb.messages, async () => {
-      await athenaDb.messages.bulkDelete(idsToDelete);
-      if (pairedUserMessageId) {
-        await athenaDb.messages.update(pairedUserMessageId, { includeInContext: false });
-      }
-    });
+    try {
+      await athenaDb.transaction('rw', athenaDb.messages, async () => {
+        await athenaDb.messages.bulkDelete(idsToDelete);
+        if (pairedUserMessageId) {
+          await athenaDb.messages.update(pairedUserMessageId, { includeInContext: false });
+        }
+      });
+    } catch (err) {
+      console.error('Failed to delete message(s) from database:', err);
+      throw err;
+    }
 
     set((state) => ({
       messagesByTopic: {
@@ -996,8 +1002,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             } else {
               set({ isSuggestionsLoading: false });
             }
-          } catch {
-            // Silently ignore suggestion errors
+          } catch (err) {
+            // Suggestion errors are non-critical; log for diagnostics but don't surface to the user
+            console.warn('Failed to generate reply suggestions:', err);
             set({ isSuggestionsLoading: false });
           }
         })();
@@ -1084,7 +1091,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       next.delete(messageId);
       return { failedSummaryMessageIds: next };
     });
-    summarizeQueue = summarizeQueue.then(() => get()._runSummarize(messageId, content, contextMessages));
+    summarizeQueue = summarizeQueue.then(() => get()._runSummarize(messageId, content, contextMessages ? [...contextMessages] : undefined));
     await summarizeQueue;
   },
 
@@ -1178,9 +1185,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
         set((state) => {
           const { currentTopicId, messagesByTopic } = state;
-          if (!currentTopicId || !messagesByTopic[currentTopicId]) return state;
+          // Remove from failed set on successful summarize to prevent unbounded growth
+          const nextFailed = new Set(state.failedSummaryMessageIds);
+          nextFailed.delete(messageId);
+          if (!currentTopicId || !messagesByTopic[currentTopicId]) return { failedSummaryMessageIds: nextFailed };
 
           return {
+            failedSummaryMessageIds: nextFailed,
             messagesByTopic: {
               ...messagesByTopic,
               [currentTopicId]: (messagesByTopic[currentTopicId] ?? []).map((m) => (m.id === messageId ? { ...m, summary: cleanSummary } : m)),

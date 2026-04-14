@@ -69,6 +69,14 @@ export async function generateMusic(prompt: string, signal?: AbortSignal): Promi
   }
 
   const audioBlob = new Blob([bytes], { type: 'audio/mpeg' });
+
+  // 10 MB guard — base64 encoding inflates size by ~33%, so 10 MB blob → ~13 MB data URL.
+  // IndexedDB entries above ~15 MB can cause storage quota errors in some browsers.
+  const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
+  if (audioBlob.size > MAX_AUDIO_BYTES) {
+    throw new Error(`Generated audio file is too large (${(audioBlob.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed is 10 MB.`);
+  }
+
   const base64Data = await new Promise<string>((resolve) => {
     const reader = new FileReader();
     reader.onloadend = (): void => {

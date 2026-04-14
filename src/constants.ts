@@ -1,6 +1,12 @@
 export const SCRATCHPAD_LIMIT = 8000;
 export const SHORT_SCRATCHPAD_RULES = `You have a private scratchpad for long-term memory (max {{SCRATCHPAD_LIMIT}} chars). Proactively store user preferences, goals, key decisions, and message bookmarks. Prefer 'replace' over 'append' to stay concise.`;
 export const USD_TO_SEK = 10;
+
+// RAG (Retrieval-Augmented Generation) tuning constants
+export const RAG_TOP_K = 5; // number of semantically similar messages to retrieve
+export const RAG_MIN_SCORE = 0.3; // discard weakly-related matches below this cosine similarity
+export const RAG_MAX_CHARS = 4000; // hard cap on total RAG block size injected into context
+export const RAG_CONTENT_LIMIT = 250; // truncate individual messages; LLM can fetch full content via read_messages
 export const DEFAULT_SCRATCHPAD_RULES = `You have a private scratchpad for long-term memory (max {{SCRATCHPAD_LIMIT}} chars).
 
 **What to store proactively — act on this every reply if relevant:**

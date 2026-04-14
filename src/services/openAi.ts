@@ -1,4 +1,4 @@
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 
 export async function sendOpenAiChat(
   messages: { role: string; content: string }[],
@@ -10,14 +10,14 @@ export async function sendOpenAiChat(
   completionTokens: number;
 }> {
   const response = await fetch(OPENAI_API_URL, {
-    method: "POST",
+    method: 'POST',
     headers: {
       Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       model,
-      messages
+      messages,
     }),
   });
 
@@ -31,6 +31,10 @@ export async function sendOpenAiChat(
   }
 
   const data = (await response.json()) as OpenAiResponse;
+
+  if (!data.choices || data.choices.length === 0) {
+    throw new Error('OpenAI returned an empty choices array');
+  }
 
   return {
     content: data.choices[0].message.content.trim(),

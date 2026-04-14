@@ -98,7 +98,22 @@ class EmbeddingService {
     const id = String(++this.requestCounter);
 
     return new Promise<number[]>((resolve, reject) => {
-      this.pendingEmbeddings.set(id, { resolve, reject });
+      const timeout = setTimeout(() => {
+        if (this.pendingEmbeddings.delete(id)) {
+          reject(new Error('Embedding generation timed out'));
+        }
+      }, 30_000);
+
+      this.pendingEmbeddings.set(id, {
+        resolve: (vector: number[]): void => {
+          clearTimeout(timeout);
+          resolve(vector);
+        },
+        reject: (err: Error): void => {
+          clearTimeout(timeout);
+          reject(err);
+        },
+      });
       this.worker?.postMessage({ type: 'embed', id, text: text.slice(0, 512) });
     });
   }

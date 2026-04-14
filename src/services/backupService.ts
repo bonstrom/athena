@@ -1,4 +1,4 @@
-import { exportDB, importDB, importInto } from 'dexie-export-import';
+import { exportDB, importInto } from 'dexie-export-import';
 import { athenaDb } from '../database/AthenaDb';
 import { get, set } from 'idb-keyval';
 import { useBackupStore } from '../store/BackupStore';
@@ -26,6 +26,9 @@ declare global {
 
 const BACKUP_HANDLE_KEY = 'autoBackupFileHandle';
 const LAST_BACKUP_TIME_KEY = 'lastAutoBackupTime';
+
+// Prevents concurrent auto-backup calls from writing to the file simultaneously
+let autoBackupInProgress = false;
 
 export const BackupService = {
   /**
@@ -74,9 +77,9 @@ export const BackupService = {
     }
 
     try {
-      await athenaDb.delete();
-      await athenaDb.open();
-      await importDB(file);
+      // Use importInto with clearTablesBeforeImport instead of delete+importDB.
+      // This avoids permanently destroying the database if the import fails midway.
+      await importInto(athenaDb, file, { overwriteValues: true, clearTablesBeforeImport: true });
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
         console.error('Failed to restore database', error);
@@ -167,6 +170,8 @@ export const BackupService = {
    * @param interactive If true, will attempt to request permission from the user (requires user gesture).
    */
   async performAutoBackup(interactive = false): Promise<void> {
+    if (autoBackupInProgress) return;
+    autoBackupInProgress = true;
     const store = useBackupStore.getState();
     try {
       const handle = await this.getAutoBackupHandle();
@@ -210,6 +215,8 @@ export const BackupService = {
         console.error('Failed auto-backup:', error);
       }
       throw error;
+    } finally {
+      autoBackupInProgress = false;
     }
   },
 

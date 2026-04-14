@@ -1,4 +1,4 @@
-const DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions";
+const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 
 export async function sendDeepSeekChat(
   messages: { role: string; content: string }[],
@@ -11,10 +11,10 @@ export async function sendDeepSeekChat(
   aiNote: string;
 }> {
   const response = await fetch(DEEPSEEK_API_URL, {
-    method: "POST",
+    method: 'POST',
     headers: {
       Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       model,
@@ -34,15 +34,19 @@ export async function sendDeepSeekChat(
 
   const data = (await response.json()) as DeepSeekResponse;
 
+  if (!data.choices || data.choices.length === 0) {
+    throw new Error('DeepSeek returned an empty choices array');
+  }
+
   const rawContent = data.choices[0].message.content.trim();
 
   const match = /<!--\s*persist:\s*(.*?)\s*-->/i.exec(rawContent);
-  const strippedContent = rawContent.replace(/<!--\s*persist:\s*(.*?)\s*-->/i, "").trim();
+  const strippedContent = rawContent.replace(/<!--\s*persist:\s*(.*?)\s*-->/i, '').trim();
 
   return {
     content: strippedContent,
     promptTokens: data.usage.prompt_tokens,
     completionTokens: data.usage.completion_tokens,
-    aiNote: match?.[1]?.trim() ?? "",
+    aiNote: match?.[1]?.trim() ?? '',
   };
 }

@@ -883,11 +883,13 @@ export async function orchestrateLlmLoop(
   let totalSearchCount = 0;
   let finalContent = '';
   let lastResult: LlmResult | null = null;
-  // Cache tool results within this loop to avoid redundant executions across iterations
-  const toolResultCache = new Map<string, string>();
 
   while (loopCount < MAX_TOOL_LOOP_ITERATIONS) {
     loopCount++;
+    // Cache tool results within a single iteration to avoid calling the same tool twice
+    // in one round-trip. A fresh cache each iteration ensures state changes between
+    // iterations are not masked by a stale result.
+    const toolResultCache = new Map<string, string>();
     const result = model.streaming
       ? await askLlmStream(model, temperature, llmContext, onToken, onReasoning, tools, webSearch, signal)
       : await askLlm(model, temperature, llmContext, tools, webSearch, signal);
