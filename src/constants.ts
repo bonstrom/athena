@@ -7,6 +7,12 @@ export const RAG_TOP_K = 5; // number of semantically similar messages to retrie
 export const RAG_MIN_SCORE = 0.3; // discard weakly-related matches below this cosine similarity
 export const RAG_MAX_CHARS = 4000; // hard cap on total RAG block size injected into context
 export const RAG_CONTENT_LIMIT = 250; // truncate individual messages; LLM can fetch full content via read_messages
+export const ASK_USER_INSTRUCTIONS = `When information is insufficient to answer confidently, follow this decision hierarchy:
+1. If you can answer with confidence — answer directly.
+2. If the answer might exist in conversation history — use list_messages / read_messages to find it.
+3. If genuinely uncertain after searching — use ask_user to request clarification with one targeted question.
+4. Never guess or produce lengthy speculation when a short clarifying question would be more helpful.`;
+
 export const DEFAULT_SCRATCHPAD_RULES = `You have a private scratchpad for long-term memory (max {{SCRATCHPAD_LIMIT}} chars).
 
 **What to store proactively — act on this every reply if relevant:**

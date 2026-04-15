@@ -88,6 +88,23 @@ export const LIST_MESSAGES_TOOL: LlmTool = {
   },
 };
 
+export const ASK_USER_TOOL: LlmTool = {
+  type: 'function',
+  function: {
+    name: 'ask_user',
+    description:
+      'Ask the user a follow-up question when you need clarification or additional information to proceed. Use this when the available context and message history are insufficient and you cannot reasonably infer the answer. Ask at most one question per turn.',
+    parameters: {
+      type: 'object',
+      properties: {
+        question: { type: 'string', description: 'The specific question to ask the user.' },
+        context: { type: 'string', description: 'Brief explanation of why you need this information.' },
+      },
+      required: ['question'],
+    },
+  },
+};
+
 export interface LlmTool {
   type: 'function' | 'builtin_function';
   function: {
@@ -358,7 +375,7 @@ const OpenAiAdapter: IMessageAdapter = {
       type: tc.type ?? 'function',
       function: tc.function,
     }));
-    const content = toolCalls && toolCalls.length > 0 ? (message.content ?? '') : (message.content ?? '').trim();
+    const content = toolCalls && toolCalls.length > 0 ? message.content : message.content.trim();
     const reasoning = (message.reasoning_content ?? message.reasoning ?? '').trim();
     return {
       content,
@@ -687,7 +704,7 @@ export async function generateMinimaxMusic(prompt: string, lyrics = '', signal?:
 function buildLlmResult(parsed: ParsedResponse): LlmResult {
   let aiNote: string | null = null;
   let aiNoteAction: 'append' | 'replace' | undefined;
-  const toolCalls = parsed.toolCalls?.filter((tc): tc is ToolCall => !!(tc && tc.function));
+  const toolCalls = parsed.toolCalls;
 
   if (toolCalls && toolCalls.length > 0) {
     const scratchpadTool = toolCalls.find((tc) => tc.function.name === 'update_scratchpad');

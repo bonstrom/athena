@@ -97,7 +97,17 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const questionRef = useRef('');
   const topicStore = useTopicStore();
-  const { selectedModel, setSelectedModel, temperature, setTemperature, currentTopicId, stopSending, messagesByTopic } = useChatStore();
+  const {
+    selectedModel,
+    setSelectedModel,
+    temperature,
+    setTemperature,
+    currentTopicId,
+    stopSending,
+    messagesByTopic,
+    pendingUserQuestion,
+    resolvePendingQuestion,
+  } = useChatStore();
   const { addNotification } = useNotificationStore();
   const {
     chatWidth,
@@ -161,6 +171,17 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   };
 
   const handleSend = (): void => {
+    // If the LLM is waiting for a clarification answer, resolve the pending promise instead of sending a new message
+    if (pendingUserQuestion) {
+      const answer = inputValue.trim();
+      if (!answer) return;
+      resolvePendingQuestion(answer);
+      questionRef.current = '';
+      setInputValue('');
+      setSuggestion('');
+      return;
+    }
+
     const currentContent = inputValue;
     const updatedPages = pages.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p));
 
@@ -1176,7 +1197,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 inputRef={textFieldRef}
                 maxRows={isExpanded ? (isMobile ? 25 : 40) : 10}
                 minRows={isExpanded ? (isMobile ? 15 : 30) : 1}
-                placeholder={isMobile ? 'Message...' : 'Type your message...'}
+                placeholder={pendingUserQuestion ? "Answer the assistant's question..." : isMobile ? 'Message...' : 'Type your message...'}
                 value={inputValue}
                 onChange={(e): void => {
                   setInputValue(e.target.value);
@@ -1184,7 +1205,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   setSuggestion(''); // Clear suggestion immediately on change
                 }}
                 onKeyDown={handleKeyDown}
-                disabled={sending}
+                disabled={sending && !pendingUserQuestion}
                 InputProps={{
                   startAdornment: suggestion ? (
                     <Box
@@ -1323,12 +1344,15 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               justifyContent: { xs: 'flex-end', md: 'flex-start' },
             }}
           >
-            <Tooltip title={sending ? 'Stop Generation' : isMobile ? 'Send Message' : 'Send Message (Enter)'} disableTouchListener={isMobile}>
+            <Tooltip
+              title={sending && !pendingUserQuestion ? 'Stop Generation' : isMobile ? 'Send Message' : 'Send Message (Enter)'}
+              disableTouchListener={isMobile}
+            >
               <span>
                 <IconButton
                   color="primary"
-                  aria-label={sending ? 'Stop Generation' : 'Send Message'}
-                  onClick={sending ? handleStop : handleSend}
+                  aria-label={sending && !pendingUserQuestion ? 'Stop Generation' : 'Send Message'}
+                  onClick={sending && !pendingUserQuestion ? handleStop : handleSend}
                   disabled={!inputValue.trim() && !attachments.length && !sending}
                   sx={{
                     width: 52,
@@ -1338,7 +1362,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     },
                   }}
                 >
-                  {sending ? <StopCircleIcon /> : <SendIcon />}
+                  {sending && !pendingUserQuestion ? <StopCircleIcon /> : <SendIcon />}
                 </IconButton>
               </span>
             </Tooltip>

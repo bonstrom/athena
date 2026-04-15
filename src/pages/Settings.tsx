@@ -79,6 +79,8 @@ const Settings: React.FC = () => {
     setMaxContextTokens,
     messageRetrievalEnabled,
     setMessageRetrievalEnabled,
+    askUserEnabled,
+    setAskUserEnabled,
     aiSummaryEnabled,
     setAiSummaryEnabled,
     summaryModel,
@@ -843,6 +845,22 @@ const Settings: React.FC = () => {
                 <Typography variant="caption" color="text.secondary">
                   Allows the LLM to selectively retrieve older messages from this topic using IDs. Dramatically improves long-term memory while saving
                   tokens.
+                </Typography>
+              </Box>
+            }
+            sx={{ alignItems: 'flex-start' }}
+          />
+        </Box>
+
+        {/* Ask User Tool */}
+        <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'divider', mb: 2 }}>
+          <FormControlLabel
+            control={<Switch checked={askUserEnabled} onChange={(e): void => setAskUserEnabled(e.target.checked)} size="small" />}
+            label={
+              <Box>
+                <Typography variant="body2">Ask User Tool</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Allows the LLM to pause and ask you a clarifying question instead of guessing when information is insufficient.
                 </Typography>
               </Box>
             }

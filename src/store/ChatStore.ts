@@ -10,6 +10,8 @@ import {
   SCRATCHPAD_TOOL,
   READ_MESSAGES_TOOL,
   LIST_MESSAGES_TOOL,
+  ASK_USER_TOOL,
+  LlmTool,
 } from '../services/llmService';
 import { generateImage, generateMusic } from '../services/mediaService';
 import { chatModels } from '../components/ModelSelector';
@@ -20,7 +22,14 @@ import { BackupService } from '../services/backupService';
 import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 
-import { SCRATCHPAD_LIMIT, SHORT_SCRATCHPAD_RULES } from '../constants';
+import { SCRATCHPAD_LIMIT, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS } from '../constants';
+
+export interface PendingUserQuestion {
+  question: string;
+  context: string;
+  resolve: (answer: string) => void;
+  reject: (reason?: unknown) => void;
+}
 
 export interface ContextEntry {
   message: LlmMessage;
@@ -71,6 +80,8 @@ interface ChatStore {
   pendingSuggestions: string[] | null;
   clearSuggestions: () => void;
   isSuggestionsLoading: boolean;
+  pendingUserQuestion: PendingUserQuestion | null;
+  resolvePendingQuestion: (answer: string) => void;
   preloadTopics: (topicIds: string[]) => Promise<void>;
   maybeSummarize: (messageId: string, content: string, force?: boolean, contextMessages?: LlmMessage[]) => Promise<void>;
   _runSummarize: (messageId: string, content: string, contextMessages?: LlmMessage[]) => Promise<void>;
@@ -100,6 +111,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   summarizingMessageIds: new Set<string>(),
   failedSummaryMessageIds: new Set<string>(),
   isSuggestionsLoading: false,
+  pendingUserQuestion: null,
+
+  resolvePendingQuestion: (answer: string): void => {
+    const pending = get().pendingUserQuestion;
+    if (pending) {
+      pending.resolve(answer);
+      set({ pendingUserQuestion: null });
+    }
+  },
 
   clearSuggestions: (): void => set({ pendingSuggestions: null, isSuggestionsLoading: false }),
 
@@ -169,6 +189,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             "You have access to real-time internet search via the $web_search tool. Use it whenever you need up-to-date information or are unsure about recent events (like 'Vem vann Melodifestivalen 2024?').",
         },
         sourceLabel: 'Web Search Instructions',
+      });
+    }
+
+    // System: Ask-user clarification instructions
+    if (useAuthStore.getState().askUserEnabled) {
+      entries.push({
+        message: { role: 'system', content: ASK_USER_INSTRUCTIONS },
+        sourceLabel: 'Ask User Instructions',
       });
     }
 
@@ -841,10 +869,40 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               return `Error listing messages: ${String(e)}`;
             }
           }
+          if (toolName === 'ask_user') {
+            try {
+              const parsedArgs = JSON.parse(argsJson) as { question?: string; context?: string };
+              const question = parsedArgs.question ?? 'Could you clarify?';
+              const context = parsedArgs.context ?? '';
+
+              // Append the question to the assistant's visible content
+              streamedContent += `\n\n${question}`;
+              get().updateMessageStateOnly(assistantId, {
+                content: streamedContent.replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '').replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, ''),
+              });
+
+              // Return a Promise that resolves when the user submits an answer
+              return new Promise<string>((resolve, reject) => {
+                set({ pendingUserQuestion: { question, context, resolve, reject } });
+              });
+            } catch (e) {
+              return `Error in ask_user: ${String(e)}`;
+            }
+          }
           return 'Tool not implemented.';
         },
         onToolLogCallback,
-        useAuthStore.getState().messageRetrievalEnabled ? [SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL] : [SCRATCHPAD_TOOL],
+        ((): LlmTool[] => {
+          const authState = useAuthStore.getState();
+          const tools = [SCRATCHPAD_TOOL];
+          if (authState.messageRetrievalEnabled) {
+            tools.push(READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL);
+          }
+          if (authState.askUserEnabled) {
+            tools.push(ASK_USER_TOOL);
+          }
+          return tools;
+        })(),
         get().webSearchEnabled,
         controller.signal,
       );
@@ -1055,7 +1113,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     await get().sendMessageStream(userMsg.content, currentTopicId, userMsg.id);
   },
   stopSending: async (): Promise<string | null> => {
-    const { abortController, currentRequestMessageIds, currentTopicId, messagesByTopic } = get();
+    const { abortController, currentRequestMessageIds, currentTopicId, messagesByTopic, pendingUserQuestion } = get();
+
+    // Reject any pending ask_user promise before aborting
+    if (pendingUserQuestion) {
+      pendingUserQuestion.reject(new DOMException('Aborted', 'AbortError'));
+      set({ pendingUserQuestion: null });
+    }
+
     if (abortController) {
       abortController.abort();
     }
