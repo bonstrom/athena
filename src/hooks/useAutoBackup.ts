@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
-import { BackupService } from "../services/backupService";
-import { useNotificationStore } from "../store/NotificationStore";
+import { useEffect, useRef } from 'react';
+import { BackupService } from '../services/backupService';
+import { useNotificationStore } from '../store/NotificationStore';
 
 export const useAutoBackup = (intervalMinutes = 30): void => {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -14,8 +14,8 @@ export const useAutoBackup = (intervalMinutes = 30): void => {
         await BackupService.performAutoBackup(false);
       } catch (error: unknown) {
         // Errors are now handled within BackupService and published to BackupStore
-        if (process.env.NODE_ENV === "development") {
-          console.error("AutoBackup failed in hook:", error);
+        if (process.env.NODE_ENV === 'development') {
+          console.error('AutoBackup failed in hook:', error);
         }
       }
     };
@@ -37,5 +37,5 @@ export const useAutoBackup = (intervalMinutes = 30): void => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (mountTimeoutRef.current) clearTimeout(mountTimeoutRef.current);
     };
-  }, [intervalMinutes, addNotification]);
+  }, [intervalMinutes]);
 };

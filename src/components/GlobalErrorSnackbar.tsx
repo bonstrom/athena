@@ -1,6 +1,6 @@
-import { Snackbar, Alert, AlertTitle } from "@mui/material";
-import { useNotificationStore } from "../store/NotificationStore";
-import { JSX, useEffect, useState } from "react";
+import { Snackbar, Alert, AlertTitle } from '@mui/material';
+import { useNotificationStore } from '../store/NotificationStore';
+import { JSX, useEffect, useState } from 'react';
 
 export const GlobalErrorSnackbar = (): JSX.Element => {
   const { notifications, removeNotification } = useNotificationStore();
@@ -10,7 +10,7 @@ export const GlobalErrorSnackbar = (): JSX.Element => {
     if (!current && notifications.length > 0) {
       setCurrent(notifications[0]);
     }
-  }, [notifications, current]);
+  }, [notifications]);
 
   const handleClose = (): void => {
     if (current) {
@@ -20,14 +20,8 @@ export const GlobalErrorSnackbar = (): JSX.Element => {
   };
 
   return (
-    <Snackbar
-      open={!!current}
-      autoHideDuration={4000}
-      onClose={handleClose}
-      anchorOrigin={{ vertical: "top", horizontal: "center" }}>
-      <Alert
-        severity="error"
-        onClose={handleClose}>
+    <Snackbar open={!!current} autoHideDuration={4000} onClose={handleClose} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+      <Alert severity="error" onClose={handleClose}>
         {current?.title && <AlertTitle>{current.title}</AlertTitle>}
         {current?.message}
       </Alert>

@@ -237,8 +237,11 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   };
 
   const handleStop = async (): Promise<void> => {
+    const topicIdBeforeStop = currentTopicId;
     const restoredContent = await stopSending();
-    if (restoredContent) {
+    // Guard: if the user switched topics while the stop was in flight, do not
+    // inject the restored content into the newly-active topic's input.
+    if (restoredContent && useChatStore.getState().currentTopicId === topicIdBeforeStop) {
       setPages([{ id: crypto.randomUUID(), title: 'Page 1', content: restoredContent }]);
       setActivePageIndex(0);
       setInputValue(restoredContent);
@@ -1089,7 +1092,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             >
               <ListSubheader sx={{ bgcolor: 'transparent', fontWeight: 'bold' }}>Predefined Prompts</ListSubheader>
               {predefinedPrompts.map((prompt) => {
-                const topic = topicStore.topics.find((t) => t.id === currentTopicId);
                 const isSelected = topic?.selectedPromptIds?.includes(prompt.id) ?? false;
                 return (
                   <MenuItem
@@ -1146,7 +1148,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               >
                 {attachments.map((file, idx) => (
                   <Chip
-                    key={idx}
+                    key={file.name + String(idx)}
                     label={file.name}
                     onDelete={(): void => {
                       setAttachments((prev) => prev.filter((_, i) => i !== idx));

@@ -35,7 +35,7 @@ const SuggestedReplies: React.FC<Props> = ({ suggestions, onSelect }) => {
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'flex-end' }}>
         {suggestions.map((s, i) => (
           <Chip
-            key={i}
+            key={`${i}-${s}`}
             label={s}
             size="small"
             variant="outlined"

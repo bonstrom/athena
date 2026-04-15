@@ -373,7 +373,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   updateMessage: async (id, patch): Promise<void> => {
-    await athenaDb.messages.update(id, patch);
+    try {
+      await athenaDb.messages.update(id, patch);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification('Failed to update message', msg);
+      throw err;
+    }
 
     const { currentTopicId, messagesByTopic } = get();
     if (!currentTopicId) return;
@@ -390,7 +396,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { currentTopicId, messagesByTopic } = get();
     if (!currentTopicId) return;
 
-    await Promise.all(updates.map(({ id, patch }) => athenaDb.messages.update(id, patch)));
+    try {
+      await Promise.all(updates.map(({ id, patch }) => athenaDb.messages.update(id, patch)));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification('Failed to update messages', msg);
+      throw err;
+    }
 
     set({
       messagesByTopic: {

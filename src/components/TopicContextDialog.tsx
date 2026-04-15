@@ -273,7 +273,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
               const willBeDropped = droppedIds.has(dropKey);
 
               return (
-                <ListItem key={index} disableGutters sx={{ mb: 1.5, opacity: willBeDropped ? 0.45 : 1 }}>
+                <ListItem key={dropKey} disableGutters sx={{ mb: 1.5, opacity: willBeDropped ? 0.45 : 1 }}>
                   <Paper
                     elevation={0}
                     sx={{

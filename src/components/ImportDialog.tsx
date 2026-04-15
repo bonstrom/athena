@@ -17,8 +17,15 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, file, onClose, onComp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
+
   const handleImport = async (mode: ImportMode): Promise<void> => {
     if (!file) return;
+
+    if (file.size > MAX_IMPORT_SIZE) {
+      setError(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is 50 MB.`);
+      return;
+    }
 
     setLoading(true);
     setError(null);

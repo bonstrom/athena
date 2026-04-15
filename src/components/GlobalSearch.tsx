@@ -33,6 +33,7 @@ export const GlobalSearch = (): JSX.Element => {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { isMobile, closeDrawer } = useUiStore();
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
@@ -46,6 +47,7 @@ export const GlobalSearch = (): JSX.Element => {
 
     setIsSearching(true);
     setIsOpen(true);
+    setSearchError(null);
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
@@ -143,6 +145,7 @@ export const GlobalSearch = (): JSX.Element => {
       setIsSearching(false);
     } catch (error) {
       console.error('Search failed:', error);
+      setSearchError('Search failed. Please try again.');
       setIsSearching(false);
     }
   };
@@ -205,7 +208,13 @@ export const GlobalSearch = (): JSX.Element => {
               bgcolor: 'background.paper', // Ensure solid background over content
             }}
           >
-            {results.length === 0 ? (
+            {searchError ? (
+              <Box p={3} textAlign="center">
+                <Typography variant="body2" color="error">
+                  {searchError}
+                </Typography>
+              </Box>
+            ) : results.length === 0 ? (
               <Box p={3} textAlign="center">
                 <Typography variant="body2" color="text.secondary">
                   No results found for &quot;{query}&quot;

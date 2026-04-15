@@ -22,7 +22,7 @@ import {
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { useState, memo, useEffect } from 'react';
+import { useState, memo, useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/AuthStore';
 import MarkdownWithCode from './MarkdownWithCode';
 import TypingIndicator from './TypingIndicator';
@@ -75,32 +75,32 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [infoAnchorEl, setInfoAnchorEl] = useState<null | HTMLElement>(null);
   const [isExpanded, setIsExpanded] = useState(() => messageTruncateChars === 0 || message.content.length <= messageTruncateChars);
-  const [expandedImage, setExpandedImage] = useState<{ url: string, name: string, data: string } | null>(null);
+  const [expandedImage, setExpandedImage] = useState<{ url: string; name: string; data: string } | null>(null);
 
   const isAssistant = message.type === 'assistant';
   const isLong = messageTruncateChars > 0 && message.content.length > messageTruncateChars;
   const displayContent = isLong && !isExpanded ? message.content.slice(0, messageTruncateChars) + '\u2026' : message.content;
 
-  const [wasReasoningAutoShown, setWasReasoningAutoShown] = useState(false);
+  const wasReasoningAutoShownRef = useRef(false);
 
   // Keep expanded while the message is being streamed/generated
   useEffect(() => {
     if (isAssistant) {
       if (message.content === '') {
         setIsExpanded(true);
-        if (message.reasoning && !wasReasoningAutoShown) {
+        if (message.reasoning && !wasReasoningAutoShownRef.current) {
           setShowReasoning(true);
-          setWasReasoningAutoShown(true);
+          wasReasoningAutoShownRef.current = true;
         }
       } else {
         // Once content starts, if we auto-showed reasoning, hide it auto
-        if (wasReasoningAutoShown && showReasoning) {
+        if (wasReasoningAutoShownRef.current) {
           setShowReasoning(false);
-          setWasReasoningAutoShown(false);
+          wasReasoningAutoShownRef.current = false;
         }
       }
     }
-  }, [isAssistant, message.content, message.reasoning, wasReasoningAutoShown, showReasoning]);
+  }, [isAssistant, message.content, message.reasoning]);
 
   const togglePin = async (): Promise<void> => {
     try {
@@ -580,7 +580,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                         color: 'white',
                         '&:hover': {
                           backgroundColor: 'rgba(0,0,0,0.7)',
-                        }
+                        },
                       }}
                     >
                       <DownloadIcon fontSize="small" />
@@ -717,18 +717,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
         </DialogActions>
       </Dialog>
 
-      <Dialog
-        open={Boolean(expandedImage)}
-        onClose={(): void => setExpandedImage(null)}
-        maxWidth="xl"
-      >
+      <Dialog open={Boolean(expandedImage)} onClose={(): void => setExpandedImage(null)} maxWidth="xl">
         <Box sx={{ position: 'relative' }}>
-          <Box
-            component="img"
-            src={expandedImage?.url}
-            alt={expandedImage?.name}
-            sx={{ maxWidth: '100%', maxHeight: '90vh', display: 'block' }}
-          />
+          <Box component="img" src={expandedImage?.url} alt={expandedImage?.name} sx={{ maxWidth: '100%', maxHeight: '90vh', display: 'block' }} />
           <IconButton
             onClick={(): void => {
               if (expandedImage) {
@@ -746,7 +737,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               color: 'white',
               '&:hover': {
                 backgroundColor: 'rgba(0,0,0,0.7)',
-              }
+              },
             }}
           >
             <DownloadIcon />
