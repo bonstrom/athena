@@ -730,6 +730,8 @@ function buildLlmResult(parsed: ParsedResponse): LlmResult {
       aiNote = persistMatch[1].trim();
       aiNoteAction = 'append';
     }
+  } else if (persistMatch || replaceMatch) {
+    console.warn('[buildLlmResult] Scratchpad updated via native tool call; HTML comment fallback was ignored.');
   }
 
   return {

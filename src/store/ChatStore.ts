@@ -312,6 +312,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const topic = useTopicStore.getState().topics.find((t) => t.id === topicId);
     const activeForkId = forkId ?? topic?.activeForkId ?? 'main';
 
+    // Reject any dangling ask_user promise from the previous topic
+    const pending = get().pendingUserQuestion;
+    if (pending) {
+      pending.reject(new DOMException('Topic switched', 'AbortError'));
+      set({ pendingUserQuestion: null });
+    }
+
     // If already cached and on the main fork, just switch to it instantly
     const cached = get().messagesByTopic[topicId];
     if (cached !== undefined && !forkId) {
@@ -829,8 +836,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
               for (const req of messagesToRead) {
                 if (!req.messageId) continue;
-                // Find message by full ID or 8-char prefix
-                const target = allMessagesInTopic.find((m) => m.id === req.messageId || m.id.startsWith(req.messageId));
+                // Find message by full ID first, then fall back to prefix match
+                let target = allMessagesInTopic.find((m) => m.id === req.messageId);
+                if (!target) {
+                  const prefixMatches = allMessagesInTopic.filter((m) => m.id.startsWith(req.messageId));
+                  if (prefixMatches.length > 1) {
+                    results.push(
+                      `Ambiguous ID prefix "${req.messageId}" matches ${prefixMatches.length} messages. Use a longer prefix or the full ID.`,
+                    );
+                    continue;
+                  }
+                  target = prefixMatches[0];
+                }
                 if (!target) {
                   results.push(`Message ${req.messageId} not found.`);
                   continue;
