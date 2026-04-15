@@ -34,7 +34,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import { useChatStore } from '../store/ChatStore';
-import { chatModels } from './ModelSelector';
+import { useProviderStore } from '../store/ProviderStore';
 import { Message } from '../database/AthenaDb';
 import { useNotificationStore } from '../store/NotificationStore';
 import { useTopicStore } from '../store/TopicStore';
@@ -133,11 +133,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
 
   const getModelLabel = (id?: string): string => {
     if (!id) return 'Unknown model';
+    const { models } = useProviderStore.getState();
     if (id.includes(' - ')) {
       const parts = id.split(' - ');
-      return parts.map((p) => chatModels.find((m) => m.id === p)?.label ?? p).join(' - ');
+      return parts.map((p) => models.find((m) => m.apiModelId === p || m.id === p)?.label ?? p).join(' - ');
     }
-    return chatModels.find((m) => m.id === id)?.label ?? id;
+    return models.find((m) => m.apiModelId === id || m.id === id)?.label ?? id;
   };
 
   const handleInfoClick = (event: React.MouseEvent<HTMLElement>): void => {

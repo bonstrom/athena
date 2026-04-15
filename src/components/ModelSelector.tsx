@@ -1,157 +1,16 @@
 import React from 'react';
 import { FormControl, InputLabel, MenuItem, Select, Box, Typography } from '@mui/material';
-import { useAuthStore } from '../store/AuthStore';
+import { useProviderStore } from '../store/ProviderStore';
+import { UserChatModel } from '../types/provider';
 import { USD_TO_SEK } from '../constants';
-import { ProviderId } from '../services/llmService';
 
-export interface ChatModel {
-  id: string;
-  label: string;
-  input: number;
-  cachedInput: number;
-  output: number;
-  provider: ProviderId;
-  streaming: boolean;
-  supportsTemperature: boolean;
-  supportsTools: boolean;
-  supportsVision: boolean;
-  supportsFiles: boolean;
-  contextWindow: number; // max input tokens
-}
-
-export const chatModels: ChatModel[] = [
-  {
-    id: 'deepseek-chat',
-    label: 'Deepseek Chat',
-    input: 0.28,
-    cachedInput: 0.028,
-    output: 0.42,
-    provider: 'deepseek',
-    streaming: true,
-    supportsTemperature: true,
-    supportsTools: true,
-    supportsVision: false,
-    supportsFiles: false,
-    contextWindow: 64_000,
-  },
-  {
-    id: 'deepseek-reasoner',
-    label: 'Deepseek R',
-    input: 0.28,
-    cachedInput: 0.028,
-    output: 0.42,
-    provider: 'deepseek',
-    streaming: true,
-    supportsTemperature: true,
-    supportsTools: false,
-    supportsVision: false,
-    supportsFiles: false,
-    contextWindow: 64_000,
-  },
-  {
-    id: 'gpt-5.4-nano',
-    label: 'GPT-5.4 Nano',
-    input: 0.2,
-    cachedInput: 0.02,
-    output: 1.25,
-    provider: 'openai',
-    streaming: true,
-    supportsTemperature: false,
-    supportsTools: true,
-    supportsVision: true,
-    supportsFiles: true,
-    contextWindow: 128_000,
-  },
-  {
-    id: 'gemini-3-flash-preview',
-    label: 'Gemini 3 Flash Preview',
-    input: 0.5,
-    cachedInput: 0.05,
-    output: 3,
-    provider: 'google',
-    streaming: true,
-    supportsTemperature: true,
-    supportsTools: true,
-    supportsVision: true,
-    supportsFiles: true,
-    contextWindow: 1_000_000,
-  },
-  {
-    id: 'kimi-k2.5',
-    label: 'Kimi 2.5',
-    input: 0.6,
-    cachedInput: 0.1,
-    output: 3,
-    provider: 'moonshot',
-    streaming: true,
-    supportsTemperature: true,
-    supportsTools: true,
-    supportsVision: true,
-    supportsFiles: true,
-    contextWindow: 128_000,
-  },
-  {
-    id: 'gpt-5.4-mini',
-    label: 'GPT-5.4 Mini',
-    input: 0.75,
-    cachedInput: 0.075,
-    output: 4.5,
-    provider: 'openai',
-    streaming: true,
-    supportsTemperature: false,
-    supportsTools: true,
-    supportsVision: true,
-    supportsFiles: true,
-    contextWindow: 128_000,
-  },
-  {
-    id: 'kimi-k2-turbo-preview',
-    label: 'Kimi K2 Turbo Preview',
-    input: 1.15,
-    cachedInput: 0.15,
-    output: 8,
-    provider: 'moonshot',
-    streaming: true,
-    supportsTemperature: true,
-    supportsTools: true,
-    supportsVision: true,
-    supportsFiles: true,
-    contextWindow: 128_000,
-  },
-  {
-    id: 'gpt-5.4',
-    label: 'GPT-5.4',
-    input: 2.5,
-    cachedInput: 0.25,
-    output: 15,
-    provider: 'openai',
-    streaming: true,
-    supportsTemperature: false,
-    supportsTools: true,
-    supportsVision: true,
-    supportsFiles: true,
-    contextWindow: 128_000,
-  },
-  {
-    id: 'MiniMax-M2.7',
-    label: 'MiniMax M2.7',
-    input: 0.3,
-    cachedInput: 0.06,
-    output: 1.2,
-    provider: 'minimax',
-    streaming: true,
-    supportsTemperature: true,
-    supportsTools: true,
-    supportsVision: false,
-    supportsFiles: false,
-    contextWindow: 128_000,
-  },
-];
+// Re-export UserChatModel as ChatModel for backward compatibility with consumers
+export type ChatModel = UserChatModel;
+export type { ProviderId } from '../services/llmService';
 
 export function calculateCostUSD(model: ChatModel, prompt: number, completion: number, promptDetails?: { cached_tokens?: number }): number {
   const cachedTokens = promptDetails?.cached_tokens ?? 0;
   const regularPromptTokens = Math.max(0, prompt - cachedTokens);
-
   return (regularPromptTokens / 1_000_000) * model.input + (cachedTokens / 1_000_000) * model.cachedInput + (completion / 1_000_000) * model.output;
 }
 
@@ -165,21 +24,13 @@ interface Props {
 }
 
 const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
-  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey, minimaxKey } = useAuthStore();
-
-  const availableModels = chatModels.filter(
-    (model) =>
-      (model.provider === 'openai' && openAiKey) ||
-      (model.provider === 'deepseek' && deepSeekKey) ||
-      (model.provider === 'google' && googleApiKey) ||
-      (model.provider === 'moonshot' && moonshotApiKey) ||
-      (model.provider === 'minimax' && minimaxKey),
-  );
+  const { getAvailableModels, models } = useProviderStore();
+  const availableModels = getAvailableModels();
 
   if (availableModels.length === 0) {
     return (
       <Typography color="text.secondary" variant="body2" mt={2}>
-        No models available. Please add an API key in the settings.
+        No models available. Please add a provider API key in the settings.
       </Typography>
     );
   }
@@ -190,12 +41,12 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
       <Select
         value={selectedModel.id}
         onChange={(e): void => {
-          const selected = chatModels.find((m) => m.id === e.target.value);
+          const selected = models.find((m) => m.id === e.target.value);
           if (selected) onChange(selected);
         }}
         label="Model"
         renderValue={(selected): React.ReactNode => {
-          const model = chatModels.find((m) => m.id === selected);
+          const model = models.find((m) => m.id === selected);
           return model ? model.label : selected;
         }}
       >
@@ -217,34 +68,31 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
 export default ModelSelector;
 
 export function getDefaultModel(): ChatModel {
+  const { models, getAvailableModels } = useProviderStore.getState();
   const savedModelId = localStorage.getItem('athena_selected_model');
   if (savedModelId) {
-    const savedModel = chatModels.find((m) => m.id === savedModelId);
-    if (savedModel) return savedModel;
+    // Try by internal ID first, then by apiModelId for backward compat
+    const saved = models.find((m) => m.id === savedModelId) ?? models.find((m) => m.apiModelId === savedModelId);
+    if (saved) return saved;
   }
-
-  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey, minimaxKey } = useAuthStore.getState();
-  const available = chatModels.filter(
-    (m) =>
-      (m.provider === 'openai' && openAiKey) ||
-      (m.provider === 'deepseek' && deepSeekKey) ||
-      (m.provider === 'google' && googleApiKey) ||
-      (m.provider === 'moonshot' && moonshotApiKey) ||
-      (m.provider === 'minimax' && minimaxKey),
-  );
-  return available[0] ?? chatModels[0];
+  const available = getAvailableModels();
+  return available[0] ?? models[0];
 }
 
 export function getDefaultTopicNameModel(): ChatModel {
-  const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey, minimaxKey } = useAuthStore.getState();
-  const available = chatModels.filter(
-    (m) =>
-      (m.provider === 'openai' && openAiKey) ||
-      (m.provider === 'deepseek' && deepSeekKey) ||
-      (m.provider === 'google' && googleApiKey) ||
-      (m.provider === 'moonshot' && moonshotApiKey) ||
-      (m.provider === 'minimax' && minimaxKey),
-  );
-  const bestModel = available.find((m) => m.id.includes('nano') || m.id.includes('flash'));
-  return bestModel ?? (available.length > 0 ? available[0] : chatModels[0]);
+  const { getAvailableModels, models } = useProviderStore.getState();
+  const available = getAvailableModels();
+  const bestModel = available.find((m) => m.apiModelId.includes('nano') || m.apiModelId.includes('flash'));
+  return bestModel ?? (available.length > 0 ? available[0] : models[0]);
+}
+
+/** Returns all models whose provider has a configured API key. */
+export function getAvailableModels(): ChatModel[] {
+  return useProviderStore.getState().getAvailableModels();
+}
+
+/** Look up a model by its API model ID string (e.g. "gpt-5.4-nano").
+ * Falls back to displaying the raw ID if not found (handles historical messages). */
+export function getModelByApiId(apiModelId: string): ChatModel | undefined {
+  return useProviderStore.getState().models.find((m) => m.apiModelId === apiModelId);
 }

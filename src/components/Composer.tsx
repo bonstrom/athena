@@ -46,10 +46,10 @@ import MusicNoteIcon from '@mui/icons-material/MusicNote';
 import TopicContextDialog from './TopicContextDialog';
 import ScratchpadDialog from './ScratchpadDialog';
 import { useAuthStore } from '../store/AuthStore';
+import { useProviderStore } from '../store/ProviderStore';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
-import { chatModels } from './ModelSelector';
 import { USD_TO_SEK } from '../constants';
 import { Attachment } from '../database/AthenaDb';
 import { useNotificationStore } from '../store/NotificationStore';
@@ -114,11 +114,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     setChatWidth,
     chatFontSize,
     setChatFontSize,
-    openAiKey,
-    deepSeekKey,
-    googleApiKey,
-    moonshotApiKey,
-    minimaxKey,
     predefinedPrompts,
     llmSuggestionEnabled,
     llmModelSelected,
@@ -126,6 +121,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     defaultMaxContextMessages,
     showCameraButton,
   } = useAuthStore();
+  const { getAvailableModels, getProviderForModel } = useProviderStore();
   const {
     webSearchEnabled,
     setWebSearchEnabled,
@@ -150,15 +146,18 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
   const topic = topicStore.topics.find((t) => t.id === currentTopicId);
 
-  const availableModels = chatModels.filter(
-    (model) =>
-      (model.provider === 'openai' && openAiKey) ||
-      (model.provider === 'deepseek' && deepSeekKey) ||
-      (model.provider === 'google' && googleApiKey) ||
-      (model.provider === 'moonshot' && moonshotApiKey) ||
-      (model.provider === 'minimax' && minimaxKey),
-  );
+  const availableModels = getAvailableModels();
+  // Provider of the currently selected model (for capability-based UI)
+  const selectedProvider = getProviderForModel(selectedModel);
   const openTempMenu = Boolean(anchorEl);
+
+  useEffect(() => {
+    if (availableModels.length === 0) return;
+    const selectedStillAvailable = availableModels.some((m) => m.id === selectedModel.id);
+    if (!selectedStillAvailable) {
+      setSelectedModel(availableModels[0]);
+    }
+  }, [availableModels, selectedModel.id, setSelectedModel]);
 
   const handleTempClick = (event: React.MouseEvent<HTMLButtonElement>): void => {
     setAnchorEl(event.currentTarget);
@@ -488,7 +487,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               <Select
                 value={selectedModel.id}
                 onChange={(e: SelectChangeEvent): void => {
-                  const selected = chatModels.find((m) => m.id === e.target.value);
+                  const selected = availableModels.find((m) => m.id === e.target.value);
                   if (selected) setSelectedModel(selected);
                 }}
                 sx={{
@@ -498,7 +497,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   },
                 }}
                 renderValue={(selected): React.ReactNode => {
-                  const model = chatModels.find((m) => m.id === selected);
+                  const model = availableModels.find((m) => m.id === selected);
                   return model ? model.label : selected;
                 }}
               >
@@ -828,7 +827,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </IconButton>
             </Tooltip>
 
-            {minimaxKey && (
+            {selectedProvider?.id === 'builtin-minimax' && (
               <Tooltip title={imageGenerationEnabled ? 'Image Gen: Active' : 'Image Gen: Inactive'}>
                 <IconButton
                   onClick={(): void => {
@@ -836,10 +835,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     if (nextState) {
                       setWebSearchEnabled(false);
                       setMusicGenerationEnabled(false);
-                      if (selectedModel.id !== 'MiniMax-M2.7') {
-                        const minimax = chatModels.find((m) => m.id === 'MiniMax-M2.7');
-                        if (minimax) setSelectedModel(minimax);
-                      }
                       if (!inputValue.trim()) setInputValue(IMAGE_TEMPLATE);
                     }
                     setImageGenerationEnabled(nextState);
@@ -863,7 +858,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </Tooltip>
             )}
 
-            {minimaxKey && (
+            {selectedProvider?.id === 'builtin-minimax' && (
               <Tooltip title={musicGenerationEnabled ? 'Music Gen: Active' : 'Music Gen: Inactive'}>
                 <IconButton
                   onClick={(): void => {
@@ -871,10 +866,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     if (nextState) {
                       setWebSearchEnabled(false);
                       setImageGenerationEnabled(false);
-                      if (selectedModel.id !== 'MiniMax-M2.7') {
-                        const minimax = chatModels.find((m) => m.id === 'MiniMax-M2.7');
-                        if (minimax) setSelectedModel(minimax);
-                      }
                       if (!inputValue.trim()) setInputValue(MUSIC_TEMPLATE);
                     }
                     setMusicGenerationEnabled(nextState);
@@ -1066,7 +1057,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </Tooltip>
             )}
 
-            {moonshotApiKey && (
+            {selectedProvider?.supportsWebSearch && (
               <Tooltip title={`Web Search (${webSearchEnabled ? 'Enabled' : 'Disabled'})`} disableTouchListener={isMobile}>
                 <span>
                   <IconButton
@@ -1075,10 +1066,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                       if (nextState) {
                         setImageGenerationEnabled(false);
                         setMusicGenerationEnabled(false);
-                        if (selectedModel.id !== 'kimi-k2.5') {
-                          const kimi = chatModels.find((m) => m.id === 'kimi-k2.5');
-                          if (kimi) setSelectedModel(kimi);
-                        }
                       }
                       setWebSearchEnabled(nextState);
                     }}

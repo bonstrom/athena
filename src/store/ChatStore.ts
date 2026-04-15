@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { calculateCostSEK, ChatModel, getDefaultModel } from '../components/ModelSelector';
+import { useProviderStore } from './ProviderStore';
 import { useTopicStore } from './TopicStore';
 import { useNotificationStore } from './NotificationStore';
 import {
@@ -14,7 +15,6 @@ import {
   LlmTool,
 } from '../services/llmService';
 import { generateImage, generateMusic } from '../services/mediaService';
-import { chatModels } from '../components/ModelSelector';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { Message, Attachment } from '../database/AthenaDb';
 import { athenaDb } from '../database/AthenaDb';
@@ -202,7 +202,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     // System: Web search instructions
-    if (webSearchEnabled && selectedModel.provider === 'moonshot') {
+    const selectedProvider = useProviderStore.getState().getProviderForModel(selectedModel);
+    if (webSearchEnabled && selectedProvider?.supportsWebSearch) {
       entries.push({
         message: {
           role: 'system',
@@ -584,7 +585,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       });
     }
 
-    if (get().webSearchEnabled && selectedModel.provider === 'moonshot') {
+    const selectedProvider = useProviderStore.getState().getProviderForModel(selectedModel);
+    if (get().webSearchEnabled && selectedProvider?.supportsWebSearch) {
       systems.push({
         role: 'system',
         content:
@@ -625,7 +627,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       type: 'assistant',
       content: '',
       created: new Date().toISOString(),
-      model: selectedModel.id,
+      model: selectedModel.apiModelId,
       isDeleted: false,
       includeInContext: false,
       failed: false,
@@ -1011,7 +1013,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         totalCost: finalTotalCost,
         failed: false,
         latencyMs,
-        model: selectedModel.id,
+        model: selectedModel.apiModelId,
       };
 
       await athenaDb.transaction('rw', athenaDb.messages, async () => {
@@ -1109,7 +1111,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               }
             } else {
               const targetModel =
-                replyPredictionModel === 'same' ? selectedModel : (chatModels.find((m) => m.id === replyPredictionModel) ?? selectedModel);
+                replyPredictionModel === 'same'
+                  ? selectedModel
+                  : (useProviderStore.getState().models.find((m) => m.id === replyPredictionModel || m.apiModelId === replyPredictionModel) ??
+                    selectedModel);
               const result = await askLlm(targetModel, 0.7, suggestionContext);
               const raw = result.content.trim();
               const jsonMatch = raw.match(/\[[\s\S]*\]/);

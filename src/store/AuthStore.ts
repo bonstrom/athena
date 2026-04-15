@@ -1,15 +1,9 @@
 import { create } from 'zustand';
 import { useNavigate } from 'react-router-dom';
-import { SecurityUtils } from '../utils/security';
 import { PredefinedPrompt, athenaDb } from '../database/AthenaDb';
 import { DEFAULT_SCRATCHPAD_RULES } from '../constants';
 
 interface AuthState {
-  openAiKey: string;
-  deepSeekKey: string;
-  googleApiKey: string;
-  moonshotApiKey: string;
-  minimaxKey: string;
   userName: string;
   backupInterval: number;
   customInstructions: string;
@@ -50,11 +44,6 @@ interface AuthState {
   setTopicPreloadCount: (count: number) => void;
   setMessageTruncateChars: (chars: number) => void;
   clearAuth: () => void;
-  setOpenAiKey: (key: string) => void;
-  setDeepSeekKey: (key: string) => void;
-  setGoogleApiKey: (key: string) => void;
-  setMoonshotApiKey: (key: string) => void;
-  setMinimaxKey: (key: string) => void;
   setUserName: (name: string) => void;
   setBackupInterval: (minutes: number) => void;
   setCustomInstructions: (instructions: string) => void;
@@ -70,11 +59,6 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => {
-  const storedOpenAiKey = SecurityUtils.decode(localStorage.getItem('openAiKey') ?? '');
-  const storedDeepSeekKey = SecurityUtils.decode(localStorage.getItem('deepSeekKey') ?? '');
-  const storedGoogleApiKey = SecurityUtils.decode(localStorage.getItem('googleApiKey') ?? '');
-  const storedMoonshotApiKey = SecurityUtils.decode(localStorage.getItem('moonshotApiKey') ?? '');
-  const storedMinimaxKey = SecurityUtils.decode(localStorage.getItem('minimaxKey') ?? '');
   const userName = localStorage.getItem('userName') ?? '';
   const storedBackupInterval = Number(localStorage.getItem('backupInterval') ?? '30');
   const storedCustomInstructions = localStorage.getItem('customInstructions') ?? '';
@@ -104,11 +88,6 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedShowCameraButton = (localStorage.getItem('showCameraButton') as 'auto' | 'always' | 'never' | null) ?? 'auto';
 
   return {
-    openAiKey: storedOpenAiKey,
-    deepSeekKey: storedDeepSeekKey,
-    googleApiKey: storedGoogleApiKey,
-    moonshotApiKey: storedMoonshotApiKey,
-    minimaxKey: storedMinimaxKey,
     userName: userName,
     backupInterval: storedBackupInterval,
     customInstructions: storedCustomInstructions,
@@ -135,11 +114,6 @@ export const useAuthStore = create<AuthState>((set) => {
     defaultMaxContextMessages: storedDefaultMaxContextMessages,
     showCameraButton: storedShowCameraButton,
     clearAuth: (): void => {
-      localStorage.removeItem('openAiKey');
-      localStorage.removeItem('deepSeekKey');
-      localStorage.removeItem('googleApiKey');
-      localStorage.removeItem('moonshotApiKey');
-      localStorage.removeItem('minimaxKey');
       localStorage.removeItem('userName');
       localStorage.removeItem('customInstructions');
       localStorage.removeItem('chatWidth');
@@ -165,11 +139,6 @@ export const useAuthStore = create<AuthState>((set) => {
         console.error('Failed to clear predefined prompts:', err);
       });
       set({
-        openAiKey: '',
-        deepSeekKey: '',
-        googleApiKey: '',
-        moonshotApiKey: '',
-        minimaxKey: '',
         userName: undefined,
         customInstructions: '',
         chatWidth: 'lg',
@@ -251,26 +220,6 @@ export const useAuthStore = create<AuthState>((set) => {
     setSummaryModel: (model: string): void => {
       localStorage.setItem('summaryModel', model);
       set({ summaryModel: model });
-    },
-    setOpenAiKey: (key: string): void => {
-      localStorage.setItem('openAiKey', SecurityUtils.encode(key));
-      set({ openAiKey: key });
-    },
-    setDeepSeekKey: (key: string): void => {
-      localStorage.setItem('deepSeekKey', SecurityUtils.encode(key));
-      set({ deepSeekKey: key });
-    },
-    setGoogleApiKey: (key: string): void => {
-      localStorage.setItem('googleApiKey', SecurityUtils.encode(key));
-      set({ googleApiKey: key });
-    },
-    setMoonshotApiKey: (key: string): void => {
-      localStorage.setItem('moonshotApiKey', SecurityUtils.encode(key));
-      set({ moonshotApiKey: key });
-    },
-    setMinimaxKey: (key: string): void => {
-      localStorage.setItem('minimaxKey', SecurityUtils.encode(key));
-      set({ minimaxKey: key });
     },
     setUserName: (userName: string): void => {
       localStorage.setItem('userName', userName);

@@ -5,14 +5,12 @@ import {
   Button,
   Typography,
   Paper,
-  InputAdornment,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
   Switch,
   FormControlLabel,
-  Chip,
   LinearProgress,
 } from '@mui/material';
 import {
@@ -27,29 +25,22 @@ import { BackupService } from '../services/backupService';
 import { useBackupStore } from '../store/BackupStore';
 import { llmSuggestionService, LlmProgress } from '../services/llmSuggestionService';
 import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
+import { useProviderStore } from '../store/ProviderStore';
+import { getApiKey as getProviderApiKey } from '../types/provider';
 import { USD_TO_SEK, DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from '../constants';
 import ThemeSelector from '../components/ThemeSelector';
 import ImportDialog from '../components/ImportDialog';
+import { ProviderCard, AddProviderCard } from '../components/ProviderCard';
 import { PredefinedPrompt } from '../database/AthenaDb';
 
 const Settings: React.FC = () => {
   const {
-    openAiKey,
-    deepSeekKey,
-    googleApiKey,
-    moonshotApiKey,
-    minimaxKey,
     userName,
     backupInterval,
     customInstructions,
     scratchpadRules,
     chatWidth,
     chatFontSize,
-    setOpenAiKey,
-    setDeepSeekKey,
-    setGoogleApiKey,
-    setMoonshotApiKey,
-    setMinimaxKey,
     setUserName,
     setBackupInterval,
     setCustomInstructions,
@@ -91,11 +82,7 @@ const Settings: React.FC = () => {
     setShowCameraButton,
   } = useAuthStore();
 
-  const [openAiInput, setOpenAiInput] = useState('');
-  const [deepSeekInput, setDeepSeekInput] = useState('');
-  const [googleInput, setGoogleInput] = useState('');
-  const [moonshotInput, setMoonshotInput] = useState('');
-  const [minimaxInput, setMinimaxInput] = useState('');
+  const { providers } = useProviderStore();
 
   const currentModelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
   const status = llmModelDownloadStatus[currentModelId] ?? 'not_downloaded';
@@ -103,12 +90,6 @@ const Settings: React.FC = () => {
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
   const [scratchpadRulesInput, setScratchpadRulesInput] = useState(scratchpadRules);
-
-  const [isUpdatingOpenAi, setIsUpdatingOpenAi] = useState(!openAiKey);
-  const [isUpdatingDeepSeek, setIsUpdatingDeepSeek] = useState(!deepSeekKey);
-  const [isUpdatingGoogle, setIsUpdatingGoogle] = useState(!googleApiKey);
-  const [isUpdatingMoonshot, setIsUpdatingMoonshot] = useState(!moonshotApiKey);
-  const [isUpdatingMinimax, setIsUpdatingMinimax] = useState(!minimaxKey);
 
   const [saved, setSaved] = useState(false);
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
@@ -130,7 +111,6 @@ const Settings: React.FC = () => {
       setLlmProgress(progress);
     });
     return () => {
-      // Clean up the callback when the component unmounts
       llmSuggestionService.setOnProgress(() => {
         /* no-op */
       });
@@ -147,7 +127,6 @@ const Settings: React.FC = () => {
     if (!window.confirm(`Delete downloaded model "${modelId}" from local cache?`)) {
       return;
     }
-
     setIsDeletingModel(true);
     try {
       await llmSuggestionService.deleteModel(modelId);
@@ -171,45 +150,34 @@ const Settings: React.FC = () => {
     setScratchpadRulesInput(scratchpadRules);
   }, [userName, customInstructions, scratchpadRules]);
 
+  // Balance display for built-in providers
   useEffect(() => {
-    setIsUpdatingOpenAi(!openAiKey);
-  }, [openAiKey]);
-
-  useEffect(() => {
-    setIsUpdatingDeepSeek(!deepSeekKey);
-  }, [deepSeekKey]);
-
-  useEffect(() => {
-    setIsUpdatingGoogle(!googleApiKey);
-  }, [googleApiKey]);
-
-  useEffect(() => {
-    setIsUpdatingMoonshot(!moonshotApiKey);
-  }, [moonshotApiKey]);
-
-  useEffect(() => {
-    setIsUpdatingMinimax(!minimaxKey);
-  }, [minimaxKey]);
-
-  useEffect(() => {
-    if (moonshotApiKey) {
-      void getMoonshotBalance().then((data) => {
-        if (data) setMoonshotBalance(data.available_balance);
-      });
-    } else {
-      setMoonshotBalance(null);
+    const moonshotProvider = providers.find((p) => p.id === 'builtin-moonshot');
+    if (moonshotProvider) {
+      const key = getProviderApiKey(moonshotProvider);
+      if (key) {
+        void getMoonshotBalance().then((data) => {
+          if (data) setMoonshotBalance(data.available_balance);
+        });
+      } else {
+        setMoonshotBalance(null);
+      }
     }
-  }, [moonshotApiKey]);
+  }, [providers]);
 
   useEffect(() => {
-    if (deepSeekKey) {
-      void getDeepSeekBalance().then((data) => {
-        if (data) setDeepSeekBalance(data);
-      });
-    } else {
-      setDeepSeekBalance(null);
+    const deepseekProvider = providers.find((p) => p.id === 'builtin-deepseek');
+    if (deepseekProvider) {
+      const key = getProviderApiKey(deepseekProvider);
+      if (key) {
+        void getDeepSeekBalance().then((data) => {
+          if (data) setDeepSeekBalance(data);
+        });
+      } else {
+        setDeepSeekBalance(null);
+      }
     }
-  }, [deepSeekKey]);
+  }, [providers]);
 
   useEffect(() => {
     void BackupService.getAutoBackupHandle().then((handle) => {
@@ -218,31 +186,6 @@ const Settings: React.FC = () => {
   }, []);
 
   function handleSave(): void {
-    if (isUpdatingOpenAi && openAiInput) {
-      setOpenAiKey(openAiInput.trim());
-      setOpenAiInput('');
-      setIsUpdatingOpenAi(false);
-    }
-    if (isUpdatingDeepSeek && deepSeekInput) {
-      setDeepSeekKey(deepSeekInput.trim());
-      setDeepSeekInput('');
-      setIsUpdatingDeepSeek(false);
-    }
-    if (isUpdatingGoogle && googleInput) {
-      setGoogleApiKey(googleInput.trim());
-      setGoogleInput('');
-      setIsUpdatingGoogle(false);
-    }
-    if (isUpdatingMoonshot && moonshotInput) {
-      setMoonshotApiKey(moonshotInput.trim());
-      setMoonshotInput('');
-      setIsUpdatingMoonshot(false);
-    }
-    if (isUpdatingMinimax && minimaxInput) {
-      setMinimaxKey(minimaxInput.trim());
-      setMinimaxInput('');
-      setIsUpdatingMinimax(false);
-    }
     setUserName(userNameInput.trim());
     setCustomInstructions(customInstructionsInput.trim());
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -314,109 +257,18 @@ const Settings: React.FC = () => {
     }
   };
 
-  const validateKey = (key: string, type: 'openai' | 'deepseek' | 'google'): boolean => {
-    if (!key) return true;
-    const trimmed = key.trim();
-    if (type === 'openai' || type === 'deepseek') {
-      return trimmed.startsWith('sk-') && trimmed.length > 20;
+  const getProviderBalanceLabel = (providerId: string): string | undefined => {
+    if (providerId === 'builtin-moonshot' && moonshotBalance !== null) {
+      return `${(moonshotBalance * USD_TO_SEK).toFixed(2)}kr`;
     }
-    return trimmed.length >= 30; // Gemini keys are typically long
-  };
 
-  const KeyConfirmation = ({
-    label,
-    isStored,
-    onUpdate,
-    extraInfo,
-    description,
-    onRemove,
-  }: {
-    label: string;
-    isStored: boolean;
-    onUpdate: () => void;
-    extraInfo?: React.ReactNode;
-    description?: string;
-    onRemove?: () => void;
-  }): React.ReactElement => (
-    <Box
-      sx={{
-        mb: 2,
-        p: 1.5,
-        border: '1px solid',
-        borderColor: 'divider',
-        borderRadius: 1,
-        display: 'flex',
-        flexDirection: { xs: 'column', sm: 'row' },
-        alignItems: { xs: 'flex-start', sm: 'center' },
-        justifyContent: 'space-between',
-        gap: { xs: 1.5, sm: 2 },
-        bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.01)'),
-      }}
-    >
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 0.5,
-          flex: 1,
-        }}
-      >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: 1.5,
-          }}
-        >
-          <Typography
-            variant="body2"
-            sx={{
-              fontWeight: 'bold',
-              color: 'text.secondary',
-              minWidth: { xs: 'auto', sm: 100 },
-            }}
-          >
-            {label}
-          </Typography>
-          {isStored ? (
-            <Chip
-              icon={<CheckCircleIcon sx={{ color: 'success.main !important' }} />}
-              label="Key Configured"
-              color="success"
-              variant="outlined"
-              size="small"
-            />
-          ) : (
-            <Chip label="Not Configured" color="warning" variant="outlined" size="small" />
-          )}
-          {extraInfo}
-        </Box>
-        {description && (
-          <Typography variant="caption" color="text.secondary">
-            {description}
-          </Typography>
-        )}
-      </Box>
-      <Box sx={{ display: 'flex', gap: 1, alignSelf: { xs: 'flex-end', sm: 'center' } }}>
-        {isStored && onRemove && (
-          <Button
-            size="small"
-            variant="outlined"
-            color="error"
-            onClick={(): void => {
-              if (window.confirm(`Remove ${label} API key?`)) onRemove();
-            }}
-          >
-            Remove
-          </Button>
-        )}
-        <Button size="small" variant="contained" onClick={onUpdate}>
-          {isStored ? 'Update Key' : 'Add Key'}
-        </Button>
-      </Box>
-    </Box>
-  );
+    if (providerId === 'builtin-deepseek' && deepSeekBalance !== null) {
+      const sekBalance = deepSeekBalance.balance * (deepSeekBalance.currency === 'CNY' ? 1.5 : USD_TO_SEK);
+      return `${sekBalance.toFixed(2)}kr`;
+    }
+
+    return undefined;
+  };
 
   return (
     <Box
@@ -525,207 +377,8 @@ const Settings: React.FC = () => {
           </Box>
         </Box>
 
-        {/* API Keys */}
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2 }}>
-            API Keys
-          </Typography>
-
-          {isUpdatingOpenAi ? (
-            <TextField
-              label="OpenAI API Key"
-              type="password"
-              fullWidth
-              value={openAiInput}
-              onChange={(e): void => setOpenAiInput(e.target.value)}
-              placeholder="Paste new key here"
-              sx={{ mb: 2 }}
-              error={openAiInput !== '' && !validateKey(openAiInput, 'openai')}
-              helperText={
-                openAiInput !== '' && !validateKey(openAiInput, 'openai')
-                  ? 'Invalid OpenAI key format (should start with sk-)'
-                  : 'Chat, reasoning, vision, tools'
-              }
-              InputProps={{
-                endAdornment: openAiKey && (
-                  <InputAdornment position="end">
-                    <Button size="small" onClick={(): void => setIsUpdatingOpenAi(false)}>
-                      Cancel
-                    </Button>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          ) : (
-            <KeyConfirmation
-              label="OpenAI"
-              isStored={!!openAiKey}
-              onUpdate={(): void => setIsUpdatingOpenAi(true)}
-              onRemove={(): void => setOpenAiKey('')}
-              description="Chat, reasoning, vision, tools"
-            />
-          )}
-
-          {isUpdatingDeepSeek ? (
-            <TextField
-              label="DeepSeek API Key"
-              type="password"
-              fullWidth
-              value={deepSeekInput}
-              onChange={(e): void => setDeepSeekInput(e.target.value)}
-              placeholder="Paste new key here"
-              sx={{ mb: 2 }}
-              error={deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek')}
-              helperText={
-                deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek')
-                  ? 'Invalid DeepSeek key format (should start with sk-)'
-                  : 'Chat, reasoning, tools (excl. Reasoner)'
-              }
-              InputProps={{
-                endAdornment: deepSeekKey && (
-                  <InputAdornment position="end">
-                    <Button size="small" onClick={(): void => setIsUpdatingDeepSeek(false)}>
-                      Cancel
-                    </Button>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          ) : (
-            <KeyConfirmation
-              label="DeepSeek"
-              isStored={!!deepSeekKey}
-              onUpdate={(): void => setIsUpdatingDeepSeek(true)}
-              onRemove={(): void => setDeepSeekKey('')}
-              description="Chat, reasoning, tools (excl. Reasoner)"
-              extraInfo={
-                deepSeekBalance !== null && (
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-                    Balance: {(deepSeekBalance.balance * (deepSeekBalance.currency === 'CNY' ? 1.5 : USD_TO_SEK)).toFixed(2)}
-                    kr
-                  </Typography>
-                )
-              }
-            />
-          )}
-
-          {isUpdatingGoogle ? (
-            <TextField
-              label="Google API Key"
-              type="password"
-              fullWidth
-              value={googleInput}
-              onChange={(e): void => setGoogleInput(e.target.value)}
-              placeholder="Paste new key here"
-              sx={{ mb: 2 }}
-              error={googleInput !== '' && !validateKey(googleInput, 'google')}
-              helperText={
-                googleInput !== '' && !validateKey(googleInput, 'google') ? 'Invalid Google API key format' : 'Chat, reasoning, vision, tools'
-              }
-              InputProps={{
-                endAdornment: googleApiKey && (
-                  <InputAdornment position="end">
-                    <Button size="small" onClick={(): void => setIsUpdatingGoogle(false)}>
-                      Cancel
-                    </Button>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          ) : (
-            <KeyConfirmation
-              label="Google (Gemini)"
-              isStored={!!googleApiKey}
-              onUpdate={(): void => setIsUpdatingGoogle(true)}
-              onRemove={(): void => setGoogleApiKey('')}
-              description="Chat, reasoning, vision, tools"
-            />
-          )}
-
-          {isUpdatingMoonshot ? (
-            <TextField
-              label="Moonshot API Key (Kimi)"
-              type="password"
-              fullWidth
-              value={moonshotInput}
-              onChange={(e): void => setMoonshotInput(e.target.value)}
-              placeholder="Paste new key here"
-              sx={{ mb: 2 }}
-              error={moonshotInput !== '' && !validateKey(moonshotInput, 'openai')}
-              helperText={
-                moonshotInput !== '' && !validateKey(moonshotInput, 'openai') ? 'Invalid Moonshot key format' : 'Chat, web search, vision, tools'
-              }
-              InputProps={{
-                endAdornment: moonshotApiKey && (
-                  <InputAdornment position="end">
-                    <Button size="small" onClick={(): void => setIsUpdatingMoonshot(false)}>
-                      Cancel
-                    </Button>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          ) : (
-            <KeyConfirmation
-              label="Moonshot"
-              isStored={!!moonshotApiKey}
-              onUpdate={(): void => setIsUpdatingMoonshot(true)}
-              onRemove={(): void => setMoonshotApiKey('')}
-              description="Chat, web search, vision, tools"
-              extraInfo={
-                moonshotBalance !== null && (
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-                    Balance: {(moonshotBalance * USD_TO_SEK).toFixed(2)}kr
-                  </Typography>
-                )
-              }
-            />
-          )}
-
-          {isUpdatingMinimax ? (
-            <TextField
-              label="Minimax API Key"
-              type="password"
-              fullWidth
-              value={minimaxInput}
-              onChange={(e): void => setMinimaxInput(e.target.value)}
-              placeholder="Paste new key here"
-              helperText="Chat, image generation, music generation, tools"
-              sx={{ mb: 2 }}
-              InputProps={{
-                endAdornment: minimaxKey && (
-                  <InputAdornment position="end">
-                    <Button size="small" onClick={(): void => setIsUpdatingMinimax(false)}>
-                      Cancel
-                    </Button>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          ) : (
-            <KeyConfirmation
-              label="Minimax"
-              isStored={!!minimaxKey}
-              onUpdate={(): void => setIsUpdatingMinimax(true)}
-              onRemove={(): void => setMinimaxKey('')}
-              description="Chat, image generation, music generation, tools"
-            />
-          )}
-        </Box>
-
         <Box display="flex" justifyContent="flex-end">
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleSave}
-            disabled={
-              (openAiInput !== '' && !validateKey(openAiInput, 'openai')) ||
-              (deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek')) ||
-              (googleInput !== '' && !validateKey(googleInput, 'google')) ||
-              (moonshotInput !== '' && !validateKey(moonshotInput, 'openai')) ||
-              (minimaxInput !== '' && minimaxInput.trim().length < 10) // Basic length check
-            }
-          >
+          <Button variant="contained" color="primary" onClick={handleSave}>
             Save
           </Button>
         </Box>
@@ -735,6 +388,21 @@ const Settings: React.FC = () => {
           </Typography>
         )}
       </Paper>
+
+      {/* ── LLM PROVIDERS (one card per provider) ── */}
+      <Box sx={{ width: '100%', maxWidth: 600, mt: 4 }}>
+        <Typography variant="h6" gutterBottom>
+          LLM Providers
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Each provider has its own API key and models. Add an OpenAI-compatible endpoint, Anthropic, or any custom provider (Ollama, Azure,
+          LiteLLM…).
+        </Typography>
+        {providers.map((p) => (
+          <ProviderCard key={p.id} provider={p} balanceLabel={getProviderBalanceLabel(p.id)} />
+        ))}
+        <AddProviderCard />
+      </Box>
 
       {/* ── 2. LOCAL BROWSER MODEL ── */}
       <Paper elevation={3} sx={{ p: 3, mt: 4, width: '100%', maxWidth: 600, bgcolor: (theme) => theme.palette.background.paper }}>

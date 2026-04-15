@@ -3,6 +3,7 @@ import { useNotificationStore } from './NotificationStore';
 import { encode } from 'gpt-tokenizer';
 import { athenaDb, Message, Topic } from '../database/AthenaDb';
 import { useAuthStore } from './AuthStore';
+import { useProviderStore } from './ProviderStore';
 import { askLlm } from '../services/llmService';
 import { embeddingService, ScoredMessage } from '../services/embeddingService';
 import { getDefaultTopicNameModel } from '../components/ModelSelector';
@@ -392,8 +393,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
     if (topic.name !== 'New Topic') return;
 
-    const { openAiKey, deepSeekKey, googleApiKey, moonshotApiKey } = useAuthStore.getState();
-    const hasAnyKey = !!(openAiKey || deepSeekKey || googleApiKey || moonshotApiKey);
+    const hasAnyKey = useProviderStore.getState().hasAnyApiKey();
 
     if (!hasAnyKey) {
       const fallback = userMessage.trim().split(/\s+/).slice(0, 6).join(' ');

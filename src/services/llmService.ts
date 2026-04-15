@@ -1,5 +1,7 @@
 import { calculateCostSEK, ChatModel } from '../components/ModelSelector';
 import { useAuthStore } from '../store/AuthStore';
+import { useProviderStore } from '../store/ProviderStore';
+import { getApiKey as getProviderApiKey, getPayloadOverrides, LlmProvider } from '../types/provider';
 import { estimateTokens } from './estimateTokens';
 
 export type LlmContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
@@ -125,97 +127,73 @@ interface LlmPayload {
   max_tokens?: number;
 }
 
-// ── Provider Registry ────────────────────────────────────────────────────────
-export type ProviderId = 'openai' | 'deepseek' | 'google' | 'moonshot' | 'minimax';
+// ── Provider lookup (replaces hardcoded PROVIDERS / MODEL_OVERRIDES) ─────────
+export type ProviderId = string;
 
 const MAX_TOOL_LOOP_ITERATIONS = 5;
 
-type AuthState = ReturnType<typeof useAuthStore.getState>;
-
-interface ProviderConfig {
-  url: string;
-  messageFormat: 'openai' | 'anthropic';
-  getApiKey: (auth: AuthState) => string;
-  /** Whether this provider supports a web-search builtin tool. */
-  supportsWebSearch?: boolean;
-  /** Whether assistant tool-call messages require a reasoning_content fallback. */
-  requiresReasoningFallback?: boolean;
-  /** Extra fields merged into the payload (may differ by stream mode). */
-  payloadOverrides?: (stream: boolean) => Partial<LlmPayload>;
+function resolveProvider(model: ChatModel): LlmProvider {
+  const store = useProviderStore.getState();
+  const provider = store.getProviderForModel(model);
+  if (!provider) throw new Error(`No provider found for model: ${model.id} (providerId: ${model.providerId})`);
+  return provider;
 }
 
-const PROVIDERS: Partial<Record<string, ProviderConfig>> = {
-  openai: {
-    url: 'https://api.openai.com/v1/chat/completions',
-    messageFormat: 'openai',
-    getApiKey: (auth) => auth.openAiKey,
-  },
-  deepseek: {
-    url: 'https://api.deepseek.com/v1/chat/completions',
-    messageFormat: 'openai',
-    getApiKey: (auth) => auth.deepSeekKey,
-  },
-  google: {
-    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    messageFormat: 'openai',
-    getApiKey: (auth) => auth.googleApiKey,
-  },
-  moonshot: {
-    url: 'https://api.moonshot.ai/v1/chat/completions',
-    messageFormat: 'openai',
-    getApiKey: (auth) => auth.moonshotApiKey,
-    supportsWebSearch: true,
-    requiresReasoningFallback: true,
-    payloadOverrides: (stream) => (!stream ? { thinking: { type: 'disabled' } } : {}),
-  },
-  minimax: {
-    url: 'https://api.minimax.io/anthropic/v1/messages',
-    messageFormat: 'anthropic',
-    getApiKey: (auth) => auth.minimaxKey,
-    payloadOverrides: () => ({ max_tokens: 4096 }),
-  },
-};
+function resolveModelAndProvider(model: ChatModel): { model: ChatModel; provider: LlmProvider } {
+  const store = useProviderStore.getState();
+  const availableModels = store.getAvailableModels();
+  const resolvedModel =
+    store.models.find((m) => m.id === model.id) ?? store.models.find((m) => m.apiModelId === model.apiModelId) ?? availableModels.at(0);
 
-// ── Model-specific overrides ──────────────────────────────────────────────────
-interface ModelOverrides {
-  /** Override temperature; receives the user-supplied value and stream flag. */
-  temperatureOverride?: (temperature: number, stream: boolean) => number;
-  /** Filter/validate messages before sending to the API. */
-  filterMessages?: (messages: LlmMessage[]) => LlmMessage[];
+  if (!resolvedModel) {
+    throw new Error('No models are configured. Add a model in Settings.');
+  }
+
+  const provider = store.getProviderForModel(resolvedModel);
+  if (!provider) {
+    throw new Error(`No provider found for model: ${resolvedModel.id} (providerId: ${resolvedModel.providerId})`);
+  }
+
+  return { model: resolvedModel, provider };
 }
 
-const MODEL_OVERRIDES: Partial<Record<string, ModelOverrides>> = {
-  'kimi-k2.5': {
-    temperatureOverride: (temp, stream) => (!stream ? 0.6 : temp),
-  },
-  'deepseek-reasoner': {
-    filterMessages: (messages) => {
-      const filtered: LlmMessage[] = [];
-      let foundUser = false;
-      let lastRole: 'user' | 'assistant' | 'tool' | null = null;
+function buildAuthHeaders(provider: LlmProvider): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const key = getProviderApiKey(provider);
+  if (key) {
+    headers.Authorization = `Bearer ${key}`;
+  }
+  return headers;
+}
 
-      for (const msg of messages) {
-        if (msg.role === 'system') {
-          filtered.push(msg);
-        } else if (!foundUser && msg.role === 'user') {
-          foundUser = true;
-          lastRole = 'user';
-          filtered.push(msg);
-        } else if (foundUser) {
-          if (msg.role === lastRole) continue;
-          filtered.push(msg);
-          if (msg.role === 'user' || msg.role === 'assistant') lastRole = msg.role;
-        }
-      }
+/** Enforce strict user/assistant alternation (for models with enforceAlternatingRoles). */
+function filterAlternatingRoles(messages: LlmMessage[]): LlmMessage[] {
+  const filtered: LlmMessage[] = [];
+  let foundUser = false;
+  let lastRole: 'user' | 'assistant' | 'tool' | null = null;
 
-      const firstContent = filtered.find((m) => m.role !== 'system');
-      if (!firstContent || firstContent.role !== 'user') {
-        throw new Error('Deepseek Reasoner requires the first non-system message to be from the user.');
-      }
-      return filtered;
-    },
-  },
-};
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      filtered.push(msg);
+    } else if (!foundUser && msg.role === 'user') {
+      foundUser = true;
+      lastRole = 'user';
+      filtered.push(msg);
+    } else if (foundUser) {
+      if (msg.role === lastRole) continue;
+      filtered.push(msg);
+      if (msg.role === 'user' || msg.role === 'assistant') lastRole = msg.role;
+    }
+  }
+
+  const firstContent = filtered.find((m) => m.role !== 'system');
+  if (!firstContent || firstContent.role !== 'user') {
+    throw new Error('Model with enforceAlternatingRoles requires the first non-system message to be from the user.');
+  }
+  return filtered;
+}
 
 // ── Anthropic-format helpers ──────────────────────────────────────────────────
 
@@ -340,7 +318,7 @@ interface IMessageAdapter {
   buildBody(payload: LlmPayload, stream: boolean): string;
   parseResponse(data: unknown): ParsedResponse;
   handleStreamChunk(parsed: unknown, state: StreamState, onToken?: (t: string) => void, onReasoning?: (t: string) => void): void;
-  buildAssistantContextMsg(result: LlmResult, config: ProviderConfig): LlmMessage;
+  buildAssistantContextMsg(result: LlmResult, provider: LlmProvider): LlmMessage;
   buildToolResultContextMsg(tc: ToolCall, toolResult: string): LlmMessage;
 }
 
@@ -427,11 +405,11 @@ const OpenAiAdapter: IMessageAdapter = {
     }
   },
 
-  buildAssistantContextMsg(result: LlmResult, config: ProviderConfig): LlmMessage {
+  buildAssistantContextMsg(result: LlmResult, provider: LlmProvider): LlmMessage {
     return {
       role: 'assistant',
       content: result.content || null,
-      reasoning_content: result.reasoning || (config.requiresReasoningFallback ? 'Thinking process hidden or not provided.' : undefined), // eslint-disable-line @typescript-eslint/prefer-nullish-coalescing
+      reasoning_content: result.reasoning || (provider.requiresReasoningFallback ? 'Thinking process hidden or not provided.' : undefined), // eslint-disable-line @typescript-eslint/prefer-nullish-coalescing
       tool_calls: result.toolCalls?.map((tc) => ({ id: tc.id, type: tc.type, function: tc.function })),
     };
   },
@@ -511,7 +489,7 @@ const AnthropicAdapter: IMessageAdapter = {
     }
   },
 
-  buildAssistantContextMsg(result: LlmResult, _config: ProviderConfig): LlmMessage {
+  buildAssistantContextMsg(result: LlmResult, _provider: LlmProvider): LlmMessage {
     const blocks: unknown[] = [];
     if (result.content) blocks.push({ type: 'text', text: result.content });
     for (const tc of result.toolCalls ?? []) {
@@ -540,8 +518,8 @@ const AnthropicAdapter: IMessageAdapter = {
   },
 };
 
-function getAdapter(provider: ProviderId): IMessageAdapter {
-  return PROVIDERS[provider]?.messageFormat === 'anthropic' ? AnthropicAdapter : OpenAiAdapter;
+function getAdapter(provider: LlmProvider): IMessageAdapter {
+  return provider.messageFormat === 'anthropic' ? AnthropicAdapter : OpenAiAdapter;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -554,9 +532,8 @@ function buildPayload(
   tools?: LlmTool[],
   webSearch?: boolean,
 ): LlmPayload {
-  const providerConfig = PROVIDERS[model.provider];
-  const modelOverrides = MODEL_OVERRIDES[model.id];
-  const filtered = modelOverrides?.filterMessages ? modelOverrides.filterMessages(messages) : messages;
+  const { model: resolvedModel, provider: providerConfig } = resolveModelAndProvider(model);
+  const filtered = resolvedModel.enforceAlternatingRoles ? filterAlternatingRoles(messages) : messages;
   const auth = useAuthStore.getState();
   const customInstructions = auth.customInstructions.trim();
 
@@ -576,7 +553,7 @@ function buildPayload(
   // Safety cap: drop oldest non-system messages until tokens fit within the user's max context budget
   // Also respects the hard model context window (whichever is smaller)
   const userTokenBudget = useAuthStore.getState().maxContextTokens;
-  const tokenBudget = Math.min(userTokenBudget, Math.floor(model.contextWindow * 0.9));
+  const tokenBudget = Math.min(userTokenBudget, Math.floor(resolvedModel.contextWindow * 0.9));
   while (finalMessages.length > 1) {
     const { promptTokens } = estimateTokens(finalMessages);
     if (promptTokens <= tokenBudget) break;
@@ -587,7 +564,7 @@ function buildPayload(
   }
 
   const finalTools = [...(tools ?? [])];
-  if (webSearch && providerConfig?.supportsWebSearch) {
+  if (webSearch && providerConfig.supportsWebSearch) {
     finalTools.push({
       type: 'builtin_function',
       function: {
@@ -597,10 +574,12 @@ function buildPayload(
     });
   }
 
-  const resolvedTemperature = modelOverrides?.temperatureOverride ? modelOverrides.temperatureOverride(temperature, stream) : temperature;
+  const resolvedTemperature = resolvedModel.forceTemperature != null && !stream ? resolvedModel.forceTemperature : temperature;
+
+  const payloadOverrides = getPayloadOverrides(providerConfig);
 
   return {
-    model: model.id,
+    model: resolvedModel.apiModelId,
     messages: finalMessages.map((m) => ({
       role: m.role,
       content: m.content as string | (LlmContentPart & { type: 'text' | 'image_url' })[] | null,
@@ -611,21 +590,22 @@ function buildPayload(
       ...(m.name && { name: m.name }),
     })),
     stream,
-    ...(model.supportsTemperature && { temperature: resolvedTemperature }),
+    ...(resolvedModel.supportsTemperature && { temperature: resolvedTemperature }),
     ...(stream && { stream_options: { include_usage: true } }),
-    ...(model.supportsTools && finalTools.length > 0 && { tools: finalTools }),
-    ...(providerConfig?.payloadOverrides?.(stream) ?? {}),
+    ...payloadOverrides,
+    ...(resolvedModel.supportsTools && finalTools.length > 0 && { tools: finalTools }),
+    ...(resolvedModel.maxTokensOverride != null && { max_tokens: resolvedModel.maxTokensOverride }),
   };
 }
 
 export function filterMessagesForModel(model: ChatModel, messages: LlmMessage[]): LlmMessage[] {
-  const overrides = MODEL_OVERRIDES[model.id];
-  return overrides?.filterMessages?.(messages) ?? messages;
+  return model.enforceAlternatingRoles ? filterAlternatingRoles(messages) : messages;
 }
 
 export async function generateMinimaxImage(prompt: string, aspectRatio = '1:1', signal?: AbortSignal): Promise<{ base64: string }> {
   const url = 'https://api.minimax.io/v1/image_generation';
-  const key = useAuthStore.getState().minimaxKey;
+  const minimaxProvider = useProviderStore.getState().providers.find((p) => p.id === 'builtin-minimax');
+  const key = minimaxProvider ? getProviderApiKey(minimaxProvider) : '';
 
   const payload = {
     model: 'image-01',
@@ -637,7 +617,7 @@ export async function generateMinimaxImage(prompt: string, aspectRatio = '1:1', 
   const res = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${key}`,
+      ...(key ? { Authorization: `Bearer ${key}` } : {}),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
@@ -655,7 +635,8 @@ export async function generateMinimaxImage(prompt: string, aspectRatio = '1:1', 
 
 export async function generateMinimaxMusic(prompt: string, lyrics = '', signal?: AbortSignal): Promise<{ audioHex: string }> {
   const url = 'https://api.minimax.io/v1/music_generation';
-  const key = useAuthStore.getState().minimaxKey;
+  const minimaxProvider = useProviderStore.getState().providers.find((p) => p.id === 'builtin-minimax');
+  const key = minimaxProvider ? getProviderApiKey(minimaxProvider) : '';
 
   const payload = {
     model: 'music-2.6',
@@ -672,7 +653,7 @@ export async function generateMinimaxMusic(prompt: string, lyrics = '', signal?:
   const res = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${key}`,
+      ...(key ? { Authorization: `Bearer ${key}` } : {}),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
@@ -760,18 +741,13 @@ export async function askLlm(
   webSearch?: boolean,
   signal?: AbortSignal,
 ): Promise<LlmResult> {
-  const providerConfig = PROVIDERS[model.provider];
-  if (!providerConfig) throw new Error(`Unknown provider: ${model.provider}`);
-
+  const { provider: providerConfig } = resolveModelAndProvider(model);
   const payload = buildPayload(model, messages, false, temperature, tools, webSearch);
-  const adapter = getAdapter(model.provider);
+  const adapter = getAdapter(providerConfig);
 
-  const res = await fetch(providerConfig.url, {
+  const res = await fetch(providerConfig.baseUrl, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${providerConfig.getApiKey(useAuthStore.getState())}`,
-      'Content-Type': 'application/json',
-    },
+    headers: buildAuthHeaders(providerConfig),
     body: adapter.buildBody(payload, false),
     signal,
   });
@@ -783,7 +759,6 @@ export async function askLlm(
 
   return buildLlmResult(adapter.parseResponse(await res.json()));
 }
-
 export async function askLlmStream(
   model: ChatModel,
   temperature: number,
@@ -794,18 +769,13 @@ export async function askLlmStream(
   webSearch?: boolean,
   signal?: AbortSignal,
 ): Promise<LlmResult> {
-  const providerConfig = PROVIDERS[model.provider];
-  if (!providerConfig) throw new Error(`Unknown provider: ${model.provider}`);
-
+  const { provider: providerConfig } = resolveModelAndProvider(model);
   const payload = buildPayload(model, messages, true, temperature, tools, webSearch);
-  const adapter = getAdapter(model.provider);
+  const adapter = getAdapter(providerConfig);
 
-  const res = await fetch(providerConfig.url, {
+  const res = await fetch(providerConfig.baseUrl, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${providerConfig.getApiKey(useAuthStore.getState())}`,
-      'Content-Type': 'application/json',
-    },
+    headers: buildAuthHeaders(providerConfig),
     body: adapter.buildBody(payload, true),
     signal,
   });
@@ -895,6 +865,7 @@ export async function orchestrateLlmLoop(
   webSearch?: boolean,
   signal?: AbortSignal,
 ): Promise<OrchestrateResult> {
+  const { model: resolvedModel } = resolveModelAndProvider(model);
   const llmContext = [...messages];
   let loopCount = 0;
   let totalPromptTokens = 0;
@@ -909,11 +880,11 @@ export async function orchestrateLlmLoop(
     // in one round-trip. A fresh cache each iteration ensures state changes between
     // iterations are not masked by a stale result.
     const toolResultCache = new Map<string, string>();
-    const result = model.streaming
-      ? await askLlmStream(model, temperature, llmContext, onToken, onReasoning, tools, webSearch, signal)
-      : await askLlm(model, temperature, llmContext, tools, webSearch, signal);
+    const result = resolvedModel.streaming
+      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, tools, webSearch, signal)
+      : await askLlm(resolvedModel, temperature, llmContext, tools, webSearch, signal);
 
-    if (!model.streaming && result.reasoning && onReasoning) {
+    if (!resolvedModel.streaming && result.reasoning && onReasoning) {
       onReasoning(result.reasoning);
     }
 
@@ -940,9 +911,8 @@ export async function orchestrateLlmLoop(
 
     // Handle Tool Calls Loop
     if (result.toolCalls && result.toolCalls.length > 0) {
-      const adapter = getAdapter(model.provider);
-      const providerConfig = PROVIDERS[model.provider];
-      if (!providerConfig) throw new Error(`Unknown provider: ${model.provider}`);
+      const providerConfig = resolveProvider(resolvedModel);
+      const adapter = getAdapter(providerConfig);
 
       // Add assistant tool calls to context
       llmContext.push(adapter.buildAssistantContextMsg(result, providerConfig));
@@ -1025,8 +995,8 @@ interface MoonshotBalanceResponse {
 }
 
 export async function getMoonshotBalance(): Promise<{ available_balance: number } | null> {
-  const auth = useAuthStore.getState();
-  const key = auth.moonshotApiKey;
+  const moonshotProvider = useProviderStore.getState().providers.find((p) => p.id === 'builtin-moonshot');
+  const key = moonshotProvider ? getProviderApiKey(moonshotProvider) : '';
   if (!key) return null;
 
   try {
@@ -1059,8 +1029,8 @@ interface DeepSeekBalanceResponse {
 }
 
 export async function getDeepSeekBalance(): Promise<{ balance: number; currency: string } | null> {
-  const auth = useAuthStore.getState();
-  const key = auth.deepSeekKey;
+  const deepseekProvider = useProviderStore.getState().providers.find((p) => p.id === 'builtin-deepseek');
+  const key = deepseekProvider ? getProviderApiKey(deepseekProvider) : '';
   if (!key) return null;
 
   try {
