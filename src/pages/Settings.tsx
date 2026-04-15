@@ -87,6 +87,8 @@ const Settings: React.FC = () => {
     setSummaryModel,
     defaultMaxContextMessages,
     setDefaultMaxContextMessages,
+    showCameraButton,
+    setShowCameraButton,
   } = useAuthStore();
 
   const [openAiInput, setOpenAiInput] = useState('');
@@ -326,11 +328,15 @@ const Settings: React.FC = () => {
     isStored,
     onUpdate,
     extraInfo,
+    description,
+    onRemove,
   }: {
     label: string;
     isStored: boolean;
     onUpdate: () => void;
     extraInfo?: React.ReactNode;
+    description?: string;
+    onRemove?: () => void;
   }): React.ReactElement => (
     <Box
       sx={{
@@ -350,44 +356,65 @@ const Settings: React.FC = () => {
       <Box
         sx={{
           display: 'flex',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 1.5,
+          flexDirection: 'column',
+          gap: 0.5,
+          flex: 1,
         }}
       >
-        <Typography
-          variant="body2"
+        <Box
           sx={{
-            fontWeight: 'bold',
-            color: 'text.secondary',
-            minWidth: { xs: 'auto', sm: 100 },
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 1.5,
           }}
         >
-          {label}
-        </Typography>
-        {isStored ? (
-          <Chip
-            icon={<CheckCircleIcon sx={{ color: 'success.main !important' }} />}
-            label="Key Configured"
-            color="success"
-            variant="outlined"
-            size="small"
-          />
-        ) : (
-          <Chip label="Not Configured" color="warning" variant="outlined" size="small" />
+          <Typography
+            variant="body2"
+            sx={{
+              fontWeight: 'bold',
+              color: 'text.secondary',
+              minWidth: { xs: 'auto', sm: 100 },
+            }}
+          >
+            {label}
+          </Typography>
+          {isStored ? (
+            <Chip
+              icon={<CheckCircleIcon sx={{ color: 'success.main !important' }} />}
+              label="Key Configured"
+              color="success"
+              variant="outlined"
+              size="small"
+            />
+          ) : (
+            <Chip label="Not Configured" color="warning" variant="outlined" size="small" />
+          )}
+          {extraInfo}
+        </Box>
+        {description && (
+          <Typography variant="caption" color="text.secondary">
+            {description}
+          </Typography>
         )}
-        {extraInfo}
       </Box>
-      <Button
-        size="small"
-        variant="contained"
-        onClick={onUpdate}
-        sx={{
-          alignSelf: { xs: 'flex-end', sm: 'center' },
-        }}
-      >
-        {isStored ? 'Update Key' : 'Add Key'}
-      </Button>
+      <Box sx={{ display: 'flex', gap: 1, alignSelf: { xs: 'flex-end', sm: 'center' } }}>
+        {isStored && onRemove && (
+          <Button
+            size="small"
+            variant="outlined"
+            color="error"
+            onClick={(): void => {
+              if (window.confirm(`Remove ${label} API key?`)) onRemove();
+            }}
+          >
+            Remove
+          </Button>
+        )}
+        <Button size="small" variant="contained" onClick={onUpdate}>
+          {isStored ? 'Update Key' : 'Add Key'}
+        </Button>
+      </Box>
     </Box>
   );
 
@@ -514,7 +541,11 @@ const Settings: React.FC = () => {
               placeholder="Paste new key here"
               sx={{ mb: 2 }}
               error={openAiInput !== '' && !validateKey(openAiInput, 'openai')}
-              helperText={openAiInput !== '' && !validateKey(openAiInput, 'openai') ? 'Invalid OpenAI key format (should start with sk-)' : ''}
+              helperText={
+                openAiInput !== '' && !validateKey(openAiInput, 'openai')
+                  ? 'Invalid OpenAI key format (should start with sk-)'
+                  : 'Chat, reasoning, vision, tools'
+              }
               InputProps={{
                 endAdornment: openAiKey && (
                   <InputAdornment position="end">
@@ -526,7 +557,13 @@ const Settings: React.FC = () => {
               }}
             />
           ) : (
-            <KeyConfirmation label="OpenAI" isStored={!!openAiKey} onUpdate={(): void => setIsUpdatingOpenAi(true)} />
+            <KeyConfirmation
+              label="OpenAI"
+              isStored={!!openAiKey}
+              onUpdate={(): void => setIsUpdatingOpenAi(true)}
+              onRemove={(): void => setOpenAiKey('')}
+              description="Chat, reasoning, vision, tools"
+            />
           )}
 
           {isUpdatingDeepSeek ? (
@@ -540,7 +577,9 @@ const Settings: React.FC = () => {
               sx={{ mb: 2 }}
               error={deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek')}
               helperText={
-                deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek') ? 'Invalid DeepSeek key format (should start with sk-)' : ''
+                deepSeekInput !== '' && !validateKey(deepSeekInput, 'deepseek')
+                  ? 'Invalid DeepSeek key format (should start with sk-)'
+                  : 'Chat, reasoning, tools (excl. Reasoner)'
               }
               InputProps={{
                 endAdornment: deepSeekKey && (
@@ -557,6 +596,8 @@ const Settings: React.FC = () => {
               label="DeepSeek"
               isStored={!!deepSeekKey}
               onUpdate={(): void => setIsUpdatingDeepSeek(true)}
+              onRemove={(): void => setDeepSeekKey('')}
+              description="Chat, reasoning, tools (excl. Reasoner)"
               extraInfo={
                 deepSeekBalance !== null && (
                   <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
@@ -578,7 +619,9 @@ const Settings: React.FC = () => {
               placeholder="Paste new key here"
               sx={{ mb: 2 }}
               error={googleInput !== '' && !validateKey(googleInput, 'google')}
-              helperText={googleInput !== '' && !validateKey(googleInput, 'google') ? 'Invalid Google API key format' : ''}
+              helperText={
+                googleInput !== '' && !validateKey(googleInput, 'google') ? 'Invalid Google API key format' : 'Chat, reasoning, vision, tools'
+              }
               InputProps={{
                 endAdornment: googleApiKey && (
                   <InputAdornment position="end">
@@ -590,7 +633,13 @@ const Settings: React.FC = () => {
               }}
             />
           ) : (
-            <KeyConfirmation label="Google (Gemini)" isStored={!!googleApiKey} onUpdate={(): void => setIsUpdatingGoogle(true)} />
+            <KeyConfirmation
+              label="Google (Gemini)"
+              isStored={!!googleApiKey}
+              onUpdate={(): void => setIsUpdatingGoogle(true)}
+              onRemove={(): void => setGoogleApiKey('')}
+              description="Chat, reasoning, vision, tools"
+            />
           )}
 
           {isUpdatingMoonshot ? (
@@ -603,7 +652,9 @@ const Settings: React.FC = () => {
               placeholder="Paste new key here"
               sx={{ mb: 2 }}
               error={moonshotInput !== '' && !validateKey(moonshotInput, 'openai')}
-              helperText={moonshotInput !== '' && !validateKey(moonshotInput, 'openai') ? 'Invalid Moonshot key format' : ''}
+              helperText={
+                moonshotInput !== '' && !validateKey(moonshotInput, 'openai') ? 'Invalid Moonshot key format' : 'Chat, web search, vision, tools'
+              }
               InputProps={{
                 endAdornment: moonshotApiKey && (
                   <InputAdornment position="end">
@@ -619,6 +670,8 @@ const Settings: React.FC = () => {
               label="Moonshot"
               isStored={!!moonshotApiKey}
               onUpdate={(): void => setIsUpdatingMoonshot(true)}
+              onRemove={(): void => setMoonshotApiKey('')}
+              description="Chat, web search, vision, tools"
               extraInfo={
                 moonshotBalance !== null && (
                   <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
@@ -637,6 +690,7 @@ const Settings: React.FC = () => {
               value={minimaxInput}
               onChange={(e): void => setMinimaxInput(e.target.value)}
               placeholder="Paste new key here"
+              helperText="Chat, image generation, music generation, tools"
               sx={{ mb: 2 }}
               InputProps={{
                 endAdornment: minimaxKey && (
@@ -649,7 +703,13 @@ const Settings: React.FC = () => {
               }}
             />
           ) : (
-            <KeyConfirmation label="Minimax" isStored={!!minimaxKey} onUpdate={(): void => setIsUpdatingMinimax(true)} />
+            <KeyConfirmation
+              label="Minimax"
+              isStored={!!minimaxKey}
+              onUpdate={(): void => setIsUpdatingMinimax(true)}
+              onRemove={(): void => setMinimaxKey('')}
+              description="Chat, image generation, music generation, tools"
+            />
           )}
         </Box>
 
@@ -949,6 +1009,18 @@ const Settings: React.FC = () => {
             <MenuItem value={1200}>Long (1200 characters)</MenuItem>
             <MenuItem value={2000}>Very long (2000 characters)</MenuItem>
             <MenuItem value={4000}>Maximum (4000 characters)</MenuItem>
+          </Select>
+        </FormControl>
+        <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+          <InputLabel>Camera Button</InputLabel>
+          <Select
+            value={showCameraButton}
+            label="Camera Button"
+            onChange={(e): void => setShowCameraButton(e.target.value as 'auto' | 'always' | 'never')}
+          >
+            <MenuItem value="auto">Auto (mobile only)</MenuItem>
+            <MenuItem value="always">Always show</MenuItem>
+            <MenuItem value="never">Never show</MenuItem>
           </Select>
         </FormControl>
       </Paper>

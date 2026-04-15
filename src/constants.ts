@@ -7,11 +7,14 @@ export const RAG_TOP_K = 5; // number of semantically similar messages to retrie
 export const RAG_MIN_SCORE = 0.3; // discard weakly-related matches below this cosine similarity
 export const RAG_MAX_CHARS = 4000; // hard cap on total RAG block size injected into context
 export const RAG_CONTENT_LIMIT = 250; // truncate individual messages; LLM can fetch full content via read_messages
+export const MESSAGE_RETRIEVAL_INSTRUCTIONS = `You have access to historical messages via list_messages and read_messages tools.
+IMPORTANT: Messages in your context may be truncated (marked with [TRUNCATED]). When the user asks about specific past messages, quotes, or details from earlier in the conversation, you MUST call read_messages to fetch the full content before answering. Do NOT guess or rely on truncated previews — always verify with the tool.`;
 export const ASK_USER_INSTRUCTIONS = `When information is insufficient to answer confidently, follow this decision hierarchy:
 1. If you can answer with confidence — answer directly.
 2. If the answer might exist in conversation history — use list_messages / read_messages to find it.
-3. If genuinely uncertain after searching — use ask_user to request clarification with one targeted question.
-4. Never guess or produce lengthy speculation when a short clarifying question would be more helpful.`;
+3. If genuinely uncertain after searching — call the ask_user tool to request clarification with one targeted question.
+4. Never guess or produce lengthy speculation when a short clarifying question would be more helpful.
+IMPORTANT: When you need to ask the user a question, you MUST use the ask_user tool. Do NOT embed questions in your reply text. Always call ask_user instead of writing a question directly.`;
 
 export const DEFAULT_SCRATCHPAD_RULES = `You have a private scratchpad for long-term memory (max {{SCRATCHPAD_LIMIT}} chars).
 

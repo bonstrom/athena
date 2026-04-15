@@ -22,7 +22,28 @@ import { BackupService } from '../services/backupService';
 import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 
-import { SCRATCHPAD_LIMIT, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS } from '../constants';
+import { SCRATCHPAD_LIMIT, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS } from '../constants';
+
+/**
+ * Heuristic: detect when the LLM response is primarily a clarification question
+ * rather than a substantive answer. Used as a fallback when the model ignores the
+ * ask_user tool and embeds questions directly in its reply text.
+ */
+function looksLikeClarificationQuestion(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  // Must end with a question mark
+  if (!trimmed.endsWith('?')) return false;
+  // Must have at least one question mark
+  const questionCount = (trimmed.match(/\?/g) ?? []).length;
+  if (questionCount < 1) return false;
+  // Skip long, substantive responses (likely real answers that happen to end with a question)
+  if (trimmed.length > 2000) return false;
+  // Should contain clarification-related language
+  const clarificationPatterns =
+    /\b(clarif|specify|which|what (do|would|are|is|did)|could you (tell|let|provide|share|specify)|more (context|information|details)|what.*(mean|refer)|need.*(know|more|information|context|detail))\b/i;
+  return clarificationPatterns.test(trimmed);
+}
 
 export interface PendingUserQuestion {
   question: string;
@@ -197,6 +218,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       entries.push({
         message: { role: 'system', content: ASK_USER_INSTRUCTIONS },
         sourceLabel: 'Ask User Instructions',
+      });
+    }
+
+    // System: Message retrieval instructions
+    if (useAuthStore.getState().messageRetrievalEnabled) {
+      entries.push({
+        message: { role: 'system', content: MESSAGE_RETRIEVAL_INSTRUCTIONS },
+        sourceLabel: 'Message Retrieval Instructions',
       });
     }
 
@@ -944,6 +973,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         Date.now() - loopStartTime,
         llmContext.length,
       );
+
+      // ── Fallback: detect inline clarification questions when ask_user tool wasn't called ──
+      const askUserWasCalled = get().pendingUserQuestion != null;
+      if (useAuthStore.getState().askUserEnabled && !askUserWasCalled && looksLikeClarificationQuestion(finalContent)) {
+        console.debug('[ask_user:fallback] Detected inline clarification question — activating answer mode');
+        const capturedTopicId = topicId;
+        set({
+          pendingUserQuestion: {
+            question: finalContent.trim(),
+            context: 'Fallback: model asked inline instead of using ask_user tool.',
+            resolve: (answer: string) => {
+              set({ pendingUserQuestion: null });
+              void get().sendMessageStream(answer, capturedTopicId);
+            },
+            reject: () => {
+              set({ pendingUserQuestion: null });
+            },
+          },
+        });
+      }
 
       // 5. Finalize DB Updates in atomic transaction
       const latencyMs = Date.now() - loopStartTime;

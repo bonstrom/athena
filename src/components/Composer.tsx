@@ -124,6 +124,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     llmModelSelected,
     llmModelDownloadStatus,
     defaultMaxContextMessages,
+    showCameraButton,
   } = useAuthStore();
   const {
     webSearchEnabled,
@@ -1055,7 +1056,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </span>
             </Tooltip>
 
-            {!isMobile && (
+            {(showCameraButton === 'always' || (showCameraButton === 'auto' && isMobile)) && (
               <Tooltip title="Camera" disableTouchListener={isMobile}>
                 <span>
                   <IconButton disabled={sending} aria-label="Camera">
@@ -1195,7 +1196,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 fullWidth
                 multiline
                 inputRef={textFieldRef}
-                maxRows={isExpanded ? (isMobile ? 25 : 40) : 10}
+                maxRows={isExpanded ? undefined : 10}
                 minRows={isExpanded ? (isMobile ? 15 : 30) : 1}
                 placeholder={pendingUserQuestion ? "Answer the assistant's question..." : isMobile ? 'Message...' : 'Type your message...'}
                 value={inputValue}
@@ -1328,6 +1329,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     fontFamily: 'var(--font-family, inherit)',
                     lineHeight: '1.5 !important',
                   },
+                  ...(isExpanded
+                    ? {
+                        '& .MuiInputBase-inputMultiline': {
+                          maxHeight: isMobile ? '50vh' : '60vh',
+                          overflowY: 'auto !important',
+                        },
+                      }
+                    : {}),
                 }}
               />
             </Box>

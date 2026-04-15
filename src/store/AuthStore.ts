@@ -33,7 +33,9 @@ interface AuthState {
   aiSummaryEnabled: boolean;
   summaryModel: string;
   defaultMaxContextMessages: number;
+  showCameraButton: 'auto' | 'always' | 'never';
   setDefaultMaxContextMessages: (count: number) => void;
+  setShowCameraButton: (value: 'auto' | 'always' | 'never') => void;
   setAskUserEnabled: (enabled: boolean) => void;
   setAiSummaryEnabled: (enabled: boolean) => void;
   setSummaryModel: (model: string) => void;
@@ -99,6 +101,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedAiSummaryEnabled = localStorage.getItem('aiSummaryEnabled') === 'true';
   const storedSummaryModel = localStorage.getItem('summaryModel') ?? 'same';
   const storedDefaultMaxContextMessages = Number(localStorage.getItem('defaultMaxContextMessages') ?? '10');
+  const storedShowCameraButton = (localStorage.getItem('showCameraButton') as 'auto' | 'always' | 'never' | null) ?? 'auto';
 
   return {
     openAiKey: storedOpenAiKey,
@@ -130,6 +133,7 @@ export const useAuthStore = create<AuthState>((set) => {
     aiSummaryEnabled: storedAiSummaryEnabled,
     summaryModel: storedSummaryModel,
     defaultMaxContextMessages: storedDefaultMaxContextMessages,
+    showCameraButton: storedShowCameraButton,
     clearAuth: (): void => {
       localStorage.removeItem('openAiKey');
       localStorage.removeItem('deepSeekKey');
@@ -156,6 +160,7 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem('aiSummaryEnabled');
       localStorage.removeItem('summaryModel');
       localStorage.removeItem('defaultMaxContextMessages');
+      localStorage.removeItem('showCameraButton');
       void athenaDb.predefinedPrompts.clear().catch((err: unknown) => {
         console.error('Failed to clear predefined prompts:', err);
       });
@@ -181,7 +186,12 @@ export const useAuthStore = create<AuthState>((set) => {
         askUserEnabled: true,
         aiSummaryEnabled: false,
         defaultMaxContextMessages: 10,
+        showCameraButton: 'auto',
       });
+    },
+    setShowCameraButton: (value: 'auto' | 'always' | 'never'): void => {
+      localStorage.setItem('showCameraButton', value);
+      set({ showCameraButton: value });
     },
     setDefaultMaxContextMessages: (count: number): void => {
       localStorage.setItem('defaultMaxContextMessages', String(count));

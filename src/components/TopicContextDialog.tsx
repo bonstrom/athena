@@ -26,7 +26,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 
 import { useChatStore, ContextEntry } from '../store/ChatStore';
 import { estimateTokens } from '../services/estimateTokens';
-import { SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL } from '../services/llmService';
+import { SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL, ASK_USER_TOOL } from '../services/llmService';
 import { useNotificationStore } from '../store/NotificationStore';
 import { useAuthStore } from '../store/AuthStore';
 
@@ -45,7 +45,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
 
   const { buildFullContext, updateMessageContext, selectedModel } = useChatStore();
   const { addNotification } = useNotificationStore();
-  const { maxContextTokens, messageRetrievalEnabled } = useAuthStore();
+  const { maxContextTokens, messageRetrievalEnabled, askUserEnabled } = useAuthStore();
 
   const effectiveBudget = useMemo(() => {
     return Math.min(maxContextTokens, Math.floor(selectedModel.contextWindow * 0.9));
@@ -73,10 +73,12 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
   // Compute tool schema token cost from the actual tool definitions rather than a static guess
   const toolSchemaTokens = useMemo(() => {
     if (!selectedModel.supportsTools) return 0;
-    const tools = messageRetrievalEnabled ? [SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL] : [SCRATCHPAD_TOOL];
+    const tools = [SCRATCHPAD_TOOL];
+    if (messageRetrievalEnabled) tools.push(READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL);
+    if (askUserEnabled) tools.push(ASK_USER_TOOL);
     // Treat serialised tool JSON as a pseudo-message so estimateTokens can count it
     return estimateTokens([{ role: 'system', content: JSON.stringify(tools) }]).promptTokens;
-  }, [selectedModel.supportsTools, messageRetrievalEnabled]);
+  }, [selectedModel.supportsTools, messageRetrievalEnabled, askUserEnabled]);
 
   const totalTokenCount = useMemo(() => {
     if (entries.length === 0) return 0;
