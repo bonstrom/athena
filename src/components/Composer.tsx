@@ -590,79 +590,83 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             </MuiToggleButtonGroup>
           </Box>
 
-          <Divider sx={{ my: 1, opacity: 0.6 }} />
+          {!isMobile && (
+            <>
+              <Divider sx={{ my: 1, opacity: 0.6 }} />
 
-          <ListSubheader
-            sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
-            }}
-          >
-            Layout Width
-          </ListSubheader>
-
-          <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
-            <MuiToggleButtonGroup
-              value={chatWidth}
-              exclusive
-              onChange={(_, value: 'sm' | 'md' | 'lg' | 'xl' | 'full' | null): void => {
-                if (value) setChatWidth(value);
-              }}
-              size="small"
-              fullWidth
-              sx={{
-                bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
-                p: 0.5,
-                '& .MuiToggleButton-root': {
-                  border: 'none',
-                  borderRadius: '8px !important',
-                  mx: 0.25,
-                  px: 1.5,
-                  py: 0.5,
-                  fontSize: '0.75rem',
+              <ListSubheader
+                sx={{
+                  lineHeight: '36px',
                   fontWeight: 'bold',
-                  color: 'text.secondary',
-                  '&.Mui-selected': {
-                    bgcolor: 'primary.main',
-                    color: 'primary.contrastText',
-                    '&:hover': {
-                      bgcolor: 'primary.dark',
+                  fontSize: '0.75rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  bgcolor: 'transparent',
+                }}
+              >
+                Layout Width
+              </ListSubheader>
+
+              <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
+                <MuiToggleButtonGroup
+                  value={chatWidth}
+                  exclusive
+                  onChange={(_, value: 'sm' | 'md' | 'lg' | 'xl' | 'full' | null): void => {
+                    if (value) setChatWidth(value);
+                  }}
+                  size="small"
+                  fullWidth
+                  sx={{
+                    bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                    p: 0.5,
+                    '& .MuiToggleButton-root': {
+                      border: 'none',
+                      borderRadius: '8px !important',
+                      mx: 0.25,
+                      px: 1.5,
+                      py: 0.5,
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      color: 'text.secondary',
+                      '&.Mui-selected': {
+                        bgcolor: 'primary.main',
+                        color: 'primary.contrastText',
+                        '&:hover': {
+                          bgcolor: 'primary.dark',
+                        },
+                      },
                     },
-                  },
-                },
-              }}
-            >
-              <MuiToggleButton value="sm">
-                <Tooltip title="Compact (600px)" disableTouchListener={isMobile}>
-                  <span>S</span>
-                </Tooltip>
-              </MuiToggleButton>
-              <MuiToggleButton value="md">
-                <Tooltip title="Standard (900px)" disableTouchListener={isMobile}>
-                  <span>M</span>
-                </Tooltip>
-              </MuiToggleButton>
-              <MuiToggleButton value="lg">
-                <Tooltip title="Wide (1200px)" disableTouchListener={isMobile}>
-                  <span>L</span>
-                </Tooltip>
-              </MuiToggleButton>
-              <MuiToggleButton value="xl">
-                <Tooltip title="Extra Wide (1500px)" disableTouchListener={isMobile}>
-                  <span>XL</span>
-                </Tooltip>
-              </MuiToggleButton>
-              <MuiToggleButton value="full">
-                <Tooltip title="Full Width" disableTouchListener={isMobile}>
-                  <span>Full</span>
-                </Tooltip>
-              </MuiToggleButton>
-            </MuiToggleButtonGroup>
-          </Box>
+                  }}
+                >
+                  <MuiToggleButton value="sm">
+                    <Tooltip title="Compact (600px)" disableTouchListener={isMobile}>
+                      <span>S</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value="md">
+                    <Tooltip title="Standard (900px)" disableTouchListener={isMobile}>
+                      <span>M</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value="lg">
+                    <Tooltip title="Wide (1200px)" disableTouchListener={isMobile}>
+                      <span>L</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value="xl">
+                    <Tooltip title="Extra Wide (1500px)" disableTouchListener={isMobile}>
+                      <span>XL</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value="full">
+                    <Tooltip title="Full Width" disableTouchListener={isMobile}>
+                      <span>Full</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                </MuiToggleButtonGroup>
+              </Box>
+            </>
+          )}
 
           <Divider sx={{ my: 1, opacity: 0.6 }} />
 
@@ -1318,11 +1322,11 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   },
                   ...(isExpanded
                     ? {
-                        '& .MuiInputBase-inputMultiline': {
-                          maxHeight: isMobile ? '50vh' : '60vh',
-                          overflowY: 'auto !important',
-                        },
-                      }
+                      '& .MuiInputBase-inputMultiline': {
+                        maxHeight: isMobile ? '50vh' : '60vh',
+                        overflowY: 'auto !important',
+                      },
+                    }
                     : {}),
                 }}
               />
