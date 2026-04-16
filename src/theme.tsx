@@ -133,11 +133,11 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
       mode,
       primary: {
         main: palette.primary,
-        contrastText: mode === 'dark' ? '#ffffff' : 'rgba(0, 0, 0, 0.87)',
+        contrastText: '#ffffff',
       },
       secondary: {
         main: palette.secondary,
-        contrastText: mode === 'dark' ? '#ffffff' : 'rgba(0, 0, 0, 0.87)',
+        contrastText: '#ffffff',
       },
       background: {
         default: mode === 'dark' ? '#121212' : '#f5f5f5',
