@@ -163,6 +163,7 @@ export interface Message {
   attachments?: Attachment[];
   embedding?: number[] | null;
   summary?: string;
+  rawResponse?: string;
 }
 
 export interface Topic {

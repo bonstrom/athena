@@ -17,6 +17,7 @@ export interface LlmMessage {
 
 export interface LlmResult {
   content: string;
+  rawContent: string;
   promptTokens: number;
   completionTokens: number;
   aiNote?: string | null;
@@ -27,6 +28,41 @@ export interface LlmResult {
   searchCount: number;
   finishReason?: string;
   reasoning?: string;
+  // Provider metadata
+  responseId?: string;
+  actualModel?: string;
+  systemFingerprint?: string;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
+}
+
+export interface ToolLoopIteration {
+  iteration: number;
+  llmResponse: {
+    content: string;
+    reasoning?: string;
+    toolCalls?: { id: string; type: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[];
+    finishReason?: string;
+  };
+  toolResults: { toolCallId: string; toolName: string; result: string }[];
+}
+
+export interface LlmDebugPayload {
+  rawContent: string;
+  responseId?: string;
+  actualModel?: string;
+  systemFingerprint?: string;
+  finishReason?: string;
+  usageDetails: {
+    promptTokens: number;
+    completionTokens: number;
+    cachedTokens?: number;
+    reasoningTokens?: number;
+    cacheCreationTokens?: number;
+    cacheReadTokens?: number;
+  };
+  toolLoopTrace: ToolLoopIteration[];
+  timestamp: string;
 }
 
 export const SCRATCHPAD_TOOL: LlmTool = {
@@ -260,6 +296,9 @@ interface ToolCall {
 }
 
 interface OpenAiStreamChunk {
+  id?: string;
+  model?: string;
+  system_fingerprint?: string;
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -286,9 +325,9 @@ interface AnthropicStreamChunk {
   type: string;
   index?: number;
   content_block?: { type: string; id?: string; name?: string };
-  delta?: { type: string; text?: string; thinking?: string; partial_json?: string };
-  message?: { usage: { input_tokens: number } };
-  usage?: { output_tokens: number };
+  delta?: { type: string; text?: string; thinking?: string; partial_json?: string; stop_reason?: string };
+  message?: { id?: string; model?: string; usage: { input_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } };
+  usage?: { output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
 }
 
 interface ParsedResponse {
@@ -300,6 +339,11 @@ interface ParsedResponse {
   completionTokensDetails?: { reasoning_tokens?: number };
   toolCalls?: ToolCall[];
   finishReason?: string;
+  responseId?: string;
+  actualModel?: string;
+  systemFingerprint?: string;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
 }
 
 interface StreamState {
@@ -312,6 +356,11 @@ interface StreamState {
   toolCalls?: ToolCall[];
   finishReason?: string;
   done: boolean;
+  responseId?: string;
+  actualModel?: string;
+  systemFingerprint?: string;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
 }
 
 interface IMessageAdapter {
@@ -329,6 +378,9 @@ const OpenAiAdapter: IMessageAdapter = {
 
   parseResponse(data: unknown): ParsedResponse {
     const d = data as {
+      id?: string;
+      model?: string;
+      system_fingerprint?: string;
       choices: {
         finish_reason?: string;
         message: {
@@ -365,11 +417,17 @@ const OpenAiAdapter: IMessageAdapter = {
       completionTokensDetails: d.usage.completion_tokens_details,
       toolCalls,
       finishReason,
+      responseId: d.id,
+      actualModel: d.model,
+      systemFingerprint: d.system_fingerprint,
     };
   },
 
   handleStreamChunk(parsed: unknown, state: StreamState, onToken, onReasoning): void {
     const p = parsed as OpenAiStreamChunk;
+    if (p.id && !state.responseId) state.responseId = p.id;
+    if (p.model && !state.actualModel) state.actualModel = p.model;
+    if (p.system_fingerprint && !state.systemFingerprint) state.systemFingerprint = p.system_fingerprint;
     if (p.usage) {
       state.promptTokens = p.usage.prompt_tokens;
       state.completionTokens = p.usage.completion_tokens;
@@ -435,8 +493,11 @@ const AnthropicAdapter: IMessageAdapter = {
 
   parseResponse(data: unknown): ParsedResponse {
     const d = data as {
+      id?: string;
+      model?: string;
+      stop_reason?: string;
       content: { type: string; text?: string; thinking?: string; id?: string; name?: string; input?: Record<string, unknown> }[];
-      usage: { input_tokens: number; output_tokens: number };
+      usage: { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
     };
     const textBlock = d.content.find((c) => c.type === 'text');
     const thinkingBlock = d.content.find((c) => c.type === 'thinking');
@@ -455,6 +516,11 @@ const AnthropicAdapter: IMessageAdapter = {
       promptTokens: d.usage.input_tokens,
       completionTokens: d.usage.output_tokens,
       toolCalls,
+      finishReason: d.stop_reason,
+      responseId: d.id,
+      actualModel: d.model,
+      cacheCreationTokens: d.usage.cache_creation_input_tokens,
+      cacheReadTokens: d.usage.cache_read_input_tokens,
     };
   },
 
@@ -484,8 +550,15 @@ const AnthropicAdapter: IMessageAdapter = {
       }
     } else if (p.type === 'message_start') {
       state.promptTokens = p.message?.usage.input_tokens ?? 0;
+      if (p.message?.id && !state.responseId) state.responseId = p.message.id;
+      if (p.message?.model && !state.actualModel) state.actualModel = p.message.model;
+      if (p.message?.usage.cache_creation_input_tokens != null) state.cacheCreationTokens = p.message.usage.cache_creation_input_tokens;
+      if (p.message?.usage.cache_read_input_tokens != null) state.cacheReadTokens = p.message.usage.cache_read_input_tokens;
     } else if (p.type === 'message_delta') {
       state.completionTokens = p.usage?.output_tokens ?? 0;
+      if (p.delta?.stop_reason) state.finishReason = p.delta.stop_reason;
+      if (p.usage?.cache_creation_input_tokens != null) state.cacheCreationTokens = p.usage.cache_creation_input_tokens;
+      if (p.usage?.cache_read_input_tokens != null) state.cacheReadTokens = p.usage.cache_read_input_tokens;
     }
   },
 
@@ -681,6 +754,126 @@ export async function generateMinimaxMusic(prompt: string, lyrics = '', signal?:
   return { audioHex };
 }
 
+// ── Think-tag stream splitter ──────────────────────────────────────────────────
+/**
+ * Wraps onToken/onReasoning callbacks to intercept inline think tags (e.g. <think>…</think>)
+ * streamed as part of regular content. Characters before/between tags go to onToken; characters
+ * inside tags go to onReasoning. Handles tags split across chunk boundaries via a lookahead buffer.
+ *
+ * Usage:
+ *   const splitter = new ThinkTagStreamSplitter('<think>', '</think>', onToken, onReasoning);
+ *   // replace onToken / onReasoning with:
+ *   //   splitter.handleToken   and   undefined (reasoning is routed internally)
+ *   // After stream ends, call splitter.flush() to drain any buffered content.
+ *   // Then read splitter.contentAccumulated and splitter.reasoningAccumulated for the final split.
+ */
+class ThinkTagStreamSplitter {
+  private readonly openTag: string;
+  private readonly closeTag: string;
+  private readonly onContent: (t: string) => void;
+  private readonly onReasoning: ((t: string) => void) | undefined;
+
+  private inThinking = false;
+  /** Partial-match lookahead buffer — holds characters that might be the start of a tag. */
+  private buffer = '';
+
+  contentAccumulated = '';
+  reasoningAccumulated = '';
+
+  constructor(openTag: string, closeTag: string, onContent: (t: string) => void, onReasoning?: (t: string) => void) {
+    this.openTag = openTag.toLowerCase();
+    this.closeTag = closeTag.toLowerCase();
+    this.onContent = onContent;
+    this.onReasoning = onReasoning;
+  }
+
+  /** Feed raw incoming text tokens from the adapter. */
+  handleToken(token: string): void {
+    this.processChunk(this.buffer + token);
+    this.buffer = '';
+  }
+
+  /** Call once after the stream ends to flush any remaining buffered characters. */
+  flush(): void {
+    if (this.buffer) {
+      this.emit(this.buffer);
+      this.buffer = '';
+    }
+  }
+
+  // ── internals ──────────────────────────────────────────────────────────────
+
+  private emit(text: string): void {
+    if (!text) return;
+    if (this.inThinking) {
+      this.reasoningAccumulated += text;
+      if (this.onReasoning) this.onReasoning(text);
+    } else {
+      this.contentAccumulated += text;
+      this.onContent(text);
+    }
+  }
+
+  private processChunk(text: string): void {
+    const tag = this.inThinking ? this.closeTag : this.openTag;
+    let pos = 0;
+
+    while (pos < text.length) {
+      const remaining = text.slice(pos);
+      const lowerRemaining = remaining.toLowerCase();
+
+      // Look for an exact match of the active tag
+      const matchIdx = lowerRemaining.indexOf(tag);
+
+      if (matchIdx === -1) {
+        // Tag not found — but the tail of remaining might be a partial tag prefix.
+        const partialLen = this.longestPrefixMatch(lowerRemaining, tag);
+        if (partialLen > 0) {
+          // Emit everything before the potential partial prefix, then buffer the rest.
+          this.emit(remaining.slice(0, remaining.length - partialLen));
+          this.buffer = remaining.slice(remaining.length - partialLen);
+        } else {
+          this.emit(remaining);
+        }
+        return;
+      }
+
+      // Emit content before the tag
+      this.emit(remaining.slice(0, matchIdx));
+      // Skip past the tag, toggle mode, continue
+      pos += matchIdx + tag.length;
+      this.inThinking = !this.inThinking;
+    }
+  }
+
+  /** Returns the length of the longest suffix of `text` that is a prefix of `tag`. */
+  private longestPrefixMatch(text: string, tag: string): number {
+    for (let len = Math.min(tag.length - 1, text.length); len > 0; len--) {
+      if (text.endsWith(tag.slice(0, len))) return len;
+    }
+    return 0;
+  }
+}
+
+/**
+ * Post-process a completed (non-streaming) response to extract tag-based thinking.
+ * Strips all open/close tag pairs from content and concatenates the inner text as reasoning.
+ */
+function extractThinkTags(content: string, openTag: string, closeTag: string): { content: string; reasoning: string } {
+  const open = openTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const close = closeTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`${open}([\\s\\S]*?)(?:${close}|$)`, 'gi');
+  const reasoningParts: string[] = [];
+  const strippedContent = content.replace(regex, (_match, inner: string) => {
+    reasoningParts.push((inner ?? '').trim());
+    return '';
+  });
+  return {
+    content: strippedContent.trim(),
+    reasoning: reasoningParts.join('\n\n').trim(),
+  };
+}
+
 // ── Shared result builder ─────────────────────────────────────────────────────
 function buildLlmResult(parsed: ParsedResponse): LlmResult {
   let aiNote: string | null = null;
@@ -715,11 +908,14 @@ function buildLlmResult(parsed: ParsedResponse): LlmResult {
     console.warn('[buildLlmResult] Scratchpad updated via native tool call; HTML comment fallback was ignored.');
   }
 
+  const strippedContent = parsed.content
+    .replace(/<!--\s*persist:\s*[\s\S]*?\s*-->/gi, '')
+    .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
+    .trim();
+
   return {
-    content: parsed.content
-      .replace(/<!--\s*persist:\s*[\s\S]*?\s*-->/gi, '')
-      .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
-      .trim(),
+    content: strippedContent,
+    rawContent: parsed.content,
     promptTokens: parsed.promptTokens,
     completionTokens: parsed.completionTokens,
     promptTokensDetails: parsed.promptTokensDetails,
@@ -730,6 +926,11 @@ function buildLlmResult(parsed: ParsedResponse): LlmResult {
     toolCalls,
     searchCount: toolCalls?.filter((tc) => tc.function.name === '$web_search').length ?? 0, // toolCalls may be undefined
     finishReason: parsed.finishReason,
+    responseId: parsed.responseId,
+    actualModel: parsed.actualModel,
+    systemFingerprint: parsed.systemFingerprint,
+    cacheCreationTokens: parsed.cacheCreationTokens,
+    cacheReadTokens: parsed.cacheReadTokens,
   };
 }
 
@@ -741,7 +942,7 @@ export async function askLlm(
   webSearch?: boolean,
   signal?: AbortSignal,
 ): Promise<LlmResult> {
-  const { provider: providerConfig } = resolveModelAndProvider(model);
+  const { provider: providerConfig, model: resolvedModel } = resolveModelAndProvider(model);
   const payload = buildPayload(model, messages, false, temperature, tools, webSearch);
   const adapter = getAdapter(providerConfig);
 
@@ -757,7 +958,20 @@ export async function askLlm(
     throw new Error(`LLM Error ${res.status}: ${text}`);
   }
 
-  return buildLlmResult(adapter.parseResponse(await res.json()));
+  const parsed = adapter.parseResponse(await res.json());
+
+  const parseMode = resolvedModel.thinkingParseMode ?? 'api-native';
+  if (parseMode === 'tag-based') {
+    const open = resolvedModel.thinkingOpenTag ?? '<think>';
+    const close = resolvedModel.thinkingCloseTag ?? '</think>';
+    const extracted = extractThinkTags(parsed.content, open, close);
+    parsed.content = extracted.content;
+    parsed.reasoning = extracted.reasoning;
+  } else if (parseMode === 'none') {
+    parsed.reasoning = '';
+  }
+
+  return buildLlmResult(parsed);
 }
 export async function askLlmStream(
   model: ChatModel,
@@ -769,7 +983,7 @@ export async function askLlmStream(
   webSearch?: boolean,
   signal?: AbortSignal,
 ): Promise<LlmResult> {
-  const { provider: providerConfig } = resolveModelAndProvider(model);
+  const { provider: providerConfig, model: resolvedModel } = resolveModelAndProvider(model);
   const payload = buildPayload(model, messages, true, temperature, tools, webSearch);
   const adapter = getAdapter(providerConfig);
 
@@ -787,6 +1001,23 @@ export async function askLlmStream(
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder('utf-8');
+
+  // Set up think-tag splitting for tag-based mode
+  const parseMode = resolvedModel.thinkingParseMode ?? 'api-native';
+  let splitter: ThinkTagStreamSplitter | null = null;
+  let activeOnToken = onToken;
+  let activeOnReasoning = onReasoning;
+
+  if (parseMode === 'tag-based' && onToken) {
+    const open = resolvedModel.thinkingOpenTag ?? '<think>';
+    const close = resolvedModel.thinkingCloseTag ?? '</think>';
+    splitter = new ThinkTagStreamSplitter(open, close, onToken, onReasoning);
+    // Route all raw tokens through the splitter; it calls onToken/onReasoning internally.
+    activeOnToken = (t: string): void => splitter!.handleToken(t);
+    activeOnReasoning = undefined; // splitter handles routing
+  } else if (parseMode === 'none') {
+    activeOnReasoning = undefined;
+  }
 
   const state: StreamState = { accumulated: '', reasoning: '', promptTokens: 0, completionTokens: 0, done: false };
 
@@ -814,7 +1045,7 @@ export async function askLlmStream(
           break;
         }
         try {
-          adapter.handleStreamChunk(JSON.parse(json) as unknown, state, onToken, onReasoning);
+          adapter.handleStreamChunk(JSON.parse(json) as unknown, state, activeOnToken, activeOnReasoning);
         } catch (e) {
           console.warn('Invalid stream chunk:', trimmed, e);
         }
@@ -823,6 +1054,17 @@ export async function askLlmStream(
   } finally {
     signal?.removeEventListener('abort', onAbort);
     reader.releaseLock();
+  }
+
+  // Flush any buffered partial-tag characters and reconcile split state with stream state
+  if (splitter) {
+    splitter.flush();
+    // The adapter accumulated raw text (including tags) in state.accumulated.
+    // Replace with the splitter's clean content/reasoning split.
+    state.accumulated = splitter.contentAccumulated;
+    state.reasoning = splitter.reasoningAccumulated;
+  } else if (parseMode === 'none') {
+    state.reasoning = '';
   }
 
   // Fallback to estimation if usage was not provided in the stream
@@ -841,6 +1083,11 @@ export async function askLlmStream(
     completionTokensDetails: state.completionTokensDetails,
     toolCalls: state.toolCalls,
     finishReason: state.finishReason,
+    responseId: state.responseId,
+    actualModel: state.actualModel,
+    systemFingerprint: state.systemFingerprint,
+    cacheCreationTokens: state.cacheCreationTokens,
+    cacheReadTokens: state.cacheReadTokens,
   });
 }
 
@@ -850,6 +1097,7 @@ export interface OrchestrateResult {
   totalCompletionTokens: number;
   totalSearchCount: number;
   lastResult: LlmResult;
+  toolLoopTrace: ToolLoopIteration[];
 }
 
 export async function orchestrateLlmLoop(
@@ -873,6 +1121,7 @@ export async function orchestrateLlmLoop(
   let totalSearchCount = 0;
   let finalContent = '';
   let lastResult: LlmResult | null = null;
+  const toolLoopTrace: ToolLoopIteration[] = [];
 
   while (loopCount < MAX_TOOL_LOOP_ITERATIONS) {
     loopCount++;
@@ -917,6 +1166,9 @@ export async function orchestrateLlmLoop(
       // Add assistant tool calls to context
       llmContext.push(adapter.buildAssistantContextMsg(result, providerConfig));
 
+      // Collect tool results for this iteration's trace
+      const iterationToolResults: ToolLoopIteration['toolResults'] = [];
+
       // Add tool results to context
       for (const tc of result.toolCalls) {
         const isWebSearch = tc.function.name === '$web_search';
@@ -957,8 +1209,15 @@ export async function orchestrateLlmLoop(
           onToolLog(`**Tool Result**: \`${tc.function.name}\`\n> ${summary.replace(/\n/g, '\n> ')}\n\n`);
         }
 
+        iterationToolResults.push({ toolCallId: tc.id, toolName: tc.function.name, result: toolResult });
         llmContext.push(adapter.buildToolResultContextMsg(tc, toolResult));
       }
+
+      toolLoopTrace.push({
+        iteration: loopCount,
+        llmResponse: { content: result.content, reasoning: result.reasoning, toolCalls: result.toolCalls, finishReason: result.finishReason },
+        toolResults: iterationToolResults,
+      });
       continue;
     }
     break;
@@ -972,6 +1231,7 @@ export async function orchestrateLlmLoop(
     totalCompletionTokens,
     totalSearchCount,
     lastResult,
+    toolLoopTrace,
   };
 }
 

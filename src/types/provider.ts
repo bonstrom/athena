@@ -42,6 +42,17 @@ export interface UserChatModel {
   isBuiltIn: boolean;
   /** Whether this model is selectable in the chat. Defaults to true. */
   enabled: boolean;
+  /**
+   * Controls how thinking/reasoning content is extracted from the model's output.
+   * - 'api-native' (default): Use the adapter's built-in extraction (reasoning_content / thinking blocks).
+   * - 'tag-based': Strip configurable inline tags (e.g. <think>...</think>) from text content.
+   * - 'none': Never extract reasoning; treat all output as regular content.
+   */
+  thinkingParseMode?: 'api-native' | 'tag-based' | 'none';
+  /** Opening tag for 'tag-based' mode. Defaults to '<think>'. */
+  thinkingOpenTag?: string;
+  /** Closing tag for 'tag-based' mode. Defaults to '</think>'. */
+  thinkingCloseTag?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

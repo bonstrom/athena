@@ -13,6 +13,7 @@ import {
   LIST_MESSAGES_TOOL,
   ASK_USER_TOOL,
   LlmTool,
+  LlmDebugPayload,
 } from '../services/llmService';
 import { generateImage, generateMusic } from '../services/mediaService';
 import { llmSuggestionService } from '../services/llmSuggestionService';
@@ -961,6 +962,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const lastResult = primaryResult.lastResult;
       const finalTotalCost = calculateCostSEK(selectedModel, totalPromptTokens, totalCompletionTokens, lastResult.promptTokensDetails);
 
+      const debugPayload: LlmDebugPayload = {
+        rawContent: lastResult.rawContent,
+        responseId: lastResult.responseId,
+        actualModel: lastResult.actualModel,
+        systemFingerprint: lastResult.systemFingerprint,
+        finishReason: lastResult.finishReason,
+        usageDetails: {
+          promptTokens: totalPromptTokens,
+          completionTokens: totalCompletionTokens,
+          cachedTokens: lastResult.promptTokensDetails?.cached_tokens,
+          reasoningTokens: lastResult.completionTokensDetails?.reasoning_tokens,
+          cacheCreationTokens: lastResult.cacheCreationTokens,
+          cacheReadTokens: lastResult.cacheReadTokens,
+        },
+        toolLoopTrace: primaryResult.toolLoopTrace,
+        timestamp: new Date().toISOString(),
+      };
+
       // ── Verification: Main chat stream ──
       if (!finalContent.trim()) console.warn('[verify:chat] Assistant response was empty');
       if (totalPromptTokens === 0) console.warn('[verify:chat] promptTokens is 0 — possible usage tracking issue');
@@ -1014,6 +1033,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         failed: false,
         latencyMs,
         model: selectedModel.apiModelId,
+        rawResponse: JSON.stringify(debugPayload),
       };
 
       await athenaDb.transaction('rw', athenaDb.messages, async () => {

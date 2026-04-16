@@ -46,6 +46,9 @@ const emptyModel = (providerId = ''): Omit<UserChatModel, 'id'> => ({
   maxTokensOverride: null,
   isBuiltIn: false,
   enabled: true,
+  thinkingParseMode: 'api-native',
+  thinkingOpenTag: '<think>',
+  thinkingCloseTag: '</think>',
 });
 
 const ModelsSettings: React.FC = () => {
@@ -78,6 +81,9 @@ const ModelsSettings: React.FC = () => {
       maxTokensOverride: model.maxTokensOverride,
       isBuiltIn: model.isBuiltIn,
       enabled: model.enabled !== false,
+      thinkingParseMode: model.thinkingParseMode ?? 'api-native',
+      thinkingOpenTag: model.thinkingOpenTag ?? '<think>',
+      thinkingCloseTag: model.thinkingCloseTag ?? '</think>',
     });
     setForceTempInput(model.forceTemperature !== null && model.forceTemperature !== undefined ? String(model.forceTemperature) : '');
     setMaxTokensInput(model.maxTokensOverride !== null && model.maxTokensOverride !== undefined ? String(model.maxTokensOverride) : '');
@@ -326,6 +332,41 @@ const ModelsSettings: React.FC = () => {
                 helperText="Adds max_tokens to payload (e.g. 4096 for MiniMax)"
               />
             </Box>
+
+            {/* Thinking / Reasoning extraction */}
+            <Typography variant="caption" color="text.secondary" fontWeight="bold" sx={{ display: 'block', mt: 1.5, mb: 0.75 }}>
+              THINKING EXTRACTION
+            </Typography>
+            <FormControl fullWidth size="small" sx={{ mb: 1 }}>
+              <InputLabel>Parse Mode</InputLabel>
+              <Select
+                value={form.thinkingParseMode ?? 'api-native'}
+                label="Parse Mode"
+                onChange={(e): void => setForm((f) => ({ ...f, thinkingParseMode: e.target.value as UserChatModel['thinkingParseMode'] }))}
+              >
+                <MenuItem value="api-native">API Native (reasoning_content / thinking blocks)</MenuItem>
+                <MenuItem value="tag-based">Tag-Based (e.g. &lt;think&gt;…&lt;/think&gt;)</MenuItem>
+                <MenuItem value="none">None (never extract reasoning)</MenuItem>
+              </Select>
+            </FormControl>
+            {(form.thinkingParseMode ?? 'api-native') === 'tag-based' && (
+              <Box display="grid" gridTemplateColumns="1fr 1fr" gap={1.5}>
+                <TextField
+                  label="Open Tag"
+                  size="small"
+                  value={form.thinkingOpenTag ?? '<think>'}
+                  onChange={(e): void => setForm((f) => ({ ...f, thinkingOpenTag: e.target.value }))}
+                  helperText="e.g. <think>"
+                />
+                <TextField
+                  label="Close Tag"
+                  size="small"
+                  value={form.thinkingCloseTag ?? '</think>'}
+                  onChange={(e): void => setForm((f) => ({ ...f, thinkingCloseTag: e.target.value }))}
+                  helperText="e.g. </think>"
+                />
+              </Box>
+            )}
           </Box>
         </Collapse>
 

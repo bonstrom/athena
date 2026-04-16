@@ -47,6 +47,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SummarizeIcon from '@mui/icons-material/Summarize';
+import BugReportIcon from '@mui/icons-material/BugReport';
 
 interface MessageBubbleProps {
   message: Message;
@@ -72,6 +73,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [infoAnchorEl, setInfoAnchorEl] = useState<null | HTMLElement>(null);
   const [isExpanded, setIsExpanded] = useState(() => messageTruncateChars === 0 || message.content.length <= messageTruncateChars);
@@ -190,6 +192,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
 
   const handleDeleteMenu = (): void => {
     handleDeleteClick();
+    handleMenuClose();
+  };
+
+  const handleRawMenu = (): void => {
+    setShowRaw((v) => !v);
     handleMenuClose();
   };
 
@@ -478,6 +485,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     <ListItemText>Fork</ListItemText>
                   </MenuItem>
                 )}
+                {message.rawResponse && (
+                  <MenuItem onClick={handleRawMenu}>
+                    <ListItemIcon>
+                      <BugReportIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>{showRaw ? 'Show formatted' : 'Show raw response'}</ListItemText>
+                  </MenuItem>
+                )}
                 <MenuItem onClick={handleDeleteMenu}>
                   <ListItemIcon>
                     <DeleteIcon fontSize="small" />
@@ -496,10 +511,29 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             </Typography>
           ) : (
             <>
-              <MarkdownWithCode fontSize={chatFontSize}>{displayContent}</MarkdownWithCode>
-              {(isLong || message.reasoning) && (
+              {showRaw && message.rawResponse ? (
+                <Box
+                  component="pre"
+                  sx={{
+                    fontFamily: 'monospace',
+                    fontSize: '0.75rem',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all',
+                    m: 0,
+                    p: 1,
+                    bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)'),
+                    borderRadius: 1,
+                    overflowX: 'auto',
+                  }}
+                >
+                  {JSON.stringify(JSON.parse(message.rawResponse) as unknown, null, 2)}
+                </Box>
+              ) : (
+                <MarkdownWithCode fontSize={chatFontSize}>{displayContent}</MarkdownWithCode>
+              )}
+              {(isLong || message.reasoning || message.rawResponse) && (
                 <Box mt={0.5} display="flex" alignItems="center" gap={1}>
-                  {isLong && (
+                  {isLong && !showRaw && (
                     <Button
                       size="small"
                       variant="text"
