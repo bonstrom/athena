@@ -531,7 +531,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               ) : (
                 <MarkdownWithCode fontSize={chatFontSize}>{displayContent}</MarkdownWithCode>
               )}
-              {(isLong || message.reasoning || message.rawResponse) && (
+              {(isLong || message.reasoning) && (
                 <Box mt={0.5} display="flex" alignItems="center" gap={1}>
                   {isLong && !showRaw && (
                     <Button
