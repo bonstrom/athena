@@ -227,7 +227,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   getAvailableModels: (): UserChatModel[] => {
     const { models, providers } = get();
     return models.filter((m) => {
-      if (m.enabled === false) return false;
+      if (!m.enabled) return false;
       const provider = providers.find((p) => p.id === m.providerId);
       if (!provider) return false;
       const hasKey = getApiKey(provider).length > 0;

@@ -1,19 +1,15 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 
-jest.mock(
-  'react-router-dom',
-  () => {
-    const React = require('react');
-    return {
-      __esModule: true,
-      HashRouter: ({ children }: { children: React.ReactNode }) => <div data-testid="router">{children}</div>,
-      Routes: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-      Route: ({ element }: { element: React.ReactElement }) => element,
-    };
-  },
-  { virtual: true },
-);
+jest.mock('react-router-dom', () => {
+  const React = require('react');
+  return {
+    __esModule: true,
+    HashRouter: ({ children }: { children: React.ReactNode }) => <div data-testid="router">{children}</div>,
+    Routes: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Route: ({ element }: { element: React.ReactElement }) => element,
+  };
+});
 
 jest.mock('./components/ChatLayout', () => () => <div data-testid="chat-layout" />);
 jest.mock('./components/GlobalErrorSnackbar', () => ({
@@ -33,9 +29,9 @@ import { useAutoBackup } from './hooks/useAutoBackup';
 import { useEmbeddingBackfill } from './hooks/useEmbeddingBackfill';
 import { useAuthStore } from './store/AuthStore';
 
-const mockUseAuthStore = useAuthStore as jest.Mock;
-const mockUseAutoBackup = useAutoBackup as jest.Mock;
-const mockUseEmbeddingBackfill = useEmbeddingBackfill as jest.Mock;
+const mockUseAuthStore = jest.mocked(useAuthStore);
+const mockUseAutoBackup = jest.mocked(useAutoBackup);
+const mockUseEmbeddingBackfill = jest.mocked(useEmbeddingBackfill);
 
 beforeEach(() => {
   jest.clearAllMocks();

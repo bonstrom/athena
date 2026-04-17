@@ -1,4 +1,4 @@
-import { pipeline, env, type TextGenerationPipeline } from '@huggingface/transformers';
+import { pipeline, env, type TextGenerationPipeline } from '@xenova/transformers';
 
 interface TransformersEnv {
   allowLocalModels: boolean;

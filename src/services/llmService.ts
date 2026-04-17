@@ -865,7 +865,7 @@ function extractThinkTags(content: string, openTag: string, closeTag: string): {
   const regex = new RegExp(`${open}([\\s\\S]*?)(?:${close}|$)`, 'gi');
   const reasoningParts: string[] = [];
   const strippedContent = content.replace(regex, (_match, inner: string) => {
-    reasoningParts.push((inner ?? '').trim());
+    reasoningParts.push(inner.trim());
     return '';
   });
   return {
@@ -1011,9 +1011,10 @@ export async function askLlmStream(
   if (parseMode === 'tag-based' && onToken) {
     const open = resolvedModel.thinkingOpenTag ?? '<think>';
     const close = resolvedModel.thinkingCloseTag ?? '</think>';
-    splitter = new ThinkTagStreamSplitter(open, close, onToken, onReasoning);
+    const streamSplitter = new ThinkTagStreamSplitter(open, close, onToken, onReasoning);
+    splitter = streamSplitter;
     // Route all raw tokens through the splitter; it calls onToken/onReasoning internally.
-    activeOnToken = (t: string): void => splitter!.handleToken(t);
+    activeOnToken = (t: string): void => streamSplitter.handleToken(t);
     activeOnReasoning = undefined; // splitter handles routing
   } else if (parseMode === 'none') {
     activeOnReasoning = undefined;

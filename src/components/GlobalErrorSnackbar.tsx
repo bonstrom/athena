@@ -7,9 +7,8 @@ export const GlobalErrorSnackbar = (): JSX.Element => {
   const [current, setCurrent] = useState<null | (typeof notifications)[0]>(null);
 
   useEffect(() => {
-    if (!current && notifications.length > 0) {
-      setCurrent(notifications[0]);
-    }
+    if (notifications.length === 0) return;
+    setCurrent((prev) => prev ?? notifications[0]);
   }, [notifications]);
 
   const handleClose = (): void => {

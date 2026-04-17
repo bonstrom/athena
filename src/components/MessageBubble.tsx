@@ -595,7 +595,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                         '&:hover': { opacity: 0.9 },
                       }}
                       onClick={(): void => {
-                        setExpandedImage({ url: att.previewUrl!, name: att.name, data: att.data });
+                        if (!att.previewUrl) return;
+                        setExpandedImage({ url: att.previewUrl, name: att.name, data: att.data });
                       }}
                     />
                     <IconButton
@@ -621,7 +622,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       <DownloadIcon fontSize="small" />
                     </IconButton>
                   </>
-                ) : att.name?.toLowerCase().match(/\.(mp3|wav|ogg)$/) ? (
+                ) : att.name.toLowerCase().match(/\.(mp3|wav|ogg)$/) ? (
                   <>
                     {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                     <audio controls src={att.data} style={{ display: 'block', outline: 'none' }} />

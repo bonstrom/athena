@@ -531,15 +531,15 @@ const ProviderCardComponent: React.FC<ProviderCardProps> = ({ provider, balanceL
               borderRadius: 1,
               mb: 1,
               bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
-              opacity: model.enabled === false ? 0.5 : 1,
+              opacity: model.enabled ? 1 : 0.5,
             }}
           >
             <Box display="flex" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
               <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
-                <Tooltip title={model.enabled === false ? 'Disabled — not selectable in chat' : 'Enabled'}>
+                <Tooltip title={model.enabled ? 'Enabled' : 'Disabled — not selectable in chat'}>
                   <Switch
                     size="small"
-                    checked={model.enabled !== false}
+                    checked={model.enabled}
                     onChange={(e): void => {
                       useProviderStore.getState().updateModel({ ...model, enabled: e.target.checked });
                     }}

@@ -18,7 +18,7 @@ import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
 import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown';
 import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx';
 import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, CSSProperties } from 'react';
 import { useTheme, alpha } from '@mui/material/styles';
 
 SyntaxHighlighter.registerLanguage('javascript', javascript);
@@ -127,9 +127,23 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) 
       </li>
     ),
 
-    code({ inline, className, children, ...props }: React.ComponentPropsWithoutRef<'code'> & { inline?: boolean }): React.ReactElement {
+    code({
+      inline,
+      className,
+      children,
+      style: _inlineCodeStyle,
+      ...props
+    }: React.ComponentPropsWithoutRef<'code'> & { inline?: boolean }): React.ReactElement {
       const match = /language-(\w+)/.exec(className ?? '');
       const codeString = String(children).replace(/\n$/, '');
+      const darkSyntaxStyle: Record<string, CSSProperties> = {
+        ...oneDark,
+        comment: { ...oneDark.comment, color: '#7f8ea3' },
+        'block-comment': { ...oneDark['block-comment'], color: '#7f8ea3' },
+        prolog: { ...oneDark.prolog, color: '#7f8ea3' },
+      };
+      const lightSyntaxStyle = oneLight as Record<string, CSSProperties>;
+      const syntaxStyle: Record<string, CSSProperties> = theme.palette.mode === 'dark' ? darkSyntaxStyle : lightSyntaxStyle;
       return !inline && match ? (
         <Box
           sx={{
@@ -144,18 +158,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) 
           <CopyButton text={codeString} />
           <SyntaxHighlighter
             language={match[1]}
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-            style={
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-              (theme.palette.mode === 'dark'
-                ? {
-                    ...oneDark,
-                    comment: { ...oneDark.comment, color: '#7f8ea3' },
-                    'block-comment': { ...oneDark['block-comment'], color: '#7f8ea3' },
-                    prolog: { ...oneDark.prolog, color: '#7f8ea3' },
-                  }
-                : oneLight) as any
-            }
+            style={syntaxStyle}
             PreTag="div"
             customStyle={{
               whiteSpace: 'pre',

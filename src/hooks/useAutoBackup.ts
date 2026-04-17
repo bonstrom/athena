@@ -1,11 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { BackupService } from '../services/backupService';
-import { useNotificationStore } from '../store/NotificationStore';
 
 export const useAutoBackup = (intervalMinutes = 30): void => {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { addNotification } = useNotificationStore();
 
   useEffect(() => {
     // Helper function to try running the backup

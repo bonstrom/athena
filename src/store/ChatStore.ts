@@ -878,7 +878,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                     );
                     continue;
                   }
-                  target = prefixMatches[0];
+                  target = prefixMatches.at(0);
                 }
                 if (!target) {
                   results.push(`Message ${req.messageId} not found.`);

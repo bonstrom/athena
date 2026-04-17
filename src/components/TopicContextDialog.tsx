@@ -263,7 +263,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
           </Box>
         ) : (
           <List disablePadding>
-            {filteredEntries.map((entry, index) => {
+            {filteredEntries.map((entry) => {
               const globalIndex = entries.indexOf(entry);
               const isExpanded = expandedIds.has(globalIndex);
               const isPinned = entry.isConversationMessage && entry.sourceLabel.startsWith('Pinned');
