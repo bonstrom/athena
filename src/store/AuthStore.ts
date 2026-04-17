@@ -78,7 +78,7 @@ export const useAuthStore = create<AuthState>((set) => {
   >;
   const storedTopicPreloadCount = Number(localStorage.getItem('topicPreloadCount') ?? '5');
   const storedMessageTruncateChars = Number(localStorage.getItem('messageTruncateChars') ?? '500');
-  const storedRagEnabled = localStorage.getItem('ragEnabled') !== 'false'; // default true
+  const storedRagEnabled = localStorage.getItem('ragEnabled') === 'true'; // default false
   const storedMaxContextTokens = Number(localStorage.getItem('maxContextTokens') ?? '16000');
   const storedMessageRetrievalEnabled = localStorage.getItem('messageRetrievalEnabled') !== 'false'; // default true
   const storedAskUserEnabled = localStorage.getItem('askUserEnabled') !== 'false'; // default true
@@ -151,6 +151,8 @@ export const useAuthStore = create<AuthState>((set) => {
         replyPredictionModel: 'same',
         llmModelSelected: 'qwen3.5-0.8b',
         llmModelDownloadStatus: {},
+        ragEnabled: false,
+        maxContextTokens: 16000,
         messageRetrievalEnabled: true,
         askUserEnabled: true,
         aiSummaryEnabled: false,
