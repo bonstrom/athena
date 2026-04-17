@@ -636,7 +636,17 @@ describe('TopicStore.getTopicContext', () => {
 });
 
 describe('TopicStore actions', () => {
+  let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
+  let consoleDebugSpy: jest.SpiedFunction<typeof console.debug>;
+
   beforeEach(() => {
+    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation((...args: unknown[]): void => {
+      void args;
+    });
+    consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation((...args: unknown[]): void => {
+      void args;
+    });
+
     mockAddNotification.mockReset();
     mockTopicsToArray.mockReset();
     mockTopicsAdd.mockReset();
@@ -659,6 +669,11 @@ describe('TopicStore actions', () => {
       loading: false,
       error: null,
     });
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+    consoleDebugSpy.mockRestore();
   });
 
   it('loadTopics sets error and notifies when DB query fails', async () => {

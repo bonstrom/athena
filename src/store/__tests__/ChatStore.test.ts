@@ -143,7 +143,13 @@ jest.mock('../../database/AthenaDb', () => ({
 import { useChatStore } from '../../store/ChatStore';
 
 describe('ChatStore', () => {
+  let consoleDebugSpy: jest.SpiedFunction<typeof console.debug>;
+
   beforeEach(() => {
+    consoleDebugSpy = jest.spyOn(console, 'debug').mockImplementation((...args: unknown[]): void => {
+      void args;
+    });
+
     jest.clearAllMocks();
 
     Object.defineProperty(globalThis, 'crypto', {
@@ -198,6 +204,10 @@ describe('ChatStore', () => {
       webSearchEnabled: false,
       selectedModel: testModel,
     });
+  });
+
+  afterEach(() => {
+    consoleDebugSpy.mockRestore();
   });
 
   it('sendMessageStream persists a user and assistant message and finalizes assistant content', async () => {

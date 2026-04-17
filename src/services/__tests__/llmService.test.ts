@@ -129,6 +129,8 @@ describe('filterMessagesForModel — model WITH enforceAlternatingRoles', () => 
 });
 
 describe('orchestrateLlmLoop — tool calls', () => {
+  let consoleWarnSpy: jest.SpiedFunction<typeof console.warn>;
+
   const model: UserChatModel = { ...makeModel(false), streaming: false };
   const provider: LlmProvider = {
     id: 'test-provider',
@@ -150,6 +152,10 @@ describe('orchestrateLlmLoop — tool calls', () => {
   }
 
   beforeEach(() => {
+    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation((...args: unknown[]): void => {
+      void args;
+    });
+
     mockEstimateTokens.mockReturnValue({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
     mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 16000 });
     mockProviderGetState.mockReturnValue({
@@ -157,6 +163,10 @@ describe('orchestrateLlmLoop — tool calls', () => {
       getAvailableModels: (): UserChatModel[] => [model],
       getProviderForModel: (): LlmProvider => provider,
     });
+  });
+
+  afterEach(() => {
+    consoleWarnSpy.mockRestore();
   });
 
   it('executes tool calls and includes tool results in loop trace', async () => {
@@ -595,5 +605,89 @@ describe('orchestrateLlmLoop — tool calls', () => {
     const body = JSON.parse(String(requestInit?.body)) as { messages: { role: string; content: string | null }[] };
 
     expect(body.messages).toEqual([{ role: 'system', content: 'sys instructions' }]);
+  });
+});
+
+describe('askLlm — non-streaming API calls', () => {
+  const model: UserChatModel = makeModel(false);
+  const provider: LlmProvider = {
+    id: 'test-provider',
+    name: 'Test Provider',
+    baseUrl: 'https://example.com/v1/chat/completions',
+    messageFormat: 'openai',
+    apiKeyEncrypted: 'key-encrypted',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: false,
+  };
+
+  beforeEach(() => {
+    mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 16000 });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+    mockEstimateTokens.mockReturnValue({ promptTokens: 50, completionTokens: 75, totalTokens: 125 });
+  });
+
+  it('returns response with message content and token counts', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> =>
+        Promise.resolve({
+          choices: [{ message: { content: 'Hello there' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 48, completion_tokens: 12 },
+        }),
+    } as unknown as Response);
+
+    const { askLlm } = await import('../llmService');
+    const result = await askLlm(model, 0.7, [user('Hi')]);
+
+    expect(result.content).toBe('Hello there');
+    expect(result.promptTokens).toBe(48);
+    expect(result.completionTokens).toBe(12);
+    expect(result.finishReason).toBe('stop');
+  });
+
+  it('throws error when API returns non-OK status', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      text: (): Promise<string> => Promise.resolve('Unauthorized'),
+    } as unknown as Response);
+
+    const { askLlm } = await import('../llmService');
+    await expect(askLlm(model, 0.7, [user('Test')])).rejects.toThrow('LLM Error 401');
+  });
+
+  it('preserves cached token information from API response', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> =>
+        Promise.resolve({
+          choices: [{ message: { content: 'cached result' }, finish_reason: 'stop' }],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 50,
+            prompt_tokens_details: { cached_tokens: 60 },
+          },
+        }),
+    } as unknown as Response);
+
+    const { askLlm } = await import('../llmService');
+    const result = await askLlm(model, 0.7, [user('Test')]);
+
+    expect(result.promptTokensDetails?.cached_tokens).toBe(60);
   });
 });

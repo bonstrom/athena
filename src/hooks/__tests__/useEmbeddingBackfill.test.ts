@@ -38,7 +38,13 @@ jest.mock('../../database/AthenaDb', () => ({
 import { useEmbeddingBackfill } from '../useEmbeddingBackfill';
 
 describe('useEmbeddingBackfill', () => {
+  let consoleWarnSpy: jest.SpiedFunction<typeof console.warn>;
+
   beforeEach(() => {
+    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation((...args: unknown[]): void => {
+      void args;
+    });
+
     jest.clearAllMocks();
     mockRagEnabledState = false;
 
@@ -50,6 +56,10 @@ describe('useEmbeddingBackfill', () => {
     mockLoadModel.mockResolvedValue();
     mockGenerateEmbedding.mockResolvedValue([0.1, 0.2]);
     mockUpdate.mockResolvedValue(1);
+  });
+
+  afterEach(() => {
+    consoleWarnSpy.mockRestore();
   });
 
   it('does nothing when rag is disabled', async () => {
