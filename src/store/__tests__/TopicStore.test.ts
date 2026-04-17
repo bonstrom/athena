@@ -225,4 +225,71 @@ describe('TopicStore.getTopicContext', () => {
     expect(ids).not.toContain('u3');
     expect(ids).not.toContain('a3');
   });
+
+  it('uses only the active assistant version for a user message', async () => {
+    mockAuthGetState.mockReturnValue({
+      defaultMaxContextMessages: 10,
+      maxContextTokens: 10000,
+      messageRetrievalEnabled: false,
+      ragEnabled: false,
+    });
+
+    const u1 = makeMessage({
+      id: 'u1',
+      type: 'user',
+      content: 'Question with multiple assistant versions',
+      created: '2024-01-01T00:00:00.000Z',
+      activeResponseId: 'a1-v2',
+    });
+    const a1v1 = makeMessage({
+      id: 'a1-v1',
+      type: 'assistant',
+      content: 'Old assistant response',
+      created: '2024-01-01T00:01:00.000Z',
+      parentMessageId: 'u1',
+    });
+    const a1v2 = makeMessage({
+      id: 'a1-v2',
+      type: 'assistant',
+      content: 'Active assistant response',
+      created: '2024-01-01T00:02:00.000Z',
+      parentMessageId: 'u1',
+    });
+
+    mockDbMessages = [u1, a1v1, a1v2];
+
+    const context = await useTopicStore.getState().getTopicContext('topic-1');
+    const ids = context.map((m) => m.id);
+
+    expect(ids).toContain('u1');
+    expect(ids).toContain('a1-v2');
+    expect(ids).not.toContain('a1-v1');
+  });
+
+  it('adds a history directory message when retrieval is enabled and older messages are outside context', async () => {
+    useTopicStore.setState({ topics: [makeTopic({ maxContextMessages: 2 })] });
+    mockAuthGetState.mockReturnValue({
+      defaultMaxContextMessages: 2,
+      maxContextTokens: 10000,
+      messageRetrievalEnabled: true,
+      ragEnabled: false,
+    });
+
+    const u1 = makeMessage({ id: 'u1', type: 'user', content: 'Question 1', created: '2024-01-01T00:00:00.000Z' });
+    const a1 = makeMessage({ id: 'a1', type: 'assistant', content: 'Answer 1', created: '2024-01-01T00:01:00.000Z', parentMessageId: 'u1' });
+    const u2 = makeMessage({ id: 'u2', type: 'user', content: 'Question 2', created: '2024-01-01T00:02:00.000Z' });
+    const a2 = makeMessage({ id: 'a2', type: 'assistant', content: 'Answer 2', created: '2024-01-01T00:03:00.000Z', parentMessageId: 'u2' });
+    const u3 = makeMessage({ id: 'u3', type: 'user', content: 'Question 3', created: '2024-01-01T00:04:00.000Z' });
+    const a3 = makeMessage({ id: 'a3', type: 'assistant', content: 'Answer 3', created: '2024-01-01T00:05:00.000Z', parentMessageId: 'u3' });
+
+    mockDbMessages = [u1, a1, u2, a2, u3, a3];
+
+    const context = await useTopicStore.getState().getTopicContext('topic-1');
+    const directory = context.find((m) => m.id === '__history_directory__');
+
+    expect(directory).toBeDefined();
+    expect(directory?.content).toContain('Historical messages outside context');
+    expect(directory?.content).toContain('u1|U|');
+    expect(directory?.content).toContain('a1|A|');
+  });
 });

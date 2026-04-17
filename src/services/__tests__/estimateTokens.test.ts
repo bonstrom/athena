@@ -23,6 +23,11 @@ beforeEach(() => {
 });
 
 describe('estimateTokens — basic output shape', () => {
+  it('returns 0 prompt tokens for an empty message list', () => {
+    const result = estimateTokens([]);
+    expect(result.promptTokens).toBe(0);
+  });
+
   it('returns promptTokens, completionTokens, and totalTokens', () => {
     const result = estimateTokens([msg('user', 'hi')]);
     expect(result).toHaveProperty('promptTokens');
@@ -89,6 +94,20 @@ describe('estimateTokens — content type handling', () => {
 });
 
 describe('estimateTokens — LRU cache behaviour', () => {
+  it('treats different reasoning_content values as different cache keys', () => {
+    const withReasoningA: LlmMessage = { role: 'assistant', content: 'answer', reasoning_content: 'reason-a' };
+    const withReasoningB: LlmMessage = { role: 'assistant', content: 'answer', reasoning_content: 'reason-b' };
+
+    estimateTokens([withReasoningA]);
+    const callsAfterA = mockEncode.mock.calls.length;
+
+    estimateTokens([withReasoningB]);
+    const callsAfterB = mockEncode.mock.calls.length;
+
+    expect(callsAfterA).toBeGreaterThan(0);
+    expect(callsAfterB).toBeGreaterThan(callsAfterA);
+  });
+
   it('does not call encode a second time for identical messages (cache hit)', () => {
     const messages = [msg('user', 'same message')];
     estimateTokens(messages);
@@ -113,5 +132,29 @@ describe('estimateTokens — LRU cache behaviour', () => {
     // Re-querying the first message should now miss the cache and call encode again
     estimateTokens([msg('user', 'unique message 0')]);
     expect(mockEncode.mock.calls.length).toBeGreaterThan(callsAfterEviction);
+  });
+
+  it('refreshes LRU position on cache hit so recently used entries are not evicted first', () => {
+    for (let i = 0; i < 100; i++) {
+      estimateTokens([msg('user', `lru message ${i}`)]);
+    }
+
+    mockEncode.mockClear();
+
+    // Cache hit should refresh entry 0 to most-recently-used.
+    estimateTokens([msg('user', 'lru message 0')]);
+    expect(mockEncode.mock.calls.length).toBe(0);
+
+    // Insert one new entry; this should evict entry 1 (the oldest), not entry 0.
+    estimateTokens([msg('user', 'lru message 100')]);
+    expect(mockEncode.mock.calls.length).toBe(1);
+
+    // Entry 0 should still be cached (no additional encode call).
+    estimateTokens([msg('user', 'lru message 0')]);
+    expect(mockEncode.mock.calls.length).toBe(1);
+
+    // Entry 1 should have been evicted and require re-encoding.
+    estimateTokens([msg('user', 'lru message 1')]);
+    expect(mockEncode.mock.calls.length).toBe(2);
   });
 });
