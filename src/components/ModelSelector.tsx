@@ -8,6 +8,19 @@ import { USD_TO_SEK } from '../constants';
 export type ChatModel = UserChatModel;
 export type { ProviderId } from '../services/llmService';
 
+const LEGACY_MODEL_ID_MAP: Record<string, string> = {
+  'builtin-kimi-k2-5': 'builtin-kimi-k2-turbo',
+  'kimi-k2.5': 'builtin-kimi-k2-turbo',
+};
+
+function resolveModelFromSavedId(savedModelId: string | null, models: ChatModel[]): ChatModel | undefined {
+  if (!savedModelId) return undefined;
+  const normalizedSavedId = Object.prototype.hasOwnProperty.call(LEGACY_MODEL_ID_MAP, savedModelId)
+    ? LEGACY_MODEL_ID_MAP[savedModelId]
+    : savedModelId;
+  return models.find((m) => m.id === normalizedSavedId) ?? models.find((m) => m.apiModelId === normalizedSavedId);
+}
+
 export function calculateCostUSD(model: ChatModel, prompt: number, completion: number, promptDetails?: { cached_tokens?: number }): number {
   const cachedTokens = promptDetails?.cached_tokens ?? 0;
   const regularPromptTokens = Math.max(0, prompt - cachedTokens);
@@ -26,6 +39,14 @@ interface Props {
 const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
   const { getAvailableModels, models } = useProviderStore();
   const availableModels = getAvailableModels();
+  const selectedStillAvailable = availableModels.some((m) => m.id === selectedModel.id);
+  const selectValue = selectedStillAvailable ? selectedModel.id : '';
+
+  React.useEffect(() => {
+    if (!selectedStillAvailable && availableModels.length > 0) {
+      onChange(availableModels[0]);
+    }
+  }, [selectedStillAvailable, availableModels, onChange]);
 
   if (availableModels.length === 0) {
     return (
@@ -39,7 +60,7 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
     <FormControl fullWidth variant="outlined" size="small">
       <InputLabel>Model</InputLabel>
       <Select
-        value={selectedModel.id}
+        value={selectValue}
         onChange={(e): void => {
           const selected = models.find((m) => m.id === e.target.value);
           if (selected) onChange(selected);
@@ -69,14 +90,18 @@ export default ModelSelector;
 
 export function getDefaultModel(): ChatModel {
   const { models, getAvailableModels } = useProviderStore.getState();
-  const savedModelId = localStorage.getItem('athena_selected_model');
-  if (savedModelId) {
-    // Try by internal ID first, then by apiModelId for backward compat
-    const saved = models.find((m) => m.id === savedModelId) ?? models.find((m) => m.apiModelId === savedModelId);
-    if (saved) return saved;
-  }
   const available = getAvailableModels();
-  return available[0] ?? models[0];
+  const availableIds = new Set(available.map((m) => m.id));
+  const savedModelId = localStorage.getItem('athena_selected_model');
+  const saved = resolveModelFromSavedId(savedModelId, models);
+
+  if (saved && availableIds.has(saved.id)) {
+    return saved;
+  }
+
+  const fallback: ChatModel = available[0] ?? models[0];
+  localStorage.setItem('athena_selected_model', fallback.id);
+  return fallback;
 }
 
 export function getDefaultTopicNameModel(): ChatModel {
