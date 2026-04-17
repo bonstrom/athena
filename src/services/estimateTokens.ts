@@ -3,6 +3,11 @@ import { LlmMessage } from './llmService';
 
 const promptCache = new Map<string, number>();
 
+/** Clears the internal token cache. Intended for use in tests only. */
+export function clearTokenCacheForTesting(): void {
+  promptCache.clear();
+}
+
 export function estimateTokens(
   messages: LlmMessage[],
   reply?: string,
