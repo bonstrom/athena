@@ -1,4 +1,5 @@
 import { Message } from '../database/AthenaDb';
+import { createEmbeddingWorker } from './embeddingWorkerFactory';
 
 export interface ScoredMessage {
   message: Message;
@@ -12,7 +13,7 @@ interface PendingEmbedding {
   reject: (err: Error) => void;
 }
 
-class EmbeddingService {
+export class EmbeddingService {
   private worker: Worker | null = null;
   private status: EmbeddingStatus = 'idle';
   private readyListeners: (() => void)[] = [];
@@ -32,7 +33,7 @@ class EmbeddingService {
     }
 
     this.status = 'loading';
-    this.worker = new Worker(new URL('./embeddingWorker.ts', import.meta.url));
+    this.worker = createEmbeddingWorker();
 
     this.worker.onmessage = (event: MessageEvent<{ type: string; status?: string; id?: string; vector?: number[]; error?: string }>): void => {
       const { type, status, id, vector, error } = event.data;

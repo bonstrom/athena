@@ -373,4 +373,42 @@ describe('ChatStore', () => {
     expect(sendSpy).toHaveBeenCalledWith('Original question', 'topic-1', 'u-regen');
     sendSpy.mockRestore();
   });
+
+  it('switchMessageVersion updates activeResponseId on the user message', async () => {
+    const userMessage: Message = {
+      id: 'u-switch',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'Question with multiple answers',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    };
+
+    useChatStore.setState({
+      currentTopicId: 'topic-1',
+      messagesByTopic: {
+        'topic-1': [userMessage],
+      },
+    });
+
+    await useChatStore.getState().switchMessageVersion('u-switch', 'a-v2');
+
+    expect(mockDbUpdate).toHaveBeenCalledWith('u-switch', { activeResponseId: 'a-v2' });
+    const updatedUser = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.id === 'u-switch');
+    expect(updatedUser?.activeResponseId).toBe('a-v2');
+  });
+
+  it('switchMessageVersion is a no-op when no current topic is selected', async () => {
+    useChatStore.setState({ currentTopicId: null });
+
+    await useChatStore.getState().switchMessageVersion('u-switch', 'a-v2');
+
+    expect(mockDbUpdate).not.toHaveBeenCalledWith('u-switch', { activeResponseId: 'a-v2' });
+  });
 });

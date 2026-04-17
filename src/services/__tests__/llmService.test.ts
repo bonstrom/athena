@@ -217,6 +217,58 @@ describe('orchestrateLlmLoop — tool calls', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
+  it('caches duplicate tool calls within a single iteration', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-1',
+          model: model.apiModelId,
+          choices: [
+            {
+              finish_reason: 'tool_calls',
+              message: {
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call-1',
+                    type: 'function',
+                    function: { name: 'read_messages', arguments: '{"messages":[{"messageId":"abc"}]}' },
+                  },
+                  {
+                    id: 'call-2',
+                    type: 'function',
+                    function: { name: 'read_messages', arguments: '{"messages":[{"messageId":"abc"}]}' },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 3 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-2',
+          model: model.apiModelId,
+          choices: [{ finish_reason: 'stop', message: { content: 'done' } }],
+          usage: { prompt_tokens: 12, completion_tokens: 4 },
+        }),
+      );
+
+    const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('shared tool result'));
+
+    const result = await orchestrateLlmLoop(model, 0.7, [user('Read message twice')], undefined, undefined, undefined, onExecuteTool);
+
+    expect(onExecuteTool).toHaveBeenCalledTimes(1);
+    expect(result.toolLoopTrace).toHaveLength(1);
+    expect(result.toolLoopTrace[0].toolResults).toHaveLength(2);
+    expect(result.toolLoopTrace[0].toolResults[0].result).toBe('shared tool result');
+    expect(result.toolLoopTrace[0].toolResults[1].result).toBe('shared tool result');
+  });
+
   it('handles update_scratchpad tool calls via onScratchpadUpdate', async () => {
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
@@ -428,6 +480,52 @@ describe('orchestrateLlmLoop — tool calls', () => {
 
     expect(tracedResult).toContain('[TRUNCATED: result exceeded 8000 chars]');
     expect(tracedResult.length).toBeGreaterThan(8000);
+  });
+
+  it('captures tool execution errors and continues the loop', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-1',
+          model: model.apiModelId,
+          choices: [
+            {
+              finish_reason: 'tool_calls',
+              message: {
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call-error',
+                    type: 'function',
+                    function: { name: 'read_messages', arguments: '{"messages":[{"messageId":"abc"}]}' },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 3 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-2',
+          model: model.apiModelId,
+          choices: [{ finish_reason: 'stop', message: { content: 'fallback answer' } }],
+          usage: { prompt_tokens: 11, completion_tokens: 4 },
+        }),
+      );
+
+    const onExecuteTool = jest.fn((): Promise<string> => Promise.reject(new Error('tool failed')));
+
+    const result = await orchestrateLlmLoop(model, 0.7, [user('Trigger tool error')], undefined, undefined, undefined, onExecuteTool);
+
+    expect(onExecuteTool).toHaveBeenCalledTimes(1);
+    expect(result.finalContent).toBe('fallback answer');
+    expect(result.toolLoopTrace[0].toolResults[0].toolName).toBe('read_messages');
+    expect(result.toolLoopTrace[0].toolResults[0].result).toContain('Error executing tool: tool failed');
   });
 
   it('does not crash on malformed update_scratchpad arguments and skips scratchpad update callback', async () => {
