@@ -1,4 +1,5 @@
 import { useAuthStore } from '../store/AuthStore';
+import { createLlmWorker } from './llmWorkerFactory';
 
 export interface LlmProgress {
   modelId: string;
@@ -72,10 +73,7 @@ class LlmSuggestionService {
   private initWorker(): void {
     if (this.worker) return;
 
-    // CRA 5 supports this syntax
-    this.worker = new Worker(new URL('./llmWorker.ts', import.meta.url), {
-      type: 'module',
-    });
+    this.worker = createLlmWorker();
 
     this.worker.onerror = (event: ErrorEvent): void => {
       const message = event.message || 'Unknown worker error';

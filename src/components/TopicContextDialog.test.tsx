@@ -51,13 +51,17 @@ const mockUseAuthStore = useAuthStore as unknown as jest.Mock<{
 const mockEstimateTokens = estimateTokens as jest.MockedFunction<typeof estimateTokens>;
 
 describe('TopicContextDialog', () => {
+  let writeTextMock: jest.MockedFunction<(text: string) => Promise<void>>;
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockEstimateTokens.mockReturnValue({ promptTokens: 42, completionTokens: 0, totalTokens: 42 });
 
+    writeTextMock = jest.fn((_: string): Promise<void> => Promise.resolve());
+
     Object.defineProperty(navigator, 'clipboard', {
       value: {
-        writeText: jest.fn((): Promise<void> => Promise.resolve()),
+        writeText: writeTextMock,
       },
       writable: true,
     });
@@ -89,7 +93,7 @@ describe('TopicContextDialog', () => {
   });
 
   it('loads context entries, supports copy, and closes dialog', async () => {
-    const onClose = jest.fn<void, []>();
+    const onClose = jest.fn((): void => undefined);
 
     render(<TopicContextDialog open topicId="topic-1" onClose={onClose} />);
 
@@ -98,7 +102,7 @@ describe('TopicContextDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy as JSON' }));
 
     await waitFor(() => {
-      expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
+      expect(writeTextMock).toHaveBeenCalledTimes(1);
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));

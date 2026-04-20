@@ -37,7 +37,7 @@ jest.mock('../components/ForkTabs', () => ({
 }));
 
 jest.mock('@mui/material', () => {
-  const actual = jest.requireActual('@mui/material') as Record<string, unknown>;
+  const actual = jest.requireActual<typeof import('@mui/material')>('@mui/material');
   return {
     ...actual,
     useMediaQuery: jest.fn(() => false),
@@ -101,9 +101,9 @@ describe('ChatView page', () => {
   });
 
   it('renders chat content and sends suggestion through store action', async () => {
-    const clearSuggestions = jest.fn<void, []>();
-    const sendMessageStream = jest.fn<Promise<void>, [string, string]>(() => Promise.resolve());
-    const fetchMessages = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
+    const clearSuggestions = jest.fn((): void => undefined);
+    const sendMessageStream = jest.fn((_: string, __: string): Promise<void> => Promise.resolve());
+    const fetchMessages = jest.fn((_: string): Promise<void> => Promise.resolve());
 
     mockUseChatStore.mockReturnValue({
       messagesByTopic: { 'topic-1': [] },

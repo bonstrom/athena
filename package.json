@@ -70,7 +70,13 @@
     "moduleNameMapper": {
       "^react-router-dom$": "<rootDir>/node_modules/react-router-dom/dist/index.js",
       "^react-router$": "<rootDir>/node_modules/react-router/dist/development/index.js"
-    }
+    },
+    "coveragePathIgnorePatterns": [
+      "/node_modules/",
+      "src/services/llmWorkerFactory\\.ts",
+      "src/services/embeddingWorkerFactory\\.ts",
+      "src/reportWebVitals\\.ts"
+    ]
   },
   "devDependencies": {
     "@types/react-syntax-highlighter": "^15.5.13",

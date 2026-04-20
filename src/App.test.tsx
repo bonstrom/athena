@@ -1,28 +1,73 @@
-import React from 'react';
+import type { JSX, ReactElement, ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 
 jest.mock('react-router-dom', () => {
-  const React = require('react');
+  function MockHashRouter({ children }: { children: ReactNode }): JSX.Element {
+    return <div data-testid="router">{children}</div>;
+  }
+
+  function MockRoutes({ children }: { children: ReactNode }): JSX.Element {
+    return <>{children}</>;
+  }
+
+  function MockRoute({ element }: { element: ReactElement }): ReactElement {
+    return element;
+  }
+
+  MockHashRouter.displayName = 'MockHashRouter';
+  MockRoutes.displayName = 'MockRoutes';
+  MockRoute.displayName = 'MockRoute';
+
   return {
     __esModule: true,
-    HashRouter: ({ children }: { children: React.ReactNode }) => <div data-testid="router">{children}</div>,
-    Routes: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    Route: ({ element }: { element: React.ReactElement }) => element,
+    HashRouter: MockHashRouter,
+    Routes: MockRoutes,
+    Route: MockRoute,
   };
 });
 
-jest.mock('./components/ChatLayout', () => () => <div data-testid="chat-layout" />);
+jest.mock('./components/ChatLayout', () => {
+  function MockChatLayout(): JSX.Element {
+    return <div data-testid="chat-layout" />;
+  }
+
+  MockChatLayout.displayName = 'MockChatLayout';
+  return MockChatLayout;
+});
 jest.mock('./components/GlobalErrorSnackbar', () => ({
-  GlobalErrorSnackbar: () => <div data-testid="global-error-snackbar" />,
+  GlobalErrorSnackbar: function MockGlobalErrorSnackbar(): JSX.Element {
+    return <div data-testid="global-error-snackbar" />;
+  },
 }));
 
 jest.mock('./hooks/useAutoBackup', () => ({ useAutoBackup: jest.fn() }));
 jest.mock('./hooks/useEmbeddingBackfill', () => ({ useEmbeddingBackfill: jest.fn() }));
 jest.mock('./store/AuthStore', () => ({ useAuthStore: jest.fn() }));
 
-jest.mock('./pages/Home', () => () => <div data-testid="home-page" />);
-jest.mock('./pages/Settings', () => () => <div data-testid="settings-page" />);
-jest.mock('./pages/ChatView', () => () => <div data-testid="chat-page" />);
+jest.mock('./pages/Home', () => {
+  function MockHomePage(): JSX.Element {
+    return <div data-testid="home-page" />;
+  }
+
+  MockHomePage.displayName = 'MockHomePage';
+  return MockHomePage;
+});
+jest.mock('./pages/Settings', () => {
+  function MockSettingsPage(): JSX.Element {
+    return <div data-testid="settings-page" />;
+  }
+
+  MockSettingsPage.displayName = 'MockSettingsPage';
+  return MockSettingsPage;
+});
+jest.mock('./pages/ChatView', () => {
+  function MockChatPage(): JSX.Element {
+    return <div data-testid="chat-page" />;
+  }
+
+  MockChatPage.displayName = 'MockChatPage';
+  return MockChatPage;
+});
 
 import App from './App';
 import { useAutoBackup } from './hooks/useAutoBackup';

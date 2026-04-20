@@ -34,22 +34,69 @@ const testProvider: LlmProvider = {
   isBuiltIn: false,
 };
 
+interface TopicStoreState {
+  topics: Topic[];
+  getTopicContext: (topicId: string, excludeAfterId?: string, userQuery?: string) => Promise<Message[]>;
+  updateTopicTimestamp: (topicId: string) => Promise<void>;
+  generateTopicName: (topicId: string, userMessage: string) => Promise<void>;
+  updateTopicScratchpad: (topicId: string, scratchpad: string) => Promise<void>;
+}
+
+interface ProviderStoreState {
+  models: UserChatModel[];
+  getProviderForModel: (model: UserChatModel) => LlmProvider;
+}
+
+interface AuthStoreState {
+  customInstructions: string;
+  scratchpadRules: string;
+  predefinedPrompts: unknown[];
+  messageRetrievalEnabled: boolean;
+  askUserEnabled: boolean;
+  aiSummaryEnabled: boolean;
+  replyPredictionEnabled: boolean;
+  replyPredictionModel: string;
+  llmModelSelected: 'qwen3.5-0.8b' | 'qwen3.5-2b';
+  llmModelDownloadStatus: Record<string, unknown>;
+}
+
+interface LlmLoopResult {
+  finalContent: string;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalSearchCount: number;
+  toolLoopTrace: unknown[];
+  lastResult: {
+    content: string;
+    rawContent: string;
+    promptTokens: number;
+    completionTokens: number;
+    searchCount: number;
+  };
+}
+
+type AskLlmResult = unknown;
+
 const mockGetTopicContext = jest.fn<Promise<Message[]>, [string, string | undefined, string | undefined]>();
 const mockUpdateTopicTimestamp = jest.fn<Promise<void>, [string]>();
 const mockGenerateTopicName = jest.fn<Promise<void>, [string, string]>();
 const mockUpdateTopicScratchpad = jest.fn<Promise<void>, [string, string]>();
-const mockOrchestrateLlmLoop = jest.fn();
-const mockAskLlm = jest.fn();
-const mockAuthGetState = jest.fn();
-const mockProviderGetState = jest.fn();
+const mockOrchestrateLlmLoop = jest.fn<Promise<LlmLoopResult>, unknown[]>();
+const mockAskLlm = jest.fn<Promise<AskLlmResult>, unknown[]>();
+const mockAuthGetState = jest.fn<AuthStoreState, []>();
+const mockProviderGetState = jest.fn<ProviderStoreState, []>();
 const mockAddNotification = jest.fn();
 const mockGenerateEmbedding = jest.fn<Promise<number[]>, [string]>();
 
 const mockDbGet = jest.fn<Promise<Message | undefined>, [string]>();
 const mockDbAdd = jest.fn<Promise<string>, [Message]>();
+const mockDbBulkGet = jest.fn<Promise<Array<Message | undefined>>, [string[]]>();
+const mockDbBulkAdd = jest.fn<Promise<unknown>, [Message[]]>();
 const mockDbUpdate = jest.fn<Promise<number>, [string, Partial<Message>]>();
 const mockDbDelete = jest.fn<Promise<void>, [string]>();
+const mockDbBulkDelete = jest.fn<Promise<void>, [string[]]>();
 const mockDbTransaction = jest.fn<Promise<void>, [string, unknown, () => Promise<void>]>();
+const mockDbSortBy = jest.fn<Promise<Message[]>, [string]>();
 
 const baseTopic: Topic = {
   id: 'topic-1',
@@ -67,7 +114,7 @@ jest.mock('../../components/ModelSelector', () => ({
 
 jest.mock('../../store/TopicStore', () => ({
   useTopicStore: {
-    getState: () => ({
+    getState: (): TopicStoreState => ({
       topics: [baseTopic],
       getTopicContext: (...args: [string, string | undefined, string | undefined]) => mockGetTopicContext(...args),
       updateTopicTimestamp: (...args: [string]) => mockUpdateTopicTimestamp(...args),
@@ -79,13 +126,13 @@ jest.mock('../../store/TopicStore', () => ({
 
 jest.mock('../../store/ProviderStore', () => ({
   useProviderStore: {
-    getState: () => mockProviderGetState(),
+    getState: (): ProviderStoreState => mockProviderGetState(),
   },
 }));
 
 jest.mock('../../store/AuthStore', () => ({
   useAuthStore: {
-    getState: () => mockAuthGetState(),
+    getState: (): AuthStoreState => mockAuthGetState(),
   },
 }));
 
@@ -96,8 +143,8 @@ jest.mock('../../store/NotificationStore', () => ({
 }));
 
 jest.mock('../../services/llmService', () => ({
-  orchestrateLlmLoop: (...args: unknown[]) => mockOrchestrateLlmLoop(...args),
-  askLlm: (...args: unknown[]) => mockAskLlm(...args),
+  orchestrateLlmLoop: (...args: unknown[]): Promise<LlmLoopResult> => mockOrchestrateLlmLoop(...args),
+  askLlm: (...args: unknown[]): Promise<AskLlmResult> => mockAskLlm(...args),
   SCRATCHPAD_TOOL: { type: 'function', function: { name: 'update_scratchpad' } },
   READ_MESSAGES_TOOL: { type: 'function', function: { name: 'read_messages' } },
   LIST_MESSAGES_TOOL: { type: 'function', function: { name: 'list_messages' } },
@@ -133,8 +180,18 @@ jest.mock('../../database/AthenaDb', () => ({
     messages: {
       get: (...args: [string]) => mockDbGet(...args),
       add: (...args: [Message]) => mockDbAdd(...args),
+      bulkGet: (...args: [string[]]) => mockDbBulkGet(...args),
+      bulkAdd: (...args: [Message[]]) => mockDbBulkAdd(...args),
       update: (...args: [string, Partial<Message>]) => mockDbUpdate(...args),
       delete: (...args: [string]) => mockDbDelete(...args),
+      bulkDelete: (...args: [string[]]) => mockDbBulkDelete(...args),
+      where: () => ({
+        equals: () => ({
+          and: () => ({
+            sortBy: (...args: [string]) => mockDbSortBy(...args),
+          }),
+        }),
+      }),
     },
     transaction: (mode: string, table: unknown, callback: () => Promise<void>) => mockDbTransaction(mode, table, callback),
   },
@@ -186,9 +243,13 @@ describe('ChatStore', () => {
       await callback();
     });
     mockDbAdd.mockResolvedValue('ok');
+    mockDbBulkGet.mockResolvedValue([]);
+    mockDbBulkAdd.mockResolvedValue(undefined);
     mockDbUpdate.mockResolvedValue(1);
     mockDbDelete.mockResolvedValue();
+    mockDbBulkDelete.mockResolvedValue();
     mockDbGet.mockResolvedValue(undefined);
+    mockDbSortBy.mockResolvedValue([]);
 
     useChatStore.setState({
       messagesByTopic: {},
@@ -420,5 +481,519 @@ describe('ChatStore', () => {
     await useChatStore.getState().switchMessageVersion('u-switch', 'a-v2');
 
     expect(mockDbUpdate).not.toHaveBeenCalledWith('u-switch', { activeResponseId: 'a-v2' });
+  });
+
+  // ========== NEW TEST COVERAGE: addMessage, addMessages, updateMessage, updateMessages ==========
+
+  it('addMessage adds a single message to the store and database', async () => {
+    const message: Message = {
+      id: 'msg-1',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'Test message',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    };
+
+    await useChatStore.getState().addMessage(message);
+
+    expect(mockDbAdd).toHaveBeenCalledWith(message);
+    const messages = useChatStore.getState().messagesByTopic['topic-1'] ?? [];
+    expect(messages).toContainEqual(message);
+  });
+
+  it('addMessage does not re-add an existing message', async () => {
+    const message: Message = {
+      id: 'msg-dup',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'Duplicate',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    };
+
+    mockDbGet.mockResolvedValue(message);
+
+    await useChatStore.getState().addMessage(message);
+
+    expect(mockDbAdd).not.toHaveBeenCalled();
+  });
+
+  it('addMessages adds multiple messages and deduplicates existing ones', async () => {
+    const messages: Message[] = [
+      {
+        id: 'msg-a',
+        topicId: 'topic-1',
+        forkId: 'main',
+        type: 'user',
+        content: 'Message A',
+        created: '2024-01-01T00:00:00.000Z',
+        isDeleted: false,
+        includeInContext: false,
+        failed: false,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalCost: 0,
+      },
+      {
+        id: 'msg-b',
+        topicId: 'topic-1',
+        forkId: 'main',
+        type: 'assistant',
+        content: 'Message B',
+        created: '2024-01-01T00:00:01.000Z',
+        isDeleted: false,
+        includeInContext: false,
+        failed: false,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalCost: 0,
+      },
+    ];
+
+    mockDbBulkGet.mockResolvedValue([undefined, undefined]);
+    mockDbBulkAdd.mockResolvedValue(undefined);
+
+    await useChatStore.getState().addMessages(messages);
+
+    expect(mockDbBulkAdd).toHaveBeenCalledWith(messages);
+    const storedMessages = useChatStore.getState().messagesByTopic['topic-1'] ?? [];
+    expect(storedMessages.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('addMessages is a no-op when the list is empty', async () => {
+    await useChatStore.getState().addMessages([]);
+
+    expect(mockDbAdd).not.toHaveBeenCalled();
+  });
+
+  it('updateMessage updates a message in database and state', async () => {
+    const existingMessage: Message = {
+      id: 'msg-upd',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'Old content',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    };
+
+    useChatStore.setState({
+      messagesByTopic: {
+        'topic-1': [existingMessage],
+      },
+    });
+
+    const patch: Partial<Message> = { content: 'Updated content', failed: false };
+    await useChatStore.getState().updateMessage('msg-upd', patch);
+
+    expect(mockDbUpdate).toHaveBeenCalledWith('msg-upd', patch);
+    const updated = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.id === 'msg-upd');
+    expect(updated?.content).toBe('Updated content');
+  });
+
+  it('updateMessage handles database errors gracefully', async () => {
+    mockDbUpdate.mockRejectedValue(new Error('Database error'));
+
+    useChatStore.setState({
+      messagesByTopic: {
+        'topic-1': [
+          {
+            id: 'msg-err',
+            topicId: 'topic-1',
+            forkId: 'main',
+            type: 'user',
+            content: 'Test',
+            created: '2024-01-01T00:00:00.000Z',
+            isDeleted: false,
+            includeInContext: false,
+            failed: false,
+            promptTokens: 0,
+            completionTokens: 0,
+            totalCost: 0,
+          },
+        ],
+      },
+    });
+
+    await expect(useChatStore.getState().updateMessage('msg-err', { failed: true })).rejects.toThrow('Database error');
+    expect(mockAddNotification).toHaveBeenCalledWith('Failed to update message', 'Database error');
+  });
+
+  it('updateMessages updates multiple messages in a batch', async () => {
+    const messages: Message[] = [
+      {
+        id: 'batch-1',
+        topicId: 'topic-1',
+        forkId: 'main',
+        type: 'user',
+        content: 'Msg 1',
+        created: '2024-01-01T00:00:00.000Z',
+        isDeleted: false,
+        includeInContext: false,
+        failed: false,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalCost: 0,
+      },
+      {
+        id: 'batch-2',
+        topicId: 'topic-1',
+        forkId: 'main',
+        type: 'assistant',
+        content: 'Msg 2',
+        created: '2024-01-01T00:00:01.000Z',
+        isDeleted: false,
+        includeInContext: false,
+        failed: false,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalCost: 0,
+      },
+    ];
+
+    useChatStore.setState({
+      messagesByTopic: { 'topic-1': messages },
+    });
+
+    const updates = [
+      { id: 'batch-1', patch: { failed: false } },
+      { id: 'batch-2', patch: { includeInContext: true } },
+    ];
+
+    await useChatStore.getState().updateMessages(updates);
+
+    expect(mockDbUpdate).toHaveBeenCalledWith('batch-1', { failed: false });
+    expect(mockDbUpdate).toHaveBeenCalledWith('batch-2', { includeInContext: true });
+
+    const updated1 = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.id === 'batch-1');
+    const updated2 = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.id === 'batch-2');
+    expect(updated1?.failed).toBe(false);
+    expect(updated2?.includeInContext).toBe(true);
+  });
+
+  it('updateMessages is a no-op when no current topic is selected', async () => {
+    useChatStore.setState({ currentTopicId: null });
+
+    const updates = [{ id: 'msg', patch: { failed: true } }];
+    await useChatStore.getState().updateMessages(updates);
+
+    expect(mockDbUpdate).not.toHaveBeenCalled();
+  });
+
+  it('updateMessageStateOnly updates state without persisting to database', () => {
+    const message: Message = {
+      id: 'state-msg',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'assistant',
+      content: 'Original',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    };
+
+    useChatStore.setState({
+      messagesByTopic: { 'topic-1': [message] },
+    });
+
+    useChatStore.getState().updateMessageStateOnly('state-msg', { content: 'Updated' });
+
+    const updated = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.id === 'state-msg');
+    expect(updated?.content).toBe('Updated');
+    expect(mockDbUpdate).not.toHaveBeenCalled();
+  });
+
+  // ========== deleteMessage and related functions ==========
+
+  it('deleteMessage removes a user message and its associated assistant response', async () => {
+    const userMsg: Message = {
+      id: 'u-del',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'User query',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: true,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    };
+
+    const assistantMsg: Message = {
+      id: 'a-del',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'assistant',
+      content: 'Assistant answer',
+      created: '2024-01-01T00:00:01.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+      parentMessageId: 'u-del',
+    };
+
+    useChatStore.setState({
+      messagesByTopic: { 'topic-1': [userMsg, assistantMsg] },
+    });
+
+    await useChatStore.getState().deleteMessage('u-del');
+
+    expect(mockDbBulkDelete).toHaveBeenCalledWith(['u-del', 'a-del']);
+
+    const remaining = useChatStore.getState().messagesByTopic['topic-1'] ?? [];
+    expect(remaining).not.toContainEqual(userMsg);
+    expect(remaining).not.toContainEqual(assistantMsg);
+  });
+
+  it('deleteMessage clears includeInContext on paired user when deleting assistant message', async () => {
+    const userMsg: Message = {
+      id: 'u-paired',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'Question',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: true,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    };
+
+    const assistantMsg: Message = {
+      id: 'a-paired',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'assistant',
+      content: 'Answer',
+      created: '2024-01-01T00:00:01.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+      parentMessageId: 'u-paired',
+    };
+
+    useChatStore.setState({
+      messagesByTopic: { 'topic-1': [userMsg, assistantMsg] },
+    });
+
+    await useChatStore.getState().deleteMessage('a-paired');
+
+    expect(mockDbUpdate).toHaveBeenCalledWith('u-paired', { includeInContext: false });
+    const updated = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.id === 'u-paired');
+    expect(updated?.includeInContext).toBe(false);
+  });
+
+  it('deleteMessage is a no-op when no current topic is set', async () => {
+    useChatStore.setState({ currentTopicId: null });
+
+    await useChatStore.getState().deleteMessage('msg-id');
+
+    expect(mockDbDelete).not.toHaveBeenCalled();
+  });
+
+  // ========== fetchMessages and topic switching ==========
+
+  it('fetchMessages loads messages from database for a topic', async () => {
+    const messages: Message[] = [
+      {
+        id: 'fetch-1',
+        topicId: 'topic-1',
+        forkId: 'main',
+        type: 'user',
+        content: 'First',
+        created: '2024-01-01T00:00:00.000Z',
+        isDeleted: false,
+        includeInContext: false,
+        failed: false,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalCost: 0,
+      },
+    ];
+
+    mockDbSortBy.mockResolvedValue(messages);
+
+    await useChatStore.getState().fetchMessages('topic-1');
+
+    expect(useChatStore.getState().currentTopicId).toBe('topic-1');
+    expect(useChatStore.getState().messagesByTopic['topic-1']).toEqual(messages);
+  });
+
+  it('updateMessageContext toggles the includeInContext flag', async () => {
+    const message: Message = {
+      id: 'ctx-msg',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'Context message',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    };
+
+    useChatStore.setState({
+      messagesByTopic: { 'topic-1': [message] },
+    });
+
+    await useChatStore.getState().updateMessageContext('ctx-msg', true);
+
+    expect(mockDbUpdate).toHaveBeenCalledWith('ctx-msg', { includeInContext: true });
+    const updated = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.id === 'ctx-msg');
+    expect(updated?.includeInContext).toBe(true);
+  });
+
+  it('updateMessageContext is a no-op when no current topic is selected', async () => {
+    useChatStore.setState({ currentTopicId: null });
+
+    await useChatStore.getState().updateMessageContext('msg', true);
+
+    expect(mockDbUpdate).toHaveBeenCalledWith('msg', { includeInContext: true });
+  });
+
+  // ========== State management and UI functions ==========
+
+  it('increaseVisibleMessageCount increases the count by 10', () => {
+    useChatStore.setState({ visibleMessageCount: 10 });
+    useChatStore.getState().increaseVisibleMessageCount();
+
+    expect(useChatStore.getState().visibleMessageCount).toBe(20);
+  });
+
+  it('toggleShowAllMessages switches the showAllMessages flag', () => {
+    useChatStore.setState({ showAllMessages: false });
+    useChatStore.getState().toggleShowAllMessages();
+    expect(useChatStore.getState().showAllMessages).toBe(true);
+
+    useChatStore.getState().toggleShowAllMessages();
+    expect(useChatStore.getState().showAllMessages).toBe(false);
+  });
+
+  it('resetVisibleMessageCount resets to 10', () => {
+    useChatStore.setState({ visibleMessageCount: 50 });
+    useChatStore.getState().resetVisibleMessageCount();
+
+    expect(useChatStore.getState().visibleMessageCount).toBe(10);
+  });
+
+  it('setInitialLoad updates the isInitialLoad flag', () => {
+    useChatStore.setState({ isInitialLoad: true });
+    useChatStore.getState().setInitialLoad(false);
+
+    expect(useChatStore.getState().isInitialLoad).toBe(false);
+  });
+
+  it('setSelectedModel persists and updates the selected model', () => {
+    const localStorageMock = { setItem: jest.fn() };
+    Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock, writable: true });
+
+    useChatStore.getState().setSelectedModel(testModel);
+
+    expect(localStorageMock.setItem).toHaveBeenCalledWith('athena_selected_model', testModel.id);
+    expect(useChatStore.getState().selectedModel).toEqual(testModel);
+  });
+
+  it('setTemperature updates the temperature setting', () => {
+    useChatStore.getState().setTemperature(0.5);
+    expect(useChatStore.getState().temperature).toBe(0.5);
+
+    useChatStore.getState().setTemperature(2.0);
+    expect(useChatStore.getState().temperature).toBe(2.0);
+  });
+
+  it('clearSuggestions clears pending suggestions and loading state', () => {
+    useChatStore.setState({
+      pendingSuggestions: ['Suggestion 1', 'Suggestion 2'],
+      isSuggestionsLoading: true,
+    });
+
+    useChatStore.getState().clearSuggestions();
+
+    expect(useChatStore.getState().pendingSuggestions).toBeNull();
+    expect(useChatStore.getState().isSuggestionsLoading).toBe(false);
+  });
+
+  it('resolvePendingQuestion resolves pending user question and clears it', () => {
+    const mockResolve = jest.fn();
+    useChatStore.setState({
+      pendingUserQuestion: {
+        question: 'What is your name?',
+        context: 'User context',
+        resolve: mockResolve,
+        reject: jest.fn(),
+      },
+    });
+
+    useChatStore.getState().resolvePendingQuestion('My name is AI');
+
+    expect(mockResolve).toHaveBeenCalledWith('My name is AI');
+    expect(useChatStore.getState().pendingUserQuestion).toBeNull();
+  });
+
+  it('resolvePendingQuestion is a no-op when there is no pending question', () => {
+    useChatStore.setState({ pendingUserQuestion: null });
+    expect(() => useChatStore.getState().resolvePendingQuestion('Answer')).not.toThrow();
+  });
+
+  it('setWebSearchEnabled, setImageGenerationEnabled, setMusicGenerationEnabled update feature flags', () => {
+    useChatStore.getState().setWebSearchEnabled(true);
+    expect(useChatStore.getState().webSearchEnabled).toBe(true);
+
+    useChatStore.getState().setImageGenerationEnabled(true);
+    expect(useChatStore.getState().imageGenerationEnabled).toBe(true);
+
+    useChatStore.getState().setMusicGenerationEnabled(true);
+    expect(useChatStore.getState().musicGenerationEnabled).toBe(true);
+
+    useChatStore.getState().setWebSearchEnabled(false);
+    useChatStore.getState().setImageGenerationEnabled(false);
+    useChatStore.getState().setMusicGenerationEnabled(false);
+
+    expect(useChatStore.getState().webSearchEnabled).toBe(false);
+    expect(useChatStore.getState().imageGenerationEnabled).toBe(false);
+    expect(useChatStore.getState().musicGenerationEnabled).toBe(false);
+  });
+
+  it('setSending updates sending state', () => {
+    useChatStore.getState().setSending(true);
+    expect(useChatStore.getState().sending).toBe(true);
+
+    useChatStore.getState().setSending(false);
+    expect(useChatStore.getState().sending).toBe(false);
   });
 });

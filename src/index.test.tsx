@@ -1,10 +1,12 @@
-import React from 'react';
+import type { JSX } from 'react';
 
-const mockReportWebVitals = jest.fn<void, []>();
+const mockReportWebVitals = jest.fn((): void => undefined);
 
 jest.mock('./App', () => ({
   __esModule: true,
-  default: (): JSX.Element => <div data-testid="app" />,
+  default: function MockApp(): JSX.Element {
+    return <div data-testid="app" />;
+  },
 }));
 
 jest.mock('./reportWebVitals', () => ({

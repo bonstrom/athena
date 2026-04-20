@@ -1,3 +1,5 @@
+import { TextDecoder as NodeTextDecoder } from 'util';
+
 // Mock out modules that have heavy side-effects / browser dependencies so that
 // the pure filterMessagesForModel function can be tested in isolation.
 const mockAuthGetState = jest.fn(() => ({}));
@@ -14,10 +16,12 @@ jest.mock('../../components/ModelSelector', () => ({
 jest.mock('../estimateTokens', () => ({ estimateTokens: jest.fn() }));
 
 import { filterMessagesForModel, LlmMessage, orchestrateLlmLoop } from '../llmService';
+import { calculateCostSEK } from '../../components/ModelSelector';
 import { estimateTokens } from '../estimateTokens';
 import { LlmProvider, UserChatModel } from '../../types/provider';
 
 const mockEstimateTokens = estimateTokens as jest.MockedFunction<typeof estimateTokens>;
+const mockCalculateCostSEK = calculateCostSEK as jest.MockedFunction<typeof calculateCostSEK>;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -492,6 +496,53 @@ describe('orchestrateLlmLoop — tool calls', () => {
     expect(tracedResult.length).toBeGreaterThan(8000);
   });
 
+  it('logs tool execution and truncates long display output in the tool log', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-1',
+          model: model.apiModelId,
+          choices: [
+            {
+              finish_reason: 'tool_calls',
+              message: {
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call-log',
+                    type: 'function',
+                    function: { name: 'read_messages', arguments: '{"messages":[{"messageId":"abc"}]}' },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 3 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-2',
+          model: model.apiModelId,
+          choices: [{ finish_reason: 'stop', message: { content: 'ok' } }],
+          usage: { prompt_tokens: 11, completion_tokens: 4 },
+        }),
+      );
+
+    const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('Y'.repeat(600)));
+    const onToolLog = jest.fn((log: string): void => {
+      void log;
+    });
+
+    await orchestrateLlmLoop(model, 0.7, [user('Show logs')], undefined, undefined, undefined, onExecuteTool, onToolLog);
+
+    expect(onToolLog).toHaveBeenCalledWith(expect.stringContaining('**Executing Tool**: `read_messages`'));
+    expect(onToolLog).toHaveBeenCalledWith(expect.stringContaining('... *(display truncated — full content sent to LLM)*'));
+  });
+
   it('captures tool execution errors and continues the loop', async () => {
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
@@ -582,6 +633,50 @@ describe('orchestrateLlmLoop — tool calls', () => {
     expect(result.finalContent).toBe('continue after bad args');
   });
 
+  it('logs and applies scratchpad updates from HTML comment fallback syntax', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        id: 'resp-fallback-scratchpad',
+        model: model.apiModelId,
+        choices: [
+          {
+            finish_reason: 'stop',
+            message: {
+              content: 'Visible answer\n<!-- replace: store this memory -->',
+            },
+          },
+        ],
+        usage: { prompt_tokens: 9, completion_tokens: 4 },
+      }),
+    );
+
+    const onScratchpadUpdate = jest.fn((): Promise<void> => Promise.resolve());
+    const onToolLog = jest.fn((log: string): void => {
+      void log;
+    });
+
+    const result = await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('Remember this with fallback syntax')],
+      undefined,
+      undefined,
+      onScratchpadUpdate,
+      undefined,
+      onToolLog,
+    );
+
+    expect(onScratchpadUpdate).toHaveBeenCalledWith('store this memory', 'replace');
+    expect(onToolLog).toHaveBeenCalledWith(expect.stringContaining('**Executing Tool**: `update_scratchpad` *(via fallback syntax)*'));
+    expect(onToolLog).toHaveBeenCalledWith(expect.stringContaining('"action": "replace"'));
+    expect(result.finalContent).toBe('Visible answer');
+    expect(result.lastResult.aiNote).toBe('store this memory');
+    expect(result.lastResult.aiNoteAction).toBe('replace');
+  });
+
   it('drops oldest non-system messages when token budget is exceeded while keeping system messages', async () => {
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
@@ -630,6 +725,11 @@ describe('askLlm — non-streaming API calls', () => {
       getProviderForModel: (): LlmProvider => provider,
     });
     mockEstimateTokens.mockReturnValue({ promptTokens: 50, completionTokens: 75, totalTokens: 125 });
+    Object.defineProperty(globalThis, 'TextDecoder', {
+      configurable: true,
+      writable: true,
+      value: NodeTextDecoder,
+    });
   });
 
   it('returns response with message content and token counts', async () => {
@@ -689,5 +789,290 @@ describe('askLlm — non-streaming API calls', () => {
     const result = await askLlm(model, 0.7, [user('Test')]);
 
     expect(result.promptTokensDetails?.cached_tokens).toBe(60);
+  });
+});
+
+describe('askLlmStream — streaming API calls', () => {
+  const model: UserChatModel = makeModel(false);
+  const provider: LlmProvider = {
+    id: 'test-provider',
+    name: 'Test Provider',
+    baseUrl: 'https://example.com/v1/chat/completions',
+    messageFormat: 'openai',
+    apiKeyEncrypted: 'key-encrypted',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: false,
+  };
+
+  beforeEach(() => {
+    mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 16000 });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+    mockEstimateTokens.mockReturnValue({ promptTokens: 50, completionTokens: 75, totalTokens: 125 });
+  });
+
+  it('streams tokens, assembles the final content, and uses usage from the stream', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    const streamPayload = [
+      'data: {"id":"resp-stream","model":"test-model","choices":[{"delta":{"content":"Hello "}}]}',
+      'data: {"choices":[{"delta":{"content":"world"},"finish_reason":"stop"}],"usage":{"prompt_tokens":21,"completion_tokens":7}}',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+
+    let readCount = 0;
+    const reader = {
+      read: jest.fn((): Promise<ReadableStreamReadResult<Uint8Array>> => {
+        if (readCount === 0) {
+          readCount += 1;
+          return Promise.resolve({ done: false, value: Buffer.from(streamPayload, 'utf8') });
+        }
+        return Promise.resolve({ done: true, value: undefined });
+      }),
+      releaseLock: jest.fn((): void => undefined),
+      cancel: jest.fn((): Promise<void> => Promise.resolve()),
+    };
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: {
+        getReader: (): typeof reader => reader,
+      },
+    } as unknown as Response);
+
+    const onToken = jest.fn((token: string): void => {
+      void token;
+    });
+
+    const { askLlmStream } = await import('../llmService');
+    const result = await askLlmStream(model, 0.7, [user('Hi')], onToken);
+
+    expect(onToken).toHaveBeenNthCalledWith(1, 'Hello ');
+    expect(onToken).toHaveBeenNthCalledWith(2, 'world');
+    expect(result.content).toBe('Hello world');
+    expect(result.promptTokens).toBe(21);
+    expect(result.completionTokens).toBe(7);
+    expect(result.finishReason).toBe('stop');
+    expect(result.responseId).toBe('resp-stream');
+    expect(result.actualModel).toBe('test-model');
+    expect(mockEstimateTokens).not.toHaveBeenCalled();
+    expect(reader.releaseLock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('estimateStreamedTokens', () => {
+  it('uses estimated tokens and calculateCostSEK to build the result', async () => {
+    const model = makeModel(false);
+    mockEstimateTokens.mockReturnValue({ promptTokens: 123, completionTokens: 45, totalTokens: 168 });
+    mockCalculateCostSEK.mockReturnValue(1.75);
+
+    const { estimateStreamedTokens } = await import('../llmService');
+    const result = estimateStreamedTokens(model, [user('hello')], 'streamed response');
+
+    expect(mockEstimateTokens).toHaveBeenCalledWith([user('hello')], 'streamed response');
+    expect(mockCalculateCostSEK).toHaveBeenCalledWith(model, 123, 45);
+    expect(result).toEqual({ promptTokens: 123, completionTokens: 45, costSEK: 1.75 });
+  });
+});
+
+describe('getMoonshotBalance', () => {
+  const moonshotProvider: LlmProvider = {
+    id: 'builtin-moonshot',
+    name: 'Moonshot',
+    baseUrl: 'https://api.moonshot.ai/v1/chat/completions',
+    messageFormat: 'openai',
+    apiKeyEncrypted: 'moonshot-key',
+    supportsWebSearch: true,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: true,
+  };
+
+  beforeEach(() => {
+    mockProviderGetState.mockReturnValue({ providers: [moonshotProvider] });
+  });
+
+  it('returns the available balance on success', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> =>
+        Promise.resolve({
+          status: true,
+          data: { available_balance: 42.5, voucher_balance: 0, cash_balance: 42.5 },
+        }),
+    } as unknown as Response);
+
+    const { getMoonshotBalance } = await import('../llmService');
+    const result = await getMoonshotBalance();
+
+    expect(mockFetch).toHaveBeenCalledWith('https://api.moonshot.ai/v1/users/me/balance', {
+      headers: {
+        Authorization: 'Bearer moonshot-key',
+      },
+    });
+    expect(result).toEqual({ available_balance: 42.5, voucher_balance: 0, cash_balance: 42.5 });
+  });
+
+  it('returns null when no Moonshot key is configured', async () => {
+    mockProviderGetState.mockReturnValue({
+      providers: [{ ...moonshotProvider, apiKeyEncrypted: '' }],
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    const { getMoonshotBalance } = await import('../llmService');
+    const result = await getMoonshotBalance();
+
+    expect(result).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('returns null for non-OK responses and failed payloads', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({ ok: false } as Response).mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> =>
+        Promise.resolve({
+          status: false,
+          data: { available_balance: 99, voucher_balance: 0, cash_balance: 99 },
+        }),
+    } as unknown as Response);
+
+    const { getMoonshotBalance } = await import('../llmService');
+
+    await expect(getMoonshotBalance()).resolves.toBeNull();
+    await expect(getMoonshotBalance()).resolves.toBeNull();
+  });
+
+  it('returns null and logs when fetching the balance throws', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation((...args: unknown[]): void => {
+      void args;
+    });
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockRejectedValueOnce(new Error('network down'));
+
+    const { getMoonshotBalance } = await import('../llmService');
+    const result = await getMoonshotBalance();
+
+    expect(result).toBeNull();
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch Moonshot balance:', expect.any(Error));
+    consoleErrorSpy.mockRestore();
+  });
+});
+
+describe('getDeepSeekBalance', () => {
+  const deepseekProvider: LlmProvider = {
+    id: 'builtin-deepseek',
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1/chat/completions',
+    messageFormat: 'openai',
+    apiKeyEncrypted: 'deepseek-key',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: true,
+  };
+
+  beforeEach(() => {
+    mockProviderGetState.mockReturnValue({ providers: [deepseekProvider] });
+  });
+
+  it('returns the parsed balance and currency on success', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> =>
+        Promise.resolve({
+          is_available: true,
+          balance_infos: [{ currency: 'USD', total_balance: '12.34', granted_balance: '0', topped_up_balance: '12.34' }],
+        }),
+    } as unknown as Response);
+
+    const { getDeepSeekBalance } = await import('../llmService');
+    const result = await getDeepSeekBalance();
+
+    expect(mockFetch).toHaveBeenCalledWith('https://api.deepseek.com/user/balance', {
+      headers: {
+        Authorization: 'Bearer deepseek-key',
+        Accept: 'application/json',
+      },
+    });
+    expect(result).toEqual({ balance: 12.34, currency: 'USD' });
+  });
+
+  it('returns null when no DeepSeek key is configured', async () => {
+    mockProviderGetState.mockReturnValue({
+      providers: [{ ...deepseekProvider, apiKeyEncrypted: '' }],
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    const { getDeepSeekBalance } = await import('../llmService');
+    const result = await getDeepSeekBalance();
+
+    expect(result).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('returns null for unavailable, empty, or non-OK DeepSeek balance responses', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: (): Promise<unknown> => Promise.resolve({ is_available: false, balance_infos: [] }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: (): Promise<unknown> => Promise.resolve({ is_available: true, balance_infos: [] }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({ ok: false } as Response);
+
+    const { getDeepSeekBalance } = await import('../llmService');
+
+    await expect(getDeepSeekBalance()).resolves.toBeNull();
+    await expect(getDeepSeekBalance()).resolves.toBeNull();
+    await expect(getDeepSeekBalance()).resolves.toBeNull();
+  });
+
+  it('logs errors only in development when fetch throws', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation((...args: unknown[]): void => {
+      void args;
+    });
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockRejectedValueOnce(new Error('timeout'));
+
+    const { getDeepSeekBalance } = await import('../llmService');
+    const result = await getDeepSeekBalance();
+
+    expect(result).toBeNull();
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch DeepSeek balance:', expect.any(Error));
+
+    consoleErrorSpy.mockRestore();
+    process.env.NODE_ENV = previousNodeEnv;
   });
 });

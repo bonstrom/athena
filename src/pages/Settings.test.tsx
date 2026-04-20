@@ -7,6 +7,60 @@ import { BackupService } from '../services/backupService';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
 
+interface PredefinedPrompt {
+  id: string;
+  name: string;
+  content: string;
+}
+
+interface AuthState {
+  userName: string;
+  backupInterval: number;
+  customInstructions: string;
+  scratchpadRules: string;
+  chatWidth: string;
+  chatFontSize: number;
+  setUserName: jest.MockedFunction<(name: string) => void>;
+  setBackupInterval: jest.MockedFunction<(minutes: number) => void>;
+  setCustomInstructions: jest.MockedFunction<(instructions: string) => void>;
+  setScratchpadRules: jest.MockedFunction<(rules: string) => void>;
+  setChatWidth: jest.MockedFunction<(width: string) => void>;
+  setChatFontSize: jest.MockedFunction<(size: number) => void>;
+  predefinedPrompts: PredefinedPrompt[];
+  addPredefinedPrompt: jest.MockedFunction<(prompt: PredefinedPrompt) => void>;
+  updatePredefinedPrompt: jest.MockedFunction<(prompt: PredefinedPrompt) => void>;
+  deletePredefinedPrompt: jest.MockedFunction<(id: string) => void>;
+  llmSuggestionEnabled: boolean;
+  replyPredictionEnabled: boolean;
+  replyPredictionModel: string;
+  llmModelSelected: 'qwen3.5-0.8b' | 'qwen3.5-2b';
+  llmModelDownloadStatus: Record<string, 'not_downloaded' | 'downloading' | 'downloaded' | undefined>;
+  setLlmSuggestionEnabled: jest.MockedFunction<(enabled: boolean) => void>;
+  setReplyPredictionEnabled: jest.MockedFunction<(enabled: boolean) => void>;
+  setReplyPredictionModel: jest.MockedFunction<(model: string) => void>;
+  setLlmModelSelected: jest.MockedFunction<(model: 'qwen3.5-0.8b' | 'qwen3.5-2b') => void>;
+  topicPreloadCount: number;
+  setTopicPreloadCount: jest.MockedFunction<(count: number) => void>;
+  messageTruncateChars: number;
+  setMessageTruncateChars: jest.MockedFunction<(chars: number) => void>;
+  ragEnabled: boolean;
+  setRagEnabled: jest.MockedFunction<(enabled: boolean) => void>;
+  maxContextTokens: number;
+  setMaxContextTokens: jest.MockedFunction<(tokens: number) => void>;
+  messageRetrievalEnabled: boolean;
+  setMessageRetrievalEnabled: jest.MockedFunction<(enabled: boolean) => void>;
+  askUserEnabled: boolean;
+  setAskUserEnabled: jest.MockedFunction<(enabled: boolean) => void>;
+  aiSummaryEnabled: boolean;
+  setAiSummaryEnabled: jest.MockedFunction<(enabled: boolean) => void>;
+  summaryModel: string;
+  setSummaryModel: jest.MockedFunction<(model: string) => void>;
+  defaultMaxContextMessages: number;
+  setDefaultMaxContextMessages: jest.MockedFunction<(count: number) => void>;
+  showCameraButton: 'auto' | 'always' | 'never';
+  setShowCameraButton: jest.MockedFunction<(value: 'auto' | 'always' | 'never') => void>;
+}
+
 jest.mock('../components/ThemeSelector', () => ({
   __esModule: true,
   default: (): JSX.Element => <div data-testid="theme-selector" />,
@@ -58,7 +112,7 @@ jest.mock('../services/llmService', () => ({
   getDeepSeekBalance: jest.fn(),
 }));
 
-const mockUseAuthStore = useAuthStore as unknown as jest.Mock;
+const mockUseAuthStore = useAuthStore as unknown as jest.Mock<AuthState>;
 const mockUseProviderStore = useProviderStore as unknown as jest.Mock;
 const mockUseBackupStore = useBackupStore as unknown as jest.Mock;
 const mockBackupService = BackupService as unknown as {
@@ -70,7 +124,7 @@ const mockLlmSuggestionService = llmSuggestionService as unknown as {
 const mockGetMoonshotBalance = getMoonshotBalance as jest.MockedFunction<typeof getMoonshotBalance>;
 const mockGetDeepSeekBalance = getDeepSeekBalance as jest.MockedFunction<typeof getDeepSeekBalance>;
 
-function buildAuthState(): Record<string, unknown> {
+function buildAuthState(): AuthState {
   return {
     userName: 'Alex',
     backupInterval: 30,
@@ -189,7 +243,7 @@ describe('Settings page', () => {
       expect(authState.addPredefinedPrompt).toHaveBeenCalledTimes(1);
     });
 
-    const added = authState.addPredefinedPrompt.mock.calls[0][0] as { id: string; name: string; content: string };
+    const added = authState.addPredefinedPrompt.mock.calls[0][0];
     expect(added.id).toBe('prompt-uuid');
     expect(added.name).toBe('Code style');
     expect(added.content).toBe('Prefer concise TypeScript.');

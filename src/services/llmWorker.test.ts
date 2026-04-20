@@ -61,12 +61,15 @@ describe('llmWorker', () => {
 
     loadWorkerWithSelf(workerSelf);
 
-    if (!workerSelf.onmessage) {
+    const handleMessage = workerSelf.onmessage;
+    if (!handleMessage) {
       throw new Error('Expected worker onmessage handler to be defined');
     }
 
-    await workerSelf.onmessage({ data: { type: 'load', modelId: 'model-1' } } as MessageEvent<Record<string, unknown>>);
-    await workerSelf.onmessage({ data: { type: 'generate', text: 'hello there', context: 'ctx' } } as MessageEvent<Record<string, unknown>>);
+    await Promise.resolve(handleMessage({ data: { type: 'load', modelId: 'model-1' } } as MessageEvent<Record<string, unknown>>));
+    await Promise.resolve(
+      handleMessage({ data: { type: 'generate', text: 'hello there', context: 'ctx' } } as MessageEvent<Record<string, unknown>>),
+    );
 
     expect(mockPipeline).toHaveBeenCalledWith('text-generation', 'model-1', expect.objectContaining({ device: 'wasm', dtype: 'q8' }));
 
@@ -90,12 +93,15 @@ describe('llmWorker', () => {
 
     loadWorkerWithSelf(workerSelf);
 
-    if (!workerSelf.onmessage) {
+    const handleMessage = workerSelf.onmessage;
+    if (!handleMessage) {
       throw new Error('Expected worker onmessage handler to be defined');
     }
 
-    await workerSelf.onmessage({ data: { type: 'complete', prompt: 'finish this', maxTokens: 10 } } as MessageEvent<Record<string, unknown>>);
-    await workerSelf.onmessage({ data: { type: 'unload', modelId: 'model-1' } } as MessageEvent<Record<string, unknown>>);
+    await Promise.resolve(
+      handleMessage({ data: { type: 'complete', prompt: 'finish this', maxTokens: 10 } } as MessageEvent<Record<string, unknown>>),
+    );
+    await Promise.resolve(handleMessage({ data: { type: 'unload', modelId: 'model-1' } } as MessageEvent<Record<string, unknown>>));
 
     expect(workerSelf.postMessage).toHaveBeenCalledWith({ type: 'completion', text: '' });
     expect(workerSelf.postMessage).toHaveBeenCalledWith({ type: 'status', status: 'unloaded', modelId: 'model-1' });

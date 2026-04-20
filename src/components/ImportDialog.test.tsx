@@ -1,16 +1,18 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ImportDialog from './ImportDialog';
-import { BackupService } from '../services/backupService';
+
+type MergeBackupHandler = (file: File) => Promise<void>;
+type RestoreBackupHandler = (file: File) => Promise<void>;
+
+const mockMergeBackup = jest.fn<ReturnType<MergeBackupHandler>, Parameters<MergeBackupHandler>>();
+const mockRestoreBackup = jest.fn<ReturnType<RestoreBackupHandler>, Parameters<RestoreBackupHandler>>();
 
 jest.mock('../services/backupService', () => ({
   BackupService: {
-    mergeBackup: jest.fn(),
-    restoreBackup: jest.fn(),
+    mergeBackup: (...args: Parameters<MergeBackupHandler>): ReturnType<MergeBackupHandler> => mockMergeBackup(...args),
+    restoreBackup: (...args: Parameters<RestoreBackupHandler>): ReturnType<RestoreBackupHandler> => mockRestoreBackup(...args),
   },
 }));
-
-const mockMergeBackup = BackupService.mergeBackup as jest.MockedFunction<typeof BackupService.mergeBackup>;
-const mockRestoreBackup = BackupService.restoreBackup as jest.MockedFunction<typeof BackupService.restoreBackup>;
 
 function makeFile(size: number): File {
   const f = new File(['x'], 'backup.json', { type: 'application/json' });
@@ -35,7 +37,7 @@ describe('ImportDialog', () => {
 
   it('runs merge import and calls onComplete', async () => {
     mockMergeBackup.mockResolvedValue();
-    const onComplete = jest.fn<void, []>();
+    const onComplete = jest.fn((): void => undefined);
 
     render(<ImportDialog open file={makeFile(1024)} onClose={jest.fn()} onComplete={onComplete} />);
 

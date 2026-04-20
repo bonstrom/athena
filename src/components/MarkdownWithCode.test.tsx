@@ -1,18 +1,37 @@
+import type { JSX } from 'react';
 import { render, screen } from '@testing-library/react';
 
 jest.mock('react-markdown', () => ({
   __esModule: true,
-  default: ({ children }: { children: string }): JSX.Element => {
-    return <div data-testid="markdown-root">{children}</div>;
+  default: ({
+    children = '',
+    components,
+  }: {
+    children?: string;
+    components?: {
+      code?: (props: { inline?: boolean; className?: string; children?: unknown }) => JSX.Element;
+    };
+  }): JSX.Element => {
+    const codeRenderer = components?.code;
+    const segments = children.split(/(```[\s\S]*?```)/g).filter((segment) => segment.length > 0);
+
+    return (
+      <div data-testid="markdown-root">
+        {segments.map((segment, index) => {
+          const match = /^```(\w+)?\n([\s\S]*?)```$/.exec(segment);
+          if (!match || !codeRenderer) {
+            return <span key={`text-${String(index)}`}>{segment}</span>;
+          }
+
+          const language = match[1] ?? 'text';
+          return <span key={`code-${String(index)}`}>{codeRenderer({ inline: false, className: `language-${language}`, children: match[2] })}</span>;
+        })}
+      </div>
+    );
   },
 }));
 
 jest.mock('remark-gfm', () => jest.fn());
-
-const mockRegisterLanguage = jest.fn((name: string, language: unknown): void => {
-  void name;
-  void language;
-});
 
 jest.mock('react-syntax-highlighter', () => ({
   PrismLight: Object.assign(
@@ -22,9 +41,7 @@ jest.mock('react-syntax-highlighter', () => ({
       </pre>
     ),
     {
-      registerLanguage: (...args: [string, unknown]): void => {
-        mockRegisterLanguage(...args);
-      },
+      registerLanguage: jest.fn(),
     },
   ),
 }));
@@ -49,15 +66,15 @@ jest.mock('react-syntax-highlighter/dist/esm/languages/prism/markdown', () => ({
 jest.mock('react-syntax-highlighter/dist/esm/languages/prism/jsx', () => ({}));
 jest.mock('react-syntax-highlighter/dist/esm/languages/prism/tsx', () => ({}));
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const markdownModule = require('./MarkdownWithCode') as {
-  default: ({ children, fontSize }: { children: string; fontSize?: number }) => JSX.Element;
-};
-const MarkdownWithCode = markdownModule.default;
+const { default: MarkdownWithCode } = jest.requireActual<typeof import('./MarkdownWithCode')>('./MarkdownWithCode');
 
 describe('MarkdownWithCode', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: jest.fn(() => Promise.resolve()),
+      },
+    });
   });
 
   it('renders markdown content container', () => {
@@ -66,9 +83,34 @@ describe('MarkdownWithCode', () => {
     expect(screen.getByTestId('markdown-root')).toHaveTextContent('# Hello markdown');
   });
 
-  it('renders fenced markdown input', () => {
-    render(<MarkdownWithCode>{'```ts\nconst typed = true;\n```'}</MarkdownWithCode>);
+  it('renders syntax highlighter for fenced code blocks', () => {
+    render(<MarkdownWithCode>{'```javascript\nconst x = 1;\n```'}</MarkdownWithCode>);
 
-    expect(screen.getByTestId('markdown-root')).toHaveTextContent('const typed = true;');
+    expect(screen.getByTestId('syntax-highlighter')).toBeInTheDocument();
+    expect(screen.getByTestId('syntax-highlighter')).toHaveTextContent('const x = 1;');
+  });
+
+  it('passes the detected language to the syntax highlighter', () => {
+    render(<MarkdownWithCode>{'```python\nprint("hello")\n```'}</MarkdownWithCode>);
+
+    expect(screen.getByTestId('syntax-highlighter')).toHaveAttribute('data-language', 'python');
+  });
+
+  it('renders multiple code blocks in one message', () => {
+    render(<MarkdownWithCode>{'```javascript\nconst a = 1;\n```\n```python\nprint("b")\n```'}</MarkdownWithCode>);
+
+    expect(screen.getAllByTestId('syntax-highlighter')).toHaveLength(2);
+  });
+
+  it('handles empty markdown content', () => {
+    render(<MarkdownWithCode>{''}</MarkdownWithCode>);
+
+    expect(screen.getByTestId('markdown-root')).toBeInTheDocument();
+  });
+
+  it('accepts a custom font size prop', () => {
+    render(<MarkdownWithCode fontSize={16}>Test</MarkdownWithCode>);
+
+    expect(screen.getByTestId('markdown-root')).toHaveTextContent('Test');
   });
 });

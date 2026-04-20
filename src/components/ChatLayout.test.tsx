@@ -31,7 +31,7 @@ jest.mock('../store/AuthStore', () => ({
 }));
 
 jest.mock('@mui/material', () => {
-  const actual = jest.requireActual('@mui/material') as Record<string, unknown>;
+  const actual = jest.requireActual<typeof import('@mui/material')>('@mui/material');
   return {
     ...actual,
     useMediaQuery: jest.fn(),
@@ -79,8 +79,8 @@ describe('ChatLayout', () => {
   });
 
   it('mobile mode shows open-menu button and triggers openDrawer', () => {
-    const openDrawer = jest.fn<void, []>();
-    const setMobile = jest.fn<void, [boolean]>();
+    const openDrawer = jest.fn((): void => undefined);
+    const setMobile = jest.fn((_: boolean): void => undefined);
     mockUseUiStore.mockReturnValue({
       drawerOpen: false,
       openDrawer,
