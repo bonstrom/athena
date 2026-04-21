@@ -911,7 +911,14 @@ const Settings: React.FC = () => {
                             <Typography variant="caption" color="success.main">
                               {backupStatus === 'permission_required' ? 'Authorize Required' : backupStatus === 'in-progress' ? 'Backing up...' : 'Active'}
                             </Typography>
-                            <Button size="small" onClick={(): void => { void handleChangeLocation(); }}>Change Location</Button>
+                            <Box display="flex" flexDirection="column" alignItems="flex-end">
+                              <Button size="small" onClick={(): void => { void handleChangeLocation(); }}>Change Location</Button>
+                              {lastBackupTime && (
+                                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                                  Last: {new Date(lastBackupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </Typography>
+                              )}
+                            </Box>
                           </Box>
                           {backupStatus === 'permission_required' && (
                             <Button size="small" color="error" variant="contained" onClick={(): void => { void BackupService.performAutoBackup(true); }}>
