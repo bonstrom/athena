@@ -1,3 +1,4 @@
+import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import Settings from './Settings';
 import { useAuthStore } from '../store/AuthStore';
@@ -63,17 +64,17 @@ interface AuthState {
 
 jest.mock('../components/ThemeSelector', () => ({
   __esModule: true,
-  default: (): JSX.Element => <div data-testid="theme-selector" />,
+  default: (): React.ReactElement => <div data-testid="theme-selector" />,
 }));
 
 jest.mock('../components/ProviderCard', () => ({
-  ProviderCard: ({ provider }: { provider: { name: string } }): JSX.Element => <div>{provider.name}</div>,
-  AddProviderCard: (): JSX.Element => <div>Add Provider Card</div>,
+  ProviderCard: ({ provider }: { provider: { name: string } }): React.ReactElement => <div>{provider.name}</div>,
+  AddProviderCard: (): React.ReactElement => <div>Add Provider Card</div>,
 }));
 
 jest.mock('../components/ImportDialog', () => ({
   __esModule: true,
-  default: (): JSX.Element => <div data-testid="import-dialog" />,
+  default: (): React.ReactElement => <div data-testid="import-dialog" />,
 }));
 
 jest.mock('../store/AuthStore', () => ({

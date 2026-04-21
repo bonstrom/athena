@@ -1,3 +1,4 @@
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import { ChatModel } from './ModelSelector';
@@ -6,7 +7,7 @@ import theme from '../theme';
 
 jest.mock('./TypingIndicator', () => ({
   __esModule: true,
-  default: (): JSX.Element => <div data-testid="typing-indicator" />,
+  default: (): React.ReactElement => <div data-testid="typing-indicator" />,
 }));
 
 function createModel(): ChatModel {

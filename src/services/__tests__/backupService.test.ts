@@ -1,3 +1,4 @@
+export {};
 const mockExportDB = jest.fn<Promise<Blob>, [unknown, { prettyJson: boolean }]>();
 const mockImportInto = jest.fn<Promise<void>, [unknown, File, { overwriteValues: boolean; clearTablesBeforeImport: boolean }]>();
 const mockGet = jest.fn<Promise<unknown>, [string]>();

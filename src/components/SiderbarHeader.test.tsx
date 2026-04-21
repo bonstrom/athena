@@ -5,7 +5,7 @@ import { useChatStore } from '../store/ChatStore';
 
 jest.mock('./ModelSelector', () => ({
   __esModule: true,
-  default: (): JSX.Element => <div data-testid="model-selector" />,
+  default: (): React.ReactElement => <div data-testid="model-selector" />,
 }));
 
 jest.mock('../store/UiStore', () => ({

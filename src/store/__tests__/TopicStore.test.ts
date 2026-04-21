@@ -141,14 +141,10 @@ function makeTopic(overrides: Partial<Topic> = {}): Topic {
 
 function makeMessage(overrides: Partial<Message> & { id: string; type: Message['type']; content: string; created: string }): Message {
   return {
-    id: overrides.id,
     topicId: 'topic-1',
     forkId: 'main',
-    type: overrides.type,
-    content: overrides.content,
     isDeleted: false,
     includeInContext: false,
-    created: overrides.created,
     failed: false,
     promptTokens: 0,
     completionTokens: 0,

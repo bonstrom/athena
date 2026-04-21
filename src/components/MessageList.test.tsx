@@ -8,7 +8,7 @@ import { Message } from '../database/AthenaDb';
 
 jest.mock('react-scroll-to-bottom', () => ({
   __esModule: true,
-  default: ({ children }: { children: React.ReactNode }): JSX.Element => <div>{children}</div>,
+  default: ({ children }: { children: React.ReactNode }): React.ReactElement => <div>{children}</div>,
   useScrollToBottom: jest.fn(() => jest.fn()),
   useSticky: jest.fn(() => [true]),
 }));
@@ -27,12 +27,12 @@ jest.mock('../store/UiStore', () => ({
 
 jest.mock('./MessageBubble', () => ({
   __esModule: true,
-  default: ({ message }: { message: Message }): JSX.Element => <div>{message.content}</div>,
+  default: ({ message }: { message: Message }): React.ReactElement => <div>{message.content}</div>,
 }));
 
 jest.mock('./SuggestedReplies', () => ({
   __esModule: true,
-  default: ({ suggestions, onSelect }: { suggestions: string[]; onSelect: (s: string) => void }): JSX.Element => (
+  default: ({ suggestions, onSelect }: { suggestions: string[]; onSelect: (s: string) => void }): React.ReactElement => (
     <button
       onClick={(): void => {
         onSelect(suggestions[0]);

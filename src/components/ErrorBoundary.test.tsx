@@ -1,11 +1,11 @@
 import { render, screen } from '@testing-library/react';
 import { ErrorBoundary } from './ErrorBoundary';
 
-function OkChild(): JSX.Element {
+function OkChild(): React.ReactElement {
   return <div>Healthy child</div>;
 }
 
-function ThrowingChild(): JSX.Element {
+function ThrowingChild(): React.ReactElement {
   throw new Error('Boom from child');
 }
 

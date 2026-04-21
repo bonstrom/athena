@@ -1,3 +1,4 @@
+import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Sidebar } from './Sidebar';
 import { useNavigate } from 'react-router-dom';
@@ -6,19 +7,19 @@ import { useTopicStore } from '../store/TopicStore';
 import { useLogout } from '../store/AuthStore';
 
 jest.mock('./TopicList', () => ({
-  TopicList: (): JSX.Element => <div data-testid="topic-list" />,
+  TopicList: (): React.ReactElement => <div data-testid="topic-list" />,
 }));
 
 jest.mock('./BuildVersion', () => ({
-  BuildVersion: (): JSX.Element => <div data-testid="build-version" />,
+  BuildVersion: (): React.ReactElement => <div data-testid="build-version" />,
 }));
 
 jest.mock('./SiderbarHeader', () => ({
-  SidebarHeader: (): JSX.Element => <div data-testid="sidebar-header" />,
+  SidebarHeader: (): React.ReactElement => <div data-testid="sidebar-header" />,
 }));
 
 jest.mock('./GlobalSearch', () => ({
-  GlobalSearch: (): JSX.Element => <div data-testid="global-search" />,
+  GlobalSearch: (): React.ReactElement => <div data-testid="global-search" />,
 }));
 
 jest.mock('react-router-dom', () => ({

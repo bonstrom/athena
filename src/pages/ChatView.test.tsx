@@ -1,3 +1,4 @@
+import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ChatView from './ChatView';
 import { useParams } from 'react-router-dom';
@@ -7,7 +8,7 @@ import { useTopicStore } from '../store/TopicStore';
 
 jest.mock('../components/Composer', () => ({
   __esModule: true,
-  default: ({ onSend }: { onSend: (content: string) => void }): JSX.Element => (
+  default: ({ onSend }: { onSend: (content: string) => void }): React.ReactElement => (
     <button
       onClick={(): void => {
         onSend('hello');
@@ -20,7 +21,7 @@ jest.mock('../components/Composer', () => ({
 
 jest.mock('../components/MessageList', () => ({
   __esModule: true,
-  default: ({ onSuggestionSelect }: { onSuggestionSelect: (s: string) => void }): JSX.Element => (
+  default: ({ onSuggestionSelect }: { onSuggestionSelect: (s: string) => void }): React.ReactElement => (
     <button
       onClick={(): void => {
         onSuggestionSelect('suggested reply');
@@ -33,7 +34,7 @@ jest.mock('../components/MessageList', () => ({
 
 jest.mock('../components/ForkTabs', () => ({
   __esModule: true,
-  default: ({ topicId }: { topicId: string }): JSX.Element => <div data-testid="fork-tabs">{topicId}</div>,
+  default: ({ topicId }: { topicId: string }): React.ReactElement => <div data-testid="fork-tabs">{topicId}</div>,
 }));
 
 jest.mock('@mui/material', () => {

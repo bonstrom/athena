@@ -1,3 +1,4 @@
+import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import MessageBubble from './MessageBubble';
@@ -46,12 +47,12 @@ type ProviderStoreHookMock = jest.Mock<unknown> & {
 
 jest.mock('./MarkdownWithCode', () => ({
   __esModule: true,
-  default: ({ children }: { children: string }): JSX.Element => <div data-testid="markdown-content">{children}</div>,
+  default: ({ children }: { children: string }): React.ReactElement => <div data-testid="markdown-content">{children}</div>,
 }));
 
 jest.mock('./TypingIndicator', () => ({
   __esModule: true,
-  default: (): JSX.Element => <div data-testid="typing-indicator" />,
+  default: (): React.ReactElement => <div data-testid="typing-indicator" />,
 }));
 
 jest.mock('../store/AuthStore', () => ({
@@ -106,7 +107,7 @@ function createMessage(overrides?: Partial<Message>): Message {
   };
 }
 
-function renderWithTheme(ui: JSX.Element): ReturnType<typeof render> {
+function renderWithTheme(ui: React.ReactElement): ReturnType<typeof render> {
   return render(<ThemeProvider theme={theme}>{ui}</ThemeProvider>);
 }
 

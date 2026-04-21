@@ -119,7 +119,7 @@ describe('ModelSelector', () => {
       models: [],
     });
 
-    render(<ModelSelector selectedModel={undefined} onChange={onChange} />);
+    render(<ModelSelector selectedModel={undefined as any} onChange={onChange} />);
 
     expect(screen.getByText(/no models available/i)).toBeInTheDocument();
   });

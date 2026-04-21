@@ -1,3 +1,4 @@
+export {};
 type PipelineFactory = (task: string, modelId: string, options: Record<string, unknown>) => Promise<unknown>;
 
 type ExtractorFn = (
@@ -75,7 +76,7 @@ describe('embeddingWorker', () => {
       throw new Error('Expected worker onmessage handler to be defined');
     }
 
-    workerSelf.onmessage({ data: { type: 'load' } } as MessageEvent<{ type: string; id?: string; text?: string }>);
+    workerSelf.onmessage({ data: { type: 'load' } } as unknown as MessageEvent<{ type: string; id?: string; text?: string }>);
     await flushAsync();
 
     expect(mockPipeline).toHaveBeenCalledWith('feature-extraction', 'Xenova/all-MiniLM-L6-v2', expect.objectContaining({ quantized: true }));
@@ -98,7 +99,7 @@ describe('embeddingWorker', () => {
       throw new Error('Expected worker onmessage handler to be defined');
     }
 
-    workerSelf.onmessage({ data: { type: 'embed', id: 'req-1', text: 'hello' } } as MessageEvent<{ type: string; id?: string; text?: string }>);
+    workerSelf.onmessage({ data: { type: 'embed', id: 'req-1', text: 'hello' } } as unknown as MessageEvent<{ type: string; id?: string; text?: string }>);
 
     expect(workerSelf.postMessage).toHaveBeenCalledWith({ type: 'error', error: 'Model not loaded', id: 'req-1' });
   });
@@ -125,10 +126,10 @@ describe('embeddingWorker', () => {
       throw new Error('Expected worker onmessage handler to be defined');
     }
 
-    workerSelf.onmessage({ data: { type: 'load' } } as MessageEvent<{ type: string; id?: string; text?: string }>);
+    workerSelf.onmessage({ data: { type: 'load' } } as unknown as MessageEvent<{ type: string; id?: string; text?: string }>);
     await flushAsync();
 
-    workerSelf.onmessage({ data: { type: 'embed', id: 'req-2', text: 'hello world' } } as MessageEvent<{ type: string; id?: string; text?: string }>);
+    workerSelf.onmessage({ data: { type: 'embed', id: 'req-2', text: 'hello world' } } as unknown as MessageEvent<{ type: string; id?: string; text?: string }>);
     await flushAsync();
 
     expect(workerSelf.postMessage).toHaveBeenCalledWith({ type: 'embedding', id: 'req-2', vector: [1, 2, 3] });
@@ -165,10 +166,10 @@ describe('embeddingWorker', () => {
       throw new Error('Expected worker onmessage handler to be defined');
     }
 
-    workerSelf.onmessage({ data: { type: 'load' } } as MessageEvent<{ type: string; id?: string; text?: string }>);
+    workerSelf.onmessage({ data: { type: 'load' } } as unknown as MessageEvent<{ type: string; id?: string; text?: string }>);
     await flushAsync();
 
-    workerSelf.onmessage({ data: { type: 'embed', id: 'req-3', text: 'fallback' } } as MessageEvent<{ type: string; id?: string; text?: string }>);
+    workerSelf.onmessage({ data: { type: 'embed', id: 'req-3', text: 'fallback' } } as unknown as MessageEvent<{ type: string; id?: string; text?: string }>);
     await flushAsync();
 
     const embeddingMessage = workerSelf.postMessage.mock.calls
@@ -200,7 +201,7 @@ describe('embeddingWorker', () => {
       throw new Error('Expected worker onmessage handler to be defined');
     }
 
-    workerSelf.onmessage({ data: { type: 'unload' } } as MessageEvent<{ type: string; id?: string; text?: string }>);
+    workerSelf.onmessage({ data: { type: 'unload' } } as unknown as MessageEvent<{ type: string; id?: string; text?: string }>);
 
     expect(workerSelf.postMessage).toHaveBeenCalledWith({ type: 'status', status: 'unloaded' });
   });

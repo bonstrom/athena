@@ -1,3 +1,4 @@
+export {};
 type PipelineFactory = (task: string, modelId: string, options: Record<string, unknown>) => Promise<unknown>;
 
 interface WorkerSelfLike {
@@ -66,9 +67,9 @@ describe('llmWorker', () => {
       throw new Error('Expected worker onmessage handler to be defined');
     }
 
-    await Promise.resolve(handleMessage({ data: { type: 'load', modelId: 'model-1' } } as MessageEvent<Record<string, unknown>>));
+    await Promise.resolve(handleMessage({ data: { type: 'load', modelId: 'model-1' } } as unknown as MessageEvent<Record<string, unknown>>));
     await Promise.resolve(
-      handleMessage({ data: { type: 'generate', text: 'hello there', context: 'ctx' } } as MessageEvent<Record<string, unknown>>),
+      handleMessage({ data: { type: 'generate', text: 'hello there', context: 'ctx' } } as unknown as MessageEvent<Record<string, unknown>>),
     );
 
     expect(mockPipeline).toHaveBeenCalledWith('text-generation', 'model-1', expect.objectContaining({ device: 'wasm', dtype: 'q8' }));
@@ -99,9 +100,9 @@ describe('llmWorker', () => {
     }
 
     await Promise.resolve(
-      handleMessage({ data: { type: 'complete', prompt: 'finish this', maxTokens: 10 } } as MessageEvent<Record<string, unknown>>),
+      handleMessage({ data: { type: 'complete', prompt: 'finish this', maxTokens: 10 } } as unknown as MessageEvent<Record<string, unknown>>),
     );
-    await Promise.resolve(handleMessage({ data: { type: 'unload', modelId: 'model-1' } } as MessageEvent<Record<string, unknown>>));
+    await Promise.resolve(handleMessage({ data: { type: 'unload', modelId: 'model-1' } } as unknown as MessageEvent<Record<string, unknown>>));
 
     expect(workerSelf.postMessage).toHaveBeenCalledWith({ type: 'completion', text: '' });
     expect(workerSelf.postMessage).toHaveBeenCalledWith({ type: 'status', status: 'unloaded', modelId: 'model-1' });

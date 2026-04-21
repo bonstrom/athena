@@ -1,3 +1,4 @@
+export {};
 interface NotificationItem {
   id: string;
   title: string;
@@ -32,7 +33,7 @@ describe('NotificationStore', () => {
   });
 
   it('adds notifications with generated ids', () => {
-    const mockRandomUUID = jest.fn<() => `${string}-${string}`>().mockReturnValueOnce('id-1').mockReturnValueOnce('id-2');
+    const mockRandomUUID = jest.fn<`${string}-${string}`, []>().mockReturnValueOnce('id-1').mockReturnValueOnce('id-2');
 
     Object.defineProperty(globalThis, 'crypto', {
       value: {
@@ -55,7 +56,7 @@ describe('NotificationStore', () => {
   it('removes only the targeted notification id', () => {
     Object.defineProperty(globalThis, 'crypto', {
       value: {
-        randomUUID: jest.fn<() => `${string}-${string}`>().mockReturnValueOnce('keep-id').mockReturnValueOnce('remove-id'),
+        randomUUID: jest.fn<`${string}-${string}`, []>().mockReturnValueOnce('keep-id').mockReturnValueOnce('remove-id'),
       },
       configurable: true,
     });

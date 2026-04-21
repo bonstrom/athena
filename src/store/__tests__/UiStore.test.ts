@@ -1,3 +1,4 @@
+export {};
 interface UiStoreState {
   drawerOpen: boolean;
   isMobile: boolean;

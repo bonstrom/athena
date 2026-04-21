@@ -1,3 +1,4 @@
+export {};
 type SchemaMap = Record<string, string>;
 
 type UpgradeCallback = (trans: { table: (tableName: string) => unknown }) => Promise<void> | void;

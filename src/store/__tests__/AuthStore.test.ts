@@ -1,3 +1,4 @@
+export {};
 const mockClearPredefinedPrompts = jest.fn<Promise<void>, []>(() => Promise.resolve());
 const mockAddPredefinedPrompt = jest.fn<Promise<string>, [unknown]>(() => Promise.resolve('id-1'));
 const mockPutPredefinedPrompt = jest.fn<Promise<string>, [unknown]>(() => Promise.resolve('id-1'));

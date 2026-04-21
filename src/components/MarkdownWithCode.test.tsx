@@ -1,4 +1,5 @@
 import type { JSX } from 'react';
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 
 jest.mock('react-markdown', () => ({
@@ -9,9 +10,9 @@ jest.mock('react-markdown', () => ({
   }: {
     children?: string;
     components?: {
-      code?: (props: { inline?: boolean; className?: string; children?: unknown }) => JSX.Element;
+      code?: (props: { inline?: boolean; className?: string; children?: unknown }) => React.ReactElement;
     };
-  }): JSX.Element => {
+  }): React.ReactElement => {
     const codeRenderer = components?.code;
     const segments = children.split(/(```[\s\S]*?```)/g).filter((segment) => segment.length > 0);
 
@@ -35,7 +36,7 @@ jest.mock('remark-gfm', () => jest.fn());
 
 jest.mock('react-syntax-highlighter', () => ({
   PrismLight: Object.assign(
-    ({ children, language }: { children?: unknown; language?: string }) => (
+    ({ children, language }: { children?: any; language?: string }) => (
       <pre data-testid="syntax-highlighter" data-language={language}>
         {children}
       </pre>

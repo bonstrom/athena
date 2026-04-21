@@ -1,3 +1,4 @@
+import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import ChatLayout from './ChatLayout';
 import { useUiStore } from '../store/UiStore';
@@ -7,11 +8,11 @@ import { useAuthStore } from '../store/AuthStore';
 import { useMediaQuery } from '@mui/material';
 
 jest.mock('./Sidebar', () => ({
-  Sidebar: (): JSX.Element => <div data-testid="sidebar" />,
+  Sidebar: (): React.ReactElement => <div data-testid="sidebar" />,
 }));
 
 jest.mock('react-router-dom', () => ({
-  Outlet: (): JSX.Element => <div data-testid="outlet" />,
+  Outlet: (): React.ReactElement => <div data-testid="outlet" />,
 }));
 
 jest.mock('../store/UiStore', () => ({

@@ -32,7 +32,7 @@ const mockIncreaseVisibleTopicCount = jest.fn<void, []>(() => undefined);
 const mockPreloadTopics = jest.fn<Promise<void>, [string[]]>(() => Promise.resolve());
 
 jest.mock('./TopicListItem', () => ({
-  TopicListItem: ({ topic }: { topic: TopicLike }): JSX.Element => <div data-testid="topic-item">{topic.name}</div>,
+  TopicListItem: ({ topic }: { topic: TopicLike }): React.ReactElement => <div data-testid="topic-item">{topic.name}</div>,
 }));
 
 jest.mock('../store/TopicStore', () => ({

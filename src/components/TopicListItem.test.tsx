@@ -1,3 +1,4 @@
+import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Topic } from '../database/AthenaDb';
 import { TopicListItem } from './TopicListItem';
@@ -30,10 +31,10 @@ jest.mock('../store/TopicStore', () => ({
 
 jest.mock('./TopicContextDialog', () => ({
   __esModule: true,
-  default: (): JSX.Element => <div data-testid="topic-context-dialog" />,
+  default: (): React.ReactElement => <div data-testid="topic-context-dialog" />,
 }));
 
-const mockUseNavigate = useNavigate as unknown as jest.Mock<() => (path: string) => void>;
+const mockUseNavigate = useNavigate as unknown as jest.Mock;
 const mockUseParams = useParams as unknown as jest.Mock<{ topicId?: string }>;
 const mockUseUiStore = useUiStore as unknown as jest.Mock<{ isMobile: boolean; closeDrawer: () => void }>;
 const mockUseAuthStore = useAuthStore as unknown as jest.Mock<{ chatFontSize: number }>;

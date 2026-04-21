@@ -5,7 +5,7 @@ import { useAuthStore, useLogout } from '../store/AuthStore';
 import { useTopicStore } from '../store/TopicStore';
 
 jest.mock('react-router-dom', () => ({
-  Link: ({ children }: { children: React.ReactNode }): JSX.Element => <>{children}</>,
+  Link: ({ children }: { children: React.ReactNode }): React.ReactElement => <>{children}</>,
   useNavigate: jest.fn(),
 }));
 
