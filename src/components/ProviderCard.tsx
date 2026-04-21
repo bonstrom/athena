@@ -21,7 +21,6 @@ import {
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  CheckCircle as CheckCircleIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
   Settings as SettingsIcon,
@@ -469,7 +468,6 @@ const ProviderCardComponent: React.FC<ProviderCardProps> = ({ provider, balanceL
           <Chip label={provider.messageFormat} size="small" variant="outlined" sx={{ fontSize: '0.65rem' }} />
           {hasKey ? (
             <Chip
-              icon={<CheckCircleIcon sx={{ color: 'success.main !important' }} />}
               label="Key set"
               color="success"
               variant="outlined"
