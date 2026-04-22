@@ -135,6 +135,17 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
   } else {
     // Migration: Update built-in models with new defaults from DEFAULT_MODELS (e.g. forceTemperature)
     let modelsChanged = false;
+    const existingModelIds = new Set(models.map((m) => m.id));
+
+    // 1. Add missing built-in models
+    for (const def of DEFAULT_MODELS) {
+      if (!existingModelIds.has(def.id)) {
+        models.push(def);
+        modelsChanged = true;
+      }
+    }
+
+    // 2. Update existing built-in models
     models = models.map((m) => {
       if (!m.isBuiltIn) return m;
       const def = DEFAULT_MODELS.find((dm) => dm.id === m.id);

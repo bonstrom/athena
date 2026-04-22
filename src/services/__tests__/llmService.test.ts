@@ -1,4 +1,23 @@
-import { TextDecoder as NodeTextDecoder } from 'util';
+import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from 'util';
+import { ReadableStream as NodeReadableStream } from 'stream/web';
+
+Object.defineProperty(globalThis, 'ReadableStream', {
+  value: NodeReadableStream,
+  writable: true,
+  configurable: true,
+});
+
+Object.defineProperty(globalThis, 'TextEncoder', {
+  value: NodeTextEncoder,
+  writable: true,
+  configurable: true,
+});
+
+Object.defineProperty(globalThis, 'TextDecoder', {
+  value: NodeTextDecoder,
+  writable: true,
+  configurable: true,
+});
 
 // Mock out modules that have heavy side-effects / browser dependencies so that
 // the pure filterMessagesForModel function can be tested in isolation.
@@ -725,11 +744,6 @@ describe('askLlm — non-streaming API calls', () => {
       getProviderForModel: (): LlmProvider => provider,
     });
     mockEstimateTokens.mockReturnValue({ promptTokens: 50, completionTokens: 75, totalTokens: 125 });
-    Object.defineProperty(globalThis, 'TextDecoder', {
-      configurable: true,
-      writable: true,
-      value: NodeTextDecoder,
-    });
   });
 
   it('returns response with message content and token counts', async () => {
@@ -1074,5 +1088,98 @@ describe('getDeepSeekBalance', () => {
 
     consoleErrorSpy.mockRestore();
     (process.env as any).NODE_ENV = previousNodeEnv;
+  });
+});
+describe('askLlm — temperature resolution', () => {
+  const model: UserChatModel = {
+    id: 'kimi-forced',
+    label: 'Kimi Forced',
+    apiModelId: 'kimi-k2.5',
+    providerId: 'test-provider',
+    input: 0,
+    cachedInput: 0,
+    output: 0,
+    streaming: true,
+    supportsTemperature: true,
+    supportsTools: true,
+    supportsVision: false,
+    supportsFiles: false,
+    contextWindow: 128000,
+    forceTemperature: 1.0, // FORCED
+    enforceAlternatingRoles: false,
+    maxTokensOverride: null,
+    isBuiltIn: false,
+    enabled: true,
+  };
+
+  const provider: LlmProvider = {
+    id: 'test-provider',
+    name: 'Test Provider',
+    baseUrl: 'https://example.com/v1/chat/completions',
+    messageFormat: 'openai',
+    apiKeyEncrypted: 'key-encrypted',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: false,
+  };
+
+  beforeEach(() => {
+    mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 16000 });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+    mockEstimateTokens.mockReturnValue({ promptTokens: 50, completionTokens: 75, totalTokens: 125 });
+  });
+
+  it('uses forced temperature even if a different one is requested in askLlm', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> =>
+        Promise.resolve({
+          choices: [{ message: { content: 'forced temp response' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        }),
+    } as unknown as Response);
+
+    const { askLlm } = await import('../llmService');
+    // We request 0.7, but the model has forceTemperature: 1.0
+    await askLlm(model, 0.7, [user('Hi')]);
+
+    const requestInit = mockFetch.mock.calls[0][1];
+    const body = JSON.parse(String(requestInit?.body)) as { temperature: number };
+    expect(body.temperature).toBe(1.0);
+  });
+
+  it('uses forced temperature in streaming requests (orchestrateLlmLoop)', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    // Mock a streaming response (simplified)
+    const mockStream = new ReadableStream({
+      start(controller): void {
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"streaming response"}}]}\n\ndata: [DONE]\n\n'));
+        controller.close();
+      },
+    });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: mockStream,
+    } as unknown as Response);
+
+    const { orchestrateLlmLoop } = await import('../llmService');
+    // Model is streaming: true, so it will call askLlmStream
+    // We request 0.5, but model has forceTemperature: 1.0
+    await orchestrateLlmLoop(model, 0.5, [user('Hi')], () => {});
+
+    const requestInit = mockFetch.mock.calls[0][1];
+    const body = JSON.parse(String(requestInit?.body)) as { temperature: number };
+    expect(body.temperature).toBe(1.0);
   });
 });
