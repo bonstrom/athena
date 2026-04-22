@@ -15,6 +15,9 @@ const LEGACY_MODEL_ID_MAP: Record<string, string> = {
 
 function resolveModelFromSavedId(savedModelId: string | null, models: ChatModel[]): ChatModel | undefined {
   if (!savedModelId) return undefined;
+  const exactMatch = models.find((m) => m.id === savedModelId) ?? models.find((m) => m.apiModelId === savedModelId);
+  if (exactMatch) return exactMatch;
+
   const normalizedSavedId = Object.prototype.hasOwnProperty.call(LEGACY_MODEL_ID_MAP, savedModelId)
     ? LEGACY_MODEL_ID_MAP[savedModelId]
     : savedModelId;

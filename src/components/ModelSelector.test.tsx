@@ -72,6 +72,61 @@ describe('ModelSelector', () => {
     expect(selected.id).toBe('builtin-kimi-k2-turbo');
   });
 
+  it('prefers exact current model ID over legacy remap when both could match', () => {
+    const kimi25 = buildModel({
+      id: 'builtin-kimi-k2-5',
+      label: 'Kimi 2.5',
+      apiModelId: 'kimi-k2.5',
+      providerId: 'builtin-moonshot',
+    });
+    const turbo = buildModel({
+      id: 'builtin-kimi-k2-turbo',
+      label: 'Kimi K2 Turbo Preview',
+      apiModelId: 'kimi-k2-turbo-preview',
+      providerId: 'builtin-moonshot',
+    });
+
+    mockUseProviderStore.getState.mockReturnValue({
+      models: [kimi25, turbo],
+      getAvailableModels: (): ChatModel[] => [kimi25, turbo],
+    });
+
+    localStorage.setItem('athena_selected_model', 'builtin-kimi-k2-5');
+
+    const selected = getDefaultModel();
+
+    expect(selected.id).toBe('builtin-kimi-k2-5');
+  });
+
+  it('restores the same saved model across repeated getDefaultModel calls (reopen simulation)', () => {
+    const kimi25 = buildModel({
+      id: 'builtin-kimi-k2-5',
+      label: 'Kimi 2.5',
+      apiModelId: 'kimi-k2.5',
+      providerId: 'builtin-moonshot',
+    });
+    const turbo = buildModel({
+      id: 'builtin-kimi-k2-turbo',
+      label: 'Kimi K2 Turbo Preview',
+      apiModelId: 'kimi-k2-turbo-preview',
+      providerId: 'builtin-moonshot',
+    });
+
+    mockUseProviderStore.getState.mockReturnValue({
+      models: [kimi25, turbo],
+      getAvailableModels: (): ChatModel[] => [kimi25, turbo],
+    });
+
+    localStorage.setItem('athena_selected_model', 'builtin-kimi-k2-5');
+
+    const firstLoadSelection = getDefaultModel();
+    const secondLoadSelection = getDefaultModel();
+
+    expect(firstLoadSelection.id).toBe('builtin-kimi-k2-5');
+    expect(secondLoadSelection.id).toBe('builtin-kimi-k2-5');
+    expect(localStorage.getItem('athena_selected_model')).toBe('builtin-kimi-k2-5');
+  });
+
   it('auto-corrects invalid selected model to first available option and avoids out-of-range warning', async () => {
     const invalidSelected = buildModel({
       id: 'builtin-kimi-k2-5',
@@ -113,13 +168,14 @@ describe('ModelSelector', () => {
 
   it('renders empty state message when no models available', (): void => {
     const onChange = jest.fn<undefined, [ChatModel]>();
+    const selected = buildModel({ id: 'selected-model', label: 'Selected model', apiModelId: 'selected-model' });
 
     mockUseProviderStore.mockReturnValue({
       getAvailableModels: (): ChatModel[] => [],
       models: [],
     });
 
-    render(<ModelSelector selectedModel={undefined as any} onChange={onChange} />);
+    render(<ModelSelector selectedModel={selected} onChange={onChange} />);
 
     expect(screen.getByText(/no models available/i)).toBeInTheDocument();
   });
