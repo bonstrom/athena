@@ -1,4 +1,4 @@
-﻿import { SecurityUtils } from '../utils/security';
+import { SecurityUtils } from '../utils/security';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -226,7 +226,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsVision: true,
     supportsFiles: true,
     contextWindow: 128_000,
-    forceTemperature: 0.6,
+    forceTemperature: 1,
     enforceAlternatingRoles: false,
     maxTokensOverride: null,
     isBuiltIn: true,
@@ -266,7 +266,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsVision: true,
     supportsFiles: true,
     contextWindow: 128_000,
-    forceTemperature: null,
+    forceTemperature: 1,
     enforceAlternatingRoles: false,
     maxTokensOverride: null,
     isBuiltIn: true,

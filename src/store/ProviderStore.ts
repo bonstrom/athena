@@ -132,6 +132,22 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
     models = DEFAULT_MODELS;
     saveProviders(providers);
     saveModels(models);
+  } else {
+    // Migration: Update built-in models with new defaults from DEFAULT_MODELS (e.g. forceTemperature)
+    let modelsChanged = false;
+    models = models.map((m) => {
+      if (!m.isBuiltIn) return m;
+      const def = DEFAULT_MODELS.find((dm) => dm.id === m.id);
+      if (!def) return m;
+
+      // Update specific properties that might have changed in code but need to persist in storage
+      if (m.forceTemperature !== def.forceTemperature) {
+        modelsChanged = true;
+        return { ...m, forceTemperature: def.forceTemperature };
+      }
+      return m;
+    });
+    if (modelsChanged) saveModels(models);
   }
 
   return { providers, models };

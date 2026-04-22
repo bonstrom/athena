@@ -647,7 +647,7 @@ function buildPayload(
     });
   }
 
-  const resolvedTemperature = resolvedModel.forceTemperature != null && !stream ? resolvedModel.forceTemperature : temperature;
+  const resolvedTemperature = resolvedModel.forceTemperature != null ? resolvedModel.forceTemperature : temperature;
 
   const payloadOverrides = getPayloadOverrides(providerConfig);
 

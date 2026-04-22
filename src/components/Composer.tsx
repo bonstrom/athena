@@ -517,80 +517,83 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
           <Divider sx={{ my: 1, opacity: 0.6 }} />
 
-          <ListSubheader
-            sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
-            }}
-          >
-            Temperature Presets
-            {!selectedModel.supportsTemperature && (
-              <Box component="span" sx={{ color: 'error.main', ml: 1 }}>
-                (Not supported)
-              </Box>
-            )}
-          </ListSubheader>
-
-          <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
-            <MuiToggleButtonGroup
-              value={temperature}
-              exclusive
-              onChange={(_, value: number | null): void => {
-                if (value !== null) handleTempSelect(value);
-              }}
-              disabled={!selectedModel.supportsTemperature}
-              size="small"
-              fullWidth
-              sx={{
-                bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
-                p: 0.5,
-                '& .MuiToggleButton-root': {
-                  border: 'none',
-                  borderRadius: '8px !important',
-                  mx: 0.25,
-                  px: 1,
-                  py: 0.5,
-                  fontSize: '0.75rem',
+          {selectedModel.forceTemperature == null && (
+            <>
+              <ListSubheader
+                sx={{
+                  lineHeight: '36px',
                   fontWeight: 'bold',
-                  color: 'text.secondary',
-                  '&.Mui-selected': {
-                    bgcolor: 'primary.main',
-                    color: 'primary.contrastText',
-                    '&:hover': {
-                      bgcolor: 'primary.dark',
-                    },
-                  },
-                },
-              }}
-            >
-              <MuiToggleButton value={0.0}>
-                <Tooltip title="Coding / Math (0.0)" disableTouchListener={isMobile}>
-                  <CodeIcon fontSize="small" />
-                </Tooltip>
-              </MuiToggleButton>
-              <MuiToggleButton value={1.0}>
-                <Tooltip title="Data Analysis (1.0)" disableTouchListener={isMobile}>
-                  <AnalyticsIcon fontSize="small" />
-                </Tooltip>
-              </MuiToggleButton>
-              <MuiToggleButton value={1.3}>
-                <Tooltip title="General Chat (1.3)" disableTouchListener={isMobile}>
-                  <ForumIcon fontSize="small" />
-                </Tooltip>
-              </MuiToggleButton>
-              <MuiToggleButton value={1.5}>
-                <Tooltip title="Creative Writing (1.5)" disableTouchListener={isMobile}>
-                  <AutoAwesomeIcon fontSize="small" />
-                </Tooltip>
-              </MuiToggleButton>
-            </MuiToggleButtonGroup>
-          </Box>
+                  fontSize: '0.75rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  bgcolor: 'transparent',
+                }}
+              >
+                Temperature Presets
+                {!selectedModel.supportsTemperature && (
+                  <Box component="span" sx={{ color: 'error.main', ml: 1 }}>
+                    (Not supported)
+                  </Box>
+                )}
+              </ListSubheader>
 
-          {!isMobile && <Divider sx={{ my: 1, opacity: 0.6 }} />}
+              <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
+                <MuiToggleButtonGroup
+                  value={temperature}
+                  exclusive
+                  onChange={(_, value: number | null): void => {
+                    if (value !== null) handleTempSelect(value);
+                  }}
+                  disabled={!selectedModel.supportsTemperature}
+                  size="small"
+                  fullWidth
+                  sx={{
+                    bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                    p: 0.5,
+                    '& .MuiToggleButton-root': {
+                      border: 'none',
+                      borderRadius: '8px !important',
+                      mx: 0.25,
+                      px: 1,
+                      py: 0.5,
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      color: 'text.secondary',
+                      '&.Mui-selected': {
+                        bgcolor: 'primary.main',
+                        color: 'primary.contrastText',
+                        '&:hover': {
+                          bgcolor: 'primary.dark',
+                        },
+                      },
+                    },
+                  }}
+                >
+                  <MuiToggleButton value={0.0}>
+                    <Tooltip title="Coding / Math (0.0)" disableTouchListener={isMobile}>
+                      <CodeIcon fontSize="small" />
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value={1.0}>
+                    <Tooltip title="Data Analysis (1.0)" disableTouchListener={isMobile}>
+                      <AnalyticsIcon fontSize="small" />
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value={1.3}>
+                    <Tooltip title="General Chat (1.3)" disableTouchListener={isMobile}>
+                      <ForumIcon fontSize="small" />
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value={1.5}>
+                    <Tooltip title="Creative Writing (1.5)" disableTouchListener={isMobile}>
+                      <AutoAwesomeIcon fontSize="small" />
+                    </Tooltip>
+                  </MuiToggleButton>
+                </MuiToggleButtonGroup>
+              </Box>
+              <Divider sx={{ my: 1, opacity: 0.6 }} />
+            </>
+          )}
 
           {!isMobile && (
             <ListSubheader
