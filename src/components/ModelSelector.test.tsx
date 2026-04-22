@@ -9,11 +9,13 @@ jest.mock('../store/ProviderStore', () => ({
 interface ProviderStoreStateForSelector {
   getAvailableModels: () => ChatModel[];
   models: ChatModel[];
+  providers: any[];
 }
 
 interface ProviderStoreStateForDefault {
   models: ChatModel[];
   getAvailableModels: () => ChatModel[];
+  providers: any[];
 }
 
 type UseProviderStoreMock = jest.Mock<ProviderStoreStateForSelector> & {
@@ -63,6 +65,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.getState.mockReturnValue({
       models: [turbo],
       getAvailableModels: (): ChatModel[] => [turbo],
+      providers: [{ id: 'builtin-moonshot', name: 'Moonshot' }],
     });
 
     localStorage.setItem('athena_selected_model', 'builtin-kimi-k2-5');
@@ -89,6 +92,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.getState.mockReturnValue({
       models: [kimi25, turbo],
       getAvailableModels: (): ChatModel[] => [kimi25, turbo],
+      providers: [{ id: 'builtin-moonshot', name: 'Moonshot' }],
     });
 
     localStorage.setItem('athena_selected_model', 'builtin-kimi-k2-5');
@@ -115,6 +119,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.getState.mockReturnValue({
       models: [kimi25, turbo],
       getAvailableModels: (): ChatModel[] => [kimi25, turbo],
+      providers: [{ id: 'builtin-moonshot', name: 'Moonshot' }],
     });
 
     localStorage.setItem('athena_selected_model', 'builtin-kimi-k2-5');
@@ -146,6 +151,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.mockReturnValue({
       getAvailableModels: (): ChatModel[] => [available],
       models: [available],
+      providers: [{ id: 'builtin-moonshot', name: 'Moonshot' }],
     });
 
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation((): void => undefined);
@@ -173,6 +179,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.mockReturnValue({
       getAvailableModels: (): ChatModel[] => [],
       models: [],
+      providers: [],
     });
 
     render(<ModelSelector selectedModel={selected} onChange={onChange} />);
@@ -195,6 +202,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.getState.mockReturnValue({
       models: [gpt4, gpt35],
       getAvailableModels: (): ChatModel[] => [gpt35],
+      providers: [{ id: 'builtin-openai', name: 'OpenAI' }],
     });
 
     localStorage.setItem('athena_selected_model', 'builtin-gpt-4');
@@ -215,6 +223,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.getState.mockReturnValue({
       models: [gpt4],
       getAvailableModels: (): ChatModel[] => [],
+      providers: [],
     });
 
     const selected = getDefaultModel();
@@ -237,6 +246,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.getState.mockReturnValue({
       models: [standard, nano],
       getAvailableModels: (): ChatModel[] => [standard, nano],
+      providers: [{ id: 'builtin-openai', name: 'OpenAI' }],
     });
 
     const result = getDefaultTopicNameModel();
@@ -253,6 +263,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.getState.mockReturnValue({
       models: [gpt4],
       getAvailableModels: (): ChatModel[] => [gpt4],
+      providers: [{ id: 'builtin-openai', name: 'OpenAI' }],
     });
 
     const result = getDefaultTopicNameModel();
@@ -269,6 +280,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.getState.mockReturnValue({
       models: [gpt4],
       getAvailableModels: (): ChatModel[] => [gpt4],
+      providers: [{ id: 'builtin-openai', name: 'OpenAI' }],
     });
 
     const available = getAvailableModels();
@@ -286,6 +298,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.getState.mockReturnValue({
       models: [gpt4],
       getAvailableModels: (): ChatModel[] => [gpt4],
+      providers: [{ id: 'builtin-openai', name: 'OpenAI' }],
     });
 
     const found = getModelByApiId('gpt-4');
@@ -302,6 +315,7 @@ describe('ModelSelector', () => {
     mockUseProviderStore.getState.mockReturnValue({
       models: [gpt4],
       getAvailableModels: (): ChatModel[] => [gpt4],
+      providers: [{ id: 'builtin-openai', name: 'OpenAI' }],
     });
 
     const found = getModelByApiId('gpt-3.5');

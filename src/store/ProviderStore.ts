@@ -152,13 +152,61 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
       if (!def) return m;
 
       // Update specific properties that might have changed in code but need to persist in storage
+      let updated = false;
+      const next = { ...m };
+
       if (m.forceTemperature !== def.forceTemperature) {
+        next.forceTemperature = def.forceTemperature;
+        updated = true;
+      }
+      if (m.input !== def.input) {
+        next.input = def.input;
+        updated = true;
+      }
+      if (m.cachedInput !== def.cachedInput) {
+        next.cachedInput = def.cachedInput;
+        updated = true;
+      }
+      if (m.output !== def.output) {
+        next.output = def.output;
+        updated = true;
+      }
+      if (m.contextWindow !== def.contextWindow) {
+        next.contextWindow = def.contextWindow;
+        updated = true;
+      }
+
+      if (updated) {
         modelsChanged = true;
-        return { ...m, forceTemperature: def.forceTemperature };
+        return next;
       }
       return m;
     });
+
+    // 3. Remove built-in models that are no longer in DEFAULT_MODELS
+    const currentDefaultIds = new Set(DEFAULT_MODELS.map((dm) => dm.id));
+    const nextModels = models.filter((m) => !m.isBuiltIn || currentDefaultIds.has(m.id));
+    if (nextModels.length !== models.length) {
+      models = nextModels;
+      modelsChanged = true;
+    }
+
     if (modelsChanged) saveModels(models);
+
+    // 4. Update built-in providers (e.g. name changes)
+    let providersChanged = false;
+    providers = providers.map((p) => {
+      if (!p.isBuiltIn) return p;
+      const def = DEFAULT_PROVIDERS.find((dp) => dp.id === p.id);
+      if (!def) return p;
+
+      if (p.name !== def.name) {
+        providersChanged = true;
+        return { ...p, name: def.name };
+      }
+      return p;
+    });
+    if (providersChanged) saveProviders(providers);
   }
 
   return { providers, models };
@@ -253,12 +301,22 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
 
   getAvailableModels: (): UserChatModel[] => {
     const { models, providers } = get();
-    return models.filter((m) => {
+    const available = models.filter((m) => {
       if (!m.enabled) return false;
       const provider = providers.find((p) => p.id === m.providerId);
       if (!provider) return false;
       const hasKey = getApiKey(provider).length > 0;
       return hasKey || providerCanBeUsedWithoutKey(provider);
+    });
+
+    return [...available].sort((a, b) => {
+      const pA = providers.find((p) => p.id === a.providerId)?.name ?? '';
+      const pB = providers.find((p) => p.id === b.providerId)?.name ?? '';
+
+      if (pA !== pB) {
+        return pA.localeCompare(pB);
+      }
+      return a.label.localeCompare(b.label);
     });
   },
 
