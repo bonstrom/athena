@@ -54,54 +54,6 @@ describe('ModelSelector', () => {
     localStorage.clear();
   });
 
-  it('maps legacy saved Kimi model IDs to K2 Turbo in getDefaultModel', () => {
-    const turbo = buildModel({
-      id: 'builtin-kimi-k2-turbo',
-      label: 'Kimi K2 Turbo Preview',
-      apiModelId: 'kimi-k2-turbo-preview',
-      providerId: 'builtin-moonshot',
-    });
-
-    mockUseProviderStore.getState.mockReturnValue({
-      models: [turbo],
-      getAvailableModels: (): ChatModel[] => [turbo],
-      providers: [{ id: 'builtin-moonshot', name: 'Moonshot' }],
-    });
-
-    localStorage.setItem('athena_selected_model', 'builtin-kimi-k2-5');
-
-    const selected = getDefaultModel();
-
-    expect(selected.id).toBe('builtin-kimi-k2-turbo');
-  });
-
-  it('prefers exact current model ID over legacy remap when both could match', () => {
-    const kimi25 = buildModel({
-      id: 'builtin-kimi-k2-5',
-      label: 'Kimi 2.5',
-      apiModelId: 'kimi-k2.5',
-      providerId: 'builtin-moonshot',
-    });
-    const turbo = buildModel({
-      id: 'builtin-kimi-k2-turbo',
-      label: 'Kimi K2 Turbo Preview',
-      apiModelId: 'kimi-k2-turbo-preview',
-      providerId: 'builtin-moonshot',
-    });
-
-    mockUseProviderStore.getState.mockReturnValue({
-      models: [kimi25, turbo],
-      getAvailableModels: (): ChatModel[] => [kimi25, turbo],
-      providers: [{ id: 'builtin-moonshot', name: 'Moonshot' }],
-    });
-
-    localStorage.setItem('athena_selected_model', 'builtin-kimi-k2-5');
-
-    const selected = getDefaultModel();
-
-    expect(selected.id).toBe('builtin-kimi-k2-5');
-  });
-
   it('restores the same saved model across repeated getDefaultModel calls (reopen simulation)', () => {
     const kimi25 = buildModel({
       id: 'builtin-kimi-k2-5',

@@ -28,8 +28,7 @@ export function groupTopicsByDate(topics: Topic[]): GroupedTopics[] {
   };
 
   topics.forEach((topic) => {
-    // Fallback to createdOn if updatedOn is missing for any legacy topics
-    const updated = new Date(topic.updatedOn || topic.createdOn);
+    const updated = new Date(topic.updatedOn);
     if (updated >= today) {
       groups.Today.push(topic);
     } else if (updated >= yesterday) {
@@ -48,7 +47,7 @@ export function groupTopicsByDate(topics: Topic[]): GroupedTopics[] {
     .map(([label, items]) => ({
       label,
       topics: items.sort((a, b) => 
-        new Date(b.updatedOn || b.createdOn).getTime() - new Date(a.updatedOn || a.createdOn).getTime()
+        new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()
       ),
     }));
 }

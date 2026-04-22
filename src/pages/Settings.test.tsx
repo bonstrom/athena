@@ -217,10 +217,13 @@ describe('Settings page', () => {
     render(<Settings />);
 
     fireEvent.change(screen.getByLabelText('User Name'), { target: { value: '  New User  ' } });
-    fireEvent.change(screen.getByLabelText('Custom Instructions (System Prompt)'), { target: { value: '  New instructions  ' } });
-    fireEvent.change(screen.getByLabelText('Scratchpad Rules (System Prompt)'), { target: { value: '  New scratchpad rules  ' } });
+    // Switch to Prompts & Data tab to see Instructions
+    fireEvent.click(screen.getByRole('tab', { name: /data/i }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.change(screen.getByLabelText('Custom Instructions (System Prompt)'), { target: { value: '  New instructions  ' } });
+    fireEvent.change(screen.getByLabelText(/Scratchpad Rules/i), { target: { value: '  New scratchpad rules  ' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save Instructions' }));
 
     await waitFor(() => {
       expect(authState.setUserName).toHaveBeenCalledWith('New User');
@@ -235,10 +238,13 @@ describe('Settings page', () => {
 
     render(<Settings />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Predefined Prompt' }));
-    fireEvent.change(screen.getByLabelText('Name (e.g., Programming)'), { target: { value: 'Code style' } });
-    fireEvent.change(screen.getByLabelText('Context / Instructions'), { target: { value: 'Prefer concise TypeScript.' } });
+    // Switch to Prompts & Data tab
+    fireEvent.click(screen.getByRole('tab', { name: /data/i }));
+
     fireEvent.click(screen.getByRole('button', { name: 'Add Prompt' }));
+    fireEvent.change(screen.getByLabelText(/Name/i), { target: { value: 'Code style' } });
+    fireEvent.change(screen.getByLabelText(/Content/i), { target: { value: 'Prefer concise TypeScript.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() => {
       expect(authState.addPredefinedPrompt).toHaveBeenCalledTimes(1);

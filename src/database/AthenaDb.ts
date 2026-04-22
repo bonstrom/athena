@@ -143,7 +143,7 @@ export interface UserSetting {
 export interface Message {
   id: string;
   topicId: string;
-  forkId?: string; // Optional for backward compatibility during migration
+  forkId?: string;
   type: MessageType;
   content: string;
   model?: string;
@@ -173,8 +173,8 @@ export interface Topic {
   updatedOn: string;
   isDeleted: boolean;
   scratchpad?: string;
-  forks?: Fork[]; // Optional for backward compatibility
-  activeForkId?: string; // Optional for backward compatibility
+  forks?: Fork[];
+  activeForkId?: string;
   maxContextMessages?: number;
   selectedPromptIds?: string[];
 }

@@ -4,24 +4,12 @@ import { useProviderStore } from '../store/ProviderStore';
 import { UserChatModel } from '../types/provider';
 import { USD_TO_SEK } from '../constants';
 
-// Re-export UserChatModel as ChatModel for backward compatibility with consumers
 export type ChatModel = UserChatModel;
 export type { ProviderId } from '../services/llmService';
 
-const LEGACY_MODEL_ID_MAP: Record<string, string> = {
-  'builtin-kimi-k2-5': 'builtin-kimi-k2-turbo',
-  'kimi-k2.5': 'builtin-kimi-k2-turbo',
-};
-
 function resolveModelFromSavedId(savedModelId: string | null, models: ChatModel[]): ChatModel | undefined {
   if (!savedModelId) return undefined;
-  const exactMatch = models.find((m) => m.id === savedModelId) ?? models.find((m) => m.apiModelId === savedModelId);
-  if (exactMatch) return exactMatch;
-
-  const normalizedSavedId = Object.prototype.hasOwnProperty.call(LEGACY_MODEL_ID_MAP, savedModelId)
-    ? LEGACY_MODEL_ID_MAP[savedModelId]
-    : savedModelId;
-  return models.find((m) => m.id === normalizedSavedId) ?? models.find((m) => m.apiModelId === normalizedSavedId);
+  return models.find((m) => m.id === savedModelId) ?? models.find((m) => m.apiModelId === savedModelId);
 }
 
 export function calculateCostUSD(model: ChatModel, prompt: number, completion: number, promptDetails?: { cached_tokens?: number }): number {

@@ -167,14 +167,4 @@ describe('ProviderStore', () => {
     expect(available.some((m) => m.id === 'custom-local-model')).toBe(true);
   });
 
-  it('migrates old provider keys into seeded providers and clears old keys', () => {
-    localStorage.setItem('openAiKey', 'legacy-encoded-openai-key');
-
-    const store = loadProviderStore();
-    const openAiProvider = store.getState().providers.find((p) => p.id === 'builtin-openai');
-
-    expect(openAiProvider).toBeDefined();
-    expect(openAiProvider?.apiKeyEncrypted).toBe('legacy-encoded-openai-key');
-    expect(localStorage.getItem('openAiKey')).toBeNull();
-  });
 });

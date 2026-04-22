@@ -43,47 +43,8 @@ function providerCanBeUsedWithoutKey(provider: LlmProvider): boolean {
   return isLocalBaseUrl(provider.baseUrl);
 }
 
-// ── Migration from old individual API key fields ──────────────────────────────
+// ── Seeding (first run) ───────────────────────────────────────────────────────
 
-interface OldKeyMap {
-  openAiKey: string | null;
-  deepSeekKey: string | null;
-  googleApiKey: string | null;
-  moonshotApiKey: string | null;
-  minimaxKey: string | null;
-}
-
-function migrateOldKeys(): OldKeyMap {
-  return {
-    openAiKey: localStorage.getItem('openAiKey'),
-    deepSeekKey: localStorage.getItem('deepSeekKey'),
-    googleApiKey: localStorage.getItem('googleApiKey'),
-    moonshotApiKey: localStorage.getItem('moonshotApiKey'),
-    minimaxKey: localStorage.getItem('minimaxKey'),
-  };
-}
-
-function clearOldKeys(): void {
-  ['openAiKey', 'deepSeekKey', 'googleApiKey', 'moonshotApiKey', 'minimaxKey'].forEach((k) => localStorage.removeItem(k));
-}
-
-// ── Seeding (first run or migration) ─────────────────────────────────────────
-
-function seedProvidersWithKeys(oldKeys: OldKeyMap): LlmProvider[] {
-  const keyMap: Record<string, string | null> = {
-    'builtin-openai': oldKeys.openAiKey,
-    'builtin-deepseek': oldKeys.deepSeekKey,
-    'builtin-google': oldKeys.googleApiKey,
-    'builtin-moonshot': oldKeys.moonshotApiKey,
-    'builtin-minimax': oldKeys.minimaxKey,
-  };
-
-  return DEFAULT_PROVIDERS.map((p) => ({
-    ...p,
-    // The old keys are already encoded with SecurityUtils.encode — reuse as-is
-    apiKeyEncrypted: keyMap[p.id] ?? '',
-  }));
-}
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
@@ -117,18 +78,8 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
   const hasStoredProviders = providers.length > 0;
 
   if (!hasStoredProviders) {
-    // First run or migrating from old format
-    const oldKeys = migrateOldKeys();
-    const hasOldKeys = [oldKeys.openAiKey, oldKeys.deepSeekKey, oldKeys.googleApiKey, oldKeys.moonshotApiKey, oldKeys.minimaxKey].some(
-      (k) => k !== null && k.length > 0,
-    );
-
-    providers = hasOldKeys ? seedProvidersWithKeys(oldKeys) : DEFAULT_PROVIDERS.map((p) => ({ ...p, apiKeyEncrypted: '' }));
-
-    if (hasOldKeys) {
-      clearOldKeys();
-    }
-
+    // First run
+    providers = DEFAULT_PROVIDERS.map((p) => ({ ...p, apiKeyEncrypted: '' }));
     models = DEFAULT_MODELS;
     saveProviders(providers);
     saveModels(models);
@@ -195,17 +146,15 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
 
     // 4. Update built-in providers (e.g. name changes)
     let providersChanged = false;
-    providers = providers.map((p) => {
-      if (!p.isBuiltIn) return p;
+    for (let i = 0; i < providers.length; i++) {
+      const p = providers[i];
+      if (!p.isBuiltIn) continue;
       const def = DEFAULT_PROVIDERS.find((dp) => dp.id === p.id);
-      if (!def) return p;
-
-      if (p.name !== def.name) {
+      if (def && p.name !== def.name) {
+        providers[i] = { ...p, name: def.name };
         providersChanged = true;
-        return { ...p, name: def.name };
       }
-      return p;
-    });
+    }
     if (providersChanged) saveProviders(providers);
   }
 

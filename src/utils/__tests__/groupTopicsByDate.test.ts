@@ -90,19 +90,6 @@ describe('groupTopicsByDate', () => {
     expect(group.topics[1].id).toBe('older');
   });
 
-  it('falls back to createdOn when updatedOn is missing', () => {
-    const topic: Topic = {
-      id: 'legacy',
-      name: 'Legacy Topic',
-      createdOn: NOW.toISOString(),
-      // @ts-expect-error — simulating legacy data without updatedOn
-      updatedOn: undefined,
-      isDeleted: false,
-    };
-    const result = groupTopicsByDate([topic]);
-    expect(result[0].label).toBe('Today');
-  });
-
   it('handles multiple topics spread across different groups', () => {
     const topics = [
       makeTopic({ id: 'a', updatedOn: NOW.toISOString() }),
