@@ -310,15 +310,21 @@ const Settings: React.FC = () => {
         width: '100%',
         maxWidth: { xs: '100%', md: chatWidth === 'full' ? '100%' : chatWidth },
         mx: 'auto',
-        mt: { xs: 2, md: 4 },
+        flexGrow: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        py: { xs: 2, md: 4 },
         px: 2,
-        pb: 8,
+        overflow: 'hidden',
       }}
     >
       <Paper
         elevation={4}
         sx={{
           borderRadius: 3,
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
           overflow: 'hidden',
           bgcolor: (theme) => theme.palette.background.paper,
           border: '1px solid',
@@ -328,14 +334,25 @@ const Settings: React.FC = () => {
         <Tabs
           value={activeTab}
           onChange={(_, newValue): void => setActiveTab(newValue as number)}
-          variant="scrollable"
-          scrollButtons="auto"
+          variant={isMobile ? 'scrollable' : 'standard'}
+          scrollButtons={isMobile ? 'auto' : false}
           sx={{
+            minHeight: { xs: 48, sm: 64 },
+            height: { xs: 48, sm: 64 },
+            overflow: 'hidden',
             borderBottom: 1,
             borderColor: 'divider',
             bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
+            '& .MuiTabs-scroller': {
+              height: '100%',
+              overflowY: 'hidden !important',
+            },
+            '& .MuiTabs-flexContainer': {
+              height: '100%',
+            },
             '& .MuiTab-root': {
               minHeight: { xs: 48, sm: 64 },
+              height: { xs: 48, sm: 64 },
               fontSize: { xs: '0.7rem', sm: '0.8rem' },
               fontWeight: 'bold',
               textTransform: 'uppercase',
@@ -350,7 +367,7 @@ const Settings: React.FC = () => {
           <Tab icon={<StorageIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />} label={isMobile ? 'Data' : 'Prompts & Data'} />
         </Tabs>
 
-        <Box sx={{ p: { xs: 2, sm: 4 }, maxHeight: 'calc(100vh - 250px)', overflowY: 'auto' }}>
+        <Box sx={{ p: { xs: 2, sm: 4 }, flexGrow: 1, overflowY: 'auto', scrollbarGutter: 'stable' }}>
           {/* ── TAB 0: GENERAL ── */}
           <TabPanel value={activeTab} index={0}>
             <Stack spacing={4} sx={{ width: '100%', maxWidth: 600 }}>
