@@ -139,7 +139,7 @@ export const useAuthStore = create<AuthState>((set) => {
         console.error('Failed to clear predefined prompts:', err);
       });
       set({
-        userName: undefined,
+        userName: '',
         customInstructions: '',
         chatWidth: 'lg',
         chatFontSize: 16,

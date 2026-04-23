@@ -50,11 +50,11 @@ describe('SecurityUtils.decode', () => {
     expect(SecurityUtils.decode(SecurityUtils.encode(original))).toBe(original);
   });
 
-  it('falls back to the raw value when the base64 payload is invalid', () => {
+  it('returns empty string when the base64 payload is invalid', () => {
     const badValue = 'obf:!!!not-valid-base64!!!';
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    // Should not throw; returns the raw obf: string as fallback
-    expect(SecurityUtils.decode(badValue)).toBe(badValue);
+    // Should not throw; returns empty string as fail-closed fallback
+    expect(SecurityUtils.decode(badValue)).toBe('');
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });

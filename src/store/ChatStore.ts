@@ -114,6 +114,8 @@ interface ChatStore {
 // Serialize summarization requests — llmSuggestionService has a single completion slot
 // so concurrent calls would overwrite each other's resolve callback and hang.
 let summarizeQueue: Promise<void> = Promise.resolve();
+const ASK_USER_TIMEOUT_MS = 5 * 60 * 1000;
+const ASK_USER_TIMEOUT_REPLY = 'User did not respond in time. Continue with your best effort based on available context.';
 
 export const useChatStore = create<ChatStore>((set, get) => ({
   messagesByTopic: {},
@@ -313,9 +315,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // If deleting a user message, also delete its active assistant reply (looked up by
     // parentMessageId rather than array position, to correctly handle aiNote/system
     // messages that may appear between the user and assistant messages).
-    const pairedAssistantId = target?.type === 'user' ? (messages.find((m) => m.type === 'assistant' && m.parentMessageId === id)?.id ?? null) : null;
+    const pairedAssistantIds =
+      target?.type === 'user' ? messages.filter((m) => m.type === 'assistant' && m.parentMessageId === id).map((m) => m.id) : [];
 
-    const idsToDelete = [id, ...(pairedAssistantId ? [pairedAssistantId] : [])];
+    const idsToDelete = [id, ...pairedAssistantIds];
 
     try {
       await athenaDb.transaction('rw', athenaDb.messages, async () => {
@@ -392,7 +395,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     // Fire-and-forget embedding
     if (embeddingService.isReady && message.content.trim()) {
-      void embeddingService.generateEmbedding(message.content).then((vector) => athenaDb.messages.update(id, { embedding: vector }));
+      void embeddingService
+        .generateEmbedding(message.content)
+        .then((vector) => athenaDb.messages.update(id, { embedding: vector }))
+        .catch((err: unknown) => {
+          console.warn('Failed to generate embedding for message:', err);
+        });
     }
 
     set((state) => {
@@ -932,7 +940,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
               // Return a Promise that resolves when the user submits an answer
               return new Promise<string>((resolve, reject) => {
-                set({ pendingUserQuestion: { question, context, resolve, reject } });
+                const timeout = setTimeout(() => {
+                  const pending = get().pendingUserQuestion;
+                  if (pending?.resolve === wrappedResolve) {
+                    set({ pendingUserQuestion: null });
+                  }
+                  resolve(ASK_USER_TIMEOUT_REPLY);
+                }, ASK_USER_TIMEOUT_MS);
+
+                const wrappedResolve = (answer: string): void => {
+                  clearTimeout(timeout);
+                  resolve(answer);
+                };
+
+                const wrappedReject = (reason?: unknown): void => {
+                  clearTimeout(timeout);
+                  reject(reason);
+                };
+
+                set({ pendingUserQuestion: { question, context, resolve: wrappedResolve, reject: wrappedReject } });
               });
             } catch (e) {
               return `Error in ask_user: ${String(e)}`;
@@ -1006,7 +1032,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             context: 'Fallback: model asked inline instead of using ask_user tool.',
             resolve: (answer: string) => {
               set({ pendingUserQuestion: null });
-              void get().sendMessageStream(answer, capturedTopicId);
+              const resolvedTopicId = get().currentTopicId ?? capturedTopicId;
+              void get().sendMessageStream(answer, resolvedTopicId);
             },
             reject: () => {
               set({ pendingUserQuestion: null });
@@ -1045,7 +1072,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (embeddingService.isReady && assistantPatch.content.trim()) {
         void embeddingService
           .generateEmbedding(assistantPatch.content)
-          .then((vector) => athenaDb.messages.update(assistantId, { embedding: vector }));
+          .then((vector) => athenaDb.messages.update(assistantId, { embedding: vector }))
+          .catch((err: unknown) => {
+            console.warn('Failed to generate embedding for assistant response:', err);
+          });
       }
 
       // Update state in one go
