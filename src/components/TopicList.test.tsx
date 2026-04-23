@@ -28,7 +28,7 @@ interface AuthSelectorState {
 }
 
 const mockLoadTopics = jest.fn<Promise<void>, []>(() => Promise.resolve());
-const mockIncreaseVisibleTopicCount = jest.fn<void, []>(() => undefined);
+const mockIncreaseVisibleTopicCount: jest.MockedFunction<() => void> = jest.fn(() => undefined);
 const mockPreloadTopics = jest.fn<Promise<void>, [string[]]>(() => Promise.resolve());
 
 jest.mock('./TopicListItem', () => ({

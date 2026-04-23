@@ -7,8 +7,8 @@ import { useUiStore } from '../store/UiStore';
 import { useAuthStore } from '../store/AuthStore';
 import { useTopicStore } from '../store/TopicStore';
 
-const mockNavigate = jest.fn<void, [string]>();
-const mockCloseDrawer = jest.fn<void, []>();
+const mockNavigate: jest.MockedFunction<(path: string) => void> = jest.fn();
+const mockCloseDrawer: jest.MockedFunction<() => void> = jest.fn();
 const mockRenameTopic = jest.fn<Promise<void>, [string, string]>(() => Promise.resolve());
 const mockDeleteTopic = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
 
@@ -63,7 +63,7 @@ describe('TopicListItem', () => {
 
     mockUseNavigate.mockReturnValue(mockNavigate);
     mockUseParams.mockReturnValue({ topicId: 'topic-1' });
-    mockUseUiStore.mockReturnValue({ isMobile: true, closeDrawer: (): void => mockCloseDrawer() });
+    mockUseUiStore.mockReturnValue({ isMobile: true, closeDrawer: mockCloseDrawer });
     mockUseAuthStore.mockReturnValue({ chatFontSize: 16 });
     mockUseTopicStore.mockReturnValue({
       renameTopic: (...args: [string, string]): Promise<void> => mockRenameTopic(...args),

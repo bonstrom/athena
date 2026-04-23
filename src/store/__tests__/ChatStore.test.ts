@@ -90,7 +90,7 @@ const mockGenerateEmbedding = jest.fn<Promise<number[]>, [string]>();
 
 const mockDbGet = jest.fn<Promise<Message | undefined>, [string]>();
 const mockDbAdd = jest.fn<Promise<string>, [Message]>();
-const mockDbBulkGet = jest.fn<Promise<Array<Message | undefined>>, [string[]]>();
+const mockDbBulkGet = jest.fn<Promise<(Message | undefined)[]>, [string[]]>();
 const mockDbBulkAdd = jest.fn<Promise<unknown>, [Message[]]>();
 const mockDbUpdate = jest.fn<Promise<number>, [string, Partial<Message>]>();
 const mockDbDelete = jest.fn<Promise<void>, [string]>();
@@ -138,7 +138,7 @@ jest.mock('../../store/AuthStore', () => ({
 
 jest.mock('../../store/NotificationStore', () => ({
   useNotificationStore: {
-    getState: () => ({ addNotification: mockAddNotification }),
+    getState: (): { addNotification: typeof mockAddNotification } => ({ addNotification: mockAddNotification }),
   },
 }));
 
@@ -152,20 +152,20 @@ jest.mock('../../services/llmService', () => ({
 }));
 
 jest.mock('../../services/mediaService', () => ({
-  generateImage: jest.fn(),
-  generateMusic: jest.fn(),
+  generateImage: jest.fn<Promise<string>, [string]>(),
+  generateMusic: jest.fn<Promise<string>, [string]>(),
 }));
 
 jest.mock('../../services/llmSuggestionService', () => ({
   llmSuggestionService: {
-    getCompletion: jest.fn(),
+    getCompletion: jest.fn<Promise<string>, [string]>(),
   },
 }));
 
 jest.mock('../../services/embeddingService', () => ({
   embeddingService: {
     isReady: false,
-    generateEmbedding: (...args: [string]) => mockGenerateEmbedding(...args),
+    generateEmbedding: (...args: [string]): Promise<number[]> => mockGenerateEmbedding(...args),
   },
 }));
 
@@ -178,22 +178,22 @@ jest.mock('../../services/backupService', () => ({
 jest.mock('../../database/AthenaDb', () => ({
   athenaDb: {
     messages: {
-      get: (...args: [string]) => mockDbGet(...args),
-      add: (...args: [Message]) => mockDbAdd(...args),
-      bulkGet: (...args: [string[]]) => mockDbBulkGet(...args),
-      bulkAdd: (...args: [Message[]]) => mockDbBulkAdd(...args),
-      update: (...args: [string, Partial<Message>]) => mockDbUpdate(...args),
-      delete: (...args: [string]) => mockDbDelete(...args),
-      bulkDelete: (...args: [string[]]) => mockDbBulkDelete(...args),
-      where: () => ({
-        equals: () => ({
-          and: () => ({
-            sortBy: (...args: [string]) => mockDbSortBy(...args),
+      get: (...args: [string]): Promise<Message | undefined> => mockDbGet(...args),
+      add: (...args: [Message]): Promise<string> => mockDbAdd(...args),
+      bulkGet: (...args: [string[]]): Promise<(Message | undefined)[]> => mockDbBulkGet(...args),
+      bulkAdd: (...args: [Message[]]): Promise<unknown> => mockDbBulkAdd(...args),
+      update: (...args: [string, Partial<Message>]): Promise<number> => mockDbUpdate(...args),
+      delete: (...args: [string]): Promise<void> => mockDbDelete(...args),
+      bulkDelete: (...args: [string[]]): Promise<void> => mockDbBulkDelete(...args),
+      where: (): { equals: () => { and: () => { sortBy: (...args: [string]) => Promise<Message[]> } } } => ({
+        equals: (): { and: () => { sortBy: (...args: [string]) => Promise<Message[]> } } => ({
+          and: (): { sortBy: (...args: [string]) => Promise<Message[]> } => ({
+            sortBy: (...args: [string]): Promise<Message[]> => mockDbSortBy(...args),
           }),
         }),
       }),
     },
-    transaction: (mode: string, table: unknown, callback: () => Promise<void>) => mockDbTransaction(mode, table, callback),
+    transaction: (mode: string, table: unknown, callback: () => Promise<void>): Promise<void> => mockDbTransaction(mode, table, callback),
   },
 }));
 
@@ -772,6 +772,65 @@ describe('ChatStore', () => {
     expect(remaining).not.toContainEqual(assistantMsg);
   });
 
+  it('deleteMessage removes all assistant versions associated with a user message', async () => {
+    const userMsg: Message = {
+      id: 'u-del-many',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'User query with multiple assistant variants',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: true,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    };
+
+    const assistantMsgV1: Message = {
+      id: 'a-del-v1',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'assistant',
+      content: 'Assistant answer v1',
+      created: '2024-01-01T00:00:01.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+      parentMessageId: 'u-del-many',
+    };
+
+    const assistantMsgV2: Message = {
+      id: 'a-del-v2',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'assistant',
+      content: 'Assistant answer v2',
+      created: '2024-01-01T00:00:02.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+      parentMessageId: 'u-del-many',
+    };
+
+    useChatStore.setState({
+      messagesByTopic: { 'topic-1': [userMsg, assistantMsgV1, assistantMsgV2] },
+    });
+
+    await useChatStore.getState().deleteMessage('u-del-many');
+
+    expect(mockDbBulkDelete).toHaveBeenCalledWith(['u-del-many', 'a-del-v1', 'a-del-v2']);
+    const remaining = useChatStore.getState().messagesByTopic['topic-1'] ?? [];
+    expect(remaining.map((m) => m.id)).toEqual([]);
+  });
+
   it('deleteMessage clears includeInContext on paired user when deleting assistant message', async () => {
     const userMsg: Message = {
       id: 'u-paired',
@@ -995,5 +1054,109 @@ describe('ChatStore', () => {
 
     useChatStore.getState().setSending(false);
     expect(useChatStore.getState().sending).toBe(false);
+  });
+
+  it('addMessage continues even when embedding generation fails', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation((): void => undefined);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { embeddingService } = require('../../services/embeddingService') as {
+      embeddingService: { isReady: boolean };
+    };
+    embeddingService.isReady = true;
+    mockGenerateEmbedding.mockRejectedValueOnce(new Error('Embedding failed'));
+
+    const message: Message = {
+      id: 'msg-embedding-fail',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'Trigger embedding',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    };
+
+    await expect(useChatStore.getState().addMessage(message)).resolves.toBeUndefined();
+
+    await Promise.resolve();
+    expect(warnSpy).toHaveBeenCalledWith('Failed to generate embedding for message:', expect.any(Error));
+
+    embeddingService.isReady = false;
+    warnSpy.mockRestore();
+  });
+
+  it('ask_user pending question times out and clears pending state', async () => {
+    jest.useFakeTimers();
+
+    type ExecuteToolCallback = (toolName: string, argsJson: string) => Promise<string>;
+    mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]) => {
+      const executeTool = args[6] as ExecuteToolCallback | undefined;
+      if (!executeTool) throw new Error('Expected execute tool callback');
+
+      const answer = await executeTool('ask_user', JSON.stringify({ question: 'Could you clarify?', context: 'Need details.' }));
+      return {
+        finalContent: `Timed answer: ${answer}`,
+        totalPromptTokens: 10,
+        totalCompletionTokens: 5,
+        totalSearchCount: 0,
+        toolLoopTrace: [],
+        lastResult: {
+          content: `Timed answer: ${answer}`,
+          rawContent: `Timed answer: ${answer}`,
+          promptTokens: 10,
+          completionTokens: 5,
+          searchCount: 0,
+        },
+      };
+    });
+
+    const sendPromise = useChatStore.getState().sendMessageStream('I need help', 'topic-1');
+
+    for (let i = 0; i < 20; i++) {
+      if (useChatStore.getState().pendingUserQuestion) break;
+      await Promise.resolve();
+    }
+
+    expect(useChatStore.getState().pendingUserQuestion).toBeDefined();
+
+    jest.advanceTimersByTime(5 * 60 * 1000 + 1);
+    await sendPromise;
+
+    expect(useChatStore.getState().pendingUserQuestion).toBeNull();
+    const assistant = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant');
+    expect(assistant?.content).toContain('did not respond in time');
+
+    jest.useRealTimers();
+  });
+
+  it('routes follow-up answer to current topic in fallback-style pending handler', async () => {
+    const sendSpy = jest.spyOn(useChatStore.getState(), 'sendMessageStream').mockResolvedValue();
+    const capturedTopicId = 'topic-1';
+
+    useChatStore.setState({
+      currentTopicId: 'topic-2',
+      pendingUserQuestion: {
+        question: 'Could you clarify?',
+        context: 'Fallback: model asked inline instead of using ask_user tool.',
+        resolve: (answer: string): void => {
+          useChatStore.setState({ pendingUserQuestion: null });
+          const resolvedTopicId = useChatStore.getState().currentTopicId ?? capturedTopicId;
+          void useChatStore.getState().sendMessageStream(answer, resolvedTopicId);
+        },
+        reject: (): void => {
+          useChatStore.setState({ pendingUserQuestion: null });
+        },
+      },
+    });
+
+    useChatStore.getState().resolvePendingQuestion('Use Node 20');
+    await Promise.resolve();
+
+    expect(sendSpy).toHaveBeenCalledWith('Use Node 20', 'topic-2');
+    sendSpy.mockRestore();
   });
 });

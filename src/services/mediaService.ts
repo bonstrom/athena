@@ -77,10 +77,17 @@ export async function generateMusic(prompt: string, signal?: AbortSignal): Promi
     throw new Error(`Generated audio file is too large (${(audioBlob.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed is 10 MB.`);
   }
 
-  const base64Data = await new Promise<string>((resolve) => {
+  const base64Data = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = (): void => {
-      resolve(reader.result as string);
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('Failed to convert generated audio to base64 data URL.'));
+    };
+    reader.onerror = (): void => {
+      reject(new Error('Failed to read generated audio blob.'));
     };
     reader.readAsDataURL(audioBlob);
   });

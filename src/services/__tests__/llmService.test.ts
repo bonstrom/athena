@@ -1070,7 +1070,7 @@ describe('getDeepSeekBalance', () => {
 
   it('logs errors only in development when fetch throws', async () => {
     const previousNodeEnv = process.env.NODE_ENV;
-    (process.env as any).NODE_ENV = 'development';
+    process.env.NODE_ENV = 'development';
 
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation((...args: unknown[]): void => {
       void args;
@@ -1087,7 +1087,7 @@ describe('getDeepSeekBalance', () => {
     expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch DeepSeek balance:', expect.any(Error));
 
     consoleErrorSpy.mockRestore();
-    (process.env as any).NODE_ENV = previousNodeEnv;
+    process.env.NODE_ENV = previousNodeEnv;
   });
 });
 describe('askLlm — temperature resolution', () => {

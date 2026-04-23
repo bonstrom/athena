@@ -85,7 +85,10 @@ describe('groupTopicsByDate', () => {
     const newer = makeTopic({ id: 'newer', updatedOn: daysAgo(2) });
     // Pass in reverse order to confirm sorting
     const result = groupTopicsByDate([older, newer]);
-    const group = result.find((g) => g.label === 'Previous 7 Days')!;
+    const group = result.find((g) => g.label === 'Previous 7 Days');
+    if (!group) {
+      throw new Error('Expected Previous 7 Days group to exist');
+    }
     expect(group.topics[0].id).toBe('newer');
     expect(group.topics[1].id).toBe('older');
   });
@@ -102,5 +105,29 @@ describe('groupTopicsByDate', () => {
     expect(labels).toContain('Yesterday');
     expect(labels).toContain('Older');
     expect(result).toHaveLength(3);
+  });
+
+  it('handles invalid or missing timestamps without NaN sort behavior', () => {
+    const validOlder = makeTopic({ id: 'valid-older', updatedOn: daysAgo(10) });
+    const validRecent = makeTopic({ id: 'valid-recent', updatedOn: daysAgo(2) });
+    const invalidDate = makeTopic({ id: 'invalid-date', updatedOn: 'not-a-date' });
+    const missingBoth = {
+      id: 'missing-both',
+      name: 'Missing Both',
+      // @ts-expect-error intentional legacy/corrupt data shape
+      createdOn: undefined,
+      // @ts-expect-error intentional legacy/corrupt data shape
+      updatedOn: undefined,
+      isDeleted: false,
+    } as Topic;
+
+    const result = groupTopicsByDate([validOlder, validRecent, invalidDate, missingBoth]);
+    const previous7 = result.find((g) => g.label === 'Previous 7 Days');
+    const previous30 = result.find((g) => g.label === 'Previous 30 Days');
+    const older = result.find((g) => g.label === 'Older');
+
+    expect(previous7?.topics[0].id).toBe('valid-recent');
+    expect(previous30?.topics[0].id).toBe('valid-older');
+    expect(older?.topics.map((t) => t.id)).toEqual(expect.arrayContaining(['invalid-date', 'missing-both']));
   });
 });

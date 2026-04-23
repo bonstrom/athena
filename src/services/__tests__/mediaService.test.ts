@@ -73,4 +73,28 @@ describe('mediaService', () => {
 
     (globalThis as unknown as { Blob: typeof Blob }).Blob = originalBlob;
   });
+
+  it('generateMusic rejects when FileReader fails to read audio blob', async () => {
+    mockGenerateMinimaxMusic.mockResolvedValue({ audioHex: 'ff00' });
+
+    const originalFileReader = globalThis.FileReader;
+
+    class FailingFileReader {
+      public result: string | ArrayBuffer | null = null;
+      public onloadend: (() => void) | null = null;
+      public onerror: (() => void) | null = null;
+
+      public readAsDataURL(_blob: Blob): void {
+        if (this.onerror) {
+          this.onerror();
+        }
+      }
+    }
+
+    (globalThis as unknown as { FileReader: typeof FileReader }).FileReader = FailingFileReader as unknown as typeof FileReader;
+
+    await expect(generateMusic('Calm piano music')).rejects.toThrow('Failed to read generated audio blob.');
+
+    (globalThis as unknown as { FileReader: typeof FileReader }).FileReader = originalFileReader;
+  });
 });

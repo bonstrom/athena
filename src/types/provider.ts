@@ -68,7 +68,11 @@ export function encodeApiKey(rawKey: string): string {
 export function getPayloadOverrides(provider: LlmProvider): Record<string, unknown> {
   if (!provider.payloadOverridesJson) return {};
   try {
-    return JSON.parse(provider.payloadOverridesJson) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(provider.payloadOverridesJson);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed as Record<string, unknown>;
   } catch {
     return {};
   }

@@ -89,7 +89,7 @@ describe('MessageList', () => {
   });
 
   it('shows load older button and triggers increaseVisibleMessageCount', () => {
-    const increaseVisibleMessageCount = jest.fn<void, []>();
+    const increaseVisibleMessageCount: jest.MockedFunction<() => void> = jest.fn();
     mockUseChatStore.mockReturnValue({
       visibleMessageCount: 1,
       increaseVisibleMessageCount,
@@ -114,7 +114,7 @@ describe('MessageList', () => {
       increaseVisibleMessageCount: jest.fn(),
     });
 
-    const onSuggestionSelect = jest.fn<void, [string]>();
+    const onSuggestionSelect: jest.MockedFunction<(suggestion: string) => void> = jest.fn();
     const messages: Message[] = [buildMessage('u1', 'user', 'Hello', '2026-04-17T10:00:00.000Z')];
 
     render(<MessageList messages={messages} maxContextMessages={10} suggestions={['Try this']} onSuggestionSelect={onSuggestionSelect} />);

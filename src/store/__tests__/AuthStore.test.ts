@@ -92,6 +92,7 @@ describe('AuthStore', () => {
   });
 
   it('clearAuth resets RAG and context defaults and clears persisted keys', () => {
+    localStorage.setItem('userName', 'Athena User');
     localStorage.setItem('ragEnabled', 'true');
     localStorage.setItem('maxContextTokens', '32000');
     localStorage.setItem('messageRetrievalEnabled', 'false');
@@ -101,6 +102,7 @@ describe('AuthStore', () => {
     store.getState().clearAuth();
 
     const state = store.getState();
+    expect(state.userName).toBe('');
     expect(state.ragEnabled).toBe(false);
     expect(state.maxContextTokens).toBe(16000);
     expect(state.messageRetrievalEnabled).toBe(true);

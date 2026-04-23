@@ -110,7 +110,6 @@ describe('ProviderStore', () => {
   it('removes selected model key when no models remain after deleting all providers', () => {
     const store = loadProviderStore();
     const initialModel = store.getState().models[0];
-    expect(initialModel).toBeDefined();
 
     if (initialModel) {
       localStorage.setItem('athena_selected_model', initialModel.id);

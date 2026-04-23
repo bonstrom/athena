@@ -10,14 +10,14 @@ jest.mock('../../services/backupService', () => ({
 }));
 
 jest.mock('../../store/NotificationStore', () => ({
-  useNotificationStore: () => ({
+  useNotificationStore: (): { addNotification: jest.Mock } => ({
     addNotification: jest.fn(),
   }),
 }));
 
 import { useAutoBackup } from '../useAutoBackup';
 
-const HookHarness: React.FC<{ intervalMinutes: number }> = ({ intervalMinutes }) => {
+const HookHarness: React.FC<{ intervalMinutes: number }> = ({ intervalMinutes }): React.ReactElement | null => {
   useAutoBackup(intervalMinutes);
   return null;
 };

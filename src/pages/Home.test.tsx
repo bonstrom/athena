@@ -44,7 +44,7 @@ describe('Home page', () => {
   });
 
   it('creates topic and navigates when starting a new conversation', async () => {
-    const navigate = jest.fn<void, [string]>();
+    const navigate: jest.MockedFunction<(path: string) => void> = jest.fn();
     mockUseNavigate.mockReturnValue(navigate);
     mockUseAuthStore.mockReturnValue({ userName: 'Alex' });
     mockUseTopicStore.mockReturnValue({

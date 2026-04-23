@@ -4,9 +4,9 @@ const mockImportInto = jest.fn<Promise<void>, [unknown, File, { overwriteValues:
 const mockGet = jest.fn<Promise<unknown>, [string]>();
 const mockSet = jest.fn<Promise<void>, [string, unknown]>();
 
-const mockSetStatus = jest.fn<void, [string]>();
-const mockSetLastBackupTime = jest.fn<void, [string]>();
-const mockSetErrorMessage = jest.fn<void, [string | null]>();
+const mockSetStatus: jest.MockedFunction<(status: string) => void> = jest.fn();
+const mockSetLastBackupTime: jest.MockedFunction<(time: string) => void> = jest.fn();
+const mockSetErrorMessage: jest.MockedFunction<(message: string | null) => void> = jest.fn();
 
 jest.mock('dexie-export-import', () => ({
   exportDB: (...args: [unknown, { prettyJson: boolean }]): Promise<Blob> => mockExportDB(...args),
@@ -24,10 +24,14 @@ jest.mock('../../database/AthenaDb', () => ({
 
 jest.mock('../../store/BackupStore', () => ({
   useBackupStore: {
-    getState: () => ({
-      setStatus: (...args: [string]): void => mockSetStatus(...args),
-      setLastBackupTime: (...args: [string]): void => mockSetLastBackupTime(...args),
-      setErrorMessage: (...args: [string | null]): void => mockSetErrorMessage(...args),
+    getState: (): {
+      setStatus: (status: string) => void;
+      setLastBackupTime: (time: string) => void;
+      setErrorMessage: (message: string | null) => void;
+    } => ({
+      setStatus: mockSetStatus,
+      setLastBackupTime: mockSetLastBackupTime,
+      setErrorMessage: mockSetErrorMessage,
     }),
   },
 }));

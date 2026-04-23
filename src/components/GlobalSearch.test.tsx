@@ -47,8 +47,8 @@ describe('GlobalSearch', () => {
   });
 
   it('searches and navigates to selected result topic', async () => {
-    const navigate = jest.fn<void, [string]>();
-    const closeDrawer = jest.fn<void, []>();
+    const navigate: jest.MockedFunction<(path: string) => void> = jest.fn();
+    const closeDrawer: jest.MockedFunction<() => void> = jest.fn();
     mockUseNavigate.mockReturnValue(navigate);
     mockUseUiStore.mockReturnValue({ isMobile: true, closeDrawer });
 
