@@ -40,18 +40,19 @@ interface Props {
 }
 
 const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
-  const { getAvailableModels, models } = useProviderStore();
-  const availableModels = getAvailableModels();
-  const selectedStillAvailable = availableModels.some((m) => m.id === selectedModel.id);
+  const sortedModels = useSortedAvailableModels();
+  const { models, providers } = useProviderStore();
+
+  const selectedStillAvailable = sortedModels.some((m) => m.id === selectedModel.id);
   const selectValue = selectedStillAvailable ? selectedModel.id : '';
 
   React.useEffect(() => {
-    if (!selectedStillAvailable && availableModels.length > 0) {
-      onChange(availableModels[0]);
+    if (!selectedStillAvailable && sortedModels.length > 0) {
+      onChange(sortedModels[0]);
     }
-  }, [selectedStillAvailable, availableModels, onChange]);
+  }, [selectedStillAvailable, sortedModels, onChange]);
 
-  if (availableModels.length === 0) {
+  if (sortedModels.length === 0) {
     return (
       <Typography color="text.secondary" variant="body2" mt={2}>
         No models available. Please add a provider API key in the settings.
@@ -74,16 +75,24 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
           return model ? model.label : selected;
         }}
       >
-        {availableModels.map((m) => (
-          <MenuItem key={m.id} value={m.id}>
-            <Box display="flex" justifyContent="space-between" width="100%" alignItems="center">
-              <Typography>{m.label}</Typography>
-              <Typography variant="caption" color="text.secondary" ml={2} whiteSpace="nowrap">
-                {`${(m.input * USD_TO_SEK).toFixed(0)}kr | ${(m.output * USD_TO_SEK).toFixed(0)}kr / 1M`}
-              </Typography>
-            </Box>
-          </MenuItem>
-        ))}
+        {sortedModels.map((m) => {
+          const provider = providers.find((p) => p.id === m.providerId);
+          return (
+            <MenuItem key={m.id} value={m.id}>
+              <Box display="flex" justifyContent="space-between" width="100%" alignItems="center">
+                <Box>
+                  <Typography variant="caption" color="primary" sx={{ display: 'block', fontSize: '0.65rem', lineHeight: 1, mb: 0.5 }}>
+                    {provider?.name.toUpperCase()}
+                  </Typography>
+                  <Typography>{m.label}</Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary" ml={2} whiteSpace="nowrap">
+                  {`${(m.input * USD_TO_SEK).toFixed(0)}kr | ${(m.output * USD_TO_SEK).toFixed(0)}kr / 1M`}
+                </Typography>
+              </Box>
+            </MenuItem>
+          );
+        })}
       </Select>
     </FormControl>
   );
@@ -91,8 +100,13 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
 
 export default ModelSelector;
 
+export function useSortedAvailableModels(): ChatModel[] {
+  const { getAvailableModels } = useProviderStore();
+  return getAvailableModels();
+}
+
 export function getDefaultModel(): ChatModel {
-  const { models, getAvailableModels } = useProviderStore.getState();
+  const { models } = useProviderStore.getState();
   const available = getAvailableModels();
   const availableIds = new Set(available.map((m) => m.id));
   const savedModelId = localStorage.getItem('athena_selected_model');
@@ -108,13 +122,13 @@ export function getDefaultModel(): ChatModel {
 }
 
 export function getDefaultTopicNameModel(): ChatModel {
-  const { getAvailableModels, models } = useProviderStore.getState();
   const available = getAvailableModels();
+  const { models } = useProviderStore.getState();
   const bestModel = available.find((m) => m.apiModelId.includes('nano') || m.apiModelId.includes('flash'));
   return bestModel ?? (available.length > 0 ? available[0] : models[0]);
 }
 
-/** Returns all models whose provider has a configured API key. */
+/** Returns all models whose provider has a configured API key, sorted by provider and name. */
 export function getAvailableModels(): ChatModel[] {
   return useProviderStore.getState().getAvailableModels();
 }

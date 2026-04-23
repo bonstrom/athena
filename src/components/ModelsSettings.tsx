@@ -320,7 +320,7 @@ const ModelsSettings: React.FC = () => {
                 type="number"
                 value={forceTempInput}
                 onChange={(e): void => setForceTempInput(e.target.value)}
-                helperText="Override temp on non-streaming (e.g. 0.6 for kimi-k2.5)"
+                helperText="Forced temperature for all requests (e.g. 1.0 for Kimi 2.5)"
                 inputProps={{ step: 0.1, min: 0, max: 2 }}
               />
               <TextField

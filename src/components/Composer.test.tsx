@@ -381,4 +381,35 @@ describe('Composer', () => {
       expect(screen.queryByText('Page 2')).not.toBeInTheDocument();
     });
   });
+  it('hides the temperature selection UI when forceTemperature is set', async () => {
+    const forcedModel = buildModel({ forceTemperature: 1.0 });
+    chatStore.selectedModel = forcedModel;
+    providerStore.getAvailableModels = (): UserChatModel[] => [forcedModel];
+    mockUseChatStore.mockReturnValue(chatStore);
+    mockUseProviderStore.mockReturnValue(providerStore);
+
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    // Open the settings menu
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+
+    // Verify "Temperature Presets" is NOT in the document
+    expect(screen.queryByText('Temperature Presets')).not.toBeInTheDocument();
+  });
+
+  it('shows the temperature selection UI when forceTemperature is NOT set', async () => {
+    const normalModel = buildModel({ forceTemperature: null });
+    chatStore.selectedModel = normalModel;
+    providerStore.getAvailableModels = (): UserChatModel[] => [normalModel];
+    mockUseChatStore.mockReturnValue(chatStore);
+    mockUseProviderStore.mockReturnValue(providerStore);
+
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    // Open the settings menu
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+
+    // Verify "Temperature Presets" is in the document
+    expect(screen.getByText('Temperature Presets')).toBeInTheDocument();
+  });
 });
