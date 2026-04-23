@@ -49,8 +49,8 @@ describe('Sidebar', () => {
   });
 
   it('creates a topic and navigates to chat', async () => {
-    const navigate = jest.fn<void, [string]>();
-    const closeDrawer = jest.fn<void, []>();
+    const navigate: jest.MockedFunction<(path: string) => void> = jest.fn();
+    const closeDrawer: jest.MockedFunction<() => void> = jest.fn();
 
     mockUseNavigate.mockReturnValue(navigate);
     mockUseUiStore.mockReturnValue({ isMobile: true, closeDrawer });
@@ -68,7 +68,7 @@ describe('Sidebar', () => {
   });
 
   it('opens logout confirmation and executes logout', () => {
-    const logout = jest.fn<void, []>();
+    const logout: jest.MockedFunction<() => void> = jest.fn();
     mockUseNavigate.mockReturnValue(jest.fn());
     mockUseUiStore.mockReturnValue({ isMobile: false, closeDrawer: jest.fn() });
     mockUseTopicStore.mockReturnValue({ createTopic: (): Promise<null> => Promise.resolve(null) });

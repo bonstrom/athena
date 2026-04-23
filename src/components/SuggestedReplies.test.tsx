@@ -9,7 +9,7 @@ describe('SuggestedReplies', () => {
   });
 
   it('renders suggestions and calls onSelect when a chip is clicked', () => {
-    const onSelect = jest.fn<void, [string]>();
+    const onSelect: jest.MockedFunction<(text: string) => void> = jest.fn();
 
     render(<SuggestedReplies suggestions={['Yes, continue', 'Tell me more']} onSelect={onSelect} />);
 

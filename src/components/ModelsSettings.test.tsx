@@ -48,7 +48,7 @@ describe('ModelsSettings', () => {
   });
 
   it('adds a model from add form', async () => {
-    const addModel = jest.fn<void, [ProviderStoreSlice['models'][0]]>();
+    const addModel: jest.MockedFunction<(model: ProviderStoreSlice['models'][0]) => void> = jest.fn();
 
     mockUseProviderStore.mockReturnValue({
       providers: [{ id: 'p1', name: 'Provider A' }],
@@ -77,7 +77,7 @@ describe('ModelsSettings', () => {
   });
 
   it('deletes model when confirmed', () => {
-    const deleteModel = jest.fn<void, [string]>();
+    const deleteModel: jest.MockedFunction<(id: string) => void> = jest.fn();
     jest.spyOn(window, 'confirm').mockImplementation((): boolean => true);
 
     mockUseProviderStore.mockReturnValue({

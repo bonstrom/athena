@@ -90,7 +90,7 @@ const mockGenerateEmbedding = jest.fn<Promise<number[]>, [string]>();
 
 const mockDbGet = jest.fn<Promise<Message | undefined>, [string]>();
 const mockDbAdd = jest.fn<Promise<string>, [Message]>();
-const mockDbBulkGet = jest.fn<Promise<Array<Message | undefined>>, [string[]]>();
+const mockDbBulkGet = jest.fn<Promise<(Message | undefined)[]>, [string[]]>();
 const mockDbBulkAdd = jest.fn<Promise<unknown>, [Message[]]>();
 const mockDbUpdate = jest.fn<Promise<number>, [string, Partial<Message>]>();
 const mockDbDelete = jest.fn<Promise<void>, [string]>();
@@ -138,7 +138,7 @@ jest.mock('../../store/AuthStore', () => ({
 
 jest.mock('../../store/NotificationStore', () => ({
   useNotificationStore: {
-    getState: () => ({ addNotification: mockAddNotification }),
+    getState: (): { addNotification: typeof mockAddNotification } => ({ addNotification: mockAddNotification }),
   },
 }));
 
@@ -152,20 +152,20 @@ jest.mock('../../services/llmService', () => ({
 }));
 
 jest.mock('../../services/mediaService', () => ({
-  generateImage: jest.fn(),
-  generateMusic: jest.fn(),
+  generateImage: jest.fn<Promise<string>, [string]>(),
+  generateMusic: jest.fn<Promise<string>, [string]>(),
 }));
 
 jest.mock('../../services/llmSuggestionService', () => ({
   llmSuggestionService: {
-    getCompletion: jest.fn(),
+    getCompletion: jest.fn<Promise<string>, [string]>(),
   },
 }));
 
 jest.mock('../../services/embeddingService', () => ({
   embeddingService: {
     isReady: false,
-    generateEmbedding: (...args: [string]) => mockGenerateEmbedding(...args),
+    generateEmbedding: (...args: [string]): Promise<number[]> => mockGenerateEmbedding(...args),
   },
 }));
 
@@ -178,22 +178,22 @@ jest.mock('../../services/backupService', () => ({
 jest.mock('../../database/AthenaDb', () => ({
   athenaDb: {
     messages: {
-      get: (...args: [string]) => mockDbGet(...args),
-      add: (...args: [Message]) => mockDbAdd(...args),
-      bulkGet: (...args: [string[]]) => mockDbBulkGet(...args),
-      bulkAdd: (...args: [Message[]]) => mockDbBulkAdd(...args),
-      update: (...args: [string, Partial<Message>]) => mockDbUpdate(...args),
-      delete: (...args: [string]) => mockDbDelete(...args),
-      bulkDelete: (...args: [string[]]) => mockDbBulkDelete(...args),
-      where: () => ({
-        equals: () => ({
-          and: () => ({
-            sortBy: (...args: [string]) => mockDbSortBy(...args),
+      get: (...args: [string]): Promise<Message | undefined> => mockDbGet(...args),
+      add: (...args: [Message]): Promise<string> => mockDbAdd(...args),
+      bulkGet: (...args: [string[]]): Promise<(Message | undefined)[]> => mockDbBulkGet(...args),
+      bulkAdd: (...args: [Message[]]): Promise<unknown> => mockDbBulkAdd(...args),
+      update: (...args: [string, Partial<Message>]): Promise<number> => mockDbUpdate(...args),
+      delete: (...args: [string]): Promise<void> => mockDbDelete(...args),
+      bulkDelete: (...args: [string[]]): Promise<void> => mockDbBulkDelete(...args),
+      where: (): { equals: () => { and: () => { sortBy: (...args: [string]) => Promise<Message[]> } } } => ({
+        equals: (): { and: () => { sortBy: (...args: [string]) => Promise<Message[]> } } => ({
+          and: (): { sortBy: (...args: [string]) => Promise<Message[]> } => ({
+            sortBy: (...args: [string]): Promise<Message[]> => mockDbSortBy(...args),
           }),
         }),
       }),
     },
-    transaction: (mode: string, table: unknown, callback: () => Promise<void>) => mockDbTransaction(mode, table, callback),
+    transaction: (mode: string, table: unknown, callback: () => Promise<void>): Promise<void> => mockDbTransaction(mode, table, callback),
   },
 }));
 

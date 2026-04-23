@@ -2,19 +2,19 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import ThemeSelector from './ThemeSelector';
 import { useAuthStore } from '../store/AuthStore';
 
-const mockSetThemeMode = jest.fn<void, ['light' | 'dark']>();
-const mockSetColorTheme = jest.fn<void, [string]>();
+const mockSetThemeMode: jest.MockedFunction<(mode: 'light' | 'dark') => void> = jest.fn();
+const mockSetColorTheme: jest.MockedFunction<(id: string) => void> = jest.fn();
 
 jest.mock('../store/AuthStore', () => ({
   useAuthStore: jest.fn(),
 }));
 
-type ThemeSelectorStoreSlice = {
+interface ThemeSelectorStoreSlice {
   themeMode: 'light' | 'dark';
   colorTheme: string;
   setThemeMode: (mode: 'light' | 'dark') => void;
   setColorTheme: (id: string) => void;
-};
+}
 
 const mockUseAuthStore = useAuthStore as unknown as jest.Mock<ThemeSelectorStoreSlice>;
 
@@ -24,8 +24,8 @@ describe('ThemeSelector', () => {
     mockUseAuthStore.mockReturnValue({
       themeMode: 'dark',
       colorTheme: 'default',
-      setThemeMode: (...args: ['light' | 'dark']): void => mockSetThemeMode(...args),
-      setColorTheme: (...args: [string]): void => mockSetColorTheme(...args),
+      setThemeMode: mockSetThemeMode,
+      setColorTheme: mockSetColorTheme,
     });
   });
 

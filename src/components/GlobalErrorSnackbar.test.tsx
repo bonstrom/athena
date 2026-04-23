@@ -13,7 +13,7 @@ const mockUseNotificationStore = useNotificationStore as unknown as jest.Mock<{
 
 describe('GlobalErrorSnackbar', () => {
   it('shows latest notification and removes it on close', () => {
-    const removeNotification = jest.fn<void, [string]>();
+    const removeNotification: jest.MockedFunction<(id: string) => void> = jest.fn();
 
     mockUseNotificationStore.mockReturnValue({
       notifications: [{ id: 'n1', title: 'Error', message: 'Something failed' }],

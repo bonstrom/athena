@@ -27,7 +27,7 @@ describe('ScratchpadDialog', () => {
   });
 
   it('loads existing scratchpad and saves updates', async () => {
-    const onClose = jest.fn<void, []>();
+    const onClose: jest.MockedFunction<() => void> = jest.fn();
 
     render(<ScratchpadDialog open topicId="topic-1" onClose={onClose} />);
 

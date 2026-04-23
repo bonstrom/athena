@@ -85,7 +85,10 @@ describe('groupTopicsByDate', () => {
     const newer = makeTopic({ id: 'newer', updatedOn: daysAgo(2) });
     // Pass in reverse order to confirm sorting
     const result = groupTopicsByDate([older, newer]);
-    const group = result.find((g) => g.label === 'Previous 7 Days')!;
+    const group = result.find((g) => g.label === 'Previous 7 Days');
+    if (!group) {
+      throw new Error('Expected Previous 7 Days group to exist');
+    }
     expect(group.topics[0].id).toBe('newer');
     expect(group.topics[1].id).toBe('older');
   });

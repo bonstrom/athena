@@ -80,13 +80,13 @@ const ModelsSettings: React.FC = () => {
       enforceAlternatingRoles: model.enforceAlternatingRoles,
       maxTokensOverride: model.maxTokensOverride,
       isBuiltIn: model.isBuiltIn,
-      enabled: model.enabled !== false,
+      enabled: model.enabled,
       thinkingParseMode: model.thinkingParseMode ?? 'api-native',
       thinkingOpenTag: model.thinkingOpenTag ?? '<think>',
       thinkingCloseTag: model.thinkingCloseTag ?? '</think>',
     });
-    setForceTempInput(model.forceTemperature !== null && model.forceTemperature !== undefined ? String(model.forceTemperature) : '');
-    setMaxTokensInput(model.maxTokensOverride !== null && model.maxTokensOverride !== undefined ? String(model.maxTokensOverride) : '');
+    setForceTempInput(model.forceTemperature !== null ? String(model.forceTemperature) : '');
+    setMaxTokensInput(model.maxTokensOverride !== null ? String(model.maxTokensOverride) : '');
     setExpandedAdvanced(false);
     setShowAddForm(false);
   };
@@ -157,7 +157,7 @@ const ModelsSettings: React.FC = () => {
           {model.supportsTools && <Chip label="Tools" size="small" variant="outlined" sx={{ fontSize: '0.6rem' }} />}
           {model.supportsVision && <Chip label="Vision" size="small" variant="outlined" sx={{ fontSize: '0.6rem' }} />}
           {model.enforceAlternatingRoles && <Chip label="Alt-roles" size="small" variant="outlined" color="warning" sx={{ fontSize: '0.6rem' }} />}
-          {model.forceTemperature !== null && model.forceTemperature !== undefined && (
+          {model.forceTemperature !== null && (
             <Chip label={`T=${model.forceTemperature}`} size="small" variant="outlined" color="info" sx={{ fontSize: '0.6rem' }} />
           )}
         </Box>

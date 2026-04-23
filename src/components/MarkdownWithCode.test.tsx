@@ -1,4 +1,3 @@
-import type { JSX } from 'react';
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 
@@ -24,7 +23,7 @@ jest.mock('react-markdown', () => ({
             return <span key={`text-${String(index)}`}>{segment}</span>;
           }
 
-          const language = match[1] ?? 'text';
+          const language = match[1] || 'text';
           return <span key={`code-${String(index)}`}>{codeRenderer({ inline: false, className: `language-${language}`, children: match[2] })}</span>;
         })}
       </div>
@@ -36,7 +35,7 @@ jest.mock('remark-gfm', () => jest.fn());
 
 jest.mock('react-syntax-highlighter', () => ({
   PrismLight: Object.assign(
-    ({ children, language }: { children?: any; language?: string }) => (
+    ({ children, language }: { children?: React.ReactNode; language?: string }) => (
       <pre data-testid="syntax-highlighter" data-language={language}>
         {children}
       </pre>

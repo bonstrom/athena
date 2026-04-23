@@ -32,7 +32,7 @@ describe('SidebarHeader', () => {
   });
 
   it('shows close button on mobile and closes drawer when clicked', () => {
-    const closeDrawer = jest.fn<void, []>();
+    const closeDrawer: jest.MockedFunction<() => void> = jest.fn();
     mockUseUiStore.mockReturnValue({ isMobile: true, closeDrawer });
 
     render(<SidebarHeader />);
