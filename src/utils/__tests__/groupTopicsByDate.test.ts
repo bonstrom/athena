@@ -114,12 +114,10 @@ describe('groupTopicsByDate', () => {
     const missingBoth = {
       id: 'missing-both',
       name: 'Missing Both',
-      // @ts-expect-error intentional legacy/corrupt data shape
       createdOn: undefined,
-      // @ts-expect-error intentional legacy/corrupt data shape
       updatedOn: undefined,
       isDeleted: false,
-    } as Topic;
+    } as unknown as Topic;
 
     const result = groupTopicsByDate([validOlder, validRecent, invalidDate, missingBoth]);
     const previous7 = result.find((g) => g.label === 'Previous 7 Days');
