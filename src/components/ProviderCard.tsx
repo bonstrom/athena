@@ -54,6 +54,7 @@ const emptyModelForm = (providerId: string): Omit<UserChatModel, 'id'> => ({
   supportsTools: true,
   supportsVision: false,
   supportsFiles: false,
+    supportsThinking: false,
   contextWindow: 128_000,
   forceTemperature: null,
   enforceAlternatingRoles: false,

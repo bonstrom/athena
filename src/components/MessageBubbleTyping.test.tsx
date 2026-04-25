@@ -24,6 +24,7 @@ function createModel(): ChatModel {
     supportsTools: true,
     supportsVision: true,
     supportsFiles: true,
+    supportsThinking: false,
     contextWindow: 128000,
     forceTemperature: null,
     enforceAlternatingRoles: false,

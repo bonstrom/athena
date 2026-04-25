@@ -14,6 +14,7 @@ const testModel: UserChatModel = {
   supportsTools: true,
   supportsVision: false,
   supportsFiles: false,
+    supportsThinking: false,
   contextWindow: 128000,
   forceTemperature: null,
   enforceAlternatingRoles: false,

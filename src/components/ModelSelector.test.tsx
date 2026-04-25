@@ -38,6 +38,7 @@ function buildModel(overrides: Partial<ChatModel>): ChatModel {
     supportsTools: true,
     supportsVision: true,
     supportsFiles: true,
+    supportsThinking: false,
     contextWindow: 128_000,
     forceTemperature: null,
     enforceAlternatingRoles: false,

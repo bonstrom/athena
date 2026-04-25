@@ -150,6 +150,7 @@ describe('ProviderStore', () => {
       supportsTools: true,
       supportsVision: false,
       supportsFiles: false,
+    supportsThinking: false,
       contextWindow: 8192,
       forceTemperature: null,
       enforceAlternatingRoles: false,

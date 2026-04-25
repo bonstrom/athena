@@ -40,9 +40,12 @@ const emptyModel = (providerId = ''): Omit<UserChatModel, 'id'> => ({
   supportsTools: true,
   supportsVision: false,
   supportsFiles: false,
+  supportsThinking: false,
   contextWindow: 128_000,
   forceTemperature: null,
   enforceAlternatingRoles: false,
+  thinkingToggle: null,
+  reasoningEffort: null,
   maxTokensOverride: null,
   isBuiltIn: false,
   enabled: true,
@@ -75,9 +78,12 @@ const ModelsSettings: React.FC = () => {
       supportsTools: model.supportsTools,
       supportsVision: model.supportsVision,
       supportsFiles: model.supportsFiles,
+      supportsThinking: model.supportsThinking ?? false,
       contextWindow: model.contextWindow,
       forceTemperature: model.forceTemperature,
       enforceAlternatingRoles: model.enforceAlternatingRoles,
+      thinkingToggle: model.thinkingToggle ?? null,
+      reasoningEffort: model.reasoningEffort ?? null,
       maxTokensOverride: model.maxTokensOverride,
       isBuiltIn: model.isBuiltIn,
       enabled: model.enabled,
@@ -270,6 +276,7 @@ const ModelsSettings: React.FC = () => {
               ['supportsTools', 'Tool Calls'],
               ['supportsVision', 'Vision'],
               ['supportsFiles', 'Files'],
+              ['supportsThinking', 'Thinking'],
             ] as [keyof typeof form, string][]
           ).map(([key, label]) => (
             <Box
@@ -331,6 +338,33 @@ const ModelsSettings: React.FC = () => {
                 onChange={(e): void => setMaxTokensInput(e.target.value)}
                 helperText="Adds max_tokens to payload (e.g. 4096 for MiniMax)"
               />
+            </Box>
+
+            <Box display="grid" gridTemplateColumns="1fr 1fr" gap={1.5} sx={{ mt: 1.5 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Thinking Mode API</InputLabel>
+                <Select
+                  value={form.thinkingToggle ?? ''}
+                  label="Thinking Mode API"
+                  onChange={(e): void => setForm((f) => ({ ...f, thinkingToggle: (e.target.value as 'enabled' | 'disabled') || null }))}
+                >
+                  <MenuItem value="">Default / N/A</MenuItem>
+                  <MenuItem value="enabled">Enabled</MenuItem>
+                  <MenuItem value="disabled">Disabled</MenuItem>
+                </Select>
+              </FormControl>
+              <FormControl fullWidth size="small">
+                <InputLabel>Reasoning Effort</InputLabel>
+                <Select
+                  value={form.reasoningEffort ?? ''}
+                  label="Reasoning Effort"
+                  onChange={(e): void => setForm((f) => ({ ...f, reasoningEffort: (e.target.value as 'high' | 'max') || null }))}
+                >
+                  <MenuItem value="">Default / N/A</MenuItem>
+                  <MenuItem value="high">High</MenuItem>
+                  <MenuItem value="max">Max</MenuItem>
+                </Select>
+              </FormControl>
             </Box>
 
             {/* Thinking / Reasoning extraction */}

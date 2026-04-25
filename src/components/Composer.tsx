@@ -595,6 +595,114 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             </>
           )}
 
+          {selectedModel.supportsThinking && (selectedModel.thinkingToggle == null || selectedModel.reasoningEffort == null) && (
+            <>
+              <ListSubheader
+                sx={{
+                  lineHeight: '36px',
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  bgcolor: 'transparent',
+                }}
+              >
+                Thinking & Effort
+              </ListSubheader>
+
+              <Box sx={{ px: 2, pb: 1, display: 'grid', gridTemplateColumns: (selectedModel.thinkingToggle == null && selectedModel.reasoningEffort == null) ? '1fr 1fr' : '1fr', gap: 1 }}>
+                {selectedModel.thinkingToggle == null && (
+                  <MuiToggleButtonGroup
+                    value={useChatStore.getState().thinkingMode ?? 'enabled'}
+                    exclusive
+                    onChange={(_, value: 'enabled' | 'disabled' | null): void => {
+                      if (value !== null) useChatStore.getState().setThinkingMode(value);
+                    }}
+                    size="small"
+                    fullWidth
+                    sx={{
+                      bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                      p: 0.5,
+                      '& .MuiToggleButton-root': {
+                        border: 'none',
+                        borderRadius: '8px !important',
+                        mx: 0.25,
+                        px: 1,
+                        py: 0.5,
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        color: 'text.secondary',
+                        '&.Mui-selected': {
+                          bgcolor: 'primary.main',
+                          color: 'primary.contrastText',
+                          '&:hover': {
+                            bgcolor: 'primary.dark',
+                          },
+                        },
+                      },
+                    }}
+                  >
+                    <MuiToggleButton value="enabled">
+                      <Tooltip title="Thinking Enabled" disableTouchListener={isMobile}>
+                        <span>On</span>
+                      </Tooltip>
+                    </MuiToggleButton>
+                    <MuiToggleButton value="disabled">
+                      <Tooltip title="Thinking Disabled" disableTouchListener={isMobile}>
+                        <span>Off</span>
+                      </Tooltip>
+                    </MuiToggleButton>
+                  </MuiToggleButtonGroup>
+                )}
+
+                {selectedModel.reasoningEffort == null && (
+                  <MuiToggleButtonGroup
+                    value={useChatStore.getState().reasoningEffort ?? 'high'}
+                    exclusive
+                    onChange={(_, value: 'high' | 'max' | null): void => {
+                      if (value !== null) useChatStore.getState().setReasoningEffort(value);
+                    }}
+                    size="small"
+                    fullWidth
+                    sx={{
+                      bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                      p: 0.5,
+                      '& .MuiToggleButton-root': {
+                        border: 'none',
+                        borderRadius: '8px !important',
+                        mx: 0.25,
+                        px: 1,
+                        py: 0.5,
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        color: 'text.secondary',
+                        '&.Mui-selected': {
+                          bgcolor: 'primary.main',
+                          color: 'primary.contrastText',
+                          '&:hover': {
+                            bgcolor: 'primary.dark',
+                          },
+                        },
+                      },
+                    }}
+                  >
+                    <MuiToggleButton value="high">
+                      <Tooltip title="High Effort (Default)" disableTouchListener={isMobile}>
+                        <span>High</span>
+                      </Tooltip>
+                    </MuiToggleButton>
+                    <MuiToggleButton value="max">
+                      <Tooltip title="Max Effort (Better reasoning)" disableTouchListener={isMobile}>
+                        <span>Max</span>
+                      </Tooltip>
+                    </MuiToggleButton>
+                  </MuiToggleButtonGroup>
+                )}
+              </Box>
+              <Divider sx={{ my: 1, opacity: 0.6 }} />
+            </>
+          )}
+
           {!isMobile && (
             <ListSubheader
               sx={{

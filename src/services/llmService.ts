@@ -1,6 +1,7 @@
 import { calculateCostSEK, ChatModel } from '../components/ModelSelector';
 import { useAuthStore } from '../store/AuthStore';
 import { useProviderStore } from '../store/ProviderStore';
+import { useChatStore } from '../store/ChatStore';
 import { getApiKey as getProviderApiKey, getPayloadOverrides, LlmProvider } from '../types/provider';
 import { estimateTokens } from './estimateTokens';
 
@@ -160,6 +161,7 @@ interface LlmPayload {
   stream_options?: { include_usage: boolean };
   tools?: LlmTool[];
   thinking?: { type: 'enabled' | 'disabled' };
+  reasoning_effort?: 'high' | 'max';
   max_tokens?: number;
 }
 
@@ -487,6 +489,8 @@ const AnthropicAdapter: IMessageAdapter = {
       max_tokens: payload.max_tokens ?? 4096,
       temperature: payload.temperature,
       stream,
+      ...(payload.thinking && { thinking: payload.thinking }),
+      ...(payload.reasoning_effort && { output_config: { effort: payload.reasoning_effort } }),
       ...(payload.tools && payload.tools.length > 0 && { tools: toAnthropicTools(payload.tools) }),
     });
   },
@@ -648,6 +652,10 @@ function buildPayload(
   }
 
   const resolvedTemperature = resolvedModel.forceTemperature != null ? resolvedModel.forceTemperature : temperature;
+  const chatStoreReasoningEffort = useChatStore.getState().reasoningEffort;
+  const resolvedReasoningEffort = resolvedModel.reasoningEffort != null ? resolvedModel.reasoningEffort : chatStoreReasoningEffort;
+  const chatStoreThinkingMode = useChatStore.getState().thinkingMode;
+  const resolvedThinkingMode = resolvedModel.thinkingToggle != null ? resolvedModel.thinkingToggle : chatStoreThinkingMode;
 
   const payloadOverrides = getPayloadOverrides(providerConfig);
 
@@ -665,6 +673,8 @@ function buildPayload(
     stream,
     ...(resolvedModel.supportsTemperature && { temperature: resolvedTemperature }),
     ...(stream && { stream_options: { include_usage: true } }),
+    ...(resolvedThinkingMode && { thinking: { type: resolvedThinkingMode } }),
+    ...(resolvedReasoningEffort && { reasoning_effort: resolvedReasoningEffort }),
     ...payloadOverrides,
     ...(resolvedModel.supportsTools && finalTools.length > 0 && { tools: finalTools }),
     ...(resolvedModel.maxTokensOverride != null && { max_tokens: resolvedModel.maxTokensOverride }),

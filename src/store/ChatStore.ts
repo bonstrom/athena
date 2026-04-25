@@ -96,6 +96,10 @@ interface ChatStore {
   switchMessageVersion: (userMessageId: string, assistantMessageId: string) => Promise<void>;
   temperature: number;
   setTemperature: (temp: number) => void;
+  reasoningEffort: 'high' | 'max' | null;
+  setReasoningEffort: (effort: 'high' | 'max' | null) => void;
+  thinkingMode: 'enabled' | 'disabled' | null;
+  setThinkingMode: (mode: 'enabled' | 'disabled' | null) => void;
   abortController: AbortController | null;
   currentRequestMessageIds: { userMessageId: string; assistantMessageId: string } | null;
   stopSending: () => Promise<string | null>;
@@ -126,6 +130,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   sending: false,
   selectedModel: getDefaultModel(),
   temperature: 1.0,
+  reasoningEffort: null,
+  thinkingMode: null,
   webSearchEnabled: false,
   imageGenerationEnabled: false,
   musicGenerationEnabled: false,
@@ -285,6 +291,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   setTemperature: (temp): void => set({ temperature: temp }),
+  setReasoningEffort: (effort): void => set({ reasoningEffort: effort }),
+  setThinkingMode: (mode): void => set({ thinkingMode: mode }),
   setSending: (value): void => set({ sending: value }),
 
   increaseVisibleMessageCount: (): void => set((state) => ({ visibleMessageCount: state.visibleMessageCount + 10 })),

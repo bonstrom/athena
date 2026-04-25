@@ -31,11 +31,16 @@ export interface UserChatModel {
   supportsTools: boolean;
   supportsVision: boolean;
   supportsFiles: boolean;
+  supportsThinking: boolean;
   contextWindow: number;
   /** Force this temperature value on every request (null = use user value). */
   forceTemperature: number | null;
   /** Enforce strict user/assistant alternation after the first system messages (for DeepSeek Reasoner). */
   enforceAlternatingRoles: boolean;
+  /** For models that support toggling thinking mode natively. */
+  thinkingToggle?: 'enabled' | 'disabled' | null;
+  /** For models that support configurable thinking effort (e.g. 'high', 'max', 'low', 'medium'). */
+  reasoningEffort?: 'high' | 'max' | null;
   /** Override max_tokens in the payload (null = provider/model default). */
   maxTokensOverride: number | null;
   /** Whether this model was shipped as a built-in default. */
@@ -149,6 +154,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsTools: true,
     supportsVision: false,
     supportsFiles: false,
+    supportsThinking: true,
     contextWindow: 1_000_000,
     forceTemperature: null,
     enforceAlternatingRoles: false,
@@ -169,6 +175,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsTools: true,
     supportsVision: false,
     supportsFiles: false,
+    supportsThinking: true,
     contextWindow: 1_000_000,
     forceTemperature: null,
     enforceAlternatingRoles: false,
@@ -189,6 +196,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsTools: true,
     supportsVision: true,
     supportsFiles: true,
+    supportsThinking: false,
     contextWindow: 128_000,
     forceTemperature: null,
     enforceAlternatingRoles: false,
@@ -209,6 +217,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsTools: true,
     supportsVision: true,
     supportsFiles: true,
+    supportsThinking: false,
     contextWindow: 1_000_000,
     forceTemperature: null,
     enforceAlternatingRoles: false,
@@ -229,6 +238,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsTools: true,
     supportsVision: true,
     supportsFiles: true,
+    supportsThinking: false,
     contextWindow: 128_000,
     forceTemperature: 1,
     enforceAlternatingRoles: false,
@@ -249,6 +259,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsTools: true,
     supportsVision: true,
     supportsFiles: true,
+    supportsThinking: false,
     contextWindow: 262_144,
     forceTemperature: 1,
     enforceAlternatingRoles: false,
@@ -269,6 +280,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsTools: true,
     supportsVision: true,
     supportsFiles: true,
+    supportsThinking: false,
     contextWindow: 128_000,
     forceTemperature: null,
     enforceAlternatingRoles: false,
@@ -289,6 +301,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsTools: true,
     supportsVision: true,
     supportsFiles: true,
+    supportsThinking: false,
     contextWindow: 128_000,
     forceTemperature: 1,
     enforceAlternatingRoles: false,
@@ -309,6 +322,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsTools: true,
     supportsVision: false,
     supportsFiles: false,
+    supportsThinking: false,
     contextWindow: 8_000,
     forceTemperature: 0.6,
     enforceAlternatingRoles: false,
@@ -329,6 +343,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsTools: true,
     supportsVision: true,
     supportsFiles: true,
+    supportsThinking: false,
     contextWindow: 128_000,
     forceTemperature: null,
     enforceAlternatingRoles: false,
@@ -349,6 +364,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsTools: true,
     supportsVision: false,
     supportsFiles: false,
+    supportsThinking: false,
     contextWindow: 128_000,
     forceTemperature: null,
     enforceAlternatingRoles: false,

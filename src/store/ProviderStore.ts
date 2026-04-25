@@ -135,6 +135,10 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
         next.contextWindow = def.contextWindow;
         updated = true;
       }
+      if (m.supportsThinking !== def.supportsThinking) {
+        next.supportsThinking = def.supportsThinking;
+        updated = true;
+      }
 
       if (updated) {
         modelsChanged = true;
