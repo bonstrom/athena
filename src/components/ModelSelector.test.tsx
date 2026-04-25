@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import ModelSelector, { getDefaultModel, getDefaultTopicNameModel, getAvailableModels, getModelByApiId, type ChatModel } from './ModelSelector';
+import ModelSelector, { getDefaultModel, getDefaultTopicNameModel, getAvailableModels, getModelByApiId, ChatModel } from './ModelSelector';
 import { useProviderStore } from '../store/ProviderStore';
 
 jest.mock('../store/ProviderStore', () => ({

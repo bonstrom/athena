@@ -86,6 +86,15 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
   } else {
     // Migration: Update built-in models with new defaults from DEFAULT_MODELS (e.g. forceTemperature)
     let modelsChanged = false;
+    
+    // Migration: DeepSeek V4
+    const selected = localStorage.getItem('athena_selected_model');
+    if (selected === 'builtin-deepseek-chat') {
+      localStorage.setItem('athena_selected_model', 'builtin-deepseek-v4-flash');
+    } else if (selected === 'builtin-deepseek-reasoner') {
+      localStorage.setItem('athena_selected_model', 'builtin-deepseek-v4-pro');
+    }
+
     const existingModelIds = new Set(models.map((m) => m.id));
 
     // 1. Add missing built-in models
