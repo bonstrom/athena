@@ -168,7 +168,7 @@ interface LlmPayload {
 // ── Provider lookup (replaces hardcoded PROVIDERS / MODEL_OVERRIDES) ─────────
 export type ProviderId = string;
 
-const MAX_TOOL_LOOP_ITERATIONS = 5;
+const MAX_TOOL_LOOP_ITERATIONS = 10;
 
 function resolveProvider(model: ChatModel): LlmProvider {
   const store = useProviderStore.getState();
@@ -1229,9 +1229,37 @@ export async function orchestrateLlmLoop(
         llmResponse: { content: result.content, reasoning: result.reasoning, toolCalls: result.toolCalls, finishReason: result.finishReason },
         toolResults: iterationToolResults,
       });
+
+      // If we've hit the iteration cap, break out to avoid an infinite loop.
+      // The fallback below will fire a final tool-free call so the model can
+      // synthesise a text answer from all the context accumulated so far.
+      if (loopCount >= MAX_TOOL_LOOP_ITERATIONS) break;
+
       continue;
     }
     break;
+  }
+
+  // ── Forced final call ────────────────────────────────────────────────────────
+  // If the loop exhausted its budget and the last response had no text content
+  // (i.e. only tool calls), make one more tool-free request so the model is
+  // required to produce a human-readable answer rather than silently returning
+  // an empty response.
+  if (!finalContent.trim() && lastResult?.toolCalls && lastResult.toolCalls.length > 0) {
+    console.warn('[orchestrateLlmLoop] Loop exhausted with no text output — firing forced final call without tools.');
+    const finalResult = resolvedModel.streaming
+      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, undefined, false, signal)
+      : await askLlm(resolvedModel, temperature, llmContext, undefined, false, signal);
+
+    if (!resolvedModel.streaming && finalResult.reasoning && onReasoning) {
+      onReasoning(finalResult.reasoning);
+    }
+
+    totalPromptTokens += finalResult.promptTokens;
+    totalCompletionTokens += finalResult.completionTokens;
+    totalSearchCount += finalResult.searchCount;
+    finalContent = finalResult.content;
+    lastResult = finalResult;
   }
 
   if (!lastResult) throw new Error('No result from LLM');

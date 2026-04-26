@@ -39,7 +39,7 @@
   },
   "homepage": "https://bonstrom.github.io/athena",
   "scripts": {
-    "predeploy": "npm run build",
+    "predeploy": "CI=true react-scripts test --watchAll=false && npm run build",
     "deploy": "gh-pages -d build",
     "start": "react-scripts start",
     "prebuild": "node -e \"const fs=require('fs');const d=new Date();const pad=n=>String(n).padStart(2,'0');fs.writeFileSync('public/build-version.txt','Deployed: '+d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()))\"",
@@ -69,7 +69,8 @@
   "jest": {
     "moduleNameMapper": {
       "^react-router-dom$": "<rootDir>/node_modules/react-router-dom/dist/index.js",
-      "^react-router$": "<rootDir>/node_modules/react-router/dist/development/index.js"
+      "^react-router$": "<rootDir>/node_modules/react-router/dist/development/index.js",
+      "^gpt-tokenizer$": "<rootDir>/node_modules/gpt-tokenizer/cjs/main.js"
     },
     "coveragePathIgnorePatterns": [
       "/node_modules/",

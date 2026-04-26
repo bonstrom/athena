@@ -1,24 +1,3 @@
-import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from 'util';
-import { ReadableStream as NodeReadableStream } from 'stream/web';
-
-Object.defineProperty(globalThis, 'ReadableStream', {
-  value: NodeReadableStream,
-  writable: true,
-  configurable: true,
-});
-
-Object.defineProperty(globalThis, 'TextEncoder', {
-  value: NodeTextEncoder,
-  writable: true,
-  configurable: true,
-});
-
-Object.defineProperty(globalThis, 'TextDecoder', {
-  value: NodeTextDecoder,
-  writable: true,
-  configurable: true,
-});
-
 // Mock out modules that have heavy side-effects / browser dependencies so that
 // the pure filterMessagesForModel function can be tested in isolation.
 const mockAuthGetState = jest.fn(() => ({}));
@@ -33,6 +12,8 @@ jest.mock('../../components/ModelSelector', () => ({
   getDefaultModel: jest.fn(),
 }));
 jest.mock('../estimateTokens', () => ({ estimateTokens: jest.fn() }));
+jest.mock('../embeddingWorkerFactory', () => ({ createEmbeddingWorker: jest.fn() }));
+jest.mock('../llmWorkerFactory', () => ({ createLlmWorker: jest.fn() }));
 
 import { filterMessagesForModel, LlmMessage, orchestrateLlmLoop } from '../llmService';
 import { calculateCostSEK } from '../../components/ModelSelector';
@@ -455,19 +436,14 @@ describe('orchestrateLlmLoop — tool calls', () => {
       usage: { prompt_tokens: 10, completion_tokens: 2 },
     });
 
-    mockFetch
-      .mockResolvedValueOnce(toolResponse)
-      .mockResolvedValueOnce(toolResponse)
-      .mockResolvedValueOnce(toolResponse)
-      .mockResolvedValueOnce(toolResponse)
-      .mockResolvedValueOnce(toolResponse);
+    mockFetch.mockResolvedValue(toolResponse);
 
     const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('loop result'));
     const result = await orchestrateLlmLoop(model, 0.7, [user('Loop test')], undefined, undefined, undefined, onExecuteTool);
 
-    expect(mockFetch).toHaveBeenCalledTimes(5);
-    expect(result.toolLoopTrace).toHaveLength(5);
-    expect(onExecuteTool).toHaveBeenCalledTimes(5);
+    expect(mockFetch).toHaveBeenCalledTimes(11);
+    expect(result.toolLoopTrace).toHaveLength(10);
+    expect(onExecuteTool).toHaveBeenCalledTimes(10);
   });
 
   it('truncates oversized tool results before adding them to context', async () => {
