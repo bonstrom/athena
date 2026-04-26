@@ -26,6 +26,8 @@ declare global {
 
 const BACKUP_HANDLE_KEY = 'autoBackupFileHandle';
 const LAST_BACKUP_TIME_KEY = 'lastAutoBackupTime';
+const OPFS_FILE_NAME = 'athena_auto_backup.json';
+
 
 // Prevents concurrent auto-backup calls from writing to the file simultaneously
 let autoBackupInProgress = false;
@@ -166,6 +168,36 @@ export const BackupService = {
   },
 
   /**
+   * Retrieves the internal backup file from OPFS.
+   */
+  async getInternalBackupFile(): Promise<File | null> {
+    try {
+      if (!('storage' in navigator) || !('getDirectory' in navigator.storage)) {
+        return null;
+      }
+      const root = await navigator.storage.getDirectory();
+      const fileHandle = await root.getFileHandle(OPFS_FILE_NAME);
+      return await fileHandle.getFile();
+    } catch (error) {
+      return null;
+    }
+  },
+
+  /**
+   * Saves the database export to the Origin Private File System (OPFS).
+   */
+  async saveToInternalBackup(blob: Blob): Promise<void> {
+    if (!('storage' in navigator) || !('getDirectory' in navigator.storage)) {
+      throw new Error('OPFS is not supported in this browser.');
+    }
+    const root = await navigator.storage.getDirectory();
+    const fileHandle = await root.getFileHandle(OPFS_FILE_NAME, { create: true }) as unknown as FileSystemFileHandle;
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+  },
+
+  /**
    * Exports the database and writes it automatically to the previously selected file handle.
    * @param interactive If true, will attempt to request permission from the user (requires user gesture).
    */
@@ -174,29 +206,36 @@ export const BackupService = {
     autoBackupInProgress = true;
     const store = useBackupStore.getState();
     try {
-      const handle = await this.getAutoBackupHandle();
-      if (!handle) {
-        store.setStatus('no_handle');
-        return;
-      }
-
-      // Check if we have write permission
-      let permission = await handle.queryPermission({ mode: 'readwrite' });
-
-      if (permission !== 'granted' && interactive) {
-        permission = await handle.requestPermission({ mode: 'readwrite' });
-      }
-
-      if (permission !== 'granted') {
-        store.setStatus('permission_required');
-        return;
-      }
-
       store.setStatus('in-progress');
       const blob = await exportDB(athenaDb, { prettyJson: true });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
+
+      if (store.backupMode === 'external') {
+        const handle = await this.getAutoBackupHandle();
+        if (!handle) {
+          store.setStatus('no_handle');
+          return;
+        }
+
+        // Check if we have write permission
+        let permission = await handle.queryPermission({ mode: 'readwrite' });
+        if (permission !== 'granted' && interactive) {
+          permission = await handle.requestPermission({ mode: 'readwrite' });
+        }
+
+        if (permission !== 'granted') {
+          store.setStatus('permission_required');
+          return;
+        }
+
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+      } else if (store.backupMode === 'internal') {
+        await this.saveToInternalBackup(blob);
+      } else {
+        autoBackupInProgress = false;
+        return;
+      }
 
       const now = new Date().toISOString();
       localStorage.setItem(LAST_BACKUP_TIME_KEY, now);

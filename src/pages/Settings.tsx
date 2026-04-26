@@ -28,6 +28,7 @@ import {
   Cloud as CloudIcon,
   AutoAwesome as AutoAwesomeIcon,
   Storage as StorageIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../store/AuthStore';
 import { BackupService } from '../services/backupService';
@@ -135,10 +136,13 @@ const Settings: React.FC = () => {
   const [promptNameInput, setPromptNameInput] = useState('');
   const [promptContentInput, setPromptContentInput] = useState('');
 
-  const { status: backupStatus, lastBackupTime, setStatus: setBackupStatus, setLastBackupTime } = useBackupStore();
+  const { status: backupStatus, lastBackupTime, backupMode, setStatus: setBackupStatus, setLastBackupTime, setBackupMode } = useBackupStore();
 
   const [llmProgress, setLlmProgress] = useState<LlmProgress | null>(null);
   const [isDeletingModel, setIsDeletingModel] = useState(false);
+  const isBrave = typeof (navigator as unknown as Record<string, unknown>).brave !== 'undefined';
+  const isFsSupported = 'showSaveFilePicker' in window;
+  const isOpfsSupported = 'storage' in navigator && 'getDirectory' in navigator.storage;
 
   useEffect(() => {
     llmSuggestionService.setOnProgress((progress) => {
@@ -215,9 +219,12 @@ const Settings: React.FC = () => {
 
   useEffect(() => {
     void BackupService.getAutoBackupHandle().then((handle) => {
-      setAutoBackupEnabled(!!handle);
+      if (handle && backupMode === 'none') {
+        setBackupMode('external');
+      }
+      setAutoBackupEnabled(backupMode !== 'none');
     });
-  }, []);
+  }, [backupMode, setBackupMode]);
 
   function handleSave(): void {
     setUserName(userNameInput.trim());
@@ -263,6 +270,7 @@ const Settings: React.FC = () => {
       try {
         const success = await BackupService.selectAutoBackupFile();
         if (success) {
+          setBackupMode('external');
           setAutoBackupEnabled(true);
         }
       } catch (error) {
@@ -270,12 +278,43 @@ const Settings: React.FC = () => {
         alert('Failed to setup auto backup file.');
       }
     } else {
-      if (window.confirm('Disable automatic backups? Your stored file location will be cleared.')) {
+      if (window.confirm('Disable external automatic backups? Your stored file location will be cleared.')) {
         await BackupService.clearAutoBackupHandle();
+        setBackupMode('none');
         setAutoBackupEnabled(false);
         setBackupStatus('no_handle');
         setLastBackupTime(null);
       }
+    }
+  };
+
+  const handleToggleInternalBackup = async (checked: boolean): Promise<void> => {
+    if (checked) {
+      setBackupMode('internal');
+      setAutoBackupEnabled(true);
+      await BackupService.performAutoBackup();
+    } else {
+      if (window.confirm('Disable internal storage backups?')) {
+        setBackupMode('none');
+        setAutoBackupEnabled(false);
+        setBackupStatus('idle');
+      }
+    }
+  };
+
+  const handleDownloadInternalBackup = async (): Promise<void> => {
+    const file = await BackupService.getInternalBackupFile();
+    if (file) {
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `athena_internal_backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else {
+      alert('No internal backup found.');
     }
   };
 
@@ -911,55 +950,101 @@ const Settings: React.FC = () => {
                     />
                   </Box>
 
-                  {'showSaveFilePicker' in window ? (
-                    <Box sx={{ p: 2, borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
-                      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>Automatic Backup</Typography>
-                        <Switch
-                          checked={autoBackupEnabled}
-                          onChange={(e): void => { void handleToggleAutoBackup(e.target.checked); }}
-                          color="primary"
-                          size="small"
-                        />
-                      </Box>
-                      {autoBackupEnabled && (
-                        <Stack spacing={2}>
-                          <Box display="flex" justifyContent="space-between" alignItems="center">
-                            <Typography variant="caption" color="success.main">
-                              {backupStatus === 'permission_required' ? 'Authorize Required' : backupStatus === 'in-progress' ? 'Backing up...' : 'Active'}
-                            </Typography>
-                            <Box display="flex" flexDirection="column" alignItems="flex-end">
-                              <Button size="small" onClick={(): void => { void handleChangeLocation(); }}>Change Location</Button>
-                              {lastBackupTime && (
-                                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-                                  Last: {new Date(lastBackupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </Typography>
-                              )}
-                            </Box>
+                  <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider', bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)' }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>Automatic Backup</Typography>
+                    
+                    <Stack spacing={3}>
+                      {/* External File Mode */}
+                      <Box>
+                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                          <Box>
+                            <Typography variant="body2">External File (Recommended)</Typography>
+                            <Typography variant="caption" color="text.secondary">Save directly to a folder on your computer.</Typography>
                           </Box>
-                          {backupStatus === 'permission_required' && (
-                            <Button size="small" color="error" variant="contained" onClick={(): void => { void BackupService.performAutoBackup(true); }}>
-                              Authorize Now
-                            </Button>
-                          )}
-                          <FormControl fullWidth size="small">
-                            <InputLabel>Frequency</InputLabel>
-                            <Select value={backupInterval} label="Frequency" onChange={(e): void => setBackupInterval(e.target.value as number)}>
-                              <MenuItem value={1}>1 Minute</MenuItem>
-                              <MenuItem value={5}>5 Minutes</MenuItem>
-                              <MenuItem value={30}>30 Minutes</MenuItem>
-                              <MenuItem value={60}>1 Hour</MenuItem>
-                              <MenuItem value={720}>12 Hours</MenuItem>
-                            </Select>
-                          </FormControl>
-                        </Stack>
+                          <Switch
+                            checked={backupMode === 'external'}
+                            disabled={!isFsSupported}
+                            onChange={(e): void => { void handleToggleAutoBackup(e.target.checked); }}
+                            color="primary"
+                            size="small"
+                          />
+                        </Box>
+                        {!isFsSupported && isBrave && (
+                          <Paper sx={{ mt: 1, p: 1.5, bgcolor: 'info.main', color: 'info.contrastText', borderRadius: 1 }} elevation={0}>
+                            <Box display="flex" gap={1}>
+                              <InfoIcon fontSize="small" />
+                              <Box>
+                                <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block' }}>Brave Privacy Tip</Typography>
+                                <Typography variant="caption">
+                                  Brave disables this API by default. To enable, go to <b>brave://flags</b> and search for &quot;File System Access API&quot;, set to &quot;Enabled&quot; and relaunch.
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </Paper>
+                        )}
+                        {backupMode === 'external' && (
+                          <Stack spacing={1} sx={{ mt: 1, pl: 2, borderLeft: '2px solid', borderColor: 'primary.main' }}>
+                            <Box display="flex" justifyContent="space-between" alignItems="center">
+                              <Typography variant="caption" color="success.main">
+                                {backupStatus === 'permission_required' ? 'Authorization Required' : backupStatus === 'in-progress' ? 'Backing up...' : 'Active'}
+                              </Typography>
+                              <Button size="small" onClick={(): void => { void handleChangeLocation(); }}>Change Location</Button>
+                            </Box>
+                            {backupStatus === 'permission_required' && (
+                              <Button size="small" color="error" variant="contained" onClick={(): void => { void BackupService.performAutoBackup(true); }}>
+                                Authorize Now
+                              </Button>
+                            )}
+                          </Stack>
+                        )}
+                      </Box>
+
+                      {/* Internal Storage Mode */}
+                      <Box>
+                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                          <Box>
+                            <Typography variant="body2">Internal Browser Storage</Typography>
+                            <Typography variant="caption" color="text.secondary">Save in a private sandboxed area. Works in Brave.</Typography>
+                          </Box>
+                          <Switch
+                            checked={backupMode === 'internal'}
+                            disabled={!isOpfsSupported}
+                            onChange={(e): void => { void handleToggleInternalBackup(e.target.checked); }}
+                            color="primary"
+                            size="small"
+                          />
+                        </Box>
+                        {backupMode === 'internal' && (
+                          <Box sx={{ mt: 1, pl: 2, borderLeft: '2px solid', borderColor: 'secondary.main' }}>
+                            <Button size="small" onClick={(): void => { void handleDownloadInternalBackup(); }}>Download Current Backup</Button>
+                          </Box>
+                        )}
+                      </Box>
+
+                      {/* Shared Settings */}
+                      {backupMode !== 'none' && (
+                        <Box sx={{ mt: 1, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                          <Stack spacing={2}>
+                            <Box display="flex" justifyContent="space-between" alignItems="center">
+                              <Typography variant="caption" color="text.secondary">
+                                {lastBackupTime ? `Last backup: ${new Date(lastBackupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'No backup yet'}
+                              </Typography>
+                            </Box>
+                            <FormControl fullWidth size="small">
+                              <InputLabel>Frequency</InputLabel>
+                              <Select value={backupInterval} label="Frequency" onChange={(e): void => setBackupInterval(e.target.value as number)}>
+                                <MenuItem value={1}>1 Minute</MenuItem>
+                                <MenuItem value={5}>5 Minutes</MenuItem>
+                                <MenuItem value={30}>30 Minutes</MenuItem>
+                                <MenuItem value={60}>1 Hour</MenuItem>
+                                <MenuItem value={720}>12 Hours</MenuItem>
+                              </Select>
+                            </FormControl>
+                          </Stack>
+                        </Box>
                       )}
-                    </Box>
-                  ) : (
-                    <Typography variant="caption" color="text.secondary">
-                      Automatic backup is not supported in this browser.
-                    </Typography>
-                  )}
+                    </Stack>
+                  </Box>
                 </Stack>
               </Box>
             </Stack>
