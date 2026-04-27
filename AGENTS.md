@@ -49,13 +49,6 @@ Run `lint` before committing; run `test:coverage` after changing tests.
 
 ## Improvement Backlog
 
-### [ISSUE-1] Fix ESLint errors in test files
-**Files:** `src/components/DebateComposer.test.tsx`, `src/store/__tests__/DebateStore.test.ts`
-7 errors, 24 warnings — unused imports, unnecessary type assertions, void misuse, missing return types, require-await violations, empty arrow functions, jsx-boolean-value warnings.
-
-### [ISSUE-2] Remove dead CSS file
-**File:** `src/App.css` — intentionally empty, import in `src/index.tsx` can be dropped.
-
 ### [ISSUE-3] Fix scrollbar theming to respect app theme toggle
 **File:** `src/index.css` — hardcodes dark scrollbar colors, only uses `prefers-color-scheme: light`. Doesn't respond to the app's own dark/light mode toggle. Move scrollbar styles into MUI theme or CSS-in-JS that reads the store.
 
