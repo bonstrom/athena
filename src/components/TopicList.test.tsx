@@ -166,4 +166,114 @@ describe('TopicList', () => {
 
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
+
+  describe('bulk delete', () => {
+    function renderWithSelection(selectedIds: string[]): { mockClearTopicSelection: jest.Mock; mockSelectAllTopics: jest.Mock } {
+      const mockClearTopicSelection = jest.fn();
+      const mockSelectAllTopics = jest.fn();
+      mockUseUiStore.mockReturnValue({
+        selectedTopicIds: new Set<string>(selectedIds),
+        selectAllTopics: mockSelectAllTopics,
+        clearTopicSelection: mockClearTopicSelection,
+      });
+      render(<TopicList />);
+      return { mockClearTopicSelection, mockSelectAllTopics };
+    }
+
+    it('shows selection toolbar with count when topics are selected', () => {
+      renderWithSelection(['t1', 't2']);
+
+      expect(screen.getByText('2 selected')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
+    });
+
+    it('shows Select All button when not all visible topics are selected', () => {
+      renderWithSelection(['t1']);
+
+      expect(screen.getByRole('button', { name: 'Select All' })).toBeInTheDocument();
+    });
+
+    it('hides Select All button when all visible topics are already selected', () => {
+      // visibleTopicCount is 2, so t1 and t2 are visible
+      renderWithSelection(['t1', 't2']);
+
+      expect(screen.queryByRole('button', { name: 'Select All' })).not.toBeInTheDocument();
+    });
+
+    it('Select All calls selectAllTopics with visible topic IDs', () => {
+      const { mockSelectAllTopics } = renderWithSelection(['t1']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Select All' }));
+
+      expect(mockSelectAllTopics).toHaveBeenCalledWith(['t1', 't2']);
+    });
+
+    it('Clear button calls clearTopicSelection', () => {
+      const { mockClearTopicSelection } = renderWithSelection(['t1']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+
+      expect(mockClearTopicSelection).toHaveBeenCalledTimes(1);
+    });
+
+    it('Delete button opens confirmation dialog', () => {
+      renderWithSelection(['t1']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+      expect(screen.getByRole('heading', { name: /Delete 1 Topics/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Delete All' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    });
+
+    it('Cancel closes dialog without calling deleteTopics', async () => {
+      renderWithSelection(['t1']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Delete All' })).not.toBeInTheDocument();
+      });
+      expect(mockDeleteTopics).not.toHaveBeenCalled();
+    });
+
+    it('Delete All calls deleteTopics with selected IDs and clears selection', async () => {
+      const { mockClearTopicSelection } = renderWithSelection(['t1', 't2']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete All' }));
+
+      await waitFor(() => {
+        expect(mockDeleteTopics).toHaveBeenCalledWith(['t1', 't2']);
+        expect(mockClearTopicSelection).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it('navigates to / after deleting the currently active topic', async () => {
+      mockUseParams.mockReturnValue({ topicId: 't1' });
+      renderWithSelection(['t1']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete All' }));
+
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/');
+      });
+    });
+
+    it('does not navigate when the active topic is not among the deleted IDs', async () => {
+      mockUseParams.mockReturnValue({ topicId: 't3' });
+      renderWithSelection(['t1', 't2']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete All' }));
+
+      await waitFor(() => {
+        expect(mockDeleteTopics).toHaveBeenCalledWith(['t1', 't2']);
+      });
+      expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
 });
