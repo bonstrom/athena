@@ -3,6 +3,7 @@ import {
   ListItem,
   ListItemButton,
   ListItemText,
+  ListItemIcon,
   TextField,
   Dialog,
   DialogActions,
@@ -209,7 +210,9 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                   handleMenuClose();
                 }}
               >
-                <MenuBookOutlined fontSize="small" sx={{ mr: 1 }} />
+                <ListItemIcon sx={{ minWidth: 28 }}>
+                  <MenuBookOutlined fontSize="small" />
+                </ListItemIcon>
                 Edit Context
               </MenuItem>
 
@@ -219,7 +222,9 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                   handleMenuClose();
                 }}
               >
-                <EditIcon fontSize="small" sx={{ mr: 1 }} />
+                <ListItemIcon sx={{ minWidth: 28 }}>
+                  <EditIcon fontSize="small" />
+                </ListItemIcon>
                 Rename
               </MenuItem>
 
@@ -229,7 +234,9 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                   handleMenuClose();
                 }}
               >
-                <DeleteIcon fontSize="small" sx={{ mr: 1 }} />
+                <ListItemIcon sx={{ minWidth: 28 }}>
+                  <DeleteIcon fontSize="small" />
+                </ListItemIcon>
                 Delete
               </MenuItem>
 
@@ -239,7 +246,9 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                   handleMenuClose();
                 }}
               >
-                <DeleteSweepIcon fontSize="small" sx={{ mr: 1 }} />
+                <ListItemIcon sx={{ minWidth: 28 }}>
+                  <DeleteSweepIcon fontSize="small" />
+                </ListItemIcon>
                 Multi Delete
               </MenuItem>
             </Menu>
