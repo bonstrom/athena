@@ -3,11 +3,16 @@ interface UiStoreState {
   drawerOpen: boolean;
   isMobile: boolean;
   showAllMessages: boolean;
+  selectedTopicIds: Set<string>;
   toggleDrawer: () => void;
   openDrawer: () => void;
   closeDrawer: () => void;
   setMobile: (value: boolean) => void;
   toggleShowAllMessages: () => void;
+  toggleTopicSelection: (id: string) => void;
+  selectAllTopics: (ids: string[]) => void;
+  clearTopicSelection: () => void;
+  isMultiSelectMode: () => boolean;
 }
 
 interface UiStoreLike {
@@ -36,6 +41,7 @@ describe('UiStore', () => {
     expect(store.getState().drawerOpen).toBe(true);
     expect(store.getState().isMobile).toBe(false);
     expect(store.getState().showAllMessages).toBe(false);
+    expect(store.getState().selectedTopicIds.size).toBe(0);
   });
 
   it('toggles and sets drawer visibility', () => {
@@ -69,5 +75,61 @@ describe('UiStore', () => {
 
     store.getState().toggleShowAllMessages();
     expect(store.getState().showAllMessages).toBe(false);
+  });
+
+  describe('topic selection', () => {
+    it('toggleTopicSelection adds and removes topic IDs', () => {
+      const store = loadUiStore();
+
+      store.getState().toggleTopicSelection('topic-1');
+      expect(store.getState().selectedTopicIds.has('topic-1')).toBe(true);
+      expect(store.getState().selectedTopicIds.size).toBe(1);
+
+      store.getState().toggleTopicSelection('topic-2');
+      expect(store.getState().selectedTopicIds.has('topic-1')).toBe(true);
+      expect(store.getState().selectedTopicIds.has('topic-2')).toBe(true);
+      expect(store.getState().selectedTopicIds.size).toBe(2);
+
+      store.getState().toggleTopicSelection('topic-1');
+      expect(store.getState().selectedTopicIds.has('topic-1')).toBe(false);
+      expect(store.getState().selectedTopicIds.has('topic-2')).toBe(true);
+      expect(store.getState().selectedTopicIds.size).toBe(1);
+    });
+
+    it('selectAllTopics replaces selection with given IDs', () => {
+      const store = loadUiStore();
+
+      store.getState().toggleTopicSelection('old-topic');
+      store.getState().selectAllTopics(['a', 'b', 'c']);
+
+      expect(store.getState().selectedTopicIds.has('old-topic')).toBe(false);
+      expect(store.getState().selectedTopicIds.has('a')).toBe(true);
+      expect(store.getState().selectedTopicIds.has('b')).toBe(true);
+      expect(store.getState().selectedTopicIds.has('c')).toBe(true);
+      expect(store.getState().selectedTopicIds.size).toBe(3);
+    });
+
+    it('clearTopicSelection empties the set', () => {
+      const store = loadUiStore();
+
+      store.getState().toggleTopicSelection('topic-1');
+      store.getState().toggleTopicSelection('topic-2');
+      expect(store.getState().selectedTopicIds.size).toBe(2);
+
+      store.getState().clearTopicSelection();
+      expect(store.getState().selectedTopicIds.size).toBe(0);
+    });
+
+    it('isMultiSelectMode returns true only when selection is non-empty', () => {
+      const store = loadUiStore();
+
+      expect(store.getState().isMultiSelectMode()).toBe(false);
+
+      store.getState().toggleTopicSelection('topic-1');
+      expect(store.getState().isMultiSelectMode()).toBe(true);
+
+      store.getState().clearTopicSelection();
+      expect(store.getState().isMultiSelectMode()).toBe(false);
+    });
   });
 });

@@ -23,6 +23,7 @@ interface TopicState {
   addTopic: (topic: Topic) => void;
   generateTopicName(topicId: string, userMessage: string): Promise<void>;
   deleteTopic: (id: string) => Promise<void>;
+  deleteTopics: (ids: string[]) => Promise<void>;
   getTopicContext(topicId: string, excludeAfterId?: string, userQuery?: string): Promise<Message[]>;
   updateTopicScratchpad: (id: string, scratchpad: string) => Promise<void>;
   updateTopicTimestamp: (id: string) => Promise<void>;
@@ -253,11 +254,16 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     if (ragEnabled && userQuery && embeddingService.isReady) {
       const baseIds = new Set(base.map((m) => m.id));
       const candidates = activeSequence.filter(
-        (m) => !baseIds.has(m.id) && (m.type === 'user' || m.type === 'assistant') && m.embedding && m.embedding.length > 0,
+        (m) =>
+          !baseIds.has(m.id) && (m.type === 'user' || m.type === 'assistant') && m.embedding && m.embedding.length > 0,
       );
 
       try {
-        const scoredResults: ScoredMessage[] = await embeddingService.searchSimilarMessages(userQuery, candidates, RAG_TOP_K);
+        const scoredResults: ScoredMessage[] = await embeddingService.searchSimilarMessages(
+          userQuery,
+          candidates,
+          RAG_TOP_K,
+        );
         // Apply minimum similarity threshold — drop weakly-related matches
         const relevant: ScoredMessage[] = scoredResults.filter((s) => s.score >= RAG_MIN_SCORE);
         if (relevant.length > 0) {
@@ -273,7 +279,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
             seenIds.add(m.id);
             if (m.type === 'user') {
               const assistantVersions = assistantByParent.get(m.id) ?? [];
-              const activeId = m.activeResponseId ?? (assistantVersions.length > 0 ? assistantVersions[assistantVersions.length - 1].id : null);
+              const activeId =
+                m.activeResponseId ??
+                (assistantVersions.length > 0 ? assistantVersions[assistantVersions.length - 1].id : null);
               if (activeId && !baseIds.has(activeId) && !seenIds.has(activeId)) {
                 const reply = allCandidatesById.get(activeId);
                 if (reply) {
@@ -313,8 +321,12 @@ export const useTopicStore = create<TopicState>((set, get) => ({
             for (const m of budgetedMessages) ragInjectedIds.add(m.id);
 
             // Sort chronologically for readable context
-            const sorted = budgetedMessages.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
-            const ragContent = sorted.map((m) => `[${m.type === 'user' ? 'User' : 'Assistant'}]: ${m.content}`).join('\n\n');
+            const sorted = budgetedMessages.sort(
+              (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime(),
+            );
+            const ragContent = sorted
+              .map((m) => `[${m.type === 'user' ? 'User' : 'Assistant'}]: ${m.content}`)
+              .join('\n\n');
             ragMessage = {
               id: '__rag_context__',
               topicId,
@@ -339,7 +351,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     // Excludes messages already present via RAG to avoid duplicates.
     if (retrievalEnabled) {
       const includedIds = new Set([...base.map((m) => m.id), ...ragInjectedIds]);
-      const directoryMessages = activeSequence.filter((m) => (m.type === 'user' || m.type === 'assistant') && !includedIds.has(m.id) && !m.isDeleted);
+      const directoryMessages = activeSequence.filter(
+        (m) => (m.type === 'user' || m.type === 'assistant') && !includedIds.has(m.id) && !m.isDeleted,
+      );
 
       if (directoryMessages.length > 0) {
         // Show only the most recent 30 missing messages in the prompt directory to save tokens
@@ -409,7 +423,8 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       const result = await askLlm(model, 1.0, [
         {
           role: 'system',
-          content: 'Reply with a short and descriptive title for the message. No explanation. Just the title. Max 5 words.',
+          content:
+            'Reply with a short and descriptive title for the message. No explanation. Just the title. Max 5 words.',
         },
         {
           role: 'user',
@@ -425,7 +440,8 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
       // ── Verification: Topic name ──
       if (!name) console.warn('[verify:topic-name] LLM returned empty topic name for topic:', topicId);
-      else if (name.split(/\s+/).length > 8) console.warn('[verify:topic-name] Name too long (%d words):', name.split(/\s+/).length, name);
+      else if (name.split(/\s+/).length > 8)
+        console.warn('[verify:topic-name] Name too long (%d words):', name.split(/\s+/).length, name);
       console.debug('[verify:topic-name] model=%s name="%s" prompt_tokens=%d', model.id, name, result.promptTokens);
 
       if (name) {
@@ -455,6 +471,23 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     }
   },
 
+  deleteTopics: async (ids: string[]): Promise<void> => {
+    try {
+      await athenaDb.transaction('rw', athenaDb.topics, athenaDb.messages, async () => {
+        await athenaDb.topics.bulkDelete(ids);
+        await athenaDb.messages.where('topicId').anyOf(ids).delete();
+      });
+      const idSet = new Set(ids);
+      set((state) => ({
+        topics: state.topics.filter((t) => !idSet.has(t.id)),
+      }));
+    } catch (err) {
+      console.error('Failed to delete topics', err);
+      const message = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification('Failed to delete topics', message);
+    }
+  },
+
   switchFork: async (topicId, forkId): Promise<void> => {
     try {
       await athenaDb.topics.update(topicId, { activeForkId: forkId });
@@ -479,7 +512,8 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
       // If this topic has never been forked, bootstrap the implicit "main" fork
       // so the ForkTabs component (which requires length > 1) will render.
-      const baseForks = existingForks.length === 0 ? [{ id: 'main', name: 'Main', createdOn: originalTopic.createdOn }] : existingForks;
+      const baseForks =
+        existingForks.length === 0 ? [{ id: 'main', name: 'Main', createdOn: originalTopic.createdOn }] : existingForks;
 
       const newForkName = `Fork ${baseForks.length}`;
 
@@ -571,7 +605,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
       set((state) => ({
         topics: state.topics
-          .map((t) => (t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newActiveForkId, updatedOn: now } : t))
+          .map((t) =>
+            t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newActiveForkId, updatedOn: now } : t,
+          )
           .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
       }));
 
