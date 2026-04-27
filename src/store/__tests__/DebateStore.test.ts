@@ -290,6 +290,7 @@ describe('DebateStore – sendDebateRound happy path', () => {
 
 describe('DebateStore – sendDebateRound error handling', () => {
   it('shows a notification and returns to idle on LLM failure', async () => {
+    jest.spyOn(console, 'error').mockImplementationOnce(() => {});
     useDebateStore.setState({ debateModelA: modelA, debateModelB: modelB });
     mockAskLlmStream.mockRejectedValue(new Error('network error'));
 

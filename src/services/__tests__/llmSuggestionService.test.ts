@@ -123,6 +123,7 @@ describe('llmSuggestionService', () => {
     jest.resetModules();
     jest.clearAllMocks();
     jest.useFakeTimers();
+    jest.spyOn(console, 'log').mockImplementation((): void => undefined);
 
     mockAuthState = createAuthStoreState();
     mockWorkers = [];
@@ -130,6 +131,7 @@ describe('llmSuggestionService', () => {
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     jest.useRealTimers();
   });
 
