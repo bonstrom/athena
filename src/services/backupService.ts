@@ -28,7 +28,6 @@ const BACKUP_HANDLE_KEY = 'autoBackupFileHandle';
 const LAST_BACKUP_TIME_KEY = 'lastAutoBackupTime';
 const OPFS_FILE_NAME = 'athena_auto_backup.json';
 
-
 // Prevents concurrent auto-backup calls from writing to the file simultaneously
 let autoBackupInProgress = false;
 
@@ -191,7 +190,7 @@ export const BackupService = {
       throw new Error('OPFS is not supported in this browser.');
     }
     const root = await navigator.storage.getDirectory();
-    const fileHandle = await root.getFileHandle(OPFS_FILE_NAME, { create: true }) as unknown as FileSystemFileHandle;
+    const fileHandle = (await root.getFileHandle(OPFS_FILE_NAME, { create: true })) as unknown as FileSystemFileHandle;
     const writable = await fileHandle.createWritable();
     await writable.write(blob);
     await writable.close();
@@ -206,9 +205,6 @@ export const BackupService = {
     autoBackupInProgress = true;
     const store = useBackupStore.getState();
     try {
-      store.setStatus('in-progress');
-      const blob = await exportDB(athenaDb, { prettyJson: true });
-
       if (store.backupMode === 'external') {
         const handle = await this.getAutoBackupHandle();
         if (!handle) {
@@ -227,10 +223,14 @@ export const BackupService = {
           return;
         }
 
+        store.setStatus('in-progress');
+        const blob = await exportDB(athenaDb, { prettyJson: true });
         const writable = await handle.createWritable();
         await writable.write(blob);
         await writable.close();
       } else if (store.backupMode === 'internal') {
+        store.setStatus('in-progress');
+        const blob = await exportDB(athenaDb, { prettyJson: true });
         await this.saveToInternalBackup(blob);
       } else {
         autoBackupInProgress = false;

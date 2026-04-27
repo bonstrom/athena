@@ -28,10 +28,12 @@ jest.mock('../../store/BackupStore', () => ({
       setStatus: (status: string) => void;
       setLastBackupTime: (time: string) => void;
       setErrorMessage: (message: string | null) => void;
+      backupMode: string;
     } => ({
       setStatus: mockSetStatus,
       setLastBackupTime: mockSetLastBackupTime,
       setErrorMessage: mockSetErrorMessage,
+      backupMode: 'external',
     }),
   },
 }));

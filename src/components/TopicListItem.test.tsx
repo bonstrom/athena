@@ -36,7 +36,12 @@ jest.mock('./TopicContextDialog', () => ({
 
 const mockUseNavigate = useNavigate as unknown as jest.Mock;
 const mockUseParams = useParams as unknown as jest.Mock<{ topicId?: string }>;
-const mockUseUiStore = useUiStore as unknown as jest.Mock<{ isMobile: boolean; closeDrawer: () => void }>;
+const mockUseUiStore = useUiStore as unknown as jest.Mock<{
+  isMobile: boolean;
+  closeDrawer: () => void;
+  selectedTopicIds: Set<string>;
+  toggleTopicSelection: (id: string) => void;
+}>;
 const mockUseAuthStore = useAuthStore as unknown as jest.Mock<{ chatFontSize: number }>;
 const mockUseTopicStore = useTopicStore as unknown as jest.Mock<{
   renameTopic: (id: string, name: string) => Promise<void>;
@@ -63,7 +68,12 @@ describe('TopicListItem', () => {
 
     mockUseNavigate.mockReturnValue(mockNavigate);
     mockUseParams.mockReturnValue({ topicId: 'topic-1' });
-    mockUseUiStore.mockReturnValue({ isMobile: true, closeDrawer: mockCloseDrawer });
+    mockUseUiStore.mockReturnValue({
+      isMobile: true,
+      closeDrawer: mockCloseDrawer,
+      selectedTopicIds: new Set<string>(),
+      toggleTopicSelection: jest.fn(),
+    });
     mockUseAuthStore.mockReturnValue({ chatFontSize: 16 });
     mockUseTopicStore.mockReturnValue({
       renameTopic: (...args: [string, string]): Promise<void> => mockRenameTopic(...args),

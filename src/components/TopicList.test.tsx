@@ -1,8 +1,11 @@
+import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { TopicList } from './TopicList';
 import { useTopicStore } from '../store/TopicStore';
 import { useChatStore } from '../store/ChatStore';
 import { useAuthStore } from '../store/AuthStore';
+import { useUiStore } from '../store/UiStore';
+import { useNavigate, useParams } from 'react-router-dom';
 import { groupTopicsByDate } from '../utils/groupTopicsByDate';
 
 interface TopicLike {
@@ -17,6 +20,7 @@ interface TopicStoreSlice {
   visibleTopicCount: number;
   loadTopics: () => Promise<void>;
   increaseVisibleTopicCount: () => void;
+  deleteTopics: (ids: string[]) => Promise<void>;
 }
 
 interface ChatSelectorState {
@@ -30,6 +34,17 @@ interface AuthSelectorState {
 const mockLoadTopics = jest.fn<Promise<void>, []>(() => Promise.resolve());
 const mockIncreaseVisibleTopicCount: jest.MockedFunction<() => void> = jest.fn(() => undefined);
 const mockPreloadTopics = jest.fn<Promise<void>, [string[]]>(() => Promise.resolve());
+const mockDeleteTopics = jest.fn<Promise<void>, [string[]]>(() => Promise.resolve());
+const mockNavigate: jest.MockedFunction<(path: string) => void> = jest.fn();
+
+jest.mock('react-router-dom', () => ({
+  useNavigate: jest.fn(),
+  useParams: jest.fn(),
+}));
+
+jest.mock('../store/UiStore', () => ({
+  useUiStore: jest.fn(),
+}));
 
 jest.mock('./TopicListItem', () => ({
   TopicListItem: ({ topic }: { topic: TopicLike }): React.ReactElement => <div data-testid="topic-item">{topic.name}</div>,
@@ -58,6 +73,9 @@ type UseTopicStoreMock = jest.Mock<TopicStoreSlice> & {
 const mockUseTopicStore = useTopicStore as unknown as UseTopicStoreMock;
 const mockUseChatStore = useChatStore as unknown as jest.Mock;
 const mockUseAuthStore = useAuthStore as unknown as jest.Mock;
+const mockUseUiStore = useUiStore as unknown as jest.Mock;
+const mockUseNavigate = useNavigate as unknown as jest.Mock;
+const mockUseParams = useParams as unknown as jest.Mock;
 const mockGroupTopicsByDate = groupTopicsByDate as jest.MockedFunction<typeof groupTopicsByDate>;
 
 function createTopics(): TopicLike[] {
@@ -73,6 +91,10 @@ describe('TopicList', () => {
     jest.clearAllMocks();
     mockLoadTopics.mockImplementation((): Promise<void> => Promise.resolve());
     mockPreloadTopics.mockImplementation((): Promise<void> => Promise.resolve());
+    mockDeleteTopics.mockImplementation((): Promise<void> => Promise.resolve());
+    mockUseNavigate.mockReturnValue(mockNavigate);
+    mockUseParams.mockReturnValue({ topicId: undefined });
+    mockUseUiStore.mockReturnValue({ selectedTopicIds: new Set<string>(), selectAllTopics: jest.fn(), clearTopicSelection: jest.fn() });
 
     const topics = createTopics();
 
@@ -84,6 +106,9 @@ describe('TopicList', () => {
         await mockLoadTopics();
       },
       increaseVisibleTopicCount: (): void => mockIncreaseVisibleTopicCount(),
+      deleteTopics: async (ids: string[]): Promise<void> => {
+        await mockDeleteTopics(ids);
+      },
     });
     mockUseTopicStore.getState.mockReturnValue({ topics });
 
@@ -132,6 +157,9 @@ describe('TopicList', () => {
         await mockLoadTopics();
       },
       increaseVisibleTopicCount: (): void => mockIncreaseVisibleTopicCount(),
+      deleteTopics: async (ids: string[]): Promise<void> => {
+        await mockDeleteTopics(ids);
+      },
     });
 
     render(<TopicList />);
