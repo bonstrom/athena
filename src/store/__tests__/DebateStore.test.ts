@@ -6,16 +6,16 @@ const mockMessages: Message[] = [];
 // ---- mock fns ----
 const mockMessagesAdd = jest.fn<Promise<string>, [Message]>().mockResolvedValue('id');
 const mockMessagesUpdate = jest.fn<Promise<number>, [string, Partial<Message>]>().mockResolvedValue(1);
-const mockMessagesDelete = jest.fn<Promise<void>, [string]>().mockResolvedValue(undefined);
+const mockMessagesDelete = jest.fn<Promise<undefined>, [string]>().mockResolvedValue(undefined);
 const mockTopicsUpdate = jest.fn<Promise<number>, [string, Partial<Topic>]>().mockResolvedValue(1);
-const mockAskLlmStream = jest.fn();
-const mockGetAvailableModels = jest.fn();
-const mockGetDefaultModel = jest.fn();
+const mockAskLlmStream = jest.fn<unknown, unknown[]>();
+const mockGetAvailableModels = jest.fn<unknown, unknown[]>();
+const mockGetDefaultModel = jest.fn<unknown, unknown[]>();
 const mockCalculateCostSEK = jest.fn<number, unknown[]>().mockReturnValue(0.5);
-const mockAddNotification = jest.fn<void, [string, string?]>();
-const mockTopicStoreSetState = jest.fn();
-const mockGenerateTopicName = jest.fn<Promise<void>, [string, string]>().mockResolvedValue(undefined);
-const mockChatStoreSetState = jest.fn();
+const mockAddNotification = jest.fn<undefined, [string, string?]>();
+const mockTopicStoreSetState = jest.fn<undefined, unknown[]>();
+const mockGenerateTopicName = jest.fn<Promise<undefined>, [string, string]>().mockResolvedValue(undefined);
+const mockChatStoreSetState = jest.fn<undefined, unknown[]>();
 
 // ---- mocks ----
 jest.mock('../../database/AthenaDb', () => ({
@@ -23,10 +23,10 @@ jest.mock('../../database/AthenaDb', () => ({
     messages: {
       add: (msg: Message): Promise<string> => mockMessagesAdd(msg),
       update: (id: string, patch: Partial<Message>): Promise<number> => mockMessagesUpdate(id, patch),
-      delete: (id: string): Promise<void> => mockMessagesDelete(id),
-      where: (_field: string) => ({
-        equals: (topicId: string) => ({
-          and: (pred: (m: Message) => boolean) => ({
+      delete: (id: string): Promise<undefined> => mockMessagesDelete(id),
+      where: (_field: string): { equals: (topicId: string) => { and: (pred: (m: Message) => boolean) => { sortBy: (_sortField: string) => Promise<Message[]> } } } => ({
+        equals: (topicId: string): { and: (pred: (m: Message) => boolean) => { sortBy: (_sortField: string) => Promise<Message[]> } } => ({
+          and: (pred: (m: Message) => boolean): { sortBy: (_sortField: string) => Promise<Message[]> } => ({
             sortBy: (_sortField: string): Promise<Message[]> => Promise.resolve(mockMessages.filter((m) => m.topicId === topicId).filter(pred)),
           }),
         }),
@@ -52,10 +52,10 @@ jest.mock('../../store/TopicStore', () => ({
   useTopicStore: {
     getState: (): {
       topics: Topic[];
-      generateTopicName: (topicId: string, question: string) => Promise<void>;
+      generateTopicName: (topicId: string, question: string) => Promise<undefined>;
     } => ({
       topics: [{ id: 'topic-1', name: 'New Debate' } as Topic],
-      generateTopicName: (...args: [string, string]): Promise<void> => mockGenerateTopicName(...args),
+      generateTopicName: (topicId: string, question: string): Promise<undefined> => mockGenerateTopicName(topicId, question),
     }),
     setState: (...args: unknown[]): void => {
       mockTopicStoreSetState(...args);
@@ -72,15 +72,18 @@ jest.mock('../../store/AuthStore', () => ({
 jest.mock('../../store/NotificationStore', () => ({
   useNotificationStore: {
     getState: (): { addNotification: (title: string, message?: string) => void } => ({
-      addNotification: (...args: [string, string?]): void => {
-        mockAddNotification(...args);
+      addNotification: (title: string, message?: string): void => {
+        mockAddNotification(title, message);
       },
     }),
   },
 }));
 
-jest.mock('../../store/ChatStore', () => ({
+jest.mock('../ChatStore', () => ({
   useChatStore: {
+    getState: (): { updateMessageStateOnly: () => void } => ({
+      updateMessageStateOnly: (): void => undefined,
+    }),
     setState: (...args: unknown[]): void => {
       mockChatStoreSetState(...args);
     },
@@ -235,7 +238,7 @@ describe('DebateStore – sendDebateRound happy path', () => {
       .mockResolvedValueOnce(makeStreamResult('final-b'))
       .mockResolvedValueOnce(makeStreamResult('consensus'));
     // Seed mockMessages so the consensus query finds something
-    mockMessagesAdd.mockImplementation(async (msg: Message): Promise<string> => {
+    mockMessagesAdd.mockImplementation((msg: Message): string => {
       mockMessages.push(msg);
       return msg.id;
     });
@@ -290,7 +293,7 @@ describe('DebateStore – sendDebateRound happy path', () => {
 
 describe('DebateStore – sendDebateRound error handling', () => {
   it('shows a notification and returns to idle on LLM failure', async () => {
-    jest.spyOn(console, 'error').mockImplementationOnce(() => {});
+    jest.spyOn(console, 'error').mockImplementationOnce((): void => undefined);
     useDebateStore.setState({ debateModelA: modelA, debateModelB: modelB });
     mockAskLlmStream.mockRejectedValue(new Error('network error'));
 
@@ -371,7 +374,7 @@ describe('DebateStore – continueDebate', () => {
     mockMessages.push(makeMessage({ id: 'rev-r', debatePhase: 'review', debateSide: 'right', content: 'review B' }));
     // final and consensus are missing
 
-    mockMessagesAdd.mockImplementation(async (msg: Message): Promise<string> => {
+    mockMessagesAdd.mockImplementation((msg: Message): Promise<string> => {
       mockMessages.push(msg);
       return msg.id;
     });
@@ -401,7 +404,7 @@ describe('DebateStore – continueDebate', () => {
     mockMessages.push(staleA);
     mockMessages.push(staleB);
 
-    mockMessagesAdd.mockImplementation(async (msg: Message): Promise<string> => {
+    mockMessagesAdd.mockImplementation((msg: Message): Promise<string> => {
       mockMessages.push(msg);
       return msg.id;
     });

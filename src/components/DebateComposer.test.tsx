@@ -1,4 +1,3 @@
-import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import DebateComposer from './DebateComposer';
 import { useAuthStore } from '../store/AuthStore';
@@ -9,24 +8,21 @@ jest.mock('../store/AuthStore', () => ({
 
 const mockUseAuthStore = useAuthStore as jest.MockedFunction<typeof useAuthStore>;
 
-interface AuthSlice {
-  chatWidth: 'sm' | 'md' | 'lg' | 'xl' | 'full';
-  setChatWidth: (v: 'sm' | 'md' | 'lg' | 'xl' | 'full') => void;
-}
+const mockSetChatWidth = jest.fn();
 
 function mockAuth(): void {
   mockUseAuthStore.mockReturnValue({
     chatWidth: 'md',
-    setChatWidth: jest.fn(),
-  } as unknown as ReturnType<typeof useAuthStore>);
+    setChatWidth: mockSetChatWidth,
+  });
 }
 
 const defaultProps = {
   sending: false,
   canContinue: false,
-  onSend: jest.fn<void, [string]>(),
-  onStop: jest.fn<void, []>(),
-  onContinue: jest.fn<void, []>(),
+  onSend: jest.fn<(text: string) => void, [string]>(),
+  onStop: jest.fn<() => void, []>(),
+  onContinue: jest.fn<() => void, []>(),
 };
 
 beforeEach(() => {
@@ -62,14 +58,14 @@ describe('DebateComposer – rendering', () => {
   });
 
   it('shows stop button instead of send when sending', () => {
-    render(<DebateComposer {...defaultProps} sending={true} />);
+    render(<DebateComposer {...defaultProps} sending />);
 
     expect(screen.getByRole('button', { name: 'Stop debate' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Send debate question' })).not.toBeInTheDocument();
   });
 
   it('disables text field when sending', () => {
-    render(<DebateComposer {...defaultProps} sending={true} />);
+    render(<DebateComposer {...defaultProps} sending />);
 
     expect(screen.getByRole('textbox', { name: 'Debate question' })).toBeDisabled();
   });
@@ -77,7 +73,7 @@ describe('DebateComposer – rendering', () => {
 
 describe('DebateComposer – continue button', () => {
   it('shows continue button when canContinue is true', () => {
-    render(<DebateComposer {...defaultProps} canContinue={true} />);
+    render(<DebateComposer {...defaultProps} canContinue />);
 
     expect(screen.getByRole('button', { name: 'Continue debate' })).toBeInTheDocument();
   });
@@ -89,8 +85,8 @@ describe('DebateComposer – continue button', () => {
   });
 
   it('calls onContinue when continue button is clicked', () => {
-    const onContinue = jest.fn<void, []>();
-    render(<DebateComposer {...defaultProps} canContinue={true} onContinue={onContinue} />);
+    const onContinue = jest.fn<() => void, []>();
+    render(<DebateComposer {...defaultProps} canContinue onContinue={onContinue} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue debate' }));
 
@@ -98,7 +94,7 @@ describe('DebateComposer – continue button', () => {
   });
 
   it('does not show continue button while sending (stop button takes over)', () => {
-    render(<DebateComposer {...defaultProps} canContinue={true} sending={true} />);
+    render(<DebateComposer {...defaultProps} canContinue sending />);
 
     expect(screen.queryByRole('button', { name: 'Continue debate' })).not.toBeInTheDocument();
   });
@@ -106,7 +102,7 @@ describe('DebateComposer – continue button', () => {
 
 describe('DebateComposer – send interactions', () => {
   it('calls onSend with trimmed text and clears input', () => {
-    const onSend = jest.fn<void, [string]>();
+    const onSend = jest.fn<(text: string) => void, [string]>();
     render(<DebateComposer {...defaultProps} onSend={onSend} />);
 
     const input = screen.getByRole('textbox', { name: 'Debate question' });
@@ -118,7 +114,7 @@ describe('DebateComposer – send interactions', () => {
   });
 
   it('calls onSend when Enter is pressed (without Shift)', () => {
-    const onSend = jest.fn<void, [string]>();
+    const onSend = jest.fn<(text: string) => void, [string]>();
     render(<DebateComposer {...defaultProps} onSend={onSend} />);
 
     const input = screen.getByRole('textbox', { name: 'Debate question' });
@@ -129,7 +125,7 @@ describe('DebateComposer – send interactions', () => {
   });
 
   it('does not call onSend when Shift+Enter is pressed', () => {
-    const onSend = jest.fn<void, [string]>();
+    const onSend = jest.fn<(text: string) => void, [string]>();
     render(<DebateComposer {...defaultProps} onSend={onSend} />);
 
     const input = screen.getByRole('textbox', { name: 'Debate question' });
@@ -140,7 +136,7 @@ describe('DebateComposer – send interactions', () => {
   });
 
   it('does not call onSend for whitespace-only input', () => {
-    const onSend = jest.fn<void, [string]>();
+    const onSend = jest.fn<(text: string) => void, [string]>();
     render(<DebateComposer {...defaultProps} onSend={onSend} />);
 
     const input = screen.getByRole('textbox', { name: 'Debate question' });
@@ -151,8 +147,8 @@ describe('DebateComposer – send interactions', () => {
   });
 
   it('calls onStop when stop button is clicked', () => {
-    const onStop = jest.fn<void, []>();
-    render(<DebateComposer {...defaultProps} sending={true} onStop={onStop} />);
+    const onStop = jest.fn<() => void, []>();
+    render(<DebateComposer {...defaultProps} sending onStop={onStop} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop debate' }));
 
@@ -160,8 +156,8 @@ describe('DebateComposer – send interactions', () => {
   });
 
   it('does not call onSend when sending is true', () => {
-    const onSend = jest.fn<void, [string]>();
-    render(<DebateComposer {...defaultProps} sending={true} onSend={onSend} />);
+    const onSend = jest.fn<(text: string) => void, [string]>();
+    render(<DebateComposer {...defaultProps} sending onSend={onSend} />);
 
     // Field is disabled, but force the Enter key anyway
     const input = screen.getByRole('textbox', { name: 'Debate question' });
@@ -183,16 +179,15 @@ describe('DebateComposer – width selector', () => {
   });
 
   it('calls setChatWidth when a toggle is clicked', () => {
-    const setChatWidth = jest.fn<void, ['sm' | 'md' | 'lg' | 'xl' | 'full']>();
     mockUseAuthStore.mockReturnValue({
       chatWidth: 'md',
-      setChatWidth,
-    } as unknown as ReturnType<typeof useAuthStore>);
+      setChatWidth: mockSetChatWidth,
+    });
 
     render(<DebateComposer {...defaultProps} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'L' }));
 
-    expect(setChatWidth).toHaveBeenCalledWith('lg');
+    expect(mockSetChatWidth).toHaveBeenCalledWith('lg');
   });
 });
