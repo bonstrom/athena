@@ -46,3 +46,36 @@ Run `lint` before committing; run `test:coverage` after changing tests.
 - **Patterns:** `jest.mock()` at module scope, `jest.isolateModules()` for fresh store state, `jest.mocked()` for typed mocks, `clearTokenCacheForTesting()` for tokenizer cache.
 - Mock return types must be **explicit** (e.g., `(): number[] => ...`). No implicit `new Array(n).fill(...)`.
 - `crypto.randomUUID()` used for all ID generation.
+
+## Improvement Backlog
+
+### [ISSUE-1] Fix ESLint errors in test files
+**Files:** `src/components/DebateComposer.test.tsx`, `src/store/__tests__/DebateStore.test.ts`
+7 errors, 24 warnings — unused imports, unnecessary type assertions, void misuse, missing return types, require-await violations, empty arrow functions, jsx-boolean-value warnings.
+
+### [ISSUE-2] Remove dead CSS file
+**File:** `src/App.css` — intentionally empty, import in `src/index.tsx` can be dropped.
+
+### [ISSUE-3] Fix scrollbar theming to respect app theme toggle
+**File:** `src/index.css` — hardcodes dark scrollbar colors, only uses `prefers-color-scheme: light`. Doesn't respond to the app's own dark/light mode toggle. Move scrollbar styles into MUI theme or CSS-in-JS that reads the store.
+
+### [ISSUE-4] Add missing test coverage — DebateView.tsx (15%)
+**File:** `src/components/DebateView.tsx` — core dual-model debate UI, essentially untested.
+
+### [ISSUE-5] Add missing test coverage — backupService.ts (57%)
+**File:** `src/services/backupService.ts` — critical data export/import/auto-backup, poorly tested.
+
+### [ISSUE-6] Add missing test coverage — ChatStore.ts (52%)
+**File:** `src/store/ChatStore.ts` — largest store (1432 lines), core of the app.
+
+### [ISSUE-7] Add missing test coverage — ProviderStore.ts (64%)
+**File:** `src/store/ProviderStore.ts` — seed + migration logic largely untested.
+
+### [ISSUE-8] Add missing test coverage — MessageBubble.tsx (59%)
+**File:** `src/components/MessageBubble.tsx` — complex component with version switching, pinning, summarization, deletion, reasoning toggle.
+
+### [ISSUE-9] Add missing test coverage — Settings.tsx (75%)
+**File:** `src/pages/Settings.tsx` — large component (1116 lines), missing coverage on error states, import/restore flows, model download, balance fetchers.
+
+### [ISSUE-10] Surface API key storage limitations in the UI
+**Files:** `src/utils/security.ts`, `src/pages/Settings.tsx` — add notice explaining keys are obfuscated (not encrypted) in localStorage.
