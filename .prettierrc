@@ -1,5 +1,6 @@
 {
   "bracketSameLine": true,
   "printWidth": 120,
-  "singleAttributePerLine": true
+  "singleAttributePerLine": true,
+  "singleQuote": true
 }

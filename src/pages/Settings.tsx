@@ -58,9 +58,10 @@ function TabPanel(props: TabPanelProps): React.ReactElement {
       id={`settings-tabpanel-${index}`}
       aria-labelledby={`settings-tab-${index}`}
       {...other}
-      style={{ width: '100%', display: value === index ? 'block' : 'none' }}
-    >
-      {value === index && <Box sx={{ py: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>{children}</Box>}
+      style={{ width: '100%', display: value === index ? 'block' : 'none' }}>
+      {value === index && (
+        <Box sx={{ py: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>{children}</Box>
+      )}
     </div>
   );
 }
@@ -119,7 +120,8 @@ const Settings: React.FC = () => {
 
   const { providers } = useProviderStore();
 
-  const currentModelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+  const currentModelId: string =
+    llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
   const status = llmModelDownloadStatus[currentModelId] ?? 'not_downloaded';
 
   const [userNameInput, setUserNameInput] = useState(userName);
@@ -136,7 +138,14 @@ const Settings: React.FC = () => {
   const [promptNameInput, setPromptNameInput] = useState('');
   const [promptContentInput, setPromptContentInput] = useState('');
 
-  const { status: backupStatus, lastBackupTime, backupMode, setStatus: setBackupStatus, setLastBackupTime, setBackupMode } = useBackupStore();
+  const {
+    status: backupStatus,
+    lastBackupTime,
+    backupMode,
+    setStatus: setBackupStatus,
+    setLastBackupTime,
+    setBackupMode,
+  } = useBackupStore();
 
   const [llmProgress, setLlmProgress] = useState<LlmProgress | null>(null);
   const [isDeletingModel, setIsDeletingModel] = useState(false);
@@ -156,12 +165,14 @@ const Settings: React.FC = () => {
   }, []);
 
   const handleDownloadModel = (): void => {
-    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+    const modelId: string =
+      llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
     llmSuggestionService.loadModel(modelId, true);
   };
 
   const handleDeleteModel = async (): Promise<void> => {
-    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+    const modelId: string =
+      llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
     if (!window.confirm(`Delete downloaded model "${modelId}" from local cache?`)) {
       return;
     }
@@ -177,7 +188,8 @@ const Settings: React.FC = () => {
   };
 
   const handleResetDownload = (): void => {
-    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+    const modelId: string =
+      llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
     llmSuggestionService.resetDownload(modelId);
     setLlmProgress(null);
   };
@@ -222,7 +234,6 @@ const Settings: React.FC = () => {
       if (handle && backupMode === 'none') {
         setBackupMode('external');
       }
-      setAutoBackupEnabled(backupMode !== 'none');
     });
   }, [backupMode, setBackupMode]);
 
@@ -355,8 +366,7 @@ const Settings: React.FC = () => {
         py: { xs: 2, md: 4 },
         px: 2,
         overflow: 'hidden',
-      }}
-    >
+      }}>
       <Paper
         elevation={4}
         sx={{
@@ -368,8 +378,7 @@ const Settings: React.FC = () => {
           bgcolor: (theme) => theme.palette.background.paper,
           border: '1px solid',
           borderColor: 'divider',
-        }}
-      >
+        }}>
         <Tabs
           value={activeTab}
           onChange={(_, newValue): void => setActiveTab(newValue as number)}
@@ -398,20 +407,38 @@ const Settings: React.FC = () => {
               letterSpacing: '0.05em',
               px: { xs: 1, sm: 2 },
             },
-          }}
-        >
-          <Tab icon={<PersonIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />} label={isMobile ? 'General' : 'General'} />
-          <Tab icon={<CloudIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />} label={isMobile ? 'Providers' : 'Providers'} />
-          <Tab icon={<AutoAwesomeIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />} label={isMobile ? 'AI' : 'AI Intelligence'} />
-          <Tab icon={<StorageIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />} label={isMobile ? 'Data' : 'Prompts & Data'} />
+          }}>
+          <Tab
+            icon={<PersonIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />}
+            label={isMobile ? 'General' : 'General'}
+          />
+          <Tab
+            icon={<CloudIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />}
+            label={isMobile ? 'Providers' : 'Providers'}
+          />
+          <Tab
+            icon={<AutoAwesomeIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />}
+            label={isMobile ? 'AI' : 'AI Intelligence'}
+          />
+          <Tab
+            icon={<StorageIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />}
+            label={isMobile ? 'Data' : 'Prompts & Data'}
+          />
         </Tabs>
 
         <Box sx={{ p: { xs: 2, sm: 4 }, flexGrow: 1, overflowY: 'auto', scrollbarGutter: 'stable' }}>
           {/* ── TAB 0: GENERAL ── */}
-          <TabPanel value={activeTab} index={0}>
-            <Stack spacing={4} sx={{ width: '100%', maxWidth: 600 }}>
+          <TabPanel
+            value={activeTab}
+            index={0}>
+            <Stack
+              spacing={4}
+              sx={{ width: '100%', maxWidth: 600 }}>
               <Box>
-                <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ fontWeight: 'bold' }}>
                   Profile
                 </Typography>
                 <TextField
@@ -424,24 +451,31 @@ const Settings: React.FC = () => {
               </Box>
 
               <Box>
-                <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
                   Appearance
                 </Typography>
                 <ThemeSelector />
               </Box>
 
               <Box>
-                <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
                   Chat Layout
                 </Typography>
                 <Stack spacing={2}>
-                  <FormControl fullWidth size="small">
+                  <FormControl
+                    fullWidth
+                    size="small">
                     <InputLabel>Max Chat Width</InputLabel>
                     <Select
                       value={chatWidth}
                       label="Max Chat Width"
-                      onChange={(e): void => setChatWidth(e.target.value as 'sm' | 'md' | 'lg' | 'xl' | 'full')}
-                    >
+                      onChange={(e): void => setChatWidth(e.target.value as 'sm' | 'md' | 'lg' | 'xl' | 'full')}>
                       <MenuItem value="full">Full Width</MenuItem>
                       <MenuItem value="xl">Extra Wide (1600px)</MenuItem>
                       <MenuItem value="lg">Wide (1200px)</MenuItem>
@@ -449,9 +483,14 @@ const Settings: React.FC = () => {
                       <MenuItem value="sm">Compact (600px)</MenuItem>
                     </Select>
                   </FormControl>
-                  <FormControl fullWidth size="small">
+                  <FormControl
+                    fullWidth
+                    size="small">
                     <InputLabel>Chat Font Size</InputLabel>
-                    <Select value={chatFontSize} label="Chat Font Size" onChange={(e): void => setChatFontSize(e.target.value as number)}>
+                    <Select
+                      value={chatFontSize}
+                      label="Chat Font Size"
+                      onChange={(e): void => setChatFontSize(e.target.value as number)}>
                       <MenuItem value={12}>Small (12px)</MenuItem>
                       <MenuItem value={14}>Compact (14px)</MenuItem>
                       <MenuItem value={16}>Standard (16px)</MenuItem>
@@ -464,17 +503,21 @@ const Settings: React.FC = () => {
               </Box>
 
               <Box>
-                <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
                   Performance
                 </Typography>
                 <Stack spacing={2}>
-                  <FormControl fullWidth size="small">
+                  <FormControl
+                    fullWidth
+                    size="small">
                     <InputLabel>Topic Preload Count</InputLabel>
                     <Select
                       value={topicPreloadCount}
                       label="Topic Preload Count"
-                      onChange={(e): void => setTopicPreloadCount(e.target.value as number)}
-                    >
+                      onChange={(e): void => setTopicPreloadCount(e.target.value as number)}>
                       <MenuItem value={0}>Disabled</MenuItem>
                       <MenuItem value={3}>3 topics</MenuItem>
                       <MenuItem value={5}>5 topics</MenuItem>
@@ -483,13 +526,14 @@ const Settings: React.FC = () => {
                       <MenuItem value={50}>50 topics</MenuItem>
                     </Select>
                   </FormControl>
-                  <FormControl fullWidth size="small">
+                  <FormControl
+                    fullWidth
+                    size="small">
                     <InputLabel>Message Preview Length</InputLabel>
                     <Select
                       value={messageTruncateChars}
                       label="Message Preview Length"
-                      onChange={(e): void => setMessageTruncateChars(e.target.value as number)}
-                    >
+                      onChange={(e): void => setMessageTruncateChars(e.target.value as number)}>
                       <MenuItem value={0}>Always show full messages</MenuItem>
                       <MenuItem value={100}>Tiny (100 characters)</MenuItem>
                       <MenuItem value={500}>Default (500 characters)</MenuItem>
@@ -499,13 +543,14 @@ const Settings: React.FC = () => {
                       <MenuItem value={4000}>Maximum (4000 characters)</MenuItem>
                     </Select>
                   </FormControl>
-                  <FormControl fullWidth size="small">
+                  <FormControl
+                    fullWidth
+                    size="small">
                     <InputLabel>Camera Button</InputLabel>
                     <Select
                       value={showCameraButton}
                       label="Camera Button"
-                      onChange={(e): void => setShowCameraButton(e.target.value as 'auto' | 'always' | 'never')}
-                    >
+                      onChange={(e): void => setShowCameraButton(e.target.value as 'auto' | 'always' | 'never')}>
                       <MenuItem value="auto">Auto (mobile only)</MenuItem>
                       <MenuItem value="always">Always show</MenuItem>
                       <MenuItem value="never">Never show</MenuItem>
@@ -514,13 +559,22 @@ const Settings: React.FC = () => {
                 </Stack>
               </Box>
 
-              <Box display="flex" justifyContent="flex-end" alignItems="center" gap={2}>
+              <Box
+                display="flex"
+                justifyContent="flex-end"
+                alignItems="center"
+                gap={2}>
                 {saved && (
-                  <Typography variant="body2" color="success.main">
+                  <Typography
+                    variant="body2"
+                    color="success.main">
                     Settings saved successfully.
                   </Typography>
                 )}
-                <Button variant="contained" color="primary" onClick={handleSave}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={handleSave}>
                   Save Profile
                 </Button>
               </Box>
@@ -528,37 +582,57 @@ const Settings: React.FC = () => {
           </TabPanel>
 
           {/* ── TAB 1: PROVIDERS ── */}
-          <TabPanel value={activeTab} index={1}>
+          <TabPanel
+            value={activeTab}
+            index={1}>
             <Box sx={{ width: '100%', maxWidth: 600 }}>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
+              <Typography
+                variant="h6"
+                gutterBottom
+                sx={{ fontWeight: 'bold' }}>
                 LLM Providers
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Each provider has its own API key and models. Add an OpenAI-compatible endpoint, Anthropic, or any custom provider (Ollama,
-                Azure, LiteLLM…).
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mb: 3 }}>
+                Each provider has its own API key and models. Add an OpenAI-compatible endpoint, Anthropic, or any
+                custom provider (Ollama, Azure, LiteLLM…).
               </Typography>
               {providers.map((p) => (
-                <ProviderCard key={p.id} provider={p} balanceLabel={getProviderBalanceLabel(p.id)} />
+                <ProviderCard
+                  key={p.id}
+                  provider={p}
+                  balanceLabel={getProviderBalanceLabel(p.id)}
+                />
               ))}
               <AddProviderCard />
             </Box>
           </TabPanel>
 
           {/* ── TAB 2: AI INTELLIGENCE ── */}
-          <TabPanel value={activeTab} index={2}>
-            <Stack spacing={4} sx={{ width: '100%', maxWidth: 600 }}>
+          <TabPanel
+            value={activeTab}
+            index={2}>
+            <Stack
+              spacing={4}
+              sx={{ width: '100%', maxWidth: 600 }}>
               <Box>
-                <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
                   Context &amp; Reasoning
                 </Typography>
                 <Stack spacing={2}>
-                  <FormControl fullWidth size="small">
+                  <FormControl
+                    fullWidth
+                    size="small">
                     <InputLabel>Max Context Tokens</InputLabel>
                     <Select
                       value={maxContextTokens}
                       label="Max Context Tokens"
-                      onChange={(e): void => setMaxContextTokens(e.target.value as number)}
-                    >
+                      onChange={(e): void => setMaxContextTokens(e.target.value as number)}>
                       <MenuItem value={4000}>4k — Minimal (cheap)</MenuItem>
                       <MenuItem value={8000}>8k — Compact</MenuItem>
                       <MenuItem value={16000}>16k — Default</MenuItem>
@@ -566,13 +640,14 @@ const Settings: React.FC = () => {
                       <MenuItem value={64000}>64k — Maximum</MenuItem>
                     </Select>
                   </FormControl>
-                  <FormControl fullWidth size="small">
+                  <FormControl
+                    fullWidth
+                    size="small">
                     <InputLabel>Default Recent Messages</InputLabel>
                     <Select
                       value={defaultMaxContextMessages}
                       label="Default Recent Messages"
-                      onChange={(e): void => setDefaultMaxContextMessages(e.target.value as number)}
-                    >
+                      onChange={(e): void => setDefaultMaxContextMessages(e.target.value as number)}>
                       <MenuItem value={5}>5 messages</MenuItem>
                       <MenuItem value={10}>10 messages (default)</MenuItem>
                       <MenuItem value={15}>15 messages</MenuItem>
@@ -585,16 +660,27 @@ const Settings: React.FC = () => {
               </Box>
 
               <Box>
-                <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
                   Intelligence Tools
                 </Typography>
                 <Stack spacing={1}>
                   <FormControlLabel
-                    control={<Switch checked={messageRetrievalEnabled} onChange={(e): void => setMessageRetrievalEnabled(e.target.checked)} size="small" />}
+                    control={
+                      <Switch
+                        checked={messageRetrievalEnabled}
+                        onChange={(e): void => setMessageRetrievalEnabled(e.target.checked)}
+                        size="small"
+                      />
+                    }
                     label={
                       <Box>
                         <Typography variant="body2">Message Retrieval Tool</Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          color="text.secondary">
                           Allows the LLM to selectively retrieve older messages from this topic using IDs.
                         </Typography>
                       </Box>
@@ -602,11 +688,19 @@ const Settings: React.FC = () => {
                     sx={{ alignItems: 'flex-start' }}
                   />
                   <FormControlLabel
-                    control={<Switch checked={askUserEnabled} onChange={(e): void => setAskUserEnabled(e.target.checked)} size="small" />}
+                    control={
+                      <Switch
+                        checked={askUserEnabled}
+                        onChange={(e): void => setAskUserEnabled(e.target.checked)}
+                        size="small"
+                      />
+                    }
                     label={
                       <Box>
                         <Typography variant="body2">Ask User Tool</Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          color="text.secondary">
                           Allows the LLM to pause and ask you a clarifying question instead of guessing.
                         </Typography>
                       </Box>
@@ -614,11 +708,19 @@ const Settings: React.FC = () => {
                     sx={{ alignItems: 'flex-start' }}
                   />
                   <FormControlLabel
-                    control={<Switch checked={aiSummaryEnabled} onChange={(e): void => setAiSummaryEnabled(e.target.checked)} size="small" />}
+                    control={
+                      <Switch
+                        checked={aiSummaryEnabled}
+                        onChange={(e): void => setAiSummaryEnabled(e.target.checked)}
+                        size="small"
+                      />
+                    }
                     label={
                       <Box>
                         <Typography variant="body2">AI Message Summaries</Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          color="text.secondary">
                           Automatically generates a short AI summary for messages exceeding 300 characters.
                         </Typography>
                       </Box>
@@ -626,20 +728,34 @@ const Settings: React.FC = () => {
                     sx={{ alignItems: 'flex-start' }}
                   />
                   {aiSummaryEnabled && (
-                    <FormControl fullWidth size="small" sx={{ mt: 1, ml: 4, width: 'calc(100% - 32px)' }}>
+                    <FormControl
+                      fullWidth
+                      size="small"
+                      sx={{ mt: 1, ml: 4, width: 'calc(100% - 32px)' }}>
                       <InputLabel>Summary Model</InputLabel>
-                      <Select value={summaryModel} label="Summary Model" onChange={(e): void => setSummaryModel(e.target.value)}>
+                      <Select
+                        value={summaryModel}
+                        label="Summary Model"
+                        onChange={(e): void => setSummaryModel(e.target.value)}>
                         <MenuItem value="same">Same as active chat model</MenuItem>
                         <MenuItem value="local">Local LLM (browser model)</MenuItem>
                       </Select>
                     </FormControl>
                   )}
                   <FormControlLabel
-                    control={<Switch checked={replyPredictionEnabled} onChange={(e): void => setReplyPredictionEnabled(e.target.checked)} size="small" />}
+                    control={
+                      <Switch
+                        checked={replyPredictionEnabled}
+                        onChange={(e): void => setReplyPredictionEnabled(e.target.checked)}
+                        size="small"
+                      />
+                    }
                     label={
                       <Box>
                         <Typography variant="body2">Reply Prediction</Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          color="text.secondary">
                           Suggest 3 follow-up questions after each response.
                         </Typography>
                       </Box>
@@ -647,9 +763,15 @@ const Settings: React.FC = () => {
                     sx={{ alignItems: 'flex-start' }}
                   />
                   {replyPredictionEnabled && (
-                    <FormControl fullWidth size="small" sx={{ mt: 1, ml: 4, width: 'calc(100% - 32px)' }}>
+                    <FormControl
+                      fullWidth
+                      size="small"
+                      sx={{ mt: 1, ml: 4, width: 'calc(100% - 32px)' }}>
                       <InputLabel>Prediction Model</InputLabel>
-                      <Select value={replyPredictionModel} label="Prediction Model" onChange={(e): void => setReplyPredictionModel(e.target.value)}>
+                      <Select
+                        value={replyPredictionModel}
+                        label="Prediction Model"
+                        onChange={(e): void => setReplyPredictionModel(e.target.value)}>
                         <MenuItem value="same">Same as active chat model</MenuItem>
                         <MenuItem value="local">Local LLM (browser model)</MenuItem>
                       </Select>
@@ -659,20 +781,27 @@ const Settings: React.FC = () => {
               </Box>
 
               <Box>
-                <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
                   Local Browser Model
                 </Typography>
-                <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+                <Typography
+                  variant="body2"
+                  sx={{ mb: 2, color: 'text.secondary' }}>
                   A small model that runs entirely on your device. No API key required.
                 </Typography>
 
-                <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                <FormControl
+                  fullWidth
+                  size="small"
+                  sx={{ mb: 2 }}>
                   <InputLabel>Model</InputLabel>
                   <Select
                     value={llmModelSelected}
                     label="Model"
-                    onChange={(e): void => setLlmModelSelected(e.target.value as 'qwen3.5-0.8b' | 'qwen3.5-2b')}
-                  >
+                    onChange={(e): void => setLlmModelSelected(e.target.value as 'qwen3.5-0.8b' | 'qwen3.5-2b')}>
                     <MenuItem value="qwen3.5-0.8b">Qwen3.5 0.8B (Recommended • ~500MB)</MenuItem>
                     <MenuItem value="qwen3.5-2b">Qwen3.5 2B (~1.5GB)</MenuItem>
                   </Select>
@@ -686,12 +815,21 @@ const Settings: React.FC = () => {
                     borderColor: 'divider',
                     bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
                     mb: 3,
-                  }}
-                >
-                  <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
-                    <Typography variant="body2" component="div">
+                  }}>
+                  <Box
+                    display="flex"
+                    justifyContent="space-between"
+                    alignItems="center"
+                    flexWrap="wrap"
+                    gap={2}>
+                    <Typography
+                      variant="body2"
+                      component="div">
                       {status === 'downloaded' ? (
-                        <Box display="flex" alignItems="center" gap={1}>
+                        <Box
+                          display="flex"
+                          alignItems="center"
+                          gap={1}>
                           <CheckCircleIcon color="success" />
                           Model Downloaded
                         </Box>
@@ -701,9 +839,16 @@ const Settings: React.FC = () => {
                         'Model not downloaded'
                       )}
                     </Typography>
-                    <Box display="flex" gap={1}>
+                    <Box
+                      display="flex"
+                      gap={1}>
                       {status === 'downloading' && (
-                        <Button variant="outlined" size="small" color="error" startIcon={<CloseIcon />} onClick={handleResetDownload}>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          color="error"
+                          startIcon={<CloseIcon />}
+                          onClick={handleResetDownload}>
                           Cancel
                         </Button>
                       )}
@@ -716,20 +861,30 @@ const Settings: React.FC = () => {
                           disabled={isDeletingModel}
                           onClick={(): void => {
                             void handleDeleteModel();
-                          }}
-                        >
+                          }}>
                           Delete
                         </Button>
                       )}
-                      <Button variant="outlined" size="small" startIcon={<DownloadIcon />} disabled={isDeletingModel} onClick={handleDownloadModel}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<DownloadIcon />}
+                        disabled={isDeletingModel}
+                        onClick={handleDownloadModel}>
                         {status === 'downloaded' ? 'Update' : 'Download'}
                       </Button>
                     </Box>
                   </Box>
                   {llmProgress && status === 'downloading' && (
                     <Box sx={{ width: '100%', mt: 2 }}>
-                      <LinearProgress variant="determinate" value={llmProgress.progress} />
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                      <LinearProgress
+                        variant="determinate"
+                        value={llmProgress.progress}
+                      />
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ mt: 1, display: 'block' }}>
                         {llmProgress.progress.toFixed(1)}% ({Math.round(llmProgress.loaded / 1024 / 1024)}MB)
                       </Typography>
                     </Box>
@@ -738,11 +893,19 @@ const Settings: React.FC = () => {
 
                 <Stack spacing={1}>
                   <FormControlLabel
-                    control={<Switch checked={llmSuggestionEnabled} onChange={(e): void => setLlmSuggestionEnabled(e.target.checked)} size="small" />}
+                    control={
+                      <Switch
+                        checked={llmSuggestionEnabled}
+                        onChange={(e): void => setLlmSuggestionEnabled(e.target.checked)}
+                        size="small"
+                      />
+                    }
                     label={
                       <Box>
                         <Typography variant="body2">Type-ahead Suggestions</Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          color="text.secondary">
                           Word prediction while you type.
                         </Typography>
                       </Box>
@@ -750,11 +913,19 @@ const Settings: React.FC = () => {
                     sx={{ alignItems: 'flex-start' }}
                   />
                   <FormControlLabel
-                    control={<Switch checked={ragEnabled} onChange={(e): void => setRagEnabled(e.target.checked)} size="small" />}
+                    control={
+                      <Switch
+                        checked={ragEnabled}
+                        onChange={(e): void => setRagEnabled(e.target.checked)}
+                        size="small"
+                      />
+                    }
                     label={
                       <Box>
                         <Typography variant="body2">Semantic Search (RAG)</Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography
+                          variant="caption"
+                          color="text.secondary">
                           Retrieves relevant older messages using local embeddings.
                         </Typography>
                       </Box>
@@ -767,10 +938,17 @@ const Settings: React.FC = () => {
           </TabPanel>
 
           {/* ── TAB 3: PROMPTS & DATA ── */}
-          <TabPanel value={activeTab} index={3}>
-            <Stack spacing={4} sx={{ width: '100%', maxWidth: 600 }}>
+          <TabPanel
+            value={activeTab}
+            index={3}>
+            <Stack
+              spacing={4}
+              sx={{ width: '100%', maxWidth: 600 }}>
               <Box>
-                <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
                   Instructions
                 </Typography>
                 <TextField
@@ -795,17 +973,33 @@ const Settings: React.FC = () => {
                   sx={{ mb: 1 }}
                   helperText={`Instructions for long-term memory scratchpad. Limit: ${SCRATCHPAD_LIMIT.toLocaleString()} chars.`}
                 />
-                <Box display="flex" justifyContent="space-between" alignItems="center">
-                  <Button size="small" variant="text" color="inherit" onClick={(): void => setScratchpadRulesInput(DEFAULT_SCRATCHPAD_RULES)}>
+                <Box
+                  display="flex"
+                  justifyContent="space-between"
+                  alignItems="center">
+                  <Button
+                    size="small"
+                    variant="text"
+                    color="inherit"
+                    onClick={(): void => setScratchpadRulesInput(DEFAULT_SCRATCHPAD_RULES)}>
                     Reset Rules
                   </Button>
-                  <Box display="flex" alignItems="center" gap={2}>
+                  <Box
+                    display="flex"
+                    alignItems="center"
+                    gap={2}>
                     {saved && (
-                      <Typography variant="body2" color="success.main">
+                      <Typography
+                        variant="body2"
+                        color="success.main">
                         Saved!
                       </Typography>
                     )}
-                    <Button variant="contained" color="primary" size="small" onClick={handleSave}>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      size="small"
+                      onClick={handleSave}>
                       Save Instructions
                     </Button>
                   </Box>
@@ -813,7 +1007,10 @@ const Settings: React.FC = () => {
               </Box>
 
               <Box>
-                <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
                   Predefined Prompts
                 </Typography>
                 <Stack spacing={2}>
@@ -823,12 +1020,17 @@ const Settings: React.FC = () => {
                       variant="outlined"
                       sx={{
                         p: 2,
-                        bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
-                      }}
-                    >
-                      <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+                        bgcolor: (theme) =>
+                          theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
+                      }}>
+                      <Box
+                        display="flex"
+                        justifyContent="space-between"
+                        alignItems="flex-start">
                         <Box>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                          <Typography
+                            variant="subtitle2"
+                            sx={{ fontWeight: 'bold' }}>
                             {prompt.name}
                           </Typography>
                           <Typography
@@ -840,8 +1042,7 @@ const Settings: React.FC = () => {
                               WebkitBoxOrient: 'vertical',
                               overflow: 'hidden',
                               color: 'text.secondary',
-                            }}
-                          >
+                            }}>
                             {prompt.content}
                           </Typography>
                         </Box>
@@ -853,8 +1054,7 @@ const Settings: React.FC = () => {
                               setPromptNameInput(prompt.name);
                               setPromptContentInput(prompt.content);
                               setShowPromptForm(true);
-                            }}
-                          >
+                            }}>
                             Edit
                           </Button>
                           <Button
@@ -864,8 +1064,7 @@ const Settings: React.FC = () => {
                               if (window.confirm(`Delete prompt "${prompt.name}"?`)) {
                                 deletePredefinedPrompt(prompt.id);
                               }
-                            }}
-                          >
+                            }}>
                             Delete
                           </Button>
                         </Box>
@@ -874,7 +1073,9 @@ const Settings: React.FC = () => {
                   ))}
 
                   {showPromptForm ? (
-                    <Paper variant="outlined" sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <Paper
+                      variant="outlined"
+                      sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <Typography variant="subtitle2">{editingPrompt ? 'Edit Prompt' : 'New Prompt'}</Typography>
                       <TextField
                         label="Name"
@@ -891,14 +1092,16 @@ const Settings: React.FC = () => {
                         value={promptContentInput}
                         onChange={(e): void => setPromptContentInput(e.target.value)}
                       />
-                      <Box display="flex" justifyContent="flex-end" gap={1}>
+                      <Box
+                        display="flex"
+                        justifyContent="flex-end"
+                        gap={1}>
                         <Button
                           size="small"
                           onClick={(): void => {
                             setShowPromptForm(false);
                             setEditingPrompt(null);
-                          }}
-                        >
+                          }}>
                           Cancel
                         </Button>
                         <Button
@@ -907,22 +1110,33 @@ const Settings: React.FC = () => {
                           disabled={!promptNameInput.trim() || !promptContentInput.trim()}
                           onClick={(): void => {
                             if (editingPrompt) {
-                              updatePredefinedPrompt({ ...editingPrompt, name: promptNameInput.trim(), content: promptContentInput.trim() });
+                              updatePredefinedPrompt({
+                                ...editingPrompt,
+                                name: promptNameInput.trim(),
+                                content: promptContentInput.trim(),
+                              });
                             } else {
-                              addPredefinedPrompt({ id: crypto.randomUUID(), name: promptNameInput.trim(), content: promptContentInput.trim() });
+                              addPredefinedPrompt({
+                                id: crypto.randomUUID(),
+                                name: promptNameInput.trim(),
+                                content: promptContentInput.trim(),
+                              });
                             }
                             setShowPromptForm(false);
                             setEditingPrompt(null);
                             setPromptNameInput('');
                             setPromptContentInput('');
-                          }}
-                        >
+                          }}>
                           {editingPrompt ? 'Save' : 'Add'}
                         </Button>
                       </Box>
                     </Paper>
                   ) : (
-                    <Button variant="outlined" startIcon={<AddIcon />} onClick={(): void => setShowPromptForm(true)} fullWidth>
+                    <Button
+                      variant="outlined"
+                      startIcon={<AddIcon />}
+                      onClick={(): void => setShowPromptForm(true)}
+                      fullWidth>
                       Add Prompt
                     </Button>
                   )}
@@ -930,15 +1144,30 @@ const Settings: React.FC = () => {
               </Box>
 
               <Box>
-                <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
+                <Typography
+                  variant="h6"
+                  gutterBottom
+                  sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
                   Data Management
                 </Typography>
                 <Stack spacing={3}>
-                  <Box display="flex" gap={2}>
-                    <Button variant="contained" color="primary" onClick={(): void => { void handleExport(); }} fullWidth>
+                  <Box
+                    display="flex"
+                    gap={2}>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={(): void => {
+                        void handleExport();
+                      }}
+                      fullWidth>
                       Export JSON
                     </Button>
-                    <Button variant="contained" color="secondary" onClick={(): void => fileInputRef.current?.click()} fullWidth>
+                    <Button
+                      variant="contained"
+                      color="secondary"
+                      onClick={(): void => fileInputRef.current?.click()}
+                      fullWidth>
                       Import JSON
                     </Button>
                     <input
@@ -950,48 +1179,101 @@ const Settings: React.FC = () => {
                     />
                   </Box>
 
-                  <Box sx={{ p: 2, borderRadius: 2, border: '1px solid', borderColor: 'divider', bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)' }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>Automatic Backup</Typography>
-                    
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      bgcolor: (theme) =>
+                        theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
+                    }}>
+                    <Typography
+                      variant="subtitle2"
+                      sx={{ fontWeight: 'bold', mb: 2 }}>
+                      Automatic Backup
+                    </Typography>
+
                     <Stack spacing={3}>
                       {/* External File Mode */}
                       <Box>
-                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Box
+                          display="flex"
+                          justifyContent="space-between"
+                          alignItems="center">
                           <Box>
                             <Typography variant="body2">External File (Recommended)</Typography>
-                            <Typography variant="caption" color="text.secondary">Save directly to a folder on your computer.</Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary">
+                              Save directly to a folder on your computer.
+                            </Typography>
                           </Box>
                           <Switch
                             checked={backupMode === 'external'}
                             disabled={!isFsSupported}
-                            onChange={(e): void => { void handleToggleAutoBackup(e.target.checked); }}
+                            onChange={(e): void => {
+                              void handleToggleAutoBackup(e.target.checked);
+                            }}
                             color="primary"
                             size="small"
                           />
                         </Box>
                         {!isFsSupported && isBrave && (
-                          <Paper sx={{ mt: 1, p: 1.5, bgcolor: 'info.main', color: 'info.contrastText', borderRadius: 1 }} elevation={0}>
-                            <Box display="flex" gap={1}>
+                          <Paper
+                            sx={{ mt: 1, p: 1.5, bgcolor: 'info.main', color: 'info.contrastText', borderRadius: 1 }}
+                            elevation={0}>
+                            <Box
+                              display="flex"
+                              gap={1}>
                               <InfoIcon fontSize="small" />
                               <Box>
-                                <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block' }}>Brave Privacy Tip</Typography>
+                                <Typography
+                                  variant="caption"
+                                  sx={{ fontWeight: 'bold', display: 'block' }}>
+                                  Brave Privacy Tip
+                                </Typography>
                                 <Typography variant="caption">
-                                  Brave disables this API by default. To enable, go to <b>brave://flags</b> and search for &quot;File System Access API&quot;, set to &quot;Enabled&quot; and relaunch.
+                                  Brave disables this API by default. To enable, go to <b>brave://flags</b> and search
+                                  for &quot;File System Access API&quot;, set to &quot;Enabled&quot; and relaunch.
                                 </Typography>
                               </Box>
                             </Box>
                           </Paper>
                         )}
                         {backupMode === 'external' && (
-                          <Stack spacing={1} sx={{ mt: 1, pl: 2, borderLeft: '2px solid', borderColor: 'primary.main' }}>
-                            <Box display="flex" justifyContent="space-between" alignItems="center">
-                              <Typography variant="caption" color="success.main">
-                                {backupStatus === 'permission_required' ? 'Authorization Required' : backupStatus === 'in-progress' ? 'Backing up...' : 'Active'}
+                          <Stack
+                            spacing={1}
+                            sx={{ mt: 1, pl: 2, borderLeft: '2px solid', borderColor: 'primary.main' }}>
+                            <Box
+                              display="flex"
+                              justifyContent="space-between"
+                              alignItems="center">
+                              <Typography
+                                variant="caption"
+                                color="success.main">
+                                {backupStatus === 'permission_required'
+                                  ? 'Authorization Required'
+                                  : backupStatus === 'in-progress'
+                                    ? 'Backing up...'
+                                    : 'Active'}
                               </Typography>
-                              <Button size="small" onClick={(): void => { void handleChangeLocation(); }}>Change Location</Button>
+                              <Button
+                                size="small"
+                                onClick={(): void => {
+                                  void handleChangeLocation();
+                                }}>
+                                Change Location
+                              </Button>
                             </Box>
                             {backupStatus === 'permission_required' && (
-                              <Button size="small" color="error" variant="contained" onClick={(): void => { void BackupService.performAutoBackup(true); }}>
+                              <Button
+                                size="small"
+                                color="error"
+                                variant="contained"
+                                onClick={(): void => {
+                                  void BackupService.performAutoBackup(true);
+                                }}>
                                 Authorize Now
                               </Button>
                             )}
@@ -1001,22 +1283,37 @@ const Settings: React.FC = () => {
 
                       {/* Internal Storage Mode */}
                       <Box>
-                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Box
+                          display="flex"
+                          justifyContent="space-between"
+                          alignItems="center">
                           <Box>
                             <Typography variant="body2">Internal Browser Storage</Typography>
-                            <Typography variant="caption" color="text.secondary">Save in a private sandboxed area. Works in Brave.</Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary">
+                              Save in a private sandboxed area. Works in Brave.
+                            </Typography>
                           </Box>
                           <Switch
                             checked={backupMode === 'internal'}
                             disabled={!isOpfsSupported}
-                            onChange={(e): void => { void handleToggleInternalBackup(e.target.checked); }}
+                            onChange={(e): void => {
+                              void handleToggleInternalBackup(e.target.checked);
+                            }}
                             color="primary"
                             size="small"
                           />
                         </Box>
                         {backupMode === 'internal' && (
                           <Box sx={{ mt: 1, pl: 2, borderLeft: '2px solid', borderColor: 'secondary.main' }}>
-                            <Button size="small" onClick={(): void => { void handleDownloadInternalBackup(); }}>Download Current Backup</Button>
+                            <Button
+                              size="small"
+                              onClick={(): void => {
+                                void handleDownloadInternalBackup();
+                              }}>
+                              Download Current Backup
+                            </Button>
                           </Box>
                         )}
                       </Box>
@@ -1025,14 +1322,26 @@ const Settings: React.FC = () => {
                       {backupMode !== 'none' && (
                         <Box sx={{ mt: 1, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
                           <Stack spacing={2}>
-                            <Box display="flex" justifyContent="space-between" alignItems="center">
-                              <Typography variant="caption" color="text.secondary">
-                                {lastBackupTime ? `Last backup: ${new Date(lastBackupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'No backup yet'}
+                            <Box
+                              display="flex"
+                              justifyContent="space-between"
+                              alignItems="center">
+                              <Typography
+                                variant="caption"
+                                color="text.secondary">
+                                {lastBackupTime
+                                  ? `Last backup: ${new Date(lastBackupTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                                  : 'No backup yet'}
                               </Typography>
                             </Box>
-                            <FormControl fullWidth size="small">
+                            <FormControl
+                              fullWidth
+                              size="small">
                               <InputLabel>Frequency</InputLabel>
-                              <Select value={backupInterval} label="Frequency" onChange={(e): void => setBackupInterval(e.target.value as number)}>
+                              <Select
+                                value={backupInterval}
+                                label="Frequency"
+                                onChange={(e): void => setBackupInterval(e.target.value as number)}>
                                 <MenuItem value={1}>1 Minute</MenuItem>
                                 <MenuItem value={5}>5 Minutes</MenuItem>
                                 <MenuItem value={30}>30 Minutes</MenuItem>
@@ -1052,7 +1361,12 @@ const Settings: React.FC = () => {
         </Box>
       </Paper>
 
-      <ImportDialog open={importDialogOpen} file={pendingImportFile} onClose={handleImportDialogClose} onComplete={handleImportComplete} />
+      <ImportDialog
+        open={importDialogOpen}
+        file={pendingImportFile}
+        onClose={handleImportDialogClose}
+        onComplete={handleImportComplete}
+      />
     </Box>
   );
 };
