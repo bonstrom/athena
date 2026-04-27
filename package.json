@@ -71,7 +71,11 @@
       "^react-router-dom$": "<rootDir>/node_modules/react-router-dom/dist/index.js",
       "^react-router$": "<rootDir>/node_modules/react-router/dist/development/index.js",
       "^react-router/dom$": "<rootDir>/node_modules/react-router/dist/development/dom-export.js",
-      "^gpt-tokenizer$": "<rootDir>/node_modules/gpt-tokenizer/cjs/main.js"
+      "^gpt-tokenizer$": "<rootDir>/node_modules/gpt-tokenizer/cjs/main.js",
+      "^react-markdown$": "<rootDir>/src/__mocks__/react-markdown.js",
+      "^remark-gfm$": "<rootDir>/src/__mocks__/remark-gfm.js",
+      "^react-syntax-highlighter$": "<rootDir>/src/__mocks__/react-syntax-highlighter.js",
+      "^react-syntax-highlighter/dist/.*$": "<rootDir>/src/__mocks__/react-syntax-highlighter-dist.js"
     },
     "coveragePathIgnorePatterns": [
       "/node_modules/",

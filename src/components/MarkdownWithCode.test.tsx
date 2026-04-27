@@ -33,38 +33,7 @@ jest.mock('react-markdown', () => ({
 
 jest.mock('remark-gfm', () => jest.fn());
 
-jest.mock('react-syntax-highlighter', () => ({
-  PrismLight: Object.assign(
-    ({ children, language }: { children?: React.ReactNode; language?: string }) => (
-      <pre data-testid="syntax-highlighter" data-language={language}>
-        {children}
-      </pre>
-    ),
-    {
-      registerLanguage: jest.fn(),
-    },
-  ),
-}));
 
-jest.mock('react-syntax-highlighter/dist/esm/styles/prism', () => ({
-  oneDark: { comment: {}, 'block-comment': {}, prolog: {} },
-  oneLight: {},
-}));
-
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/javascript', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/typescript', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/python', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/json', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/bash', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/css', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/markup', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/java', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/csharp', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/sql', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/yaml', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/markdown', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/jsx', () => ({}));
-jest.mock('react-syntax-highlighter/dist/esm/languages/prism/tsx', () => ({}));
 
 const { default: MarkdownWithCode } = jest.requireActual<typeof import('./MarkdownWithCode')>('./MarkdownWithCode');
 

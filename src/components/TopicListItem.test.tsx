@@ -109,7 +109,7 @@ describe('TopicListItem', () => {
     render(<TopicListItem topic={createTopic()} />);
 
     fireEvent.click(screen.getByLabelText('Topic options'));
-    fireEvent.click(screen.getByRole('menuitem', { name: /delete/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Delete$/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
