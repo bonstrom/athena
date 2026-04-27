@@ -1154,7 +1154,9 @@ describe('askLlm — temperature resolution', () => {
     const { orchestrateLlmLoop } = await import('../llmService');
     // Model is streaming: true, so it will call askLlmStream
     // We request 0.5, but model has forceTemperature: 1.0
-    await orchestrateLlmLoop(model, 0.5, [user('Hi')], () => {});
+    await orchestrateLlmLoop(model, 0.5, [user('Hi')], () => {
+      /* no-op */
+    });
 
     const requestInit = mockFetch.mock.calls[0][1];
     const body = JSON.parse(String(requestInit?.body)) as { temperature: number };

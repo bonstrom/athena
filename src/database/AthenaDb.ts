@@ -109,6 +109,14 @@ class AthenaDatabase extends Dexie {
       predefinedPrompts: 'id, name',
       userSettings: 'id',
     });
+
+    // Version 8: add mode index to topics for debate mode
+    this.version(8).stores({
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
+    });
   }
 }
 
@@ -140,6 +148,9 @@ export interface UserSetting {
   value: unknown;
 }
 
+export type DebateSide = 'left' | 'right';
+export type DebatePhase = 'answer' | 'review' | 'final' | 'consensus';
+
 export interface Message {
   id: string;
   topicId: string;
@@ -164,7 +175,12 @@ export interface Message {
   embedding?: number[] | null;
   summary?: string;
   rawResponse?: string;
+  // Debate fields
+  debateSide?: DebateSide;
+  debatePhase?: DebatePhase;
 }
+
+export type TopicMode = 'topic' | 'debate';
 
 export interface Topic {
   id: string;
@@ -177,6 +193,10 @@ export interface Topic {
   activeForkId?: string;
   maxContextMessages?: number;
   selectedPromptIds?: string[];
+  // Debate fields
+  mode?: TopicMode;
+  debateModelAId?: string;
+  debateModelBId?: string;
 }
 
 export const athenaDb = new AthenaDatabase();

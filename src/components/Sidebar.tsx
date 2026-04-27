@@ -1,4 +1,16 @@
-import { Box, Button, Divider, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
+import {
+  Box,
+  Button,
+  ButtonGroup,
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Menu,
+  MenuItem,
+} from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useUiStore } from '../store/UiStore';
 import { useTopicStore } from '../store/TopicStore';
@@ -9,6 +21,7 @@ import { SidebarHeader } from './SiderbarHeader';
 import { GlobalSearch } from './GlobalSearch';
 import { JSX, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import SettingsIcon from '@mui/icons-material/Settings';
 import LogoutIcon from '@mui/icons-material/Logout';
 
@@ -18,9 +31,19 @@ export const Sidebar = (): JSX.Element => {
   const { isMobile, closeDrawer } = useUiStore();
   const { createTopic } = useTopicStore();
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
+  const [newTopicMenuAnchor, setNewTopicMenuAnchor] = useState<null | HTMLElement>(null);
 
   const handleCreate = async (): Promise<void> => {
     const topic = await createTopic();
+    if (topic) {
+      void navigate(`/chat/${topic.id}`);
+      if (isMobile) closeDrawer();
+    }
+  };
+
+  const handleCreateDebate = async (): Promise<void> => {
+    setNewTopicMenuAnchor(null);
+    const topic = await createTopic('debate');
     if (topic) {
       void navigate(`/chat/${topic.id}`);
       if (isMobile) closeDrawer();
@@ -34,16 +57,56 @@ export const Sidebar = (): JSX.Element => {
       <GlobalSearch />
 
       <Box px={2} pt={0}>
-        <Button
-          variant="contained"
-          fullWidth
-          startIcon={<AddIcon />}
-          onClick={(): void => {
-            void handleCreate();
-          }}
+        <ButtonGroup variant="contained" fullWidth>
+          <Button
+            startIcon={<AddIcon />}
+            onClick={(): void => {
+              void handleCreate();
+            }}
+            sx={{ flexGrow: 1 }}
+          >
+            New Topic
+          </Button>
+          <Button
+            size="small"
+            aria-label="More topic options"
+            aria-controls={newTopicMenuAnchor ? 'new-topic-menu' : undefined}
+            aria-haspopup="true"
+            aria-expanded={newTopicMenuAnchor ? 'true' : undefined}
+            onClick={(e): void => setNewTopicMenuAnchor(e.currentTarget)}
+            sx={{ px: 0, minWidth: 'unset', width: 28, flexShrink: 0 }}
+          >
+            <ArrowDropDownIcon />
+          </Button>
+        </ButtonGroup>
+        <Menu
+          id="new-topic-menu"
+          anchorEl={newTopicMenuAnchor}
+          open={Boolean(newTopicMenuAnchor)}
+          onClose={(): void => setNewTopicMenuAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         >
-          New Topic
-        </Button>
+          <MenuItem
+            dense
+            onClick={(): void => {
+              setNewTopicMenuAnchor(null);
+              void handleCreate();
+            }}
+            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}
+          >
+            New Topic
+          </MenuItem>
+          <MenuItem
+            dense
+            onClick={(): void => {
+              void handleCreateDebate();
+            }}
+            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}
+          >
+            New Debate
+          </MenuItem>
+        </Menu>
       </Box>
 
       <Box id="sidebar-scroll-container" flexGrow={1} overflow="auto" px={1} mt={1}>

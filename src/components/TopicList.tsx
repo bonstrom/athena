@@ -76,37 +76,29 @@ export const TopicList = (): JSX.Element => {
   return (
     <>
       {isSelecting && (
-        <Box
-          display="flex"
-          alignItems="center"
-          gap={1}
-          px={2}
-          py={1}
-          bgcolor="action.selected">
-          <Typography
-            variant="body2"
-            sx={{ flexGrow: 1 }}>
+        <Box px={1} py={0.5} bgcolor="action.selected">
+          <Typography variant="body2" sx={{ textAlign: 'center', py: 0.5 }}>
             {selectionCount} selected
           </Typography>
-          {selectionCount < visibleTopics.length && (
+          <Box display="flex" alignItems="center" justifyContent="space-evenly">
+            {selectionCount < visibleTopics.length && (
+              <Button size="small" sx={{ minWidth: 0, px: 1, whiteSpace: 'nowrap' }} onClick={handleSelectAll}>
+                Select All
+              </Button>
+            )}
+            <Button size="small" sx={{ minWidth: 0, px: 1 }} onClick={clearTopicSelection}>
+              Cancel
+            </Button>
             <Button
               size="small"
-              onClick={handleSelectAll}>
-              Select All
+              color="error"
+              startIcon={<DeleteIcon />}
+              sx={{ minWidth: 0, px: 1, whiteSpace: 'nowrap' }}
+              onClick={(): void => setBulkDeleteConfirmOpen(true)}
+            >
+              Delete
             </Button>
-          )}
-          <Button
-            size="small"
-            onClick={clearTopicSelection}>
-            Clear
-          </Button>
-          <Button
-            size="small"
-            color="error"
-            startIcon={<DeleteIcon />}
-            onClick={(): void => setBulkDeleteConfirmOpen(true)}>
-            Delete
-          </Button>
+          </Box>
         </Box>
       )}
 
@@ -122,44 +114,35 @@ export const TopicList = (): JSX.Element => {
                 color: 'text.secondary',
                 lineHeight: '2.5rem',
                 bgcolor: 'transparent',
-              }}>
+              }}
+            >
               {group.label}
             </ListSubheader>
             {group.topics.map((topic) => (
-              <TopicListItem
-                key={topic.id}
-                topic={topic}
-              />
+              <TopicListItem key={topic.id} topic={topic} />
             ))}
           </React.Fragment>
         ))}
       </List>
 
-      <Box
-        p={2}
-        textAlign="center">
+      <Box p={2} textAlign="center">
         {loading ? (
           <CircularProgress size={24} />
         ) : (
           hasMoreToShow && (
-            <Button
-              onClick={increaseVisibleTopicCount}
-              variant="outlined">
+            <Button onClick={increaseVisibleTopicCount} variant="outlined">
               Load Older Topics
             </Button>
           )
         )}
       </Box>
 
-      <Dialog
-        open={bulkDeleteConfirmOpen}
-        onClose={(): void => setBulkDeleteConfirmOpen(false)}>
+      <Dialog open={bulkDeleteConfirmOpen} onClose={(): void => setBulkDeleteConfirmOpen(false)}>
         <DialogTitle>Delete {selectionCount} Topics?</DialogTitle>
 
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to delete {selectionCount} topics? All messages within these topics will also be
-            deleted. This cannot be undone.
+            Are you sure you want to delete {selectionCount} topics? All messages within these topics will also be deleted. This cannot be undone.
           </DialogContentText>
         </DialogContent>
 
@@ -170,7 +153,8 @@ export const TopicList = (): JSX.Element => {
             onClick={(): void => {
               void handleBulkDelete();
             }}
-            color="error">
+            color="error"
+          >
             Delete All
           </Button>
         </DialogActions>

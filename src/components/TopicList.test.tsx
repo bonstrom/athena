@@ -185,7 +185,7 @@ describe('TopicList', () => {
 
       expect(screen.getByText('2 selected')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     });
 
     it('shows Select All button when not all visible topics are selected', () => {
@@ -212,7 +212,7 @@ describe('TopicList', () => {
     it('Clear button calls clearTopicSelection', () => {
       const { mockClearTopicSelection } = renderWithSelection(['t1']);
 
-      fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
       expect(mockClearTopicSelection).toHaveBeenCalledTimes(1);
     });

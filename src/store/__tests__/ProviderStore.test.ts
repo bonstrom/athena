@@ -109,14 +109,15 @@ describe('ProviderStore', () => {
 
   it('removes selected model key when no models remain after deleting all providers', () => {
     const store = loadProviderStore();
-    const initialModel = store.getState().models[0];
+    const initialModel = store.getState().models[0] as UserChatModel | undefined;
 
     if (initialModel) {
       localStorage.setItem('athena_selected_model', initialModel.id);
     }
 
-    for (const provider of [...store.getState().providers]) {
-      store.getState().deleteProvider(provider.id);
+    const providerIds = store.getState().providers.map((p) => p.id);
+    for (const id of providerIds) {
+      store.getState().deleteProvider(id);
     }
 
     expect(store.getState().models).toHaveLength(0);
@@ -150,7 +151,7 @@ describe('ProviderStore', () => {
       supportsTools: true,
       supportsVision: false,
       supportsFiles: false,
-    supportsThinking: false,
+      supportsThinking: false,
       contextWindow: 8192,
       forceTemperature: null,
       enforceAlternatingRoles: false,
@@ -165,5 +166,4 @@ describe('ProviderStore', () => {
     const available = store.getState().getAvailableModels();
     expect(available.some((m) => m.id === 'custom-local-model')).toBe(true);
   });
-
 });

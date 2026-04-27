@@ -382,7 +382,7 @@ describe('Composer', () => {
       expect(screen.queryByText('Page 2')).not.toBeInTheDocument();
     });
   });
-  it('hides the temperature selection UI when forceTemperature is set', async () => {
+  it('hides the temperature selection UI when forceTemperature is set', () => {
     const forcedModel = buildModel({ forceTemperature: 1.0 });
     chatStore.selectedModel = forcedModel;
     providerStore.getAvailableModels = (): UserChatModel[] => [forcedModel];
@@ -398,7 +398,7 @@ describe('Composer', () => {
     expect(screen.queryByText('Temperature Presets')).not.toBeInTheDocument();
   });
 
-  it('shows the temperature selection UI when forceTemperature is NOT set', async () => {
+  it('shows the temperature selection UI when forceTemperature is NOT set', () => {
     const normalModel = buildModel({ forceTemperature: null });
     chatStore.selectedModel = normalModel;
     providerStore.getAvailableModels = (): UserChatModel[] => [normalModel];

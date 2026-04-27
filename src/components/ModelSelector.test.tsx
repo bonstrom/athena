@@ -9,13 +9,13 @@ jest.mock('../store/ProviderStore', () => ({
 interface ProviderStoreStateForSelector {
   getAvailableModels: () => ChatModel[];
   models: ChatModel[];
-  providers: any[];
+  providers: unknown[];
 }
 
 interface ProviderStoreStateForDefault {
   models: ChatModel[];
   getAvailableModels: () => ChatModel[];
-  providers: any[];
+  providers: unknown[];
 }
 
 type UseProviderStoreMock = jest.Mock<ProviderStoreStateForSelector> & {

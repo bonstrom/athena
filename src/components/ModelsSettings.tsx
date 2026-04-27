@@ -78,7 +78,7 @@ const ModelsSettings: React.FC = () => {
       supportsTools: model.supportsTools,
       supportsVision: model.supportsVision,
       supportsFiles: model.supportsFiles,
-      supportsThinking: model.supportsThinking ?? false,
+      supportsThinking: model.supportsThinking,
       contextWindow: model.contextWindow,
       forceTemperature: model.forceTemperature,
       enforceAlternatingRoles: model.enforceAlternatingRoles,
@@ -346,7 +346,7 @@ const ModelsSettings: React.FC = () => {
                 <Select
                   value={form.thinkingToggle ?? ''}
                   label="Thinking Mode API"
-                  onChange={(e): void => setForm((f) => ({ ...f, thinkingToggle: (e.target.value as 'enabled' | 'disabled') || null }))}
+                  onChange={(e): void => setForm((f) => ({ ...f, thinkingToggle: (e.target.value as 'enabled' | 'disabled' | '') || null }))}
                 >
                   <MenuItem value="">Default / N/A</MenuItem>
                   <MenuItem value="enabled">Enabled</MenuItem>
@@ -358,7 +358,7 @@ const ModelsSettings: React.FC = () => {
                 <Select
                   value={form.reasoningEffort ?? ''}
                   label="Reasoning Effort"
-                  onChange={(e): void => setForm((f) => ({ ...f, reasoningEffort: (e.target.value as 'high' | 'max') || null }))}
+                  onChange={(e): void => setForm((f) => ({ ...f, reasoningEffort: (e.target.value as 'high' | 'max' | '') || null }))}
                 >
                   <MenuItem value="">Default / N/A</MenuItem>
                   <MenuItem value="high">High</MenuItem>

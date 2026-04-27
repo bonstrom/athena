@@ -8,6 +8,7 @@ import { Attachment } from '../database/AthenaDb';
 import MessageList from '../components/MessageList';
 import Composer from '../components/Composer';
 import ForkTabs from '../components/ForkTabs';
+import DebateView from '../components/DebateView';
 
 const ChatView: React.FC = () => {
   const { topicId } = useParams<{ topicId: string }>();
@@ -75,32 +76,40 @@ const ChatView: React.FC = () => {
           ) : (
             <Fade key={displayTopicId} in={isVisible} timeout={{ enter: 150, exit: 0 }}>
               <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}>
-                {displayTopicId && <ForkTabs topicId={displayTopicId} />}
-                <MessageList
-                  messages={messages}
-                  maxContextMessages={maxContextMessages}
-                  suggestions={!sending ? (pendingSuggestions ?? []) : []}
-                  isSuggestionsLoading={isSuggestionsLoading && !sending && !pendingSuggestions}
-                  onSuggestionSelect={(suggestion): void => {
-                    clearSuggestions();
-                    if (!topicId) return;
-                    void sendMessageStream(suggestion, topicId);
-                  }}
-                />
+                {topic?.mode === 'debate' ? (
+                  <DebateView topic={topic} messages={messages} />
+                ) : (
+                  <>
+                    {displayTopicId && <ForkTabs topicId={displayTopicId} />}
+                    <MessageList
+                      messages={messages}
+                      maxContextMessages={maxContextMessages}
+                      suggestions={!sending ? (pendingSuggestions ?? []) : []}
+                      isSuggestionsLoading={isSuggestionsLoading && !sending && !pendingSuggestions}
+                      onSuggestionSelect={(suggestion): void => {
+                        clearSuggestions();
+                        if (!topicId) return;
+                        void sendMessageStream(suggestion, topicId);
+                      }}
+                    />
+                  </>
+                )}
               </Box>
             </Fade>
           )}
         </Box>
       </Box>
 
-      <Composer
-        sending={sending}
-        onSend={(content: string, attachments?: Attachment[]): void => {
-          if (!topicId) return;
-          void sendMessageStream(content, topicId, undefined, attachments);
-        }}
-        isMobile={isMobile}
-      />
+      {topic?.mode !== 'debate' && (
+        <Composer
+          sending={sending}
+          onSend={(content: string, attachments?: Attachment[]): void => {
+            if (!topicId) return;
+            void sendMessageStream(content, topicId, undefined, attachments);
+          }}
+          isMobile={isMobile}
+        />
+      )}
     </Box>
   );
 };

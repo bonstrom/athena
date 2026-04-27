@@ -8,10 +8,7 @@ import { getDefaultTopicNameModel } from '../../components/ModelSelector';
 let mockDbMessages: Message[] = [];
 let lastBulkAddedMessages: Message[] = [];
 
-const mockSearchSimilarMessages = jest.fn<
-  Promise<{ message: Message; score: number }[]>,
-  [string, Message[], number]
->();
+const mockSearchSimilarMessages = jest.fn<Promise<{ message: Message; score: number }[]>, [string, Message[], number]>();
 const mockAuthGetState = jest.fn();
 const mockHasAnyApiKey = jest.fn<boolean, []>();
 const mockAddNotification = jest.fn((title: string, message?: string): undefined => {
@@ -25,7 +22,7 @@ const mockTopicsDelete = jest.fn<Promise<void>, [string]>();
 const mockTopicsBulkDelete = jest.fn<Promise<void>, [string[]]>();
 const mockDbBulkAdd = jest.fn<Promise<void>, [Message[]]>();
 const mockMessagesDelete = jest.fn<Promise<number>, [Message[]]>();
-const mockMessagesAnyOfDelete = jest.fn<Promise<number>, []>();
+const _mockMessagesAnyOfDelete = jest.fn<Promise<number>, []>();
 const mockTopicsUpdate = jest.fn<Promise<number>, [string, Partial<Topic>]>();
 const mockDbTransaction = jest.fn<Promise<void>, [string, unknown[], () => Promise<void>]>();
 
@@ -42,8 +39,7 @@ jest.mock('../../store/AuthStore', () => ({
 jest.mock('../../services/embeddingService', () => ({
   embeddingService: {
     isReady: false,
-    searchSimilarMessages: (...args: [string, Message[], number]): ReturnType<typeof mockSearchSimilarMessages> =>
-      mockSearchSimilarMessages(...args),
+    searchSimilarMessages: (...args: [string, Message[], number]): ReturnType<typeof mockSearchSimilarMessages> => mockSearchSimilarMessages(...args),
   },
 }));
 
@@ -110,9 +106,7 @@ jest.mock('../../database/AthenaDb', () => ({
             }
             return Promise.resolve(mockDbMessages.filter((m) => m.topicId === topicId));
           },
-          and: (
-            predicate: (message: Message) => boolean,
-          ): { toArray: () => Promise<Message[]>; delete: () => Promise<number> } => ({
+          and: (predicate: (message: Message) => boolean): { toArray: () => Promise<Message[]>; delete: () => Promise<number> } => ({
             toArray: (): Promise<Message[]> => {
               if (field !== 'topicId') {
                 return Promise.resolve([]);
@@ -154,9 +148,7 @@ function makeTopic(overrides: Partial<Topic> = {}): Topic {
   };
 }
 
-function makeMessage(
-  overrides: Partial<Message> & { id: string; type: Message['type']; content: string; created: string },
-): Message {
+function makeMessage(overrides: Partial<Message> & { id: string; type: Message['type']; content: string; created: string }): Message {
   return {
     topicId: 'topic-1',
     forkId: 'main',
@@ -198,11 +190,9 @@ describe('TopicStore.getTopicContext', () => {
     mockMessagesDelete.mockResolvedValue(0);
     mockTopicsUpdate.mockResolvedValue(1);
     mockHasAnyApiKey.mockReturnValue(false);
-    mockDbTransaction.mockImplementation(
-      async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
-        await callback();
-      },
-    );
+    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+      await callback();
+    });
 
     const uuidSequence = ['uuid-default-1', 'uuid-default-2', 'uuid-default-3'];
     let uuidIndex = 0;
@@ -266,9 +256,7 @@ describe('TopicStore.getTopicContext', () => {
     Object.defineProperty(embeddingService, 'isReady', { value: true, configurable: true });
     mockSearchSimilarMessages.mockResolvedValue([{ message: u1, score: 0.92 }]);
 
-    const context = await useTopicStore
-      .getState()
-      .getTopicContext('topic-1', undefined, 'What did we discuss earlier?');
+    const context = await useTopicStore.getState().getTopicContext('topic-1', undefined, 'What did we discuss earlier?');
 
     expect(context[0].id).toBe('__rag_context__');
     expect(context[0].content).toContain('Relevant context retrieved from earlier in this conversation');
@@ -909,9 +897,7 @@ describe('TopicStore actions', () => {
     expect(mockTopicsUpdate).toHaveBeenCalledTimes(2);
     expect(mockTopicsUpdate.mock.calls[1][0]).toBe('t1');
     expect(mockTopicsUpdate.mock.calls[1][1]).toMatchObject({ name: 'alpha beta gamma delta epsilon zeta' });
-    expect(useTopicStore.getState().topics.find((t) => t.id === 't1')?.name).toBe(
-      'alpha beta gamma delta epsilon zeta',
-    );
+    expect(useTopicStore.getState().topics.find((t) => t.id === 't1')?.name).toBe('alpha beta gamma delta epsilon zeta');
     expect(mockAskLlm).not.toHaveBeenCalled();
   });
 
@@ -1207,9 +1193,7 @@ describe('TopicStore actions', () => {
       }),
     ];
 
-    const getTopicContextSpy = jest
-      .spyOn(useTopicStore.getState(), 'getTopicContext')
-      .mockResolvedValue(contextMessages);
+    const getTopicContextSpy = jest.spyOn(useTopicStore.getState(), 'getTopicContext').mockResolvedValue(contextMessages);
 
     const total = await useTopicStore.getState().getTopicTokenCount('token-topic');
 
