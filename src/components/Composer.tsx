@@ -45,6 +45,7 @@ import LanguageIcon from '@mui/icons-material/Language';
 import BrushIcon from '@mui/icons-material/Brush';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import MicIcon from '@mui/icons-material/Mic';
 import TopicContextDialog from './TopicContextDialog';
 import ScratchpadDialog from './ScratchpadDialog';
 import { useAuthStore } from '../store/AuthStore';
@@ -99,6 +100,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const questionRef = useRef('');
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const topicStore = useTopicStore();
   const {
     selectedModel,
@@ -147,6 +149,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [promptAnchorEl, setPromptAnchorEl] = useState<null | HTMLElement>(null);
   const [inputValue, setInputValue] = useState('');
+  const [isListening, setIsListening] = useState(false);
   const [suggestion, setSuggestion] = useState('');
   const [isSuggesting, setIsSuggesting] = useState(false);
   const suggestionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -176,6 +179,64 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const handleTempSelect = (value: number): void => {
     setTemperature(value);
     setAnchorEl(null);
+  };
+
+  const startListening = (): void => {
+    const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) return;
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event: SpeechRecognitionEvent): void => {
+      if (event.results.length > 0) {
+        const firstResult = event.results[0];
+        if (firstResult.length > 0) {
+          const transcript = firstResult[0].transcript;
+          if (transcript.trim()) {
+            onSend(transcript.trim(), []);
+          }
+        }
+      }
+      setIsListening(false);
+    };
+
+    recognition.onerror = (): void => {
+      setIsListening(false);
+    };
+
+    recognition.onend = (): void => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+  };
+
+  const stopListening = (): void => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+  };
+
+  const handleSendOrRecord = (): void => {
+    if (sending && !pendingUserQuestion) {
+      void handleStop();
+      return;
+    }
+
+    if (isMobile && !inputValue.trim() && !attachments.length) {
+      if (isListening) {
+        stopListening();
+      } else {
+        startListening();
+      }
+      return;
+    }
+
+    handleSend();
   };
 
   const handleSend = (): void => {
@@ -1638,23 +1699,55 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             }}>
             <Tooltip
               title={
-                sending && !pendingUserQuestion ? 'Stop Generation' : isMobile ? 'Send Message' : 'Send Message (Enter)'
+                sending && !pendingUserQuestion
+                  ? 'Stop Generation'
+                  : isListening
+                    ? 'Stop Voice Input'
+                    : isMobile && !inputValue.trim() && !attachments.length
+                      ? 'Start Voice Input'
+                      : isMobile
+                        ? 'Send Message'
+                        : 'Send Message (Enter)'
               }
               disableTouchListener={isMobile}>
               <span>
                 <IconButton
-                  color="primary"
-                  aria-label={sending && !pendingUserQuestion ? 'Stop Generation' : 'Send Message'}
-                  onClick={sending && !pendingUserQuestion ? handleStop : handleSend}
-                  disabled={!inputValue.trim() && !attachments.length && !sending}
+                  color={isListening ? 'error' : 'primary'}
+                  aria-label={
+                    sending && !pendingUserQuestion
+                      ? 'Stop Generation'
+                      : isListening
+                        ? 'Stop Voice Input'
+                        : isMobile && !inputValue.trim() && !attachments.length
+                          ? 'Start Voice Input'
+                          : 'Send Message'
+                  }
+                  onClick={handleSendOrRecord}
+                  disabled={!inputValue.trim() && !attachments.length && !sending && !isMobile}
                   sx={{
                     width: 52,
                     height: 52,
                     '&.Mui-disabled': {
                       backgroundColor: 'transparent',
                     },
+                    ...(isListening
+                      ? {
+                          animation: 'pulse 1.5s ease-in-out infinite',
+                          '@keyframes pulse': {
+                            '0%': { opacity: 1 },
+                            '50%': { opacity: 0.5 },
+                            '100%': { opacity: 1 },
+                          },
+                        }
+                      : {}),
                   }}>
-                  {sending && !pendingUserQuestion ? <StopCircleIcon /> : <SendIcon />}
+                  {sending && !pendingUserQuestion ? (
+                    <StopCircleIcon />
+                  ) : isMobile && !inputValue.trim() && !attachments.length ? (
+                    <MicIcon />
+                  ) : (
+                    <SendIcon />
+                  )}
                 </IconButton>
               </span>
             </Tooltip>

@@ -181,6 +181,46 @@ class MockFileReader {
   }
 }
 
+interface MockRecognition {
+  start: jest.Mock;
+  stop: jest.Mock;
+  abort: jest.Mock;
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+}
+
+function createMockRecognitionEvent(transcript: string): SpeechRecognitionEvent {
+  const alternative: SpeechRecognitionAlternative = { transcript, confidence: 1 };
+
+  const result = {
+    isFinal: true as const,
+    length: 1,
+    item: (_index: number): SpeechRecognitionAlternative => alternative,
+    0: alternative,
+    [Symbol.iterator]: function* (): IterableIterator<SpeechRecognitionAlternative> {
+      yield alternative;
+    },
+  };
+
+  const results = {
+    length: 1,
+    item: (_index: number): SpeechRecognitionResult => result as unknown as SpeechRecognitionResult,
+    0: result,
+    [Symbol.iterator]: function* (): IterableIterator<SpeechRecognitionResult> {
+      yield result as unknown as SpeechRecognitionResult;
+    },
+  };
+
+  return {
+    resultIndex: 0,
+    results: results as unknown as SpeechRecognitionResultList,
+  } as SpeechRecognitionEvent;
+}
+
 describe('Composer', () => {
   let authStore: AuthStoreSlice;
   let providerStore: ProviderStoreSlice;
@@ -189,11 +229,37 @@ describe('Composer', () => {
   let notificationStore: NotificationStoreSlice;
   let onSend: jest.MockedFunction<OnSendHandler>;
   let consoleErrorSpy: jest.SpyInstance<void, Parameters<typeof console.error>>;
+  let mockRecognition: MockRecognition;
 
   beforeEach(() => {
     jest.clearAllMocks();
 
     let uuidCounter = 0;
+
+    mockRecognition = {
+      start: jest.fn(),
+      stop: jest.fn(),
+      abort: jest.fn(),
+      continuous: false,
+      interimResults: false,
+      lang: '',
+      onresult: null,
+      onerror: null,
+      onend: null,
+    };
+
+    const MockSpeechRecognition = jest.fn((): MockRecognition => mockRecognition);
+
+    Object.defineProperty(window, 'SpeechRecognition', {
+      value: MockSpeechRecognition,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, 'webkitSpeechRecognition', {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
 
     Object.defineProperty(globalThis, 'crypto', {
       value: { randomUUID: jest.fn((): string => `generated-uuid-${++uuidCounter}`) },
@@ -414,5 +480,89 @@ describe('Composer', () => {
 
     // Verify "Temperature Presets" is in the document
     expect(screen.getByText('Temperature Presets')).toBeInTheDocument();
+  });
+
+  it('shows MicIcon and is enabled on mobile with empty input', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    const micButton = screen.getByRole('button', { name: 'Start Voice Input' });
+    expect(micButton).toBeInTheDocument();
+    expect(micButton).not.toBeDisabled();
+  });
+
+  it('starts speech recognition when mic button is clicked on mobile', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    expect(mockRecognition.start).toHaveBeenCalledTimes(1);
+    expect(mockRecognition.continuous).toBe(false);
+    expect(mockRecognition.interimResults).toBe(false);
+    expect(mockRecognition.lang).toBe('en-US');
+  });
+
+  it('auto-sends transcript on speech recognition result', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    const handler = mockRecognition.onresult;
+    expect(handler).not.toBeNull();
+
+    const event = createMockRecognitionEvent('Hello world');
+    if (handler) {
+      handler(event);
+    }
+
+    expect(onSend).toHaveBeenCalledWith('Hello world', []);
+  });
+
+  it('does not send empty transcript', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    const handler = mockRecognition.onresult;
+    expect(handler).not.toBeNull();
+
+    const event = createMockRecognitionEvent('   ');
+    if (handler) {
+      handler(event);
+    }
+
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('stops speech recognition when mic button is clicked while listening', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    // Start listening
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+    expect(mockRecognition.start).toHaveBeenCalledTimes(1);
+
+    // Click again to stop — button now shows "Stop Voice Input"
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Voice Input' }));
+
+    expect(mockRecognition.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows SendIcon on mobile when input has text', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.change(screen.getByPlaceholderText('Message...'), { target: { value: 'Hello' } });
+
+    const sendButton = screen.getByRole('button', { name: 'Send Message' });
+    expect(sendButton).toBeInTheDocument();
+    expect(sendButton).not.toBeDisabled();
+
+    fireEvent.click(sendButton);
+    expect(onSend).toHaveBeenCalledWith('Hello', []);
+  });
+
+  it('keeps send button disabled on desktop with empty input', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    const sendButton = screen.getByRole('button', { name: 'Send Message' });
+    expect(sendButton).toBeDisabled();
   });
 });
