@@ -38,6 +38,7 @@ import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
 import { useProviderStore } from '../store/ProviderStore';
 import { getApiKey as getProviderApiKey } from '../types/provider';
 import { USD_TO_SEK, DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from '../constants';
+import { ENGLISH_VOICES } from '../constants/voices';
 import ThemeSelector from '../components/ThemeSelector';
 import ImportDialog from '../components/ImportDialog';
 import { ProviderCard, AddProviderCard } from '../components/ProviderCard';
@@ -115,6 +116,10 @@ const Settings: React.FC = () => {
     setDefaultMaxContextMessages,
     showCameraButton,
     setShowCameraButton,
+    ttsEnabled,
+    ttsVoiceId,
+    setTtsEnabled,
+    setTtsVoiceId,
   } = useAuthStore();
 
   const { providers } = useProviderStore();
@@ -511,6 +516,46 @@ const Settings: React.FC = () => {
                     </Select>
                   </FormControl>
                 </Stack>
+              </Box>
+
+              <Box>
+                <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
+                  Speech
+                </Typography>
+                {!providers.some((p) => p.id === 'builtin-minimax' && p.apiKeyEncrypted) ? (
+                  <Typography variant="body2" color="text.secondary">
+                    Configure a MiniMax API key in the Providers tab to enable text-to-speech.
+                  </Typography>
+                ) : (
+                  <Stack spacing={2}>
+                    <FormControlLabel
+                      control={<Switch checked={ttsEnabled} onChange={(e): void => setTtsEnabled(e.target.checked)} size="small" />}
+                      label={
+                        <Box>
+                          <Typography variant="body2">Auto-read responses</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Reads assistant messages aloud as they arrive.
+                          </Typography>
+                        </Box>
+                      }
+                      sx={{ alignItems: 'flex-start' }}
+                    />
+                    <FormControl fullWidth size="small" disabled={!ttsEnabled}>
+                      <InputLabel>Voice</InputLabel>
+                      <Select
+                        value={ttsVoiceId}
+                        label="Voice"
+                        onChange={(e): void => setTtsVoiceId(e.target.value)}
+                      >
+                        {ENGLISH_VOICES.map((voice) => (
+                          <MenuItem key={voice.id} value={voice.id}>
+                            {voice.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Stack>
+                )}
               </Box>
 
               <Box display="flex" justifyContent="flex-end" alignItems="center" gap={2}>

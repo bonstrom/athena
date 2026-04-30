@@ -39,7 +39,9 @@ import { Message } from '../database/AthenaDb';
 import { useNotificationStore } from '../store/NotificationStore';
 import { useTopicStore } from '../store/TopicStore';
 import { useUiStore } from '../store/UiStore';
+import { speakText } from '../services/mediaService';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -78,6 +80,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const [infoAnchorEl, setInfoAnchorEl] = useState<null | HTMLElement>(null);
   const [isExpanded, setIsExpanded] = useState(() => messageTruncateChars === 0 || message.content.length <= messageTruncateChars);
   const [expandedImage, setExpandedImage] = useState<{ url: string; name: string; data: string } | null>(null);
+  const [speaking, setSpeaking] = useState(false);
 
   const isAssistant = message.type === 'assistant';
   const isLong = messageTruncateChars > 0 && message.content.length > messageTruncateChars;
@@ -444,6 +447,34 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 </IconButton>
               </Tooltip>
             </Box>
+
+            {isAssistant && message.content.trim() && (
+              <Tooltip title="Read aloud" disableTouchListener={isMobile}>
+                <IconButton
+                  size="small"
+                  aria-label="Read aloud"
+                  disabled={speaking}
+                  onClick={(): void => {
+                    setSpeaking(true);
+                    void speakText(message.content.trim())
+                      .catch(() => {
+                        /* playback errors are non-critical */
+                      })
+                      .finally(() => {
+                        setSpeaking(false);
+                      });
+                  }}
+                  sx={{
+                    color: 'text.secondary',
+                    '&:hover': {
+                      bgcolor: (theme): string => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
+                    },
+                  }}
+                >
+                  {speaking ? <CircularProgress size={14} color="inherit" /> : <VolumeUpIcon fontSize="small" />}
+                </IconButton>
+              </Tooltip>
+            )}
 
             {/* More Actions Menu */}
             <Box>

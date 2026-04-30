@@ -1,5 +1,6 @@
 import { Attachment } from '../database/AthenaDb';
-import { generateMinimaxImage, generateMinimaxMusic } from './llmService';
+import { generateMinimaxImage, generateMinimaxMusic, generateMinimaxSpeech } from './llmService';
+import { useAuthStore } from '../store/AuthStore';
 
 export interface MediaResult {
   content: string;
@@ -101,4 +102,78 @@ export async function generateMusic(prompt: string, signal?: AbortSignal): Promi
   };
 
   return { content: 'Here is your generated music:', attachment, model: 'music-2.6' };
+}
+
+function hexToDataUrl(hex: string, mimeType: string): string {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length / 2; i++) {
+    bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+  }
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  const base64 = btoa(binary);
+  return `data:${mimeType};base64,${base64}`;
+}
+
+let currentSpeechAbortController: AbortController | null = null;
+let currentSpeechAudio: HTMLAudioElement | null = null;
+
+export function stopSpeech(): void {
+  if (currentSpeechAbortController) {
+    currentSpeechAbortController.abort();
+    currentSpeechAbortController = null;
+  }
+  if (currentSpeechAudio) {
+    currentSpeechAudio.pause();
+    currentSpeechAudio.removeAttribute('src');
+    currentSpeechAudio.load();
+    currentSpeechAudio = null;
+  }
+}
+
+export async function generateSpeech(text: string, signal?: AbortSignal): Promise<string> {
+  const { ttsVoiceId } = useAuthStore.getState();
+  const { audioHex } = await generateMinimaxSpeech(text, ttsVoiceId, signal);
+  return hexToDataUrl(audioHex, 'audio/mpeg');
+}
+
+export async function speakText(text: string, _signal?: AbortSignal): Promise<void> {
+  stopSpeech();
+
+  const abortController = new AbortController();
+  currentSpeechAbortController = abortController;
+
+  try {
+    const url = await generateSpeech(text, abortController.signal);
+
+    if (abortController.signal.aborted) return;
+
+    const audio = new Audio(url);
+    currentSpeechAudio = audio;
+
+    const cleanup = (): void => {
+      if (currentSpeechAudio === audio) {
+        currentSpeechAudio = null;
+      }
+      if (currentSpeechAbortController === abortController) {
+        currentSpeechAbortController = null;
+      }
+    };
+
+    audio.addEventListener('ended', cleanup);
+    audio.addEventListener('error', cleanup);
+
+    await audio.play();
+  } catch (err: unknown) {
+    if (err instanceof Error && (err.name === 'AbortError' || err.message.includes('play() request was interrupted'))) {
+      return;
+    }
+    throw err;
+  } finally {
+    if (currentSpeechAbortController === abortController) {
+      currentSpeechAbortController = null;
+    }
+  }
 }

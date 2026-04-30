@@ -65,6 +65,7 @@ interface AuthStoreSlice {
 interface ProviderStoreSlice {
   getAvailableModels: () => UserChatModel[];
   getProviderForModel: (model: UserChatModel) => LlmProvider | undefined;
+  providers: LlmProvider[];
 }
 
 interface PendingUserQuestionState {
@@ -235,6 +236,7 @@ describe('Composer', () => {
     providerStore = {
       getAvailableModels: (): UserChatModel[] => [selectedModel],
       getProviderForModel: (): LlmProvider => selectedProvider,
+      providers: [],
     };
 
     chatStore = {

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { useNavigate } from 'react-router-dom';
 import { PredefinedPrompt, athenaDb } from '../database/AthenaDb';
 import { DEFAULT_SCRATCHPAD_RULES } from '../constants';
+import { DEFAULT_VOICE_ID } from '../constants/voices';
 
 interface AuthState {
   userName: string;
@@ -28,8 +29,12 @@ interface AuthState {
   summaryModel: string;
   defaultMaxContextMessages: number;
   showCameraButton: 'auto' | 'always' | 'never';
+  ttsEnabled: boolean;
+  ttsVoiceId: string;
   setDefaultMaxContextMessages: (count: number) => void;
   setShowCameraButton: (value: 'auto' | 'always' | 'never') => void;
+  setTtsEnabled: (enabled: boolean) => void;
+  setTtsVoiceId: (voiceId: string) => void;
   setAskUserEnabled: (enabled: boolean) => void;
   setAiSummaryEnabled: (enabled: boolean) => void;
   setSummaryModel: (model: string) => void;
@@ -86,6 +91,8 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedSummaryModel = localStorage.getItem('summaryModel') ?? 'same';
   const storedDefaultMaxContextMessages = Number(localStorage.getItem('defaultMaxContextMessages') ?? '10');
   const storedShowCameraButton = (localStorage.getItem('showCameraButton') as 'auto' | 'always' | 'never' | null) ?? 'auto';
+  const storedTtsEnabled = localStorage.getItem('ttsEnabled') === 'true';
+  const storedTtsVoiceId = localStorage.getItem('ttsVoiceId') ?? DEFAULT_VOICE_ID;
 
   return {
     userName: userName,
@@ -113,6 +120,8 @@ export const useAuthStore = create<AuthState>((set) => {
     summaryModel: storedSummaryModel,
     defaultMaxContextMessages: storedDefaultMaxContextMessages,
     showCameraButton: storedShowCameraButton,
+    ttsEnabled: storedTtsEnabled,
+    ttsVoiceId: storedTtsVoiceId,
     clearAuth: (): void => {
       localStorage.removeItem('userName');
       localStorage.removeItem('customInstructions');
@@ -135,6 +144,8 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem('summaryModel');
       localStorage.removeItem('defaultMaxContextMessages');
       localStorage.removeItem('showCameraButton');
+      localStorage.removeItem('ttsEnabled');
+      localStorage.removeItem('ttsVoiceId');
       void athenaDb.predefinedPrompts.clear().catch((err: unknown) => {
         console.error('Failed to clear predefined prompts:', err);
       });
@@ -158,11 +169,21 @@ export const useAuthStore = create<AuthState>((set) => {
         aiSummaryEnabled: false,
         defaultMaxContextMessages: 10,
         showCameraButton: 'auto',
+        ttsEnabled: false,
+        ttsVoiceId: DEFAULT_VOICE_ID,
       });
     },
     setShowCameraButton: (value: 'auto' | 'always' | 'never'): void => {
       localStorage.setItem('showCameraButton', value);
       set({ showCameraButton: value });
+    },
+    setTtsEnabled: (enabled: boolean): void => {
+      localStorage.setItem('ttsEnabled', String(enabled));
+      set({ ttsEnabled: enabled });
+    },
+    setTtsVoiceId: (voiceId: string): void => {
+      localStorage.setItem('ttsVoiceId', voiceId);
+      set({ ttsVoiceId: voiceId });
     },
     setDefaultMaxContextMessages: (count: number): void => {
       localStorage.setItem('defaultMaxContextMessages', String(count));

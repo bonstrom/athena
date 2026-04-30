@@ -21,6 +21,7 @@ import {
   alpha,
   Chip,
   InputAdornment,
+  InputLabel,
   CircularProgress,
 } from '@mui/material';
 import { Theme } from '@mui/material/styles';
@@ -43,6 +44,7 @@ import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import LanguageIcon from '@mui/icons-material/Language';
 import BrushIcon from '@mui/icons-material/Brush';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
+import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import TopicContextDialog from './TopicContextDialog';
 import ScratchpadDialog from './ScratchpadDialog';
 import { useAuthStore } from '../store/AuthStore';
@@ -51,6 +53,7 @@ import { llmSuggestionService } from '../services/llmSuggestionService';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
 import { USD_TO_SEK } from '../constants';
+import { ENGLISH_VOICES } from '../constants/voices';
 import { Attachment } from '../database/AthenaDb';
 import { useNotificationStore } from '../store/NotificationStore';
 
@@ -120,8 +123,12 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     llmModelDownloadStatus,
     defaultMaxContextMessages,
     showCameraButton,
+    ttsEnabled,
+    setTtsEnabled,
+    ttsVoiceId,
+    setTtsVoiceId,
   } = useAuthStore();
-  const { getAvailableModels, getProviderForModel } = useProviderStore();
+  const { getAvailableModels, getProviderForModel, providers } = useProviderStore();
   const {
     webSearchEnabled,
     setWebSearchEnabled,
@@ -149,6 +156,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const availableModels = getAvailableModels();
   // Provider of the currently selected model (for capability-based UI)
   const selectedProvider = getProviderForModel(selectedModel);
+  const hasMiniMaxKey = providers.some((p) => p.id === 'builtin-minimax' && !!p.apiKeyEncrypted);
   const openTempMenu = Boolean(anchorEl);
 
   useEffect(() => {
@@ -533,7 +541,94 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
           <Divider sx={{ my: 1, opacity: 0.6 }} />
 
           {selectedModel.forceTemperature == null && (
-            <>
+            <ListSubheader
+              sx={{
+                lineHeight: '36px',
+                fontWeight: 'bold',
+                fontSize: '0.75rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                bgcolor: 'transparent',
+              }}>
+              Temperature Presets
+              {!selectedModel.supportsTemperature && (
+                <Box
+                  component="span"
+                  sx={{ color: 'error.main', ml: 1 }}>
+                  (Not supported)
+                </Box>
+              )}
+            </ListSubheader>
+          )}
+          {selectedModel.forceTemperature == null && (
+            <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
+              <MuiToggleButtonGroup
+                value={temperature}
+                exclusive
+                onChange={(_, value: number | null): void => {
+                  if (value !== null) handleTempSelect(value);
+                }}
+                disabled={!selectedModel.supportsTemperature}
+                size="small"
+                fullWidth
+                sx={{
+                  bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                  p: 0.5,
+                  '& .MuiToggleButton-root': {
+                    border: 'none',
+                    borderRadius: '8px !important',
+                    mx: 0.25,
+                    px: 1,
+                    py: 0.5,
+                    fontSize: '0.75rem',
+                    fontWeight: 'bold',
+                    color: 'text.secondary',
+                    '&.Mui-selected': {
+                      bgcolor: 'primary.main',
+                      color: 'primary.contrastText',
+                      '&:hover': {
+                        bgcolor: 'primary.dark',
+                      },
+                    },
+                  },
+                }}>
+                <MuiToggleButton value={0.0}>
+                  <Tooltip
+                    title="Coding / Math (0.0)"
+                    disableTouchListener={isMobile}>
+                    <CodeIcon fontSize="small" />
+                  </Tooltip>
+                </MuiToggleButton>
+                <MuiToggleButton value={1.0}>
+                  <Tooltip
+                    title="Data Analysis (1.0)"
+                    disableTouchListener={isMobile}>
+                    <AnalyticsIcon fontSize="small" />
+                  </Tooltip>
+                </MuiToggleButton>
+                <MuiToggleButton value={1.3}>
+                  <Tooltip
+                    title="General Chat (1.3)"
+                    disableTouchListener={isMobile}>
+                    <ForumIcon fontSize="small" />
+                  </Tooltip>
+                </MuiToggleButton>
+                <MuiToggleButton value={1.5}>
+                  <Tooltip
+                    title="Creative Writing (1.5)"
+                    disableTouchListener={isMobile}>
+                    <AutoAwesomeIcon fontSize="small" />
+                  </Tooltip>
+                </MuiToggleButton>
+              </MuiToggleButtonGroup>
+            </Box>
+          )}
+          {selectedModel.forceTemperature == null && (
+            <Divider sx={{ my: 1, opacity: 0.6 }} />
+          )}
+
+          {selectedModel.supportsThinking &&
+            (selectedModel.thinkingToggle == null || selectedModel.reasoningEffort == null) && (
               <ListSubheader
                 sx={{
                   lineHeight: '36px',
@@ -543,203 +638,120 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   letterSpacing: '0.05em',
                   bgcolor: 'transparent',
                 }}>
-                Temperature Presets
-                {!selectedModel.supportsTemperature && (
-                  <Box
-                    component="span"
-                    sx={{ color: 'error.main', ml: 1 }}>
-                    (Not supported)
-                  </Box>
-                )}
+                Thinking & Effort
               </ListSubheader>
-
-              <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
-                <MuiToggleButtonGroup
-                  value={temperature}
-                  exclusive
-                  onChange={(_, value: number | null): void => {
-                    if (value !== null) handleTempSelect(value);
-                  }}
-                  disabled={!selectedModel.supportsTemperature}
-                  size="small"
-                  fullWidth
-                  sx={{
-                    bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
-                    p: 0.5,
-                    '& .MuiToggleButton-root': {
-                      border: 'none',
-                      borderRadius: '8px !important',
-                      mx: 0.25,
-                      px: 1,
-                      py: 0.5,
-                      fontSize: '0.75rem',
-                      fontWeight: 'bold',
-                      color: 'text.secondary',
-                      '&.Mui-selected': {
-                        bgcolor: 'primary.main',
-                        color: 'primary.contrastText',
-                        '&:hover': {
-                          bgcolor: 'primary.dark',
-                        },
-                      },
-                    },
-                  }}>
-                  <MuiToggleButton value={0.0}>
-                    <Tooltip
-                      title="Coding / Math (0.0)"
-                      disableTouchListener={isMobile}>
-                      <CodeIcon fontSize="small" />
-                    </Tooltip>
-                  </MuiToggleButton>
-                  <MuiToggleButton value={1.0}>
-                    <Tooltip
-                      title="Data Analysis (1.0)"
-                      disableTouchListener={isMobile}>
-                      <AnalyticsIcon fontSize="small" />
-                    </Tooltip>
-                  </MuiToggleButton>
-                  <MuiToggleButton value={1.3}>
-                    <Tooltip
-                      title="General Chat (1.3)"
-                      disableTouchListener={isMobile}>
-                      <ForumIcon fontSize="small" />
-                    </Tooltip>
-                  </MuiToggleButton>
-                  <MuiToggleButton value={1.5}>
-                    <Tooltip
-                      title="Creative Writing (1.5)"
-                      disableTouchListener={isMobile}>
-                      <AutoAwesomeIcon fontSize="small" />
-                    </Tooltip>
-                  </MuiToggleButton>
-                </MuiToggleButtonGroup>
-              </Box>
-              <Divider sx={{ my: 1, opacity: 0.6 }} />
-            </>
-          )}
-
+            )}
           {selectedModel.supportsThinking &&
             (selectedModel.thinkingToggle == null || selectedModel.reasoningEffort == null) && (
-              <>
-                <ListSubheader
-                  sx={{
-                    lineHeight: '36px',
-                    fontWeight: 'bold',
-                    fontSize: '0.75rem',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    bgcolor: 'transparent',
-                  }}>
-                  Thinking & Effort
-                </ListSubheader>
-
-                <Box
-                  sx={{
-                    px: 2,
-                    pb: 1,
-                    display: 'grid',
-                    gridTemplateColumns:
-                      selectedModel.thinkingToggle == null && selectedModel.reasoningEffort == null ? '1fr 1fr' : '1fr',
-                    gap: 1,
-                  }}>
-                  {selectedModel.thinkingToggle == null && (
-                    <MuiToggleButtonGroup
-                      value={useChatStore.getState().thinkingMode ?? 'enabled'}
-                      exclusive
-                      onChange={(_, value: 'enabled' | 'disabled' | null): void => {
-                        if (value !== null) useChatStore.getState().setThinkingMode(value);
-                      }}
-                      size="small"
-                      fullWidth
-                      sx={{
-                        bgcolor: (theme) =>
-                          theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                        p: 0.5,
-                        '& .MuiToggleButton-root': {
-                          border: 'none',
-                          borderRadius: '8px !important',
-                          mx: 0.25,
-                          px: 1,
-                          py: 0.5,
-                          fontSize: '0.75rem',
-                          fontWeight: 'bold',
-                          color: 'text.secondary',
-                          '&.Mui-selected': {
-                            bgcolor: 'primary.main',
-                            color: 'primary.contrastText',
-                            '&:hover': {
-                              bgcolor: 'primary.dark',
-                            },
+              <Box
+                sx={{
+                  px: 2,
+                  pb: 1,
+                  display: 'grid',
+                  gridTemplateColumns:
+                    selectedModel.thinkingToggle == null && selectedModel.reasoningEffort == null ? '1fr 1fr' : '1fr',
+                  gap: 1,
+                }}>
+                {selectedModel.thinkingToggle == null && (
+                  <MuiToggleButtonGroup
+                    value={useChatStore.getState().thinkingMode ?? 'enabled'}
+                    exclusive
+                    onChange={(_, value: 'enabled' | 'disabled' | null): void => {
+                      if (value !== null) useChatStore.getState().setThinkingMode(value);
+                    }}
+                    size="small"
+                    fullWidth
+                    sx={{
+                      bgcolor: (theme) =>
+                        theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                      p: 0.5,
+                      '& .MuiToggleButton-root': {
+                        border: 'none',
+                        borderRadius: '8px !important',
+                        mx: 0.25,
+                        px: 1,
+                        py: 0.5,
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        color: 'text.secondary',
+                        '&.Mui-selected': {
+                          bgcolor: 'primary.main',
+                          color: 'primary.contrastText',
+                          '&:hover': {
+                            bgcolor: 'primary.dark',
                           },
                         },
-                      }}>
-                      <MuiToggleButton value="enabled">
-                        <Tooltip
-                          title="Thinking Enabled"
-                          disableTouchListener={isMobile}>
-                          <span>On</span>
-                        </Tooltip>
-                      </MuiToggleButton>
-                      <MuiToggleButton value="disabled">
-                        <Tooltip
-                          title="Thinking Disabled"
-                          disableTouchListener={isMobile}>
-                          <span>Off</span>
-                        </Tooltip>
-                      </MuiToggleButton>
-                    </MuiToggleButtonGroup>
-                  )}
+                      },
+                    }}>
+                    <MuiToggleButton value="enabled">
+                      <Tooltip
+                        title="Thinking Enabled"
+                        disableTouchListener={isMobile}>
+                        <span>On</span>
+                      </Tooltip>
+                    </MuiToggleButton>
+                    <MuiToggleButton value="disabled">
+                      <Tooltip
+                        title="Thinking Disabled"
+                        disableTouchListener={isMobile}>
+                        <span>Off</span>
+                      </Tooltip>
+                    </MuiToggleButton>
+                  </MuiToggleButtonGroup>
+                )}
 
-                  {selectedModel.reasoningEffort == null && (
-                    <MuiToggleButtonGroup
-                      value={useChatStore.getState().reasoningEffort ?? 'high'}
-                      exclusive
-                      onChange={(_, value: 'high' | 'max' | null): void => {
-                        if (value !== null) useChatStore.getState().setReasoningEffort(value);
-                      }}
-                      size="small"
-                      fullWidth
-                      sx={{
-                        bgcolor: (theme) =>
-                          theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                        p: 0.5,
-                        '& .MuiToggleButton-root': {
-                          border: 'none',
-                          borderRadius: '8px !important',
-                          mx: 0.25,
-                          px: 1,
-                          py: 0.5,
-                          fontSize: '0.75rem',
-                          fontWeight: 'bold',
-                          color: 'text.secondary',
-                          '&.Mui-selected': {
-                            bgcolor: 'primary.main',
-                            color: 'primary.contrastText',
-                            '&:hover': {
-                              bgcolor: 'primary.dark',
-                            },
+                {selectedModel.reasoningEffort == null && (
+                  <MuiToggleButtonGroup
+                    value={useChatStore.getState().reasoningEffort ?? 'high'}
+                    exclusive
+                    onChange={(_, value: 'high' | 'max' | null): void => {
+                      if (value !== null) useChatStore.getState().setReasoningEffort(value);
+                    }}
+                    size="small"
+                    fullWidth
+                    sx={{
+                      bgcolor: (theme) =>
+                        theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                      p: 0.5,
+                      '& .MuiToggleButton-root': {
+                        border: 'none',
+                        borderRadius: '8px !important',
+                        mx: 0.25,
+                        px: 1,
+                        py: 0.5,
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        color: 'text.secondary',
+                        '&.Mui-selected': {
+                          bgcolor: 'primary.main',
+                          color: 'primary.contrastText',
+                          '&:hover': {
+                            bgcolor: 'primary.dark',
                           },
                         },
-                      }}>
-                      <MuiToggleButton value="high">
-                        <Tooltip
-                          title="High Effort (Default)"
-                          disableTouchListener={isMobile}>
-                          <span>High</span>
-                        </Tooltip>
-                      </MuiToggleButton>
-                      <MuiToggleButton value="max">
-                        <Tooltip
-                          title="Max Effort (Better reasoning)"
-                          disableTouchListener={isMobile}>
-                          <span>Max</span>
-                        </Tooltip>
-                      </MuiToggleButton>
-                    </MuiToggleButtonGroup>
-                  )}
-                </Box>
-                <Divider sx={{ my: 1, opacity: 0.6 }} />
-              </>
+                      },
+                    }}>
+                    <MuiToggleButton value="high">
+                      <Tooltip
+                        title="High Effort (Default)"
+                        disableTouchListener={isMobile}>
+                        <span>High</span>
+                      </Tooltip>
+                    </MuiToggleButton>
+                    <MuiToggleButton value="max">
+                      <Tooltip
+                        title="Max Effort (Better reasoning)"
+                        disableTouchListener={isMobile}>
+                        <span>Max</span>
+                      </Tooltip>
+                    </MuiToggleButton>
+                  </MuiToggleButtonGroup>
+                )}
+              </Box>
+            )}
+          {selectedModel.supportsThinking &&
+            (selectedModel.thinkingToggle == null || selectedModel.reasoningEffort == null) && (
+              <Divider sx={{ my: 1, opacity: 0.6 }} />
             )}
 
           {!isMobile && (
@@ -1067,6 +1079,41 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </Tooltip>
             )}
           </Box>
+
+          {ttsEnabled && (
+            <Divider sx={{ my: 1, opacity: 0.6 }} />
+          )}
+          {ttsEnabled && (
+            <ListSubheader
+              sx={{
+                lineHeight: '36px',
+                fontWeight: 'bold',
+                fontSize: '0.75rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                bgcolor: 'transparent',
+              }}>
+              TTS Voice
+            </ListSubheader>
+          )}
+          {ttsEnabled && (
+            <Box sx={{ px: 2, pb: 2 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Voice</InputLabel>
+                <Select
+                  value={ttsVoiceId}
+                  label="Voice"
+                  onChange={(e: SelectChangeEvent): void => setTtsVoiceId(e.target.value)}
+                >
+                  {ENGLISH_VOICES.map((voice) => (
+                    <MenuItem key={voice.id} value={voice.id}>
+                      {voice.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+          )}
         </Menu>
 
         {currentTopicId && showContextDialog && (
@@ -1273,6 +1320,22 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     disabled={sending}
                     aria-label="Camera">
                     <PhotoCameraIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+
+            {hasMiniMaxKey && (
+              <Tooltip
+                title={`Text-to-Speech (${ttsEnabled ? 'Enabled' : 'Disabled'})`}
+                disableTouchListener={isMobile}>
+                <span>
+                  <IconButton
+                    onClick={(): void => setTtsEnabled(!ttsEnabled)}
+                    disabled={sending}
+                    color={ttsEnabled ? 'primary' : 'default'}
+                    aria-label="Toggle Text-to-Speech">
+                    <VolumeUpIcon />
                   </IconButton>
                 </span>
               </Tooltip>

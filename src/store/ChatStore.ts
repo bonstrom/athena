@@ -15,7 +15,7 @@ import {
   LlmTool,
   LlmDebugPayload,
 } from '../services/llmService';
-import { generateImage, generateMusic } from '../services/mediaService';
+import { generateImage, generateMusic, speakText } from '../services/mediaService';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { Message, Attachment } from '../database/AthenaDb';
 import { athenaDb } from '../database/AthenaDb';
@@ -1097,6 +1097,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           }),
         },
       }));
+
+      // Fire-and-forget TTS if enabled
+      if (useAuthStore.getState().ttsEnabled && assistantPatch.content.trim()) {
+        const ttsText = assistantPatch.content.trim();
+        void speakText(ttsText).catch((err: unknown) => {
+          console.warn('TTS playback failed:', err);
+        });
+      }
 
       // Fire-and-forget summarization for user and assistant messages
       if (!isRetry) {

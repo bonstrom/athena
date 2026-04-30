@@ -764,6 +764,71 @@ export async function generateMinimaxMusic(prompt: string, lyrics = '', signal?:
   return { audioHex };
 }
 
+export async function generateMinimaxSpeech(
+  text: string,
+  voiceId: string,
+  signal?: AbortSignal,
+): Promise<{ audioHex: string }> {
+  const url = 'https://api.minimax.io/v1/t2a_v2';
+  const minimaxProvider = useProviderStore.getState().providers.find((p) => p.id === 'builtin-minimax');
+  const key = minimaxProvider ? getProviderApiKey(minimaxProvider) : '';
+
+  if (!key) {
+    throw new Error('MiniMax API key not configured');
+  }
+
+  const payload = {
+    model: 'speech-2.8-turbo',
+    text,
+    stream: false,
+    voice_setting: {
+      voice_id: voiceId,
+      speed: 1,
+      vol: 1,
+      pitch: 0,
+    },
+    audio_setting: {
+      sample_rate: 32000,
+      bitrate: 128000,
+      format: 'mp3',
+      channel: 1,
+    },
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => 'Unknown error');
+    throw new Error(`Minimax Speech Error ${res.status}: ${text}`);
+  }
+
+  const data = (await res.json()) as {
+    base_resp?: { status_code: number; status_msg?: string };
+    data?: { audio?: string };
+    audio?: string;
+  };
+
+  if (data.base_resp?.status_code !== 0) {
+    throw new Error(`Minimax Speech API Error: ${String(data.base_resp?.status_msg ?? 'Unknown error')}`);
+  }
+
+  const audioHex = data.data?.audio ?? data.audio;
+
+  if (!audioHex) {
+    throw new Error(`Minimax Speech Error: No audio data found. Data: ${JSON.stringify(data)}`);
+  }
+
+  return { audioHex };
+}
+
 // ── Think-tag stream splitter ──────────────────────────────────────────────────
 /**
  * Wraps onToken/onReasoning callbacks to intercept inline think tags (e.g. <think>…</think>)
