@@ -196,7 +196,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         if (firstResult.length > 0) {
           const transcript = firstResult[0].transcript;
           if (transcript.trim()) {
-            setInputValue(transcript.trim());
+            setInputValue('');
+            setAttachments([]);
+            onSend(transcript.trim(), []);
           }
         }
       }
@@ -1703,7 +1705,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   ? 'Stop Generation'
                   : isListening
                     ? 'Stop Voice Input'
-                    : !inputValue.trim() && !attachments.length
+                    : !inputValue.trim() && !attachments.length && isMobile
                       ? 'Start Voice Input'
                       : 'Send Message (Enter)'
               }
@@ -1716,12 +1718,12 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                       ? 'Stop Generation'
                       : isListening
                         ? 'Stop Voice Input'
-                        : !inputValue.trim() && !attachments.length
+                        : !inputValue.trim() && !attachments.length && isMobile
                           ? 'Start Voice Input'
                           : 'Send Message'
                   }
                   onClick={handleSendOrRecord}
-                  disabled={!inputValue.trim() && !attachments.length && !sending}
+                  disabled={!sending && !inputValue.trim() && !attachments.length && !isMobile && !isListening}
                   sx={{
                     width: 52,
                     height: 52,
@@ -1741,7 +1743,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   }}>
                   {sending && !pendingUserQuestion ? (
                     <StopCircleIcon />
-                  ) : !inputValue.trim() && !attachments.length ? (
+                  ) : !inputValue.trim() && !attachments.length && isMobile ? (
                     <MicIcon />
                   ) : (
                     <SendIcon />

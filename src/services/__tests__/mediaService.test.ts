@@ -1,3 +1,7 @@
+jest.mock('../../store/AuthStore', () => ({
+  useAuthStore: { getState: (): Record<string, unknown> => ({ ttsVoiceId: 'test-voice' }) },
+}));
+
 import { generateMinimaxImage, generateMinimaxMusic } from '../llmService';
 import { generateImage, generateMusic } from '../mediaService';
 
