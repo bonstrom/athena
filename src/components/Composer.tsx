@@ -188,7 +188,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     const recognition = new SpeechRecognitionCtor();
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.lang = 'en-US';
+    recognition.lang = navigator.language || 'en-US';
 
     recognition.onresult = (event: SpeechRecognitionEvent): void => {
       if (event.results.length > 0) {
@@ -196,7 +196,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
         if (firstResult.length > 0) {
           const transcript = firstResult[0].transcript;
           if (transcript.trim()) {
-            onSend(transcript.trim(), []);
+            setInputValue(transcript.trim());
           }
         }
       }
@@ -227,7 +227,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       return;
     }
 
-    if (isMobile && !inputValue.trim() && !attachments.length) {
+    if (!inputValue.trim() && !attachments.length) {
       if (isListening) {
         stopListening();
       } else {
@@ -1703,11 +1703,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   ? 'Stop Generation'
                   : isListening
                     ? 'Stop Voice Input'
-                    : isMobile && !inputValue.trim() && !attachments.length
+                    : !inputValue.trim() && !attachments.length
                       ? 'Start Voice Input'
-                      : isMobile
-                        ? 'Send Message'
-                        : 'Send Message (Enter)'
+                      : 'Send Message (Enter)'
               }
               disableTouchListener={isMobile}>
               <span>
@@ -1718,12 +1716,12 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                       ? 'Stop Generation'
                       : isListening
                         ? 'Stop Voice Input'
-                        : isMobile && !inputValue.trim() && !attachments.length
+                        : !inputValue.trim() && !attachments.length
                           ? 'Start Voice Input'
                           : 'Send Message'
                   }
                   onClick={handleSendOrRecord}
-                  disabled={!inputValue.trim() && !attachments.length && !sending && !isMobile}
+                  disabled={!inputValue.trim() && !attachments.length && !sending}
                   sx={{
                     width: 52,
                     height: 52,
@@ -1743,7 +1741,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   }}>
                   {sending && !pendingUserQuestion ? (
                     <StopCircleIcon />
-                  ) : isMobile && !inputValue.trim() && !attachments.length ? (
+                  ) : !inputValue.trim() && !attachments.length ? (
                     <MicIcon />
                   ) : (
                     <SendIcon />

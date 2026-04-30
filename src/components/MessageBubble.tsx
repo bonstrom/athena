@@ -40,6 +40,7 @@ import { useNotificationStore } from '../store/NotificationStore';
 import { useTopicStore } from '../store/TopicStore';
 import { useUiStore } from '../store/UiStore';
 import { speakText } from '../services/mediaService';
+import { stripMarkdown } from '../utils/stripMarkdown';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 
@@ -456,7 +457,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   disabled={speaking}
                   onClick={(): void => {
                     setSpeaking(true);
-                    void speakText(message.content.trim())
+                    void speakText(stripMarkdown(message.content.trim()))
                       .catch(() => {
                         /* playback errors are non-critical */
                       })

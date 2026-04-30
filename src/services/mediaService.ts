@@ -104,21 +104,9 @@ export async function generateMusic(prompt: string, signal?: AbortSignal): Promi
   return { content: 'Here is your generated music:', attachment, model: 'music-2.6' };
 }
 
-function hexToDataUrl(hex: string, mimeType: string): string {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length / 2; i++) {
-    bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
-  }
-  let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  const base64 = btoa(binary);
-  return `data:${mimeType};base64,${base64}`;
-}
-
 let currentSpeechAbortController: AbortController | null = null;
 let currentSpeechAudio: HTMLAudioElement | null = null;
+let currentSpeechObjectUrl: string | null = null;
 
 export function stopSpeech(): void {
   if (currentSpeechAbortController) {
@@ -131,12 +119,23 @@ export function stopSpeech(): void {
     currentSpeechAudio.load();
     currentSpeechAudio = null;
   }
+  if (currentSpeechObjectUrl) {
+    URL.revokeObjectURL(currentSpeechObjectUrl);
+    currentSpeechObjectUrl = null;
+  }
 }
 
 export async function generateSpeech(text: string, signal?: AbortSignal): Promise<string> {
   const { ttsVoiceId } = useAuthStore.getState();
   const { audioHex } = await generateMinimaxSpeech(text, ttsVoiceId, signal);
-  return hexToDataUrl(audioHex, 'audio/mpeg');
+
+  const bytes = new Uint8Array(audioHex.length / 2);
+  for (let i = 0; i < audioHex.length / 2; i++) {
+    bytes[i] = parseInt(audioHex.substring(i * 2, i * 2 + 2), 16);
+  }
+
+  const audioBlob = new Blob([bytes], { type: 'audio/mpeg' });
+  return URL.createObjectURL(audioBlob);
 }
 
 export async function speakText(text: string, _signal?: AbortSignal): Promise<void> {
@@ -147,13 +146,22 @@ export async function speakText(text: string, _signal?: AbortSignal): Promise<vo
 
   try {
     const url = await generateSpeech(text, abortController.signal);
+    currentSpeechObjectUrl = url;
 
-    if (abortController.signal.aborted) return;
+    if (abortController.signal.aborted) {
+      URL.revokeObjectURL(url);
+      currentSpeechObjectUrl = null;
+      return;
+    }
 
     const audio = new Audio(url);
     currentSpeechAudio = audio;
 
     const cleanup = (): void => {
+      URL.revokeObjectURL(url);
+      if (currentSpeechObjectUrl === url) {
+        currentSpeechObjectUrl = null;
+      }
       if (currentSpeechAudio === audio) {
         currentSpeechAudio = null;
       }

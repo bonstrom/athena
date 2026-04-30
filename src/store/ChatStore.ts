@@ -16,6 +16,7 @@ import {
   LlmDebugPayload,
 } from '../services/llmService';
 import { generateImage, generateMusic, speakText } from '../services/mediaService';
+import { stripMarkdown } from '../utils/stripMarkdown';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { Message, Attachment } from '../database/AthenaDb';
 import { athenaDb } from '../database/AthenaDb';
@@ -1100,7 +1101,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       // Fire-and-forget TTS if enabled
       if (useAuthStore.getState().ttsEnabled && assistantPatch.content.trim()) {
-        const ttsText = assistantPatch.content.trim();
+        const ttsText = stripMarkdown(assistantPatch.content.trim());
         void speakText(ttsText).catch((err: unknown) => {
           console.warn('TTS playback failed:', err);
         });
