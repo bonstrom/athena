@@ -1,9 +1,9 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { ThemeProvider } from '@mui/material/styles';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import MessageBubble from './MessageBubble';
 import { Message } from '../database/AthenaDb';
 import theme from '../theme';
+import { createMessage, renderWithTheme } from '../testUtils';
 import { useAuthStore } from '../store/AuthStore';
 import { useChatStore } from '../store/ChatStore';
 import { useNotificationStore } from '../store/NotificationStore';
@@ -89,28 +89,6 @@ const mockUseProviderStore = useProviderStore as unknown as ProviderStoreHookMoc
 
 let mockWriteText: jest.MockedFunction<(text: string) => Promise<void>>;
 
-function createMessage(overrides?: Partial<Message>): Message {
-  return {
-    id: 'message-1',
-    topicId: 'topic-1',
-    forkId: 'main',
-    type: 'assistant',
-    content: 'Hello from assistant',
-    model: 'model-1',
-    isDeleted: false,
-    includeInContext: false,
-    created: '2026-04-18T10:00:00.000Z',
-    failed: false,
-    promptTokens: 10,
-    completionTokens: 20,
-    totalCost: 0.123,
-    ...overrides,
-  };
-}
-
-function renderWithTheme(ui: React.ReactElement): ReturnType<typeof render> {
-  return render(<ThemeProvider theme={theme}>{ui}</ThemeProvider>);
-}
 
 function createChatStore(overrides?: Partial<ChatStoreSlice>): ChatStoreSlice {
   return {
@@ -170,14 +148,14 @@ describe('MessageBubble', () => {
   });
 
   it('renders message content with resolved model label', () => {
-    renderWithTheme(<MessageBubble message={createMessage()} />);
+    renderWithTheme(<MessageBubble message={createMessage({ type: 'assistant', content: 'Hello from assistant', model: 'model-1' })} />);
 
     expect(screen.getByText('Model One')).toBeInTheDocument();
     expect(screen.getByTestId('markdown-content')).toHaveTextContent('Hello from assistant');
   });
 
   it('copies message content to clipboard from the copy action', async () => {
-    renderWithTheme(<MessageBubble message={createMessage()} />);
+    renderWithTheme(<MessageBubble message={createMessage({ content: 'Hello from assistant' })} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy message' }));
 
@@ -191,7 +169,7 @@ describe('MessageBubble', () => {
 
     mockUseChatStore.mockReturnValue(createChatStore({ updateMessageContext }));
 
-    renderWithTheme(<MessageBubble message={createMessage({ includeInContext: false })} />);
+    renderWithTheme(<MessageBubble message={createMessage({ id: 'message-1', includeInContext: false })} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Pin to context' }));
 
@@ -208,6 +186,8 @@ describe('MessageBubble', () => {
     renderWithTheme(
       <MessageBubble
         message={createMessage({
+          id: 'message-1',
+          topicId: 'topic-1',
           failed: true,
           content: 'Please retry this',
         })}
@@ -246,7 +226,7 @@ describe('MessageBubble', () => {
 
     mockUseChatStore.mockReturnValue(createChatStore({ deleteMessage }));
 
-    renderWithTheme(<MessageBubble message={createMessage()} />);
+    renderWithTheme(<MessageBubble message={createMessage({ id: 'message-1' })} />);
 
     // Find and click delete button
     const deleteBtn = screen.queryByRole('button', { name: /delete/i });
@@ -275,6 +255,7 @@ describe('MessageBubble', () => {
     renderWithTheme(
       <MessageBubble
         message={createMessage({
+          id: 'message-1',
           includeInContext: true,
         })}
       />,
@@ -314,7 +295,7 @@ describe('MessageBubble', () => {
       forkTopic,
     });
 
-    renderWithTheme(<MessageBubble message={createMessage()} />);
+    renderWithTheme(<MessageBubble message={createMessage({ id: 'message-1', topicId: 'topic-1' })} />);
 
     const forkBtn = screen.queryByRole('button', { name: /fork/i });
     if (forkBtn) {
@@ -372,7 +353,7 @@ describe('MessageBubble', () => {
       isMobile: false,
     });
 
-    renderWithTheme(<MessageBubble message={createMessage({ id: 'message-1' })} />);
+    renderWithTheme(<MessageBubble message={createMessage({ id: 'message-1', type: 'assistant' })} />);
 
     const stopButton = screen.getByRole('button', { name: 'Stop speech' });
     expect(stopButton).toBeInTheDocument();

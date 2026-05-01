@@ -10,6 +10,7 @@ import { llmSuggestionService } from '../services/llmSuggestionService';
 import { UserChatModel, LlmProvider } from '../types/provider';
 import { Topic, Message, Attachment } from '../database/AthenaDb';
 import { useUiStore } from '../store/UiStore';
+import { createUserChatModel, createLlmProvider, createTopic as createTopicFixture } from '../testUtils';
 
 jest.mock('./TopicContextDialog', () => {
   function MockTopicContextDialog(): JSX.Element {
@@ -121,57 +122,6 @@ const mockUseNotificationStore = useNotificationStore as unknown as jest.Mock<No
 const mockUseUiStore = useUiStore as unknown as jest.Mock & { getState: jest.Mock };
 const mockSuggestionService = llmSuggestionService as jest.Mocked<typeof llmSuggestionService>;
 
-function buildModel(overrides: Partial<UserChatModel> = {}): UserChatModel {
-  return {
-    id: 'builtin-kimi-k2-turbo',
-    label: 'Kimi K2 Turbo Preview',
-    apiModelId: 'kimi-k2-turbo-preview',
-    providerId: 'builtin-moonshot',
-    input: 1.15,
-    cachedInput: 0.12,
-    output: 4.5,
-    streaming: true,
-    supportsTemperature: true,
-    supportsTools: true,
-    supportsVision: true,
-    supportsFiles: true,
-    supportsThinking: false,
-    contextWindow: 128000,
-    forceTemperature: null,
-    enforceAlternatingRoles: false,
-    maxTokensOverride: null,
-    isBuiltIn: true,
-    enabled: true,
-    ...overrides,
-  };
-}
-
-function buildProvider(overrides: Partial<LlmProvider> = {}): LlmProvider {
-  return {
-    id: 'builtin-moonshot',
-    name: 'Moonshot',
-    baseUrl: 'https://api.moonshot.ai/v1/chat/completions',
-    messageFormat: 'openai',
-    apiKeyEncrypted: 'encrypted-key',
-    supportsWebSearch: true,
-    requiresReasoningFallback: true,
-    payloadOverridesJson: '',
-    isBuiltIn: true,
-    ...overrides,
-  };
-}
-
-function createTopic(overrides: Partial<Topic> = {}): Topic {
-  return {
-    id: 'topic-1',
-    name: 'Topic 1',
-    createdOn: '2026-04-20T00:00:00.000Z',
-    updatedOn: '2026-04-20T00:00:00.000Z',
-    isDeleted: false,
-    selectedPromptIds: [],
-    ...overrides,
-  };
-}
 
 class MockFileReader {
   public result: string | ArrayBuffer | null = null;
@@ -301,8 +251,30 @@ describe('Composer', () => {
       showCameraButton: 'never',
     };
 
-    const selectedModel = buildModel();
-    const selectedProvider = buildProvider();
+    const selectedModel = createUserChatModel({
+      id: 'builtin-kimi-k2-turbo',
+      label: 'Kimi K2 Turbo Preview',
+      apiModelId: 'kimi-k2-turbo-preview',
+      providerId: 'builtin-moonshot',
+      input: 1.15,
+      cachedInput: 0.12,
+      output: 4.5,
+      streaming: true,
+      supportsTemperature: true,
+      supportsTools: true,
+      supportsVision: true,
+      supportsFiles: true,
+      isBuiltIn: true,
+    });
+    const selectedProvider = createLlmProvider({
+      id: 'builtin-moonshot',
+      name: 'Moonshot',
+      baseUrl: 'https://api.moonshot.ai/v1/chat/completions',
+      apiKeyEncrypted: 'encrypted-key',
+      supportsWebSearch: true,
+      requiresReasoningFallback: true,
+      isBuiltIn: true,
+    });
 
     providerStore = {
       getAvailableModels: (): UserChatModel[] => [selectedModel],
@@ -329,7 +301,7 @@ describe('Composer', () => {
     };
 
     topicStore = {
-      topics: [createTopic()],
+      topics: [createTopicFixture({ id: 'topic-1', name: 'Topic 1' })],
       updateTopicMaxContextMessages: jest.fn((): Promise<void> => Promise.resolve()),
       updateTopicPromptSelection: jest.fn((): Promise<void> => Promise.resolve()),
     };
@@ -459,7 +431,7 @@ describe('Composer', () => {
     });
   });
   it('hides the temperature selection UI when forceTemperature is set', () => {
-    const forcedModel = buildModel({ forceTemperature: 1.0 });
+    const forcedModel = createUserChatModel({ forceTemperature: 1.0 });
     chatStore.selectedModel = forcedModel;
     providerStore.getAvailableModels = (): UserChatModel[] => [forcedModel];
     mockUseChatStore.mockReturnValue(chatStore);
@@ -475,7 +447,7 @@ describe('Composer', () => {
   });
 
   it('shows the temperature selection UI when forceTemperature is NOT set', () => {
-    const normalModel = buildModel({ forceTemperature: null });
+    const normalModel = createUserChatModel({ forceTemperature: null });
     chatStore.selectedModel = normalModel;
     providerStore.getAvailableModels = (): UserChatModel[] => [normalModel];
     mockUseChatStore.mockReturnValue(chatStore);

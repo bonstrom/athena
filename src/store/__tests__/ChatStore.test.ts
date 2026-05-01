@@ -1,39 +1,10 @@
 import type { Message, Topic } from '../../database/AthenaDb';
 import type { LlmProvider, UserChatModel } from '../../types/provider';
+import { createUserChatModel, createLlmProvider, createTopic, createMessage } from '../../testUtils';
 
-const testModel: UserChatModel = {
-  id: 'test-model',
-  label: 'Test Model',
-  apiModelId: 'test-model',
-  providerId: 'test-provider',
-  input: 0,
-  cachedInput: 0,
-  output: 0,
-  streaming: false,
-  supportsTemperature: true,
-  supportsTools: true,
-  supportsVision: false,
-  supportsFiles: false,
-    supportsThinking: false,
-  contextWindow: 128000,
-  forceTemperature: null,
-  enforceAlternatingRoles: false,
-  maxTokensOverride: null,
-  isBuiltIn: false,
-  enabled: true,
-};
+const mockDefaultModel: UserChatModel = createUserChatModel();
 
-const testProvider: LlmProvider = {
-  id: 'test-provider',
-  name: 'Test Provider',
-  baseUrl: 'https://example.com/v1/chat/completions',
-  messageFormat: 'openai',
-  apiKeyEncrypted: '',
-  supportsWebSearch: false,
-  requiresReasoningFallback: false,
-  payloadOverridesJson: '',
-  isBuiltIn: false,
-};
+const testProvider: LlmProvider = createLlmProvider();
 
 interface TopicStoreState {
   topics: Topic[];
@@ -99,24 +70,44 @@ const mockDbBulkDelete = jest.fn<Promise<void>, [string[]]>();
 const mockDbTransaction = jest.fn<Promise<void>, [string, unknown, () => Promise<void>]>();
 const mockDbSortBy = jest.fn<Promise<Message[]>, [string]>();
 
-const baseTopic: Topic = {
+const mockBaseTopic: Topic = createTopic({
   id: 'topic-1',
   name: 'Topic',
   createdOn: '2024-01-01T00:00:00.000Z',
   updatedOn: '2024-01-01T00:00:00.000Z',
-  isDeleted: false,
   activeForkId: 'main',
-};
+});
 
 jest.mock('../../components/ModelSelector', () => ({
   calculateCostSEK: jest.fn(() => 1),
-  getDefaultModel: jest.fn(() => testModel),
+  getDefaultModel: jest.fn(
+    (): UserChatModel => ({
+      id: 'test-model',
+      label: 'Test Model',
+      apiModelId: 'test-model',
+      providerId: 'test-provider',
+      input: 0,
+      cachedInput: 0,
+      output: 0,
+      streaming: false,
+      supportsTemperature: true,
+      supportsTools: true,
+      supportsVision: false,
+      supportsFiles: false,
+      supportsThinking: false,
+      contextWindow: 128000,
+      forceTemperature: null,
+      enforceAlternatingRoles: false,
+      maxTokensOverride: null,
+      isBuiltIn: false,
+    }),
+  ),
 }));
 
 jest.mock('../../store/TopicStore', () => ({
   useTopicStore: {
     getState: (): TopicStoreState => ({
-      topics: [baseTopic],
+      topics: [mockBaseTopic],
       getTopicContext: (...args: [string, string | undefined, string | undefined]) => mockGetTopicContext(...args),
       updateTopicTimestamp: (...args: [string]) => mockUpdateTopicTimestamp(...args),
       generateTopicName: (...args: [string, string]) => mockGenerateTopicName(...args),
@@ -231,7 +222,7 @@ describe('ChatStore', () => {
     });
 
     mockProviderGetState.mockReturnValue({
-      models: [testModel],
+      models: [mockDefaultModel],
       getProviderForModel: () => testProvider,
     });
 
@@ -264,7 +255,7 @@ describe('ChatStore', () => {
       imageGenerationEnabled: false,
       musicGenerationEnabled: false,
       webSearchEnabled: false,
-      selectedModel: testModel,
+      selectedModel: mockDefaultModel,
     });
   });
 
@@ -982,10 +973,9 @@ describe('ChatStore', () => {
     const localStorageMock = { setItem: jest.fn() };
     Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock, writable: true });
 
-    useChatStore.getState().setSelectedModel(testModel);
-
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('athena_selected_model', testModel.id);
-    expect(useChatStore.getState().selectedModel).toEqual(testModel);
+    useChatStore.getState().setSelectedModel(mockDefaultModel);
+    expect(localStorageMock.setItem).toHaveBeenCalledWith('athena_selected_model', mockDefaultModel.id);
+    expect(useChatStore.getState().selectedModel).toEqual(mockDefaultModel);
   });
 
   it('setTemperature updates the temperature setting', () => {

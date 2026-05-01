@@ -3,6 +3,7 @@ import ForkTabs from './ForkTabs';
 import { useTopicStore } from '../store/TopicStore';
 import { useChatStore } from '../store/ChatStore';
 import { useAuthStore } from '../store/AuthStore';
+import { createTopic } from '../testUtils';
 
 interface TopicLike {
   id: string;
@@ -48,17 +49,6 @@ const mockUseTopicStore = useTopicStore as unknown as UseTopicStoreMock;
 const mockUseChatStore = useChatStore as unknown as jest.Mock<ChatStoreSlice>;
 const mockUseAuthStore = useAuthStore as unknown as jest.Mock<AuthStoreSlice>;
 
-function makeTopic(): TopicLike {
-  return {
-    id: 'topic-1',
-    activeForkId: 'main',
-    forks: [
-      { id: 'main', name: 'Main', createdOn: '2026-01-01T00:00:00.000Z' },
-      { id: 'branch-2', name: 'Branch 2', createdOn: '2026-01-02T00:00:00.000Z' },
-    ],
-  };
-}
-
 describe('ForkTabs', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -80,7 +70,13 @@ describe('ForkTabs', () => {
   });
 
   it('switches fork and fetches messages when another tab is selected', async () => {
-    const topic = makeTopic();
+    const topic = createTopic({
+      activeForkId: 'main',
+      forks: [
+        { id: 'main', name: 'Main', createdOn: '2026-01-01T00:00:00.000Z' },
+        { id: 'branch-2', name: 'Branch 2', createdOn: '2026-01-02T00:00:00.000Z' },
+      ],
+    });
     mockUseTopicStore.mockReturnValue({
       topics: [topic],
       switchFork: (...args: [string, string]): Promise<void> => mockSwitchFork(...args),
@@ -99,7 +95,13 @@ describe('ForkTabs', () => {
   });
 
   it('deletes a fork after confirmation and refreshes active fork messages', async () => {
-    const topic = makeTopic();
+    const topic = createTopic({
+      activeForkId: 'main',
+      forks: [
+        { id: 'main', name: 'Main', createdOn: '2026-01-01T00:00:00.000Z' },
+        { id: 'branch-2', name: 'Branch 2', createdOn: '2026-01-02T00:00:00.000Z' },
+      ],
+    });
     mockUseTopicStore.mockReturnValue({
       topics: [topic],
       switchFork: (...args: [string, string]): Promise<void> => mockSwitchFork(...args),

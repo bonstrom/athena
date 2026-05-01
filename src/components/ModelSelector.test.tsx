@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import ModelSelector, { getDefaultModel, getDefaultTopicNameModel, getAvailableModels, getModelByApiId, ChatModel } from './ModelSelector';
 import { useProviderStore } from '../store/ProviderStore';
+import { createUserChatModel } from '../testUtils';
 
 jest.mock('../store/ProviderStore', () => ({
   useProviderStore: Object.assign(jest.fn(), { getState: jest.fn() }),
@@ -24,30 +25,6 @@ type UseProviderStoreMock = jest.Mock<ProviderStoreStateForSelector> & {
 
 const mockUseProviderStore = useProviderStore as unknown as UseProviderStoreMock;
 
-function buildModel(overrides: Partial<ChatModel>): ChatModel {
-  return {
-    id: 'builtin-gpt-5-4-nano',
-    label: 'GPT-5.4 Nano',
-    apiModelId: 'gpt-5.4-nano',
-    providerId: 'builtin-openai',
-    input: 0.2,
-    cachedInput: 0.02,
-    output: 1.25,
-    streaming: true,
-    supportsTemperature: false,
-    supportsTools: true,
-    supportsVision: true,
-    supportsFiles: true,
-    supportsThinking: false,
-    contextWindow: 128_000,
-    forceTemperature: null,
-    enforceAlternatingRoles: false,
-    maxTokensOverride: null,
-    isBuiltIn: true,
-    enabled: true,
-    ...overrides,
-  };
-}
 
 describe('ModelSelector', () => {
   beforeEach(() => {
@@ -56,13 +33,13 @@ describe('ModelSelector', () => {
   });
 
   it('restores the same saved model across repeated getDefaultModel calls (reopen simulation)', () => {
-    const kimi25 = buildModel({
+    const kimi25 = createUserChatModel({
       id: 'builtin-kimi-k2-5',
       label: 'Kimi 2.5',
       apiModelId: 'kimi-k2.5',
       providerId: 'builtin-moonshot',
     });
-    const turbo = buildModel({
+    const turbo = createUserChatModel({
       id: 'builtin-kimi-k2-turbo',
       label: 'Kimi K2 Turbo Preview',
       apiModelId: 'kimi-k2-turbo-preview',
@@ -86,13 +63,13 @@ describe('ModelSelector', () => {
   });
 
   it('auto-corrects invalid selected model to first available option and avoids out-of-range warning', async () => {
-    const invalidSelected = buildModel({
+    const invalidSelected = createUserChatModel({
       id: 'builtin-kimi-k2-5',
       label: 'Kimi 2.5',
       apiModelId: 'kimi-k2.5',
       providerId: 'builtin-moonshot',
     });
-    const available = buildModel({
+    const available = createUserChatModel({
       id: 'builtin-kimi-k2-turbo',
       label: 'Kimi K2 Turbo Preview',
       apiModelId: 'kimi-k2-turbo-preview',
@@ -127,7 +104,7 @@ describe('ModelSelector', () => {
 
   it('renders empty state message when no models available', (): void => {
     const onChange = jest.fn<undefined, [ChatModel]>();
-    const selected = buildModel({ id: 'selected-model', label: 'Selected model', apiModelId: 'selected-model' });
+    const selected = createUserChatModel({ id: 'selected-model', label: 'Selected model', apiModelId: 'selected-model' });
 
     mockUseProviderStore.mockReturnValue({
       getAvailableModels: (): ChatModel[] => [],
@@ -141,12 +118,12 @@ describe('ModelSelector', () => {
   });
 
   it('returns first available model when saved model is not available', (): void => {
-    const gpt4 = buildModel({
+    const gpt4 = createUserChatModel({
       id: 'builtin-gpt-4',
       label: 'GPT-4',
       apiModelId: 'gpt-4',
     });
-    const gpt35 = buildModel({
+    const gpt35 = createUserChatModel({
       id: 'builtin-gpt-35',
       label: 'GPT-3.5',
       apiModelId: 'gpt-3.5',
@@ -167,7 +144,7 @@ describe('ModelSelector', () => {
   });
 
   it('falls back to models[0] when no available models exist', (): void => {
-    const gpt4 = buildModel({
+    const gpt4 = createUserChatModel({
       id: 'builtin-gpt-4',
       label: 'GPT-4',
       apiModelId: 'gpt-4',
@@ -185,12 +162,12 @@ describe('ModelSelector', () => {
   });
 
   it('getDefaultTopicNameModel prefers nano or flash models', (): void => {
-    const nano = buildModel({
+    const nano = createUserChatModel({
       id: 'builtin-gpt-nano',
       label: 'GPT Nano',
       apiModelId: 'gpt-nano',
     });
-    const standard = buildModel({
+    const standard = createUserChatModel({
       id: 'builtin-gpt-4',
       label: 'GPT-4',
       apiModelId: 'gpt-4',
@@ -207,7 +184,7 @@ describe('ModelSelector', () => {
   });
 
   it('getDefaultTopicNameModel falls back to first available when no nano/flash exists', (): void => {
-    const gpt4 = buildModel({
+    const gpt4 = createUserChatModel({
       id: 'builtin-gpt-4',
       label: 'GPT-4',
       apiModelId: 'gpt-4',
@@ -224,7 +201,7 @@ describe('ModelSelector', () => {
   });
 
   it('getAvailableModels delegates to provider store', (): void => {
-    const gpt4 = buildModel({
+    const gpt4 = createUserChatModel({
       id: 'builtin-gpt-4',
       label: 'GPT-4',
       apiModelId: 'gpt-4',
@@ -242,7 +219,7 @@ describe('ModelSelector', () => {
   });
 
   it('getModelByApiId finds model by API ID', (): void => {
-    const gpt4 = buildModel({
+    const gpt4 = createUserChatModel({
       id: 'builtin-gpt-4',
       label: 'GPT-4',
       apiModelId: 'gpt-4',
@@ -259,7 +236,7 @@ describe('ModelSelector', () => {
   });
 
   it('getModelByApiId returns undefined for non-existent API ID', (): void => {
-    const gpt4 = buildModel({
+    const gpt4 = createUserChatModel({
       id: 'builtin-gpt-4',
       label: 'GPT-4',
       apiModelId: 'gpt-4',

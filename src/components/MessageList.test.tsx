@@ -4,7 +4,8 @@ import { useParams } from 'react-router-dom';
 import { useScrollToBottom, useSticky } from 'react-scroll-to-bottom';
 import { useChatStore } from '../store/ChatStore';
 import { useUiStore } from '../store/UiStore';
-import { Message } from '../database/AthenaDb';
+import type { Message } from '../database/AthenaDb';
+import { createMessage } from '../testUtils';
 
 jest.mock('react-scroll-to-bottom', () => ({
   __esModule: true,
@@ -49,24 +50,6 @@ const mockUseSticky = useSticky as unknown as jest.Mock<[boolean]>;
 const mockUseChatStore = useChatStore as unknown as jest.Mock<{ visibleMessageCount: number; increaseVisibleMessageCount: () => void }>;
 const mockUseUiStore = useUiStore as unknown as jest.Mock<{ showAllMessages: boolean }>;
 
-function buildMessage(id: string, type: Message['type'], content: string, created: string, extra?: Partial<Message>): Message {
-  return {
-    id,
-    topicId: 'topic-1',
-    forkId: 'main',
-    type,
-    content,
-    isDeleted: false,
-    includeInContext: true,
-    created,
-    failed: false,
-    promptTokens: 0,
-    completionTokens: 0,
-    totalCost: 0,
-    ...extra,
-  };
-}
-
 describe('MessageList', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -96,9 +79,9 @@ describe('MessageList', () => {
     });
 
     const messages: Message[] = [
-      buildMessage('u1', 'user', 'Hello', '2026-04-17T10:00:00.000Z'),
-      buildMessage('a1', 'assistant', 'Hi', '2026-04-17T10:00:01.000Z', { parentMessageId: 'u1' }),
-      buildMessage('u2', 'user', 'Next', '2026-04-17T10:00:02.000Z'),
+      createMessage({ id: 'u1', type: 'user', content: 'Hello', created: '2026-04-17T10:00:00.000Z', includeInContext: true }),
+      createMessage({ id: 'a1', type: 'assistant', content: 'Hi', created: '2026-04-17T10:00:01.000Z', includeInContext: true, parentMessageId: 'u1' }),
+      createMessage({ id: 'u2', type: 'user', content: 'Next', created: '2026-04-17T10:00:02.000Z', includeInContext: true }),
     ];
 
     render(<MessageList messages={messages} maxContextMessages={10} />);
@@ -115,7 +98,7 @@ describe('MessageList', () => {
     });
 
     const onSuggestionSelect: jest.MockedFunction<(suggestion: string) => void> = jest.fn();
-    const messages: Message[] = [buildMessage('u1', 'user', 'Hello', '2026-04-17T10:00:00.000Z')];
+    const messages: Message[] = [createMessage({ id: 'u1', type: 'user', content: 'Hello', created: '2026-04-17T10:00:00.000Z', includeInContext: true })];
 
     render(<MessageList messages={messages} maxContextMessages={10} suggestions={['Try this']} onSuggestionSelect={onSuggestionSelect} />);
 

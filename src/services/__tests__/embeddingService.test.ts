@@ -21,6 +21,7 @@ jest.mock('../embeddingWorkerFactory', () => ({
 }));
 
 import { EmbeddingService } from '../embeddingService';
+import { createMessage } from '../../testUtils';
 
 function createWorkerLike(): WorkerLike {
   return {
@@ -38,23 +39,6 @@ function emitMessage(worker: WorkerLike, data: WorkerInbound): void {
   worker.onmessage?.({ data } as MessageEvent<WorkerInbound>);
 }
 
-function makeMessage(id: string, content: string, embedding?: number[] | null): Message {
-  return {
-    id,
-    topicId: 'topic-1',
-    forkId: 'main',
-    type: 'user',
-    content,
-    isDeleted: false,
-    includeInContext: false,
-    created: '2024-01-01T00:00:00.000Z',
-    failed: false,
-    promptTokens: 0,
-    completionTokens: 0,
-    totalCost: 0,
-    embedding,
-  };
-}
 
 describe('EmbeddingService', () => {
   beforeEach(() => {
@@ -178,10 +162,10 @@ describe('EmbeddingService', () => {
     const generateSpy = jest.spyOn(service, 'generateEmbedding').mockResolvedValue([1, 0]);
 
     const candidates: Message[] = [
-      makeMessage('m1', 'A', [0.9, 0.1]),
-      makeMessage('m2', 'B', [0.1, 0.9]),
-      makeMessage('m3', 'C', []),
-      makeMessage('m4', 'D', null),
+      createMessage({ id: 'm1', content: 'A', embedding: [0.9, 0.1] }),
+      createMessage({ id: 'm2', content: 'B', embedding: [0.1, 0.9] }),
+      createMessage({ id: 'm3', content: 'C', embedding: [] }),
+      createMessage({ id: 'm4', content: 'D', embedding: null }),
     ];
 
     const result = await service.searchSimilarMessages('query', candidates, 2);

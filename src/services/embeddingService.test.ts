@@ -1,6 +1,7 @@
 import { EmbeddingService } from './embeddingService';
 import { createEmbeddingWorker } from './embeddingWorkerFactory';
 import { Message } from '../database/AthenaDb';
+import { createMessage } from '../testUtils';
 
 jest.mock('./embeddingWorkerFactory', () => ({
   createEmbeddingWorker: jest.fn(),
@@ -17,24 +18,6 @@ interface MockWorker extends Partial<Worker> {
 }
 
 const mockCreateEmbeddingWorker = createEmbeddingWorker as jest.MockedFunction<typeof createEmbeddingWorker>;
-
-function createMessage(overrides: Partial<Message> = {}): Message {
-  return {
-    id: 'message-1',
-    topicId: 'topic-1',
-    forkId: 'main',
-    type: 'user',
-    content: 'hello',
-    isDeleted: false,
-    includeInContext: true,
-    created: '2026-04-20T00:00:00.000Z',
-    failed: false,
-    promptTokens: 0,
-    completionTokens: 0,
-    totalCost: 0,
-    ...overrides,
-  };
-}
 
 function emitWorkerMessage(worker: MockWorker, data: { type: string; status?: string; id?: string; vector?: number[]; error?: string }): void {
   worker.onmessage?.({ data } as MessageEvent<{ type: string; status?: string; id?: string; vector?: number[]; error?: string }>);

@@ -47,6 +47,70 @@ Run `lint` before committing; run `test:coverage` after changing tests.
 - Mock return types must be **explicit** (e.g., `(): number[] => ...`). No implicit `new Array(n).fill(...)`.
 - `crypto.randomUUID()` used for all ID generation.
 
+## Test Authoring Quickstart
+
+### Test utilities (`src/testUtils/`)
+
+| Export | Purpose |
+|---|---|
+| `renderWithTheme(ui)` | `@testing-library/react` `render` wrapped in MUI `<ThemeProvider>` |
+| `createMessage(overrides?)` | Returns a fully-typed `Message` fixture |
+| `createTopic(overrides?)` | Returns a fully-typed `Topic` fixture |
+| `createPredefinedPrompt(overrides?)` | Returns a fully-typed `PredefinedPrompt` fixture |
+| `createUserChatModel(overrides?)` | Returns a fully-typed `UserChatModel` fixture |
+| `createLlmProvider(overrides?)` | Returns a fully-typed `LlmProvider` fixture |
+| `createFork(overrides?)` | Returns a fully-typed `Fork` fixture |
+| `MockStoreHook<T>` | Type alias: `jest.Mock<T>` — for plain Zustand hook mocks |
+| `MockStoreHookWithGetState<THook, TState>` | Mock type for hooks that export `.getState()` |
+
+### Store mocking patterns
+
+**With static `.getState()` (e.g., stores accessed by other stores outside React):**
+
+```ts
+jest.mock('../store/ChatStore', () => ({
+  useChatStore: Object.assign(jest.fn(), { getState: jest.fn() }),
+}));
+
+const mockChat = useChatStore as unknown as MockStoreHookWithGetState<ChatSlice, ChatState>;
+```
+
+**Plain hook (no `.getState()` needed):**
+
+```ts
+jest.mock('../store/AuthStore', () => ({
+  useAuthStore: jest.fn(),
+}));
+
+const mockAuth = useAuthStore as unknown as jest.Mock<AuthSelectorState>;
+```
+
+**Isolating store state per test (fresh Zustand instances):**
+
+```ts
+jest.isolateModules(() => {
+  const { useTopicStore } = require('../store/TopicStore');
+  const store = useTopicStore.getState();
+  store.addTopic(createTopic());
+});
+```
+
+### Component test template
+
+```tsx
+import { renderWithTheme } from '../testUtils';
+import { screen } from '@testing-library/react';
+
+jest.mock('../store/SomeStore', () => ({
+  useSomeStore: jest.fn(),
+}));
+
+it('renders the component', () => {
+  renderWithTheme(<MyComponent />);
+  expect(screen.getByText('Hello')).toBeInTheDocument();
+});
+```
+
 ## Improvement Backlog
 
 ### [ISSUE-3] Fix scrollbar theming to respect app theme toggle

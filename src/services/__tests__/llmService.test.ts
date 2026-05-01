@@ -19,35 +19,12 @@ import { filterMessagesForModel, LlmMessage, orchestrateLlmLoop } from '../llmSe
 import { calculateCostSEK } from '../../components/ModelSelector';
 import { estimateTokens } from '../estimateTokens';
 import { LlmProvider, UserChatModel } from '../../types/provider';
+import { createUserChatModel } from '../../testUtils';
 
 const mockEstimateTokens = estimateTokens as jest.MockedFunction<typeof estimateTokens>;
 const mockCalculateCostSEK = calculateCostSEK as jest.MockedFunction<typeof calculateCostSEK>;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function makeModel(enforceAlternatingRoles: boolean): UserChatModel {
-  return {
-    id: 'test-model',
-    label: 'Test Model',
-    apiModelId: 'test-model',
-    providerId: 'test-provider',
-    input: 0,
-    cachedInput: 0,
-    output: 0,
-    streaming: true,
-    supportsTemperature: true,
-    supportsTools: true,
-    supportsVision: false,
-    supportsFiles: false,
-    supportsThinking: false,
-    contextWindow: 128000,
-    forceTemperature: null,
-    enforceAlternatingRoles,
-    maxTokensOverride: null,
-    isBuiltIn: false,
-    enabled: true,
-  };
-}
 
 const system = (content: string): LlmMessage => ({ role: 'system', content });
 const user = (content: string): LlmMessage => ({ role: 'user', content });
@@ -56,7 +33,7 @@ const asst = (content: string): LlmMessage => ({ role: 'assistant', content });
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 describe('filterMessagesForModel — model WITHOUT enforceAlternatingRoles', () => {
-  const model = makeModel(false);
+  const model = createUserChatModel({ enforceAlternatingRoles: false });
 
   it('returns messages unchanged', () => {
     const messages = [user('hi'), asst('hello'), user('how are you')];
@@ -79,7 +56,7 @@ describe('filterMessagesForModel — model WITHOUT enforceAlternatingRoles', () 
 });
 
 describe('filterMessagesForModel — model WITH enforceAlternatingRoles', () => {
-  const model = makeModel(true);
+  const model = createUserChatModel({ enforceAlternatingRoles: true });
 
   it('passes through a clean alternating conversation', () => {
     const result = filterMessagesForModel(model, [user('hi'), asst('hello'), user('bye')]);
@@ -136,7 +113,7 @@ describe('filterMessagesForModel — model WITH enforceAlternatingRoles', () => 
 describe('orchestrateLlmLoop — tool calls', () => {
   let consoleWarnSpy: jest.SpiedFunction<typeof console.warn>;
 
-  const model: UserChatModel = { ...makeModel(false), streaming: false };
+  const model: UserChatModel = { ...createUserChatModel({ enforceAlternatingRoles: false }), streaming: false };
   const provider: LlmProvider = {
     id: 'test-provider',
     name: 'Test Provider',
@@ -700,7 +677,7 @@ describe('orchestrateLlmLoop — tool calls', () => {
 });
 
 describe('askLlm — non-streaming API calls', () => {
-  const model: UserChatModel = makeModel(false);
+  const model: UserChatModel = createUserChatModel({ enforceAlternatingRoles: false });
   const provider: LlmProvider = {
     id: 'test-provider',
     name: 'Test Provider',
@@ -784,7 +761,7 @@ describe('askLlm — non-streaming API calls', () => {
 });
 
 describe('askLlmStream — streaming API calls', () => {
-  const model: UserChatModel = makeModel(false);
+  const model: UserChatModel = createUserChatModel({ enforceAlternatingRoles: false });
   const provider: LlmProvider = {
     id: 'test-provider',
     name: 'Test Provider',
@@ -860,7 +837,7 @@ describe('askLlmStream — streaming API calls', () => {
 
 describe('estimateStreamedTokens', () => {
   it('uses estimated tokens and calculateCostSEK to build the result', async () => {
-    const model = makeModel(false);
+    const model = createUserChatModel({ enforceAlternatingRoles: false });
     mockEstimateTokens.mockReturnValue({ promptTokens: 123, completionTokens: 45, totalTokens: 168 });
     mockCalculateCostSEK.mockReturnValue(1.75);
 

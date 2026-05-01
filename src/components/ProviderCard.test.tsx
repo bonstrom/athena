@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AddProviderCard, ProviderCard } from './ProviderCard';
 import { useProviderStore } from '../store/ProviderStore';
 import { encodeApiKey, LlmProvider, UserChatModel } from '../types/provider';
+import { createLlmProvider, createUserChatModel } from '../testUtils';
 
 type ProviderHandler = (provider: LlmProvider) => void;
 type ProviderIdHandler = (providerId: string) => void;
@@ -30,48 +31,6 @@ jest.mock('../store/ProviderStore', () => ({
 
 const mockUseProviderStore = useProviderStore as unknown as ProviderStoreHookMock;
 
-function createProvider(overrides?: Partial<LlmProvider>): LlmProvider {
-  return {
-    id: 'provider-1',
-    name: 'Provider One',
-    baseUrl: 'https://example.com/v1/chat/completions',
-    messageFormat: 'openai',
-    apiKeyEncrypted: '',
-    supportsWebSearch: false,
-    requiresReasoningFallback: false,
-    payloadOverridesJson: '',
-    isBuiltIn: false,
-    ...overrides,
-  };
-}
-
-function createModel(overrides?: Partial<UserChatModel>): UserChatModel {
-  return {
-    id: 'model-1',
-    label: 'Model One',
-    apiModelId: 'model-one',
-    providerId: 'provider-1',
-    input: 1,
-    cachedInput: 0.5,
-    output: 2,
-    streaming: true,
-    supportsTemperature: true,
-    supportsTools: true,
-    supportsVision: false,
-    supportsFiles: false,
-    supportsThinking: false,
-    contextWindow: 128000,
-    forceTemperature: null,
-    enforceAlternatingRoles: false,
-    maxTokensOverride: null,
-    isBuiltIn: false,
-    enabled: true,
-    thinkingParseMode: 'api-native',
-    thinkingOpenTag: '<think>',
-    thinkingCloseTag: '</think>',
-    ...overrides,
-  };
-}
 
 describe('ProviderCard and AddProviderCard', () => {
   beforeEach(() => {
@@ -153,10 +112,13 @@ describe('ProviderCard and AddProviderCard', () => {
   it('renders provider model list, provider chips, and model status chips', () => {
     mockUseProviderStore.mockReturnValue({
       models: [
-        createModel({
+        createUserChatModel({ providerId: 'provider-1',
+          label: 'Model One',
           supportsVision: true,
           enforceAlternatingRoles: true,
           forceTemperature: 0.4,
+          input: 1,
+          output: 2,
         }),
       ],
       addProvider: jest.fn(),
@@ -167,7 +129,7 @@ describe('ProviderCard and AddProviderCard', () => {
     });
 
     render(
-      <ProviderCard provider={createProvider({ apiKeyEncrypted: encodeApiKey('secret-key'), supportsWebSearch: true })} balanceLabel="123.45" />,
+      <ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One', apiKeyEncrypted: encodeApiKey('secret-key'), supportsWebSearch: true })} balanceLabel="123.45" />,
     );
 
     expect(screen.getByText('Provider One')).toBeInTheDocument();
@@ -195,7 +157,9 @@ describe('ProviderCard and AddProviderCard', () => {
 
     const { container } = render(
       <ProviderCard
-        provider={createProvider({
+        provider={createLlmProvider({ id: 'provider-1',
+          id: 'provider-1',
+          name: 'Provider One',
           apiKeyEncrypted: encodeApiKey('old-key'),
           payloadOverridesJson: '',
         })}
@@ -239,7 +203,7 @@ describe('ProviderCard and AddProviderCard', () => {
     jest.spyOn(window, 'confirm').mockImplementation((): boolean => true);
 
     mockUseProviderStore.mockReturnValue({
-      models: [createModel()],
+      models: [createUserChatModel({ providerId: 'provider-1', id: 'model-1', providerId: 'provider-1', label: 'Model One' })],
       addProvider: jest.fn(),
       deleteProvider: jest.fn(),
       updateProvider: jest.fn(),
@@ -251,7 +215,7 @@ describe('ProviderCard and AddProviderCard', () => {
       deleteModel,
     });
 
-    const { container } = render(<ProviderCard provider={createProvider()} />);
+    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', id: 'provider-1', name: 'Provider One' })} />);
 
     fireEvent.click(screen.getAllByRole('checkbox')[0]);
     expect(updateModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'model-1', enabled: false }));
@@ -273,7 +237,7 @@ describe('ProviderCard and AddProviderCard', () => {
       updateModel: jest.fn(),
     });
 
-    render(<ProviderCard provider={createProvider()} />);
+    render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', id: 'provider-1', name: 'Provider One' })} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Model' }));
     fireEvent.change(screen.getByLabelText('Display Label'), { target: { value: 'Reasoner' } });
@@ -307,7 +271,10 @@ describe('ProviderCard and AddProviderCard', () => {
     const updateModel: jest.MockedFunction<ModelHandler> = jest.fn();
     mockUseProviderStore.mockReturnValue({
       models: [
-        createModel({
+        createUserChatModel({ providerId: 'provider-1',
+          id: 'model-1',
+          label: 'Model One',
+          supportsThinking: true,
           thinkingParseMode: 'tag-based',
           thinkingOpenTag: '<reasoning>',
           thinkingCloseTag: '</reasoning>',
@@ -320,11 +287,11 @@ describe('ProviderCard and AddProviderCard', () => {
       updateModel,
     });
 
-    const { container } = render(<ProviderCard provider={createProvider()} />);
+    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', id: 'provider-1', name: 'Provider One' })} />);
 
-    const buttons = container.querySelectorAll<HTMLButtonElement>('button');
-    fireEvent.click(buttons[2]);
+    fireEvent.click(screen.getByLabelText('Edit model'));
 
+    fireEvent.click(screen.getByText('BEHAVIORAL OVERRIDES'));
     fireEvent.change(screen.getByLabelText('Display Label'), { target: { value: 'Model Two' } });
     fireEvent.change(screen.getByLabelText('Open Tag'), { target: { value: '<thinker>' } });
     fireEvent.change(screen.getByLabelText('Close Tag'), { target: { value: '</thinker>' } });
@@ -358,7 +325,7 @@ describe('ProviderCard and AddProviderCard', () => {
       updateModel: jest.fn(),
     });
 
-    const { container } = render(<ProviderCard provider={createProvider()} />);
+    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', id: 'provider-1', name: 'Provider One' })} />);
 
     const buttons = container.querySelectorAll<HTMLButtonElement>('button');
     fireEvent.click(buttons[1]);

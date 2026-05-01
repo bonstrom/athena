@@ -1,11 +1,11 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { Topic } from '../database/AthenaDb';
 import { TopicListItem } from './TopicListItem';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useUiStore } from '../store/UiStore';
 import { useAuthStore } from '../store/AuthStore';
 import { useTopicStore } from '../store/TopicStore';
+import { createTopic } from '../testUtils';
 
 const mockNavigate: jest.MockedFunction<(path: string) => void> = jest.fn();
 const mockCloseDrawer: jest.MockedFunction<() => void> = jest.fn();
@@ -48,19 +48,13 @@ const mockUseTopicStore = useTopicStore as unknown as jest.Mock<{
   deleteTopic: (id: string) => Promise<void>;
 }>;
 
-function createTopic(): Topic {
-  return {
-    id: 'topic-1',
-    name: 'Alpha Topic',
-    createdOn: '2026-01-01T00:00:00.000Z',
-    updatedOn: '2026-01-01T00:00:00.000Z',
-    isDeleted: false,
-    forks: [
-      { id: 'main', name: 'Main', createdOn: '2026-01-01T00:00:00.000Z' },
-      { id: 'fork-2', name: 'Fork 2', createdOn: '2026-01-02T00:00:00.000Z' },
-    ],
-  };
-}
+const testTopic = createTopic({
+  name: 'Alpha Topic',
+  forks: [
+    { id: 'main', name: 'Main', createdOn: '2026-01-01T00:00:00.000Z' },
+    { id: 'fork-2', name: 'Fork 2', createdOn: '2026-01-02T00:00:00.000Z' },
+  ],
+});
 
 describe('TopicListItem', () => {
   beforeEach(() => {
@@ -82,7 +76,7 @@ describe('TopicListItem', () => {
   });
 
   it('navigates to topic chat and closes drawer on mobile when topic is clicked', () => {
-    render(<TopicListItem topic={createTopic()} />);
+    render(<TopicListItem topic={testTopic} />);
 
     fireEvent.click(screen.getByText('Alpha Topic'));
 
@@ -91,7 +85,7 @@ describe('TopicListItem', () => {
   });
 
   it('renames a topic from the options menu', async () => {
-    render(<TopicListItem topic={createTopic()} />);
+    render(<TopicListItem topic={testTopic} />);
 
     fireEvent.click(screen.getByLabelText('Topic options'));
     fireEvent.click(screen.getByRole('menuitem', { name: /rename/i }));
@@ -106,7 +100,7 @@ describe('TopicListItem', () => {
   });
 
   it('deletes the topic via confirmation dialog and navigates home when it is active', async () => {
-    render(<TopicListItem topic={createTopic()} />);
+    render(<TopicListItem topic={testTopic} />);
 
     fireEvent.click(screen.getByLabelText('Topic options'));
     fireEvent.click(screen.getByRole('menuitem', { name: /^Delete$/i }));

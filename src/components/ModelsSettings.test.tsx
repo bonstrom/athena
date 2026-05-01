@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ModelsSettings from './ModelsSettings';
 import { useProviderStore } from '../store/ProviderStore';
+import { createUserChatModel } from '../testUtils';
 
 interface ProviderStoreSlice {
   providers: { id: string; name: string }[];
@@ -83,29 +84,12 @@ describe('ModelsSettings', () => {
     mockUseProviderStore.mockReturnValue({
       providers: [{ id: 'p1', name: 'Provider A' }],
       models: [
-        {
+        createUserChatModel({
           id: 'm1',
           label: 'Model A',
           apiModelId: 'model-a',
           providerId: 'p1',
-          input: 0,
-          cachedInput: 0,
-          output: 0,
-          streaming: true,
-          supportsTemperature: true,
-          supportsTools: true,
-          supportsVision: false,
-          supportsFiles: false,
-          contextWindow: 128000,
-          forceTemperature: null,
-          enforceAlternatingRoles: false,
-          maxTokensOverride: null,
-          isBuiltIn: false,
-          enabled: true,
-          thinkingParseMode: 'api-native',
-          thinkingOpenTag: '<think>',
-          thinkingCloseTag: '</think>',
-        },
+        }),
       ],
       addModel: jest.fn(),
       updateModel: jest.fn(),

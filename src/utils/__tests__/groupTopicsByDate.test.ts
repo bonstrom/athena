@@ -1,5 +1,6 @@
 import { groupTopicsByDate } from '../groupTopicsByDate';
 import { Topic } from '../../database/AthenaDb';
+import { createTopic } from '../../testUtils';
 
 // Pin "now" to 2024-06-15T12:00:00Z so all boundary dates are deterministic
 const NOW = new Date('2024-06-15T12:00:00Z');
@@ -13,16 +14,6 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-function makeTopic(overrides: Partial<Topic> & { updatedOn?: string; createdOn?: string }): Topic {
-  return {
-    id: 't1',
-    name: 'Test Topic',
-    createdOn: overrides.createdOn ?? NOW.toISOString(),
-    updatedOn: overrides.updatedOn ?? NOW.toISOString(),
-    isDeleted: false,
-    ...overrides,
-  };
-}
 
 /** Returns an ISO string N days before NOW at noon UTC */
 function daysAgo(n: number): string {
@@ -37,7 +28,7 @@ describe('groupTopicsByDate', () => {
   });
 
   it("groups a topic updated today into 'Today'", () => {
-    const topics = [makeTopic({ updatedOn: NOW.toISOString() })];
+    const topics = [createTopic({ updatedOn: NOW.toISOString() })];
     const result = groupTopicsByDate(topics);
     expect(result).toHaveLength(1);
     expect(result[0].label).toBe('Today');
@@ -45,32 +36,32 @@ describe('groupTopicsByDate', () => {
   });
 
   it("groups a topic updated yesterday into 'Yesterday'", () => {
-    const topics = [makeTopic({ updatedOn: daysAgo(1) })];
+    const topics = [createTopic({ updatedOn: daysAgo(1) })];
     const result = groupTopicsByDate(topics);
     expect(result[0].label).toBe('Yesterday');
   });
 
   it("groups a topic updated 3 days ago into 'Previous 7 Days'", () => {
-    const topics = [makeTopic({ updatedOn: daysAgo(3) })];
+    const topics = [createTopic({ updatedOn: daysAgo(3) })];
     const result = groupTopicsByDate(topics);
     expect(result[0].label).toBe('Previous 7 Days');
   });
 
   it("groups a topic updated 15 days ago into 'Previous 30 Days'", () => {
-    const topics = [makeTopic({ updatedOn: daysAgo(15) })];
+    const topics = [createTopic({ updatedOn: daysAgo(15) })];
     const result = groupTopicsByDate(topics);
     expect(result[0].label).toBe('Previous 30 Days');
   });
 
   it("groups a topic updated 60 days ago into 'Older'", () => {
-    const topics = [makeTopic({ updatedOn: daysAgo(60) })];
+    const topics = [createTopic({ updatedOn: daysAgo(60) })];
     const result = groupTopicsByDate(topics);
     expect(result[0].label).toBe('Older');
   });
 
   it('omits empty groups from the result', () => {
     // Only one topic, so only one group label should appear
-    const topics = [makeTopic({ updatedOn: daysAgo(60) })];
+    const topics = [createTopic({ updatedOn: daysAgo(60) })];
     const result = groupTopicsByDate(topics);
     const labels = result.map((g) => g.label);
     expect(labels).not.toContain('Today');
@@ -81,8 +72,8 @@ describe('groupTopicsByDate', () => {
   });
 
   it('sorts topics within a group newest-first', () => {
-    const older = makeTopic({ id: 'older', updatedOn: daysAgo(3) });
-    const newer = makeTopic({ id: 'newer', updatedOn: daysAgo(2) });
+    const older = createTopic({ id: 'older', updatedOn: daysAgo(3) });
+    const newer = createTopic({ id: 'newer', updatedOn: daysAgo(2) });
     // Pass in reverse order to confirm sorting
     const result = groupTopicsByDate([older, newer]);
     const group = result.find((g) => g.label === 'Previous 7 Days');
@@ -95,9 +86,9 @@ describe('groupTopicsByDate', () => {
 
   it('handles multiple topics spread across different groups', () => {
     const topics = [
-      makeTopic({ id: 'a', updatedOn: NOW.toISOString() }),
-      makeTopic({ id: 'b', updatedOn: daysAgo(1) }),
-      makeTopic({ id: 'c', updatedOn: daysAgo(60) }),
+      createTopic({ id: 'a', updatedOn: NOW.toISOString() }),
+      createTopic({ id: 'b', updatedOn: daysAgo(1) }),
+      createTopic({ id: 'c', updatedOn: daysAgo(60) }),
     ];
     const result = groupTopicsByDate(topics);
     const labels = result.map((g) => g.label);
@@ -108,9 +99,9 @@ describe('groupTopicsByDate', () => {
   });
 
   it('handles invalid or missing timestamps without NaN sort behavior', () => {
-    const validOlder = makeTopic({ id: 'valid-older', updatedOn: daysAgo(10) });
-    const validRecent = makeTopic({ id: 'valid-recent', updatedOn: daysAgo(2) });
-    const invalidDate = makeTopic({ id: 'invalid-date', updatedOn: 'not-a-date' });
+    const validOlder = createTopic({ id: 'valid-older', updatedOn: daysAgo(10) });
+    const validRecent = createTopic({ id: 'valid-recent', updatedOn: daysAgo(2) });
+    const invalidDate = createTopic({ id: 'invalid-date', updatedOn: 'not-a-date' });
     const missingBoth = {
       id: 'missing-both',
       name: 'Missing Both',
