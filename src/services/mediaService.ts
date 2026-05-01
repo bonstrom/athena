@@ -1,6 +1,7 @@
 import { Attachment } from '../database/AthenaDb';
 import { generateMinimaxImage, generateMinimaxMusic, generateMinimaxSpeech } from './llmService';
 import { useAuthStore } from '../store/AuthStore';
+import { useUiStore } from '../store/UiStore';
 
 export interface MediaResult {
   content: string;
@@ -123,6 +124,7 @@ export function stopSpeech(): void {
     URL.revokeObjectURL(currentSpeechObjectUrl);
     currentSpeechObjectUrl = null;
   }
+  useUiStore.getState().setCurrentlySpeakingMessageId(null);
 }
 
 export async function generateSpeech(text: string, signal?: AbortSignal): Promise<string> {
@@ -138,11 +140,14 @@ export async function generateSpeech(text: string, signal?: AbortSignal): Promis
   return URL.createObjectURL(audioBlob);
 }
 
-export async function speakText(text: string, _signal?: AbortSignal): Promise<void> {
+export async function speakText(text: string, messageId?: string): Promise<void> {
   stopSpeech();
 
   const abortController = new AbortController();
   currentSpeechAbortController = abortController;
+  if (messageId) {
+    useUiStore.getState().setCurrentlySpeakingMessageId(messageId);
+  }
 
   try {
     const url = await generateSpeech(text, abortController.signal);
@@ -151,6 +156,9 @@ export async function speakText(text: string, _signal?: AbortSignal): Promise<vo
     if (abortController.signal.aborted) {
       URL.revokeObjectURL(url);
       currentSpeechObjectUrl = null;
+      if (useUiStore.getState().currentlySpeakingMessageId === messageId) {
+        useUiStore.getState().setCurrentlySpeakingMessageId(null);
+      }
       return;
     }
 
@@ -167,6 +175,9 @@ export async function speakText(text: string, _signal?: AbortSignal): Promise<vo
       }
       if (currentSpeechAbortController === abortController) {
         currentSpeechAbortController = null;
+      }
+      if (useUiStore.getState().currentlySpeakingMessageId === messageId) {
+        useUiStore.getState().setCurrentlySpeakingMessageId(null);
       }
     };
 

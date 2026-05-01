@@ -1102,7 +1102,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Fire-and-forget TTS if enabled
       if (useAuthStore.getState().ttsEnabled && assistantPatch.content.trim()) {
         const ttsText = stripMarkdown(assistantPatch.content.trim());
-        void speakText(ttsText).catch((err: unknown) => {
+        void speakText(ttsText, assistantId).catch((err: unknown) => {
           console.warn('TTS playback failed:', err);
         });
       }

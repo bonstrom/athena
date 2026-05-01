@@ -9,6 +9,7 @@ import { useNotificationStore } from '../store/NotificationStore';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { UserChatModel, LlmProvider } from '../types/provider';
 import { Topic, Message, Attachment } from '../database/AthenaDb';
+import { useUiStore } from '../store/UiStore';
 
 jest.mock('./TopicContextDialog', () => {
   function MockTopicContextDialog(): JSX.Element {
@@ -47,6 +48,9 @@ jest.mock('../services/llmSuggestionService', () => ({
 }));
 jest.mock('../store/ChatStore', () => ({
   useChatStore: Object.assign(jest.fn(), { getState: jest.fn() }),
+}));
+jest.mock('../store/UiStore', () => ({
+  useUiStore: Object.assign(jest.fn(), { getState: jest.fn() }),
 }));
 
 interface AuthStoreSlice {
@@ -114,6 +118,7 @@ const mockUseProviderStore = useProviderStore as unknown as jest.Mock<ProviderSt
 const mockUseChatStore = useChatStore as unknown as UseChatStoreMock;
 const mockUseTopicStore = useTopicStore as unknown as jest.Mock<TopicStoreSlice>;
 const mockUseNotificationStore = useNotificationStore as unknown as jest.Mock<NotificationStoreSlice>;
+const mockUseUiStore = useUiStore as unknown as jest.Mock & { getState: jest.Mock };
 const mockSuggestionService = llmSuggestionService as jest.Mocked<typeof llmSuggestionService>;
 
 function buildModel(overrides: Partial<UserChatModel> = {}): UserChatModel {
@@ -341,6 +346,8 @@ describe('Composer', () => {
     mockUseChatStore.getState.mockReturnValue({ currentTopicId: 'topic-1' });
     mockUseTopicStore.mockReturnValue(topicStore);
     mockUseNotificationStore.mockReturnValue(notificationStore);
+    mockUseUiStore.mockReturnValue({ currentlySpeakingMessageId: null, isMobile: false });
+    mockUseUiStore.getState.mockReturnValue({ setCurrentlySpeakingMessageId: jest.fn() });
     mockSuggestionService.getSuggestion.mockResolvedValue('');
   });
 
@@ -383,6 +390,7 @@ describe('Composer', () => {
     render(<Composer sending onSend={onSend} isMobile={false} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop Generation' }));
+
 
     await waitFor(() => {
       expect(chatStore.stopSending).toHaveBeenCalledTimes(1);
@@ -559,10 +567,13 @@ describe('Composer', () => {
     expect(onSend).toHaveBeenCalledWith('Hello', []);
   });
 
-  it('keeps send button disabled on desktop with empty input', () => {
+  it('shows StopCircleIcon and Stop Reading tooltip when TTS is active and input is empty', () => {
+    mockUseUiStore.mockReturnValue({ currentlySpeakingMessageId: 'some-msg-id' });
+
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
-    const sendButton = screen.getByRole('button', { name: 'Send Message' });
-    expect(sendButton).toBeDisabled();
+    const stopButton = screen.getByRole('button', { name: 'Stop Reading' });
+    expect(stopButton).toBeInTheDocument();
+    expect(stopButton).not.toBeDisabled();
   });
 });

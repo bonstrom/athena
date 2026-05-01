@@ -46,6 +46,7 @@ import BrushIcon from '@mui/icons-material/Brush';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import MicIcon from '@mui/icons-material/Mic';
+import { stopSpeech } from '../services/mediaService';
 import TopicContextDialog from './TopicContextDialog';
 import ScratchpadDialog from './ScratchpadDialog';
 import { useAuthStore } from '../store/AuthStore';
@@ -53,6 +54,7 @@ import { useProviderStore } from '../store/ProviderStore';
 import { llmSuggestionService } from '../services/llmSuggestionService';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
+import { useUiStore } from '../store/UiStore';
 import { USD_TO_SEK } from '../constants';
 import { ENGLISH_VOICES } from '../constants/voices';
 import { Attachment } from '../database/AthenaDb';
@@ -94,6 +96,32 @@ interface Page {
   title: string;
   content: string;
 }
+
+const WaveformIndicator: React.FC = () => (
+  <Box
+    display="flex"
+    alignItems="center"
+    gap={0.3}
+    height={16}
+    sx={{ px: 1 }}>
+    {[0, 1, 2, 3].map((i) => (
+      <Box
+        key={i}
+        sx={{
+          width: 3,
+          bgcolor: 'primary.main',
+          borderRadius: 0.5,
+          animation: 'waveform 0.8s ease-in-out infinite',
+          animationDelay: `${i * 0.15}s`,
+          '@keyframes waveform': {
+            '0%, 100%': { height: 6 },
+            '50%': { height: 16 },
+          },
+        }}
+      />
+    ))}
+  </Box>
+);
 
 const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
@@ -139,6 +167,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     musicGenerationEnabled,
     setMusicGenerationEnabled,
   } = useChatStore();
+  const { currentlySpeakingMessageId } = useUiStore();
+  if (currentlySpeakingMessageId) console.log('DEBUG COMPOSER SPEECH', { currentlySpeakingMessageId });
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
@@ -227,6 +257,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     if (sending && !pendingUserQuestion) {
       void handleStop();
       return;
+    }
+
+    if (currentlySpeakingMessageId) {
+      stopSpeech();
+      // If the input is empty, we only stop speech and don't proceed to send/record
+      if (!inputValue.trim() && !attachments.length) {
+        return;
+      }
     }
 
     if (!inputValue.trim() && !attachments.length) {
@@ -329,6 +367,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   };
 
   const handleStop = async (): Promise<void> => {
+    stopSpeech();
     const topicIdBeforeStop = currentTopicId;
     const restoredContent = await stopSending();
     // Guard: if the user switched topics while the stop was in flight, do not
@@ -1699,15 +1738,41 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               width: { xs: 'auto', md: 220 },
               justifyContent: { xs: 'flex-end', md: 'flex-start' },
             }}>
+            {currentlySpeakingMessageId && (
+              <Box
+                display="flex"
+                alignItems="center"
+                sx={{
+                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                  borderRadius: 4,
+                  pr: 1,
+                  py: 0.5,
+                  animation: 'fadeIn 0.3s ease-out',
+                  '@keyframes fadeIn': {
+                    from: { opacity: 0, transform: 'translateX(10px)' },
+                    to: { opacity: 1, transform: 'translateX(0)' },
+                  },
+                }}>
+                <WaveformIndicator />
+                <Typography
+                  variant="caption"
+                  color="primary.main"
+                  sx={{ fontWeight: 'bold', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Speaking
+                </Typography>
+              </Box>
+            )}
             <Tooltip
               title={
                 sending && !pendingUserQuestion
                   ? 'Stop Generation'
-                  : isListening
-                    ? 'Stop Voice Input'
-                    : !inputValue.trim() && !attachments.length && isMobile
-                      ? 'Start Voice Input'
-                      : 'Send Message (Enter)'
+                  : currentlySpeakingMessageId
+                    ? 'Stop Reading'
+                    : isListening
+                      ? 'Stop Voice Input'
+                      : !inputValue.trim() && !attachments.length && isMobile
+                        ? 'Start Voice Input'
+                        : 'Send Message (Enter)'
               }
               disableTouchListener={isMobile}>
               <span>
@@ -1716,21 +1781,23 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                   aria-label={
                     sending && !pendingUserQuestion
                       ? 'Stop Generation'
-                      : isListening
-                        ? 'Stop Voice Input'
-                        : !inputValue.trim() && !attachments.length && isMobile
-                          ? 'Start Voice Input'
-                          : 'Send Message'
+                      : currentlySpeakingMessageId
+                        ? 'Stop Reading'
+                        : isListening
+                          ? 'Stop Voice Input'
+                          : !inputValue.trim() && !attachments.length && isMobile
+                            ? 'Start Voice Input'
+                            : 'Send Message'
                   }
                   onClick={handleSendOrRecord}
-                  disabled={!sending && !inputValue.trim() && !attachments.length && !isMobile && !isListening}
+                  disabled={!sending && !inputValue.trim() && attachments.length === 0 && !isMobile && !isListening && !currentlySpeakingMessageId}
                   sx={{
                     width: 52,
                     height: 52,
                     '&.Mui-disabled': {
                       backgroundColor: 'transparent',
                     },
-                    ...(isListening
+                    ...((isListening || currentlySpeakingMessageId)
                       ? {
                           animation: 'pulse 1.5s ease-in-out infinite',
                           '@keyframes pulse': {
@@ -1742,6 +1809,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                       : {}),
                   }}>
                   {sending && !pendingUserQuestion ? (
+                    <StopCircleIcon />
+                  ) : currentlySpeakingMessageId && !inputValue.trim() && !attachments.length ? (
                     <StopCircleIcon />
                   ) : !inputValue.trim() && !attachments.length && isMobile ? (
                     <MicIcon />

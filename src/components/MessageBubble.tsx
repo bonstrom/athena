@@ -39,10 +39,11 @@ import { Message } from '../database/AthenaDb';
 import { useNotificationStore } from '../store/NotificationStore';
 import { useTopicStore } from '../store/TopicStore';
 import { useUiStore } from '../store/UiStore';
-import { speakText } from '../services/mediaService';
+import { speakText, stopSpeech } from '../services/mediaService';
 import { stripMarkdown } from '../utils/stripMarkdown';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
+import StopCircleIcon from '@mui/icons-material/StopCircle';
 
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -71,7 +72,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
   const { userName, chatFontSize, messageTruncateChars, aiSummaryEnabled } = useAuthStore();
-  const { isMobile } = useUiStore();
+  const { isMobile, currentlySpeakingMessageId } = useUiStore();
 
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -82,6 +83,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const [isExpanded, setIsExpanded] = useState(() => messageTruncateChars === 0 || message.content.length <= messageTruncateChars);
   const [expandedImage, setExpandedImage] = useState<{ url: string; name: string; data: string } | null>(null);
   const [speaking, setSpeaking] = useState(false);
+
+  const isSpeaking = currentlySpeakingMessageId === message.id;
 
   const isAssistant = message.type === 'assistant';
   const isLong = messageTruncateChars > 0 && message.content.length > messageTruncateChars;
@@ -450,29 +453,43 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             </Box>
 
             {isAssistant && message.content.trim() && (
-              <Tooltip title="Read aloud" disableTouchListener={isMobile}>
+              <Tooltip title={isSpeaking ? 'Stop speech' : 'Read aloud'} disableTouchListener={isMobile}>
                 <IconButton
                   size="small"
-                  aria-label="Read aloud"
-                  disabled={speaking}
+                  aria-label={isSpeaking ? 'Stop speech' : 'Read aloud'}
+                  disabled={speaking && !isSpeaking} // Disable if something else is generating/loading, but not if we are speaking
                   onClick={(): void => {
-                    setSpeaking(true);
-                    void speakText(stripMarkdown(message.content.trim()))
-                      .catch(() => {
-                        /* playback errors are non-critical */
-                      })
-                      .finally(() => {
-                        setSpeaking(false);
-                      });
+                    if (isSpeaking) {
+                      stopSpeech();
+                    } else {
+                      setSpeaking(true);
+                      void speakText(stripMarkdown(message.content.trim()))
+                        .catch(() => {
+                          /* playback errors are non-critical */
+                        })
+                        .finally(() => {
+                          setSpeaking(false);
+                        });
+                    }
                   }}
                   sx={{
-                    color: 'text.secondary',
+                    color: isSpeaking ? 'primary.main' : 'text.secondary',
                     '&:hover': {
                       bgcolor: (theme): string => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
                     },
+                    ...(isSpeaking
+                      ? {
+                          animation: 'pulse 1.5s ease-in-out infinite',
+                          '@keyframes pulse': {
+                            '0%': { opacity: 1, transform: 'scale(1)' },
+                            '50%': { opacity: 0.7, transform: 'scale(1.1)' },
+                            '100%': { opacity: 1, transform: 'scale(1)' },
+                          },
+                        }
+                      : {}),
                   }}
                 >
-                  {speaking ? <CircularProgress size={14} color="inherit" /> : <VolumeUpIcon fontSize="small" />}
+                  {speaking && !isSpeaking ? <CircularProgress size={14} color="inherit" /> : isSpeaking ? <StopCircleIcon fontSize="small" /> : <VolumeUpIcon fontSize="small" />}
                 </IconButton>
               </Tooltip>
             )}

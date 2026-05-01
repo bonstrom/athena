@@ -15,6 +15,8 @@ interface UiState {
   selectAllTopics: (ids: string[]) => void;
   clearTopicSelection: () => void;
   isMultiSelectMode: () => boolean;
+  currentlySpeakingMessageId: string | null;
+  setCurrentlySpeakingMessageId: (id: string | null) => void;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -47,6 +49,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     }),
 
   clearTopicSelection: (): void => set({ selectedTopicIds: new Set<string>() }),
-
   isMultiSelectMode: (): boolean => get().selectedTopicIds.size > 0,
+  currentlySpeakingMessageId: null,
+  setCurrentlySpeakingMessageId: (id: string | null): void => set({ currentlySpeakingMessageId: id }),
 }));

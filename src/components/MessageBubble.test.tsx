@@ -39,6 +39,7 @@ interface TopicStoreSlice {
 
 interface UiStoreSlice {
   isMobile: boolean;
+  currentlySpeakingMessageId: string | null;
 }
 
 type ProviderStoreHookMock = jest.Mock<unknown> & {
@@ -160,6 +161,7 @@ describe('MessageBubble', () => {
 
     mockUseUiStore.mockReturnValue({
       isMobile: false,
+      currentlySpeakingMessageId: null,
     });
 
     mockUseProviderStore.getState.mockReturnValue({
@@ -349,17 +351,30 @@ describe('MessageBubble', () => {
       />,
     );
 
-    expect(screen.getByTestId('markdown-content')).toBeInTheDocument();
+    expect(screen.getByTestId('typing-indicator')).toBeInTheDocument();
   });
 
   it('shows different button states on mobile vs desktop', () => {
     mockUseUiStore.mockReturnValue({
       isMobile: true,
+      currentlySpeakingMessageId: null,
     });
 
     renderWithTheme(<MessageBubble message={createMessage()} />);
 
     // On mobile, certain action buttons might be hidden or styled differently
     expect(screen.getByTestId('markdown-content')).toBeInTheDocument();
+  });
+
+  it('shows StopCircleIcon and Stop speech tooltip when this message is being read', () => {
+    mockUseUiStore.mockReturnValue({
+      currentlySpeakingMessageId: 'message-1',
+      isMobile: false,
+    });
+
+    renderWithTheme(<MessageBubble message={createMessage({ id: 'message-1' })} />);
+
+    const stopButton = screen.getByRole('button', { name: 'Stop speech' });
+    expect(stopButton).toBeInTheDocument();
   });
 });
