@@ -59,6 +59,7 @@ const mockAuthGetState = jest.fn<AuthStoreState, []>();
 const mockProviderGetState = jest.fn<ProviderStoreState, []>();
 const mockAddNotification = jest.fn();
 const mockGenerateEmbedding = jest.fn<Promise<number[]>, [string]>();
+const mockGetDefaultModel = jest.fn<UserChatModel, []>();
 
 const mockDbGet = jest.fn<Promise<Message | undefined>, [string]>();
 const mockDbAdd = jest.fn<Promise<string>, [Message]>();
@@ -80,28 +81,7 @@ const mockBaseTopic: Topic = createTopic({
 
 jest.mock('../../components/ModelSelector', () => ({
   calculateCostSEK: jest.fn(() => 1),
-  getDefaultModel: jest.fn(
-    (): UserChatModel => ({
-      id: 'test-model',
-      label: 'Test Model',
-      apiModelId: 'test-model',
-      providerId: 'test-provider',
-      input: 0,
-      cachedInput: 0,
-      output: 0,
-      streaming: false,
-      supportsTemperature: true,
-      supportsTools: true,
-      supportsVision: false,
-      supportsFiles: false,
-      supportsThinking: false,
-      contextWindow: 128000,
-      forceTemperature: null,
-      enforceAlternatingRoles: false,
-      maxTokensOverride: null,
-      isBuiltIn: false,
-    }),
-  ),
+  getDefaultModel: (): UserChatModel => mockGetDefaultModel(),
 }));
 
 jest.mock('../../store/TopicStore', () => ({
@@ -200,6 +180,8 @@ describe('ChatStore', () => {
     });
 
     jest.clearAllMocks();
+
+    mockGetDefaultModel.mockReturnValue(mockDefaultModel);
 
     Object.defineProperty(globalThis, 'crypto', {
       value: {

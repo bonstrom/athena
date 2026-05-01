@@ -114,6 +114,7 @@ interface ChatStore {
   _runSummarize: (messageId: string, content: string, contextMessages?: LlmMessage[]) => Promise<void>;
   summarizingMessageIds: Set<string>;
   failedSummaryMessageIds: Set<string>;
+  initDefaults: () => void;
 }
 
 // Serialize summarization requests — llmSuggestionService has a single completion slot
@@ -129,7 +130,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   showAllMessages: false,
   visibleMessageCount: 10,
   sending: false,
-  selectedModel: getDefaultModel(),
+  selectedModel: undefined as unknown as ChatModel,
   temperature: 1.0,
   reasoningEffort: null,
   thinkingMode: null,
@@ -143,6 +144,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   failedSummaryMessageIds: new Set<string>(),
   isSuggestionsLoading: false,
   pendingUserQuestion: null,
+
+  initDefaults: (): void => {
+    set({ selectedModel: getDefaultModel() });
+  },
 
   resolvePendingQuestion: (answer: string): void => {
     const pending = get().pendingUserQuestion;

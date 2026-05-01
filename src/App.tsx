@@ -5,7 +5,10 @@ import { GlobalErrorSnackbar } from './components/GlobalErrorSnackbar';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { useEmbeddingBackfill } from './hooks/useEmbeddingBackfill';
 import { useAuthStore } from './store/AuthStore';
+import { useChatStore } from './store/ChatStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
+
+useChatStore.getState().initDefaults();
 
 const Home = React.lazy(() => import('./pages/Home'));
 const Settings = React.lazy(() => import('./pages/Settings'));

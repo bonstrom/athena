@@ -43,6 +43,11 @@ jest.mock('./components/GlobalErrorSnackbar', () => ({
 jest.mock('./hooks/useAutoBackup', () => ({ useAutoBackup: jest.fn() }));
 jest.mock('./hooks/useEmbeddingBackfill', () => ({ useEmbeddingBackfill: jest.fn() }));
 jest.mock('./store/AuthStore', () => ({ useAuthStore: jest.fn() }));
+jest.mock('./store/ChatStore', () => ({
+  useChatStore: {
+    getState: jest.fn(() => ({ initDefaults: jest.fn() })),
+  },
+}));
 
 jest.mock('./pages/Home', () => {
   function MockHomePage(): JSX.Element {
