@@ -157,7 +157,7 @@ describe('ProviderCard and AddProviderCard', () => {
 
     const { container } = render(
       <ProviderCard
-        provider={createLlmProvider({ id: 'provider-1',
+        provider={createLlmProvider({
           id: 'provider-1',
           name: 'Provider One',
           apiKeyEncrypted: encodeApiKey('old-key'),
@@ -203,7 +203,7 @@ describe('ProviderCard and AddProviderCard', () => {
     jest.spyOn(window, 'confirm').mockImplementation((): boolean => true);
 
     mockUseProviderStore.mockReturnValue({
-      models: [createUserChatModel({ providerId: 'provider-1', id: 'model-1', providerId: 'provider-1', label: 'Model One' })],
+      models: [createUserChatModel({ providerId: 'provider-1', id: 'model-1', label: 'Model One' })],
       addProvider: jest.fn(),
       deleteProvider: jest.fn(),
       updateProvider: jest.fn(),
@@ -215,7 +215,7 @@ describe('ProviderCard and AddProviderCard', () => {
       deleteModel,
     });
 
-    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', id: 'provider-1', name: 'Provider One' })} />);
+    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One' })} />);
 
     fireEvent.click(screen.getAllByRole('checkbox')[0]);
     expect(updateModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'model-1', enabled: false }));
@@ -237,7 +237,7 @@ describe('ProviderCard and AddProviderCard', () => {
       updateModel: jest.fn(),
     });
 
-    render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', id: 'provider-1', name: 'Provider One' })} />);
+    render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One' })} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Model' }));
     fireEvent.change(screen.getByLabelText('Display Label'), { target: { value: 'Reasoner' } });
@@ -287,7 +287,7 @@ describe('ProviderCard and AddProviderCard', () => {
       updateModel,
     });
 
-    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', id: 'provider-1', name: 'Provider One' })} />);
+    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One' })} />);
 
     fireEvent.click(screen.getByLabelText('Edit model'));
 
@@ -325,7 +325,7 @@ describe('ProviderCard and AddProviderCard', () => {
       updateModel: jest.fn(),
     });
 
-    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', id: 'provider-1', name: 'Provider One' })} />);
+    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One' })} />);
 
     const buttons = container.querySelectorAll<HTMLButtonElement>('button');
     fireEvent.click(buttons[1]);

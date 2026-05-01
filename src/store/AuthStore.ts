@@ -93,7 +93,6 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedShowCameraButton = (localStorage.getItem('showCameraButton') as 'auto' | 'always' | 'never' | null) ?? 'auto';
   const storedTtsEnabled = localStorage.getItem('ttsEnabled') === 'true';
   const storedTtsVoiceId = localStorage.getItem('ttsVoiceId') ?? DEFAULT_VOICE_ID;
-
   return {
     userName: userName,
     backupInterval: storedBackupInterval,

@@ -532,9 +532,9 @@ const Settings: React.FC = () => {
                       control={<Switch checked={ttsEnabled} onChange={(e): void => setTtsEnabled(e.target.checked)} size="small" />}
                       label={
                         <Box>
-                          <Typography variant="body2">Auto-read responses</Typography>
+                          <Typography variant="body2">Enable text-to-speech</Typography>
                           <Typography variant="caption" color="text.secondary">
-                            Reads assistant messages aloud as they arrive.
+                            Enables TTS capability globally. Use the speaker button in the message composer to toggle auto-reading of responses.
                           </Typography>
                         </Box>
                       }

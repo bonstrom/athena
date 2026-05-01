@@ -140,6 +140,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     messagesByTopic,
     pendingUserQuestion,
     resolvePendingQuestion,
+    autoReadEnabled,
+    setAutoReadEnabled,
   } = useChatStore();
   const { addNotification } = useNotificationStore();
   const {
@@ -154,7 +156,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     defaultMaxContextMessages,
     showCameraButton,
     ttsEnabled,
-    setTtsEnabled,
     ttsVoiceId,
     setTtsVoiceId,
   } = useAuthStore();
@@ -1429,14 +1430,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
             {hasMiniMaxKey && (
               <Tooltip
-                title={`Text-to-Speech (${ttsEnabled ? 'Enabled' : 'Disabled'})`}
+                title={`Auto-Read (${autoReadEnabled ? 'On' : 'Off'})`}
                 disableTouchListener={isMobile}>
                 <span>
                   <IconButton
-                    onClick={(): void => setTtsEnabled(!ttsEnabled)}
-                    disabled={sending}
-                    color={ttsEnabled ? 'primary' : 'default'}
-                    aria-label="Toggle Text-to-Speech">
+                    onClick={(): void => setAutoReadEnabled(!autoReadEnabled)}
+                    disabled={!ttsEnabled || sending}
+                    color={autoReadEnabled ? 'primary' : 'default'}
+                    aria-label="Toggle Auto-Read">
                     <VolumeUpIcon />
                   </IconButton>
                 </span>

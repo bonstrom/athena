@@ -74,9 +74,11 @@ interface ChatStore {
   webSearchEnabled: boolean;
   imageGenerationEnabled: boolean;
   musicGenerationEnabled: boolean;
+  autoReadEnabled: boolean;
   setWebSearchEnabled: (value: boolean) => void;
   setImageGenerationEnabled: (value: boolean) => void;
   setMusicGenerationEnabled: (value: boolean) => void;
+  setAutoReadEnabled: (enabled: boolean) => void;
   setSending: (value: boolean) => void;
   fetchMessages: (topicId: string, forkId?: string) => Promise<void>;
   increaseVisibleMessageCount: () => void;
@@ -137,6 +139,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   webSearchEnabled: false,
   imageGenerationEnabled: false,
   musicGenerationEnabled: false,
+  autoReadEnabled: false,
   abortController: null,
   currentRequestMessageIds: null,
   pendingSuggestions: null,
@@ -188,6 +191,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   setWebSearchEnabled: (value: boolean): void => set({ webSearchEnabled: value }),
   setImageGenerationEnabled: (value: boolean): void => set({ imageGenerationEnabled: value }),
   setMusicGenerationEnabled: (value: boolean): void => set({ musicGenerationEnabled: value }),
+  setAutoReadEnabled: (enabled: boolean): void => set({ autoReadEnabled: enabled }),
 
   buildFullContext: async (topicId: string, userMessagePreview?: string): Promise<ContextEntry[]> => {
     const { selectedModel, webSearchEnabled } = get();
@@ -370,7 +374,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // If already cached and on the main fork, just switch to it instantly
     const cached = get().messagesByTopic[topicId];
     if (cached !== undefined && !forkId) {
-      set({ currentTopicId: topicId, isInitialLoad: true, visibleMessageCount: 10 });
+      set({ currentTopicId: topicId, isInitialLoad: true, visibleMessageCount: 10, autoReadEnabled: false });
       return;
     }
 
@@ -385,6 +389,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       currentTopicId: topicId,
       isInitialLoad: true,
       visibleMessageCount: 10,
+      autoReadEnabled: false,
     }));
   },
 
@@ -1104,8 +1109,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       }));
 
-      // Fire-and-forget TTS if enabled
-      if (useAuthStore.getState().ttsEnabled && assistantPatch.content.trim()) {
+      // Fire-and-forget TTS if enabled and auto-read is on
+      if (useAuthStore.getState().ttsEnabled && get().autoReadEnabled && assistantPatch.content.trim()) {
         const ttsText = stripMarkdown(assistantPatch.content.trim());
         void speakText(ttsText, assistantId).catch((err: unknown) => {
           console.warn('TTS playback failed:', err);
