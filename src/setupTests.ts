@@ -9,7 +9,7 @@ import { ReadableStream as NodeReadableStream } from 'stream/web';
 const originalError = console.error;
 beforeAll(() => {
   console.error = (...args: unknown[]): void => {
-    if (typeof args[0] === 'string' && /not wrapped in act\(/.test(args[0])) {
+    if (typeof args[0] === 'string' && args[0].includes('not wrapped in act(')) {
       return;
     }
     originalError.call(console, ...args);

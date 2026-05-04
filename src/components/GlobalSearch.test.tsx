@@ -17,6 +17,7 @@ jest.mock('../database/AthenaDb', () => ({
     topics: {
       where: jest.fn(),
       bulkGet: jest.fn(),
+      toCollection: jest.fn(),
     },
     messages: {
       where: jest.fn(),
@@ -30,6 +31,7 @@ const mockAthenaDb = athenaDb as unknown as {
   topics: {
     where: jest.Mock;
     bulkGet: jest.Mock;
+    toCollection: jest.Mock;
   };
   messages: {
     where: jest.Mock;
@@ -57,11 +59,9 @@ describe('GlobalSearch', () => {
         toArray: jest.fn().mockResolvedValue([{ id: 't1', name: 'Topic One', updatedOn: '2026-04-17T10:00:00.000Z', isDeleted: false }]),
       }),
     });
-    const topicDeletedChain = {
-      equals: jest.fn().mockReturnValue({
-        filter: jest.fn().mockReturnValue({
-          toArray: jest.fn().mockResolvedValue([]),
-        }),
+    const collectionChain = {
+      filter: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([]),
       }),
     };
     const messageDeletedChain = {
@@ -74,8 +74,9 @@ describe('GlobalSearch', () => {
 
     mockAthenaDb.topics.where.mockImplementation((field: string) => {
       if (field === 'name') return { startsWithIgnoreCase };
-      return topicDeletedChain;
+      throw new Error(`Unexpected where field: ${field}`);
     });
+    mockAthenaDb.topics.toCollection.mockReturnValue(collectionChain);
     mockAthenaDb.messages.where.mockImplementation(() => messageDeletedChain);
     mockAthenaDb.topics.bulkGet.mockResolvedValue([]);
 
@@ -106,11 +107,9 @@ describe('GlobalSearch', () => {
         toArray: jest.fn().mockResolvedValue([]),
       }),
     });
-    const topicDeletedChain = {
-      equals: jest.fn().mockReturnValue({
-        filter: jest.fn().mockReturnValue({
-          toArray: jest.fn().mockResolvedValue([]),
-        }),
+    const collectionChain = {
+      filter: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([]),
       }),
     };
     const messageDeletedChain = {
@@ -123,8 +122,9 @@ describe('GlobalSearch', () => {
 
     mockAthenaDb.topics.where.mockImplementation((field: string) => {
       if (field === 'name') return { startsWithIgnoreCase };
-      return topicDeletedChain;
+      throw new Error(`Unexpected where field: ${field}`);
     });
+    mockAthenaDb.topics.toCollection.mockReturnValue(collectionChain);
     mockAthenaDb.messages.where.mockImplementation(() => messageDeletedChain);
     mockAthenaDb.topics.bulkGet.mockResolvedValue([]);
 

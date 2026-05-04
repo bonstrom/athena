@@ -45,6 +45,13 @@ export const GlobalSearch = (): JSX.Element => {
       return;
     }
 
+    if (query.trim().length < 3) {
+      setResults([]);
+      setIsSearching(false);
+      setIsOpen(false);
+      return;
+    }
+
     setIsSearching(true);
     setIsOpen(true);
     setSearchError(null);
@@ -69,11 +76,10 @@ export const GlobalSearch = (): JSX.Element => {
         .filter((t) => !t.isDeleted)
         .toArray();
 
-      // Also search for partial matches if needed (still a scan but more focused)
+      // Also search for partial matches if needed
       const otherMatchedTopics = await athenaDb.topics
-        .where('isDeleted')
-        .equals(0)
-        .filter((t) => t.name.toLowerCase().includes(searchQuery) && !t.name.toLowerCase().startsWith(searchQuery))
+        .toCollection()
+        .filter((t) => !t.isDeleted && t.name.toLowerCase().includes(searchQuery) && !t.name.toLowerCase().startsWith(searchQuery))
         .toArray();
 
       const matchedTopics = [...prefixMatchedTopics, ...otherMatchedTopics];
@@ -170,7 +176,7 @@ export const GlobalSearch = (): JSX.Element => {
           value={query}
           onChange={(e): void => setQuery(e.target.value)}
           onFocus={(): void => {
-            if (query.trim()) setIsOpen(true);
+            if (query.trim().length >= 3) setIsOpen(true);
           }}
           InputProps={{
             startAdornment: (
