@@ -7,7 +7,7 @@
 | Command | Purpose |
 |---|---|
 | `npm start` | Dev server :3000 |
-| `npm test` | Jest watch mode |
+| `npm test` | Jest watch mode (via `react-scripts test`) |
 | `npm run test:coverage` | Full coverage (v8, `--watchAll=false`) |
 | `npm run build` | Production build |
 | `npm run lint` | ESLint all `.js/.jsx/.ts/.tsx` |
@@ -15,6 +15,10 @@
 | `npm run pretty` | Prettier all `.ts/.tsx` |
 | `npm run deploy` | GH Pages deploy (runs predeploy first) |
 | `npm run predeploy` | `CI=true test --watchAll=false && build` |
+
+> **Important:** Always use `npm test` or `npm run test:coverage` — never `npx jest` directly. This project uses CRA, which configures Jest (Babel/TypeScript transforms, jsdom, etc.) internally through `react-scripts test`. Running `npx jest` bypasses this config and will fail with parse errors on TypeScript syntax.
+>
+> **Running a single test file:** `npm test -- --testPathPattern="ComponentName" --watchAll=false` (matches file path by regex).
 
 Run `lint` before committing; run `test:coverage` after changing tests.
 
