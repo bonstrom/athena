@@ -28,6 +28,7 @@ interface TopicState {
   updateTopicScratchpad: (id: string, scratchpad: string) => Promise<void>;
   updateTopicTimestamp: (id: string) => Promise<void>;
   forkTopic: (topicId: string, messageId: string) => Promise<void>;
+  renameFork: (topicId: string, forkId: string, name: string) => Promise<void>;
   switchFork: (topicId: string, forkId: string) => Promise<void>;
   deleteFork: (topicId: string, forkId: string) => Promise<void>;
   getTopicTokenCount: (topicId: string) => Promise<number>;
@@ -504,7 +505,15 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       // so the ForkTabs component (which requires length > 1) will render.
       const baseForks = existingForks.length === 0 ? [{ id: 'main', name: 'Main', createdOn: originalTopic.createdOn }] : existingForks;
 
-      const newForkName = `Fork ${baseForks.length}`;
+      let nextForkNumber = 1;
+      for (const fork of baseForks) {
+        const match = fork.name.match(/^Fork (\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num >= nextForkNumber) nextForkNumber = num + 1;
+        }
+      }
+      const newForkName = `Fork ${nextForkNumber}`;
 
       const newFork = {
         id: newForkId,
@@ -608,6 +617,28 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       console.error('Failed to delete fork', err);
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification('Failed to delete branch', message);
+    }
+  },
+  renameFork: async (topicId: string, forkId: string, name: string): Promise<void> => {
+    try {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+
+      const topic = get().topics.find((t) => t.id === topicId);
+      if (!topic?.forks) return;
+
+      const updatedForks = topic.forks.map((f) => (f.id === forkId ? { ...f, name: trimmed } : f));
+      const now = new Date().toISOString();
+
+      await athenaDb.topics.update(topicId, { forks: updatedForks, updatedOn: now });
+
+      set((state) => ({
+        topics: state.topics.map((t) => (t.id === topicId ? { ...t, forks: updatedForks, updatedOn: now } : t)),
+      }));
+    } catch (err) {
+      console.error('Failed to rename fork', err);
+      const message = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification('Failed to rename branch', message);
     }
   },
   getTopicTokenCount: async (topicId: string): Promise<number> => {

@@ -12,8 +12,10 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  TextField,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import EditIcon from '@mui/icons-material/Edit';
 import { useTopicStore } from '../store/TopicStore';
 import { useChatStore } from '../store/ChatStore';
 import { useAuthStore } from '../store/AuthStore';
@@ -23,10 +25,12 @@ interface ForkTabsProps {
 }
 
 const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
-  const { topics, switchFork, deleteFork } = useTopicStore();
+  const { topics, switchFork, deleteFork, renameFork } = useTopicStore();
   const { fetchMessages } = useChatStore();
   const { chatFontSize } = useAuthStore();
   const [forkToDelete, setForkToDelete] = useState<string | null>(null);
+  const [forkToRename, setForkToRename] = useState<{ id: string; name: string } | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const topic = topics.find((t) => t.id === topicId);
   if (!topic || (topic.forks?.length ?? 0) <= 1) {
@@ -45,6 +49,20 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
   const handleDeleteClick = (e: React.MouseEvent, forkId: string): void => {
     e.stopPropagation();
     setForkToDelete(forkId);
+  };
+
+  const handleRenameClick = (e: React.MouseEvent, forkId: string, name: string): void => {
+    e.stopPropagation();
+    setForkToRename({ id: forkId, name });
+    setRenameValue(name);
+  };
+
+  const handleConfirmRename = (): void => {
+    if (!forkToRename || !renameValue.trim()) return;
+    void (async (): Promise<void> => {
+      await renameFork(topicId, forkToRename.id, renameValue.trim());
+      setForkToRename(null);
+    })();
   };
 
   const handleConfirmDelete = (): void => {
@@ -101,6 +119,22 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
                     <IconButton
                       component="span"
                       size="small"
+                      aria-label={`Rename branch ${fork.name}`}
+                      onClick={(e): void => handleRenameClick(e, fork.id, fork.name)}
+                      sx={{
+                        p: 0.2,
+                        ml: 0.25,
+                        opacity: 0.5,
+                        '&:hover': { opacity: 1, bgcolor: 'rgba(0,0,0,0.1)' },
+                      }}
+                    >
+                      <EditIcon sx={{ fontSize: '0.7rem' }} />
+                    </IconButton>
+                  )}
+                  {topic.forks && topic.forks.length > 1 && (
+                    <IconButton
+                      component="span"
+                      size="small"
                       aria-label={`Delete branch ${fork.name}`}
                       onClick={(e): void => handleDeleteClick(e, fork.id)}
                       sx={{
@@ -131,6 +165,28 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
           <Button onClick={(): void => setForkToDelete(null)}>Cancel</Button>
           <Button onClick={handleConfirmDelete} color="error" variant="contained">
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(forkToRename)} onClose={(): void => setForkToRename(null)}>
+        <DialogTitle>Rename Branch</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Branch name"
+            value={renameValue}
+            onChange={(e): void => setRenameValue(e.target.value)}
+            onKeyDown={(e): void => {
+              if (e.key === 'Enter') handleConfirmRename();
+            }}
+            sx={{ mt: 1, minWidth: 280 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={(): void => setForkToRename(null)}>Cancel</Button>
+          <Button onClick={handleConfirmRename} variant="contained" disabled={!renameValue.trim()}>
+            Rename
           </Button>
         </DialogActions>
       </Dialog>

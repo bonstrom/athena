@@ -15,6 +15,7 @@ interface TopicStoreSlice {
   topics: TopicLike[];
   switchFork: (topicId: string, forkId: string) => Promise<void>;
   deleteFork: (topicId: string, forkId: string) => Promise<void>;
+  renameFork: (topicId: string, forkId: string, name: string) => Promise<void>;
 }
 
 interface ChatStoreSlice {
@@ -27,6 +28,7 @@ interface AuthStoreSlice {
 
 const mockSwitchFork = jest.fn<Promise<void>, [string, string]>(() => Promise.resolve());
 const mockDeleteFork = jest.fn<Promise<void>, [string, string]>(() => Promise.resolve());
+const mockRenameFork = jest.fn<Promise<void>, [string, string, string]>(() => Promise.resolve());
 const mockFetchMessages = jest.fn<Promise<void>, [string, string?]>(() => Promise.resolve());
 
 jest.mock('../store/TopicStore', () => ({
@@ -61,6 +63,7 @@ describe('ForkTabs', () => {
       topics: [{ id: 'topic-1', forks: [{ id: 'main', name: 'Main', createdOn: '2026-01-01T00:00:00.000Z' }] }],
       switchFork: (...args: [string, string]): Promise<void> => mockSwitchFork(...args),
       deleteFork: (...args: [string, string]): Promise<void> => mockDeleteFork(...args),
+      renameFork: (...args: [string, string, string]): Promise<void> => mockRenameFork(...args),
     });
     mockUseTopicStore.getState.mockReturnValue({ topics: [{ id: 'topic-1', activeForkId: 'main' }] });
 
@@ -81,6 +84,7 @@ describe('ForkTabs', () => {
       topics: [topic],
       switchFork: (...args: [string, string]): Promise<void> => mockSwitchFork(...args),
       deleteFork: (...args: [string, string]): Promise<void> => mockDeleteFork(...args),
+      renameFork: (...args: [string, string, string]): Promise<void> => mockRenameFork(...args),
     });
     mockUseTopicStore.getState.mockReturnValue({ topics: [topic] });
 
@@ -106,6 +110,7 @@ describe('ForkTabs', () => {
       topics: [topic],
       switchFork: (...args: [string, string]): Promise<void> => mockSwitchFork(...args),
       deleteFork: (...args: [string, string]): Promise<void> => mockDeleteFork(...args),
+      renameFork: (...args: [string, string, string]): Promise<void> => mockRenameFork(...args),
     });
     mockUseTopicStore.getState.mockReturnValue({
       topics: [{ ...topic, activeForkId: 'main', forks: [{ id: 'main', name: 'Main', createdOn: topic.forks?.[0].createdOn ?? '' }] }],
@@ -119,6 +124,35 @@ describe('ForkTabs', () => {
     await waitFor(() => {
       expect(mockDeleteFork).toHaveBeenCalledWith('topic-1', 'branch-2');
       expect(mockFetchMessages).toHaveBeenCalledWith('topic-1', 'main');
+    });
+  });
+
+  it('renames a fork after confirmation', async () => {
+    const topic = createTopic({
+      activeForkId: 'main',
+      forks: [
+        { id: 'main', name: 'Main', createdOn: '2026-01-01T00:00:00.000Z' },
+        { id: 'branch-2', name: 'Branch 2', createdOn: '2026-01-02T00:00:00.000Z' },
+      ],
+    });
+    mockUseTopicStore.mockReturnValue({
+      topics: [topic],
+      switchFork: (...args: [string, string]): Promise<void> => mockSwitchFork(...args),
+      deleteFork: (...args: [string, string]): Promise<void> => mockDeleteFork(...args),
+      renameFork: (...args: [string, string, string]): Promise<void> => mockRenameFork(...args),
+    });
+    mockUseTopicStore.getState.mockReturnValue({ topics: [topic] });
+
+    render(<ForkTabs topicId="topic-1" />);
+
+    fireEvent.click(screen.getByLabelText('Rename branch Branch 2'));
+
+    const input = screen.getByLabelText('Branch name');
+    fireEvent.change(input, { target: { value: 'My Branch' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+
+    await waitFor(() => {
+      expect(mockRenameFork).toHaveBeenCalledWith('topic-1', 'branch-2', 'My Branch');
     });
   });
 });

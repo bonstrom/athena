@@ -1,5 +1,5 @@
 import { RAG_CONTENT_LIMIT, RAG_MAX_CHARS, RAG_MIN_SCORE, SCRATCHPAD_LIMIT } from '../../constants';
-import type { Message, Topic } from '../../database/AthenaDb';
+import { Message, Topic } from '../../database/AthenaDb';
 import { createTopic, createMessage } from '../../testUtils';
 import { DEFAULT_MODELS } from '../../types/provider';
 import { encode } from 'gpt-tokenizer';
@@ -893,22 +893,33 @@ describe('TopicStore actions', () => {
       void args;
     });
 
+    mockDbMessages = [];
+    lastBulkAddedMessages = [];
     mockAddNotification.mockReset();
     mockTopicsToArray.mockReset();
     mockTopicsAdd.mockReset();
     mockTopicsDelete.mockReset();
     mockTopicsUpdate.mockReset();
     mockMessagesDelete.mockReset();
+    mockDbBulkAdd.mockReset();
+    mockDbTransaction.mockReset();
     mockHasAnyApiKey.mockReset();
     mockAskLlm.mockReset();
     mockGetDefaultTopicNameModel.mockReset();
     mockEncode.mockImplementation((text: string): number[] => new Array<number>(text.length).fill(0));
+    mockDbBulkAdd.mockImplementation((messages: Message[]): Promise<void> => {
+      lastBulkAddedMessages = messages;
+      return Promise.resolve();
+    });
     mockTopicsToArray.mockResolvedValue([]);
     mockTopicsAdd.mockResolvedValue();
     mockTopicsDelete.mockResolvedValue();
     mockTopicsUpdate.mockResolvedValue(1);
     mockMessagesDelete.mockResolvedValue(0);
     mockHasAnyApiKey.mockReturnValue(false);
+    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+      await callback();
+    });
 
     useTopicStore.setState({
       topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main' })],
@@ -1279,6 +1290,93 @@ describe('TopicStore actions', () => {
     await useTopicStore.getState().deleteFork('t1', 'fork-2');
 
     expect(mockAddNotification).toHaveBeenCalledWith('Failed to delete branch', 'delete failed');
+  });
+
+  it('forkTopic uses next available number avoiding duplicates after deletion', async () => {
+    const topic = createTopic({
+      id: 't1',
+      name: 'Topic',
+      activeForkId: 'main',
+      forks: [
+        { id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' },
+        { id: 'fork-2', name: 'Fork 2', createdOn: '2024-01-02T00:00:00.000Z' },
+        { id: 'fork-5', name: 'Fork 5', createdOn: '2024-01-05T00:00:00.000Z' },
+        { id: 'custom', name: 'Custom Name', createdOn: '2024-01-03T00:00:00.000Z' },
+      ],
+    });
+    useTopicStore.setState({ topics: [topic] });
+
+    const u1 = createMessage({
+      topicId: 't1',
+      forkId: 'main',
+      id: 'u1',
+      type: 'user',
+      content: 'Q1',
+      created: '2024-01-01T00:00:00.000Z',
+    });
+    mockDbMessages = [u1];
+
+    await useTopicStore.getState().forkTopic('t1', 'u1');
+
+    expect(mockTopicsUpdate).toHaveBeenCalledTimes(1);
+    const call = mockTopicsUpdate.mock.calls[0] as [string, Partial<Topic>];
+    const patch = call[1] as Partial<Topic> | undefined;
+    expect(patch?.forks?.some((f) => f.name === 'Fork 6')).toBe(true);
+  });
+
+  it('renameFork updates fork name in store and DB', async () => {
+    const topic = createTopic({
+      id: 't1',
+      activeForkId: 'main',
+      forks: [
+        { id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' },
+        { id: 'fork-2', name: 'Fork 2', createdOn: '2024-01-02T00:00:00.000Z' },
+      ],
+    });
+    useTopicStore.setState({ topics: [topic] });
+
+    await useTopicStore.getState().renameFork('t1', 'fork-2', 'My Custom Branch');
+
+    expect(mockTopicsUpdate).toHaveBeenCalledTimes(1);
+    expect(mockTopicsUpdate.mock.calls[0][0]).toBe('t1');
+
+    const updated = useTopicStore.getState().topics.find((t) => t.id === 't1');
+    const renamed = updated?.forks?.find((f) => f.id === 'fork-2');
+    expect(renamed?.name).toBe('My Custom Branch');
+  });
+
+  it('renameFork ignores empty name', async () => {
+    const topic = createTopic({
+      id: 't1',
+      activeForkId: 'main',
+      forks: [
+        { id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' },
+      ],
+    });
+    useTopicStore.setState({ topics: [topic] });
+
+    await useTopicStore.getState().renameFork('t1', 'main', '  ');
+
+    expect(mockTopicsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('renameFork notifies when DB update fails', async () => {
+    useTopicStore.setState({
+      topics: [
+        createTopic({
+          id: 't1',
+          activeForkId: 'main',
+          forks: [
+            { id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' },
+          ],
+        }),
+      ],
+    });
+    mockTopicsUpdate.mockRejectedValueOnce(new Error('rename failed'));
+
+    await useTopicStore.getState().renameFork('t1', 'main', 'New Name');
+
+    expect(mockAddNotification).toHaveBeenCalledWith('Failed to rename branch', 'rename failed');
   });
 
   it('deleteTopic removes topic from store on success', async () => {
