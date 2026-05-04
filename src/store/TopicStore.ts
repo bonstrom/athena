@@ -368,12 +368,12 @@ export const useTopicStore = create<TopicState>((set, get) => ({
           completionTokens: 0,
           totalCost: 0,
         };
-        base.unshift(directoryMessage);
+        base.push(directoryMessage);
       }
     }
 
     if (ragMessage) {
-      return [ragMessage, ...base];
+      return [...base, ragMessage];
     }
 
     return base;

@@ -1345,7 +1345,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const fullContent = dbMessage?.content ?? content;
       const safeContent = fullContent.length > 1500 ? fullContent.slice(0, 1500) + '... (truncated)' : fullContent;
 
-      const summaryWordLimit = Math.max(8, Math.min(30, Math.floor(fullContent.length / 20)));
+      const summaryWordLimit = Math.max(8, Math.min(50, Math.floor(fullContent.length / 20)));
 
       let rawSummary: string;
 
