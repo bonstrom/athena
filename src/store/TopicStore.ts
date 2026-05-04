@@ -398,7 +398,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
     }));
 
-    if (topic.name !== 'New Topic') return;
+    if (topic.name !== 'New Topic' && topic.name !== 'New Debate') return;
 
     const hasAnyKey = useProviderStore.getState().hasAnyApiKey();
 

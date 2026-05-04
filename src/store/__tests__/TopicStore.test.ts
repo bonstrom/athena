@@ -1105,6 +1105,16 @@ describe('TopicStore actions', () => {
     expect(mockAddNotification).not.toHaveBeenCalled();
   });
 
+  it('generateTopicName renames a debate topic ("New Debate")', async () => {
+    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'New Debate' })] });
+    mockHasAnyApiKey.mockReturnValue(false);
+
+    await useTopicStore.getState().generateTopicName('t1', 'What is the meaning of life the universe and everything');
+
+    expect(mockTopicsUpdate).toHaveBeenCalledTimes(2);
+    expect(useTopicStore.getState().topics.find((t) => t.id === 't1')?.name).not.toBe('New Debate');
+  });
+
   it('updateTopicScratchpad updates scratchpad and sorts by updatedOn desc', async () => {
     const t1 = createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'First', updatedOn: '2024-01-01T00:00:00.000Z' });
     const t2 = createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't2', name: 'Second', updatedOn: '2024-01-02T00:00:00.000Z' });
