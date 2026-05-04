@@ -3,6 +3,7 @@ import {
   Box,
   TextField,
   InputAdornment,
+  Chip,
   CircularProgress,
   List,
   ListItem,
@@ -34,6 +35,7 @@ export const GlobalSearch = (): JSX.Element => {
   const [isSearching, setIsSearching] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchMode, setSearchMode] = useState<'topics' | 'messages'>('topics');
   const navigate = useNavigate();
   const { isMobile, closeDrawer } = useUiStore();
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
@@ -59,88 +61,88 @@ export const GlobalSearch = (): JSX.Element => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
     debounceTimer.current = setTimeout(() => {
-      void performSearch(query.trim().toLowerCase());
+      void performSearch(query.trim().toLowerCase(), searchMode);
     }, 300); // 300ms debounce
 
     return (): void => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
-  }, [query]);
+  }, [query, searchMode]);
 
-  const performSearch = async (searchQuery: string): Promise<void> => {
+  const performSearch = async (searchQuery: string, mode: 'topics' | 'messages'): Promise<void> => {
     try {
-      // 1. Search Topics - Use index for prefix matches first
-      const prefixMatchedTopics = await athenaDb.topics
-        .where('name')
-        .startsWithIgnoreCase(searchQuery)
-        .filter((t) => !t.isDeleted)
-        .toArray();
-
-      // Also search for partial matches if needed
-      const otherMatchedTopics = await athenaDb.topics
-        .toCollection()
-        .filter((t) => !t.isDeleted && t.name.toLowerCase().includes(searchQuery) && !t.name.toLowerCase().startsWith(searchQuery))
-        .toArray();
-
-      const matchedTopics = [...prefixMatchedTopics, ...otherMatchedTopics];
-
-      // 2. Search Messages
-      const matchedMessages = await athenaDb.messages
-        .toCollection()
-        .filter((m) => !m.isDeleted && m.content.toLowerCase().includes(searchQuery))
-        .toArray();
-
-      // We need to fetch the parent topics for the matched messages to display their names
-      const topicIdsFromMessages = Array.from(new Set<string>(matchedMessages.map((m) => m.topicId)));
-
-      // Fetch parents in bulk
-      const topicsForMessages = await athenaDb.topics.bulkGet(topicIdsFromMessages);
-
-      // Create a lookup map for fast title retrieval
-      const topicLookup = new Map<string, Topic>();
-      topicsForMessages.forEach((t) => {
-        if (t && !t.isDeleted) topicLookup.set(t.id, t);
-      });
-
       const combinedResults: SearchResult[] = [];
 
-      // Add Topic matches
-      matchedTopics.forEach((t) => {
-        combinedResults.push({
-          id: `topic-${t.id}`,
-          topicId: t.id,
-          type: 'topic',
-          title: t.name,
-          date: t.updatedOn,
-        });
-      });
+      if (mode === 'topics') {
+        // 1. Search Topics - Use index for prefix matches first
+        const prefixMatchedTopics = await athenaDb.topics
+          .where('name')
+          .startsWithIgnoreCase(searchQuery)
+          .filter((t) => !t.isDeleted)
+          .toArray();
 
-      // Add Message matches
-      matchedMessages.forEach((m) => {
-        const parentTopic = topicLookup.get(m.topicId);
-        if (parentTopic) {
-          // Create a snippet around the search query for context
-          const lowercaseContent = m.content.toLowerCase();
-          const matchIndex = lowercaseContent.indexOf(searchQuery);
-          let snippet = m.content;
-          if (matchIndex !== -1) {
-            const start = Math.max(0, matchIndex - 30);
-            const end = Math.min(m.content.length, matchIndex + searchQuery.length + 30);
-            snippet = (start > 0 ? '...' : '') + m.content.substring(start, end).replace(/\n/g, ' ') + (end < m.content.length ? '...' : '');
-          } else {
-            snippet = m.content.substring(0, 60).replace(/\n/g, ' ') + (m.content.length > 60 ? '...' : '');
-          }
+        // Also search for partial matches if needed
+        const otherMatchedTopics = await athenaDb.topics
+          .toCollection()
+          .filter((t) => !t.isDeleted && t.name.toLowerCase().includes(searchQuery) && !t.name.toLowerCase().startsWith(searchQuery))
+          .toArray();
 
+        const matchedTopics = [...prefixMatchedTopics, ...otherMatchedTopics];
+
+        matchedTopics.forEach((t) => {
           combinedResults.push({
-            id: `msg-${m.id}`,
-            topicId: m.topicId,
-            type: 'message',
-            title: parentTopic.name, // Show the topic name it belongs to
-            snippet: snippet,
-            date: m.created,
+            id: `topic-${t.id}`,
+            topicId: t.id,
+            type: 'topic',
+            title: t.name,
+            date: t.updatedOn,
           });
-        }
-      });
+        });
+      } else {
+        // 2. Search Messages
+        const matchedMessages = await athenaDb.messages
+          .toCollection()
+          .filter((m) => !m.isDeleted && m.content.toLowerCase().includes(searchQuery))
+          .toArray();
+
+        // We need to fetch the parent topics for the matched messages to display their names
+        const topicIdsFromMessages = Array.from(new Set<string>(matchedMessages.map((m) => m.topicId)));
+
+        // Fetch parents in bulk
+        const topicsForMessages = await athenaDb.topics.bulkGet(topicIdsFromMessages);
+
+        // Create a lookup map for fast title retrieval
+        const topicLookup = new Map<string, Topic>();
+        topicsForMessages.forEach((t) => {
+          if (t && !t.isDeleted) topicLookup.set(t.id, t);
+        });
+
+        matchedMessages.forEach((m) => {
+          const parentTopic = topicLookup.get(m.topicId);
+          if (parentTopic) {
+            // Create a snippet around the search query for context
+            const lowercaseContent = m.content.toLowerCase();
+            const matchIndex = lowercaseContent.indexOf(searchQuery);
+            let snippet = m.content;
+            if (matchIndex !== -1) {
+              const start = Math.max(0, matchIndex - 30);
+              const end = Math.min(m.content.length, matchIndex + searchQuery.length + 30);
+              snippet = (start > 0 ? '...' : '') + m.content.substring(start, end).replace(/\n/g, ' ') + (end < m.content.length ? '...' : '');
+            } else {
+              snippet = m.content.substring(0, 60).replace(/\n/g, ' ') + (m.content.length > 60 ? '...' : '');
+            }
+
+            combinedResults.push({
+              id: `msg-${m.id}`,
+              topicId: m.topicId,
+              type: 'message',
+              title: parentTopic.name,
+              snippet: snippet,
+              date: m.created,
+            });
+          }
+        });
+      }
 
       // Sort by date descending (newest first)
       combinedResults.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -164,16 +166,29 @@ export const GlobalSearch = (): JSX.Element => {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      setSearchMode((prev) => (prev === 'topics' ? 'messages' : 'topics'));
+    }
+  };
+
+  const handleBlur = (): void => {
+    setSearchMode('topics');
+  };
+
   return (
     <ClickAwayListener onClickAway={(): void => setIsOpen(false)}>
       <Box sx={{ position: 'relative', width: '100%', px: 2, pb: 1, zIndex: 1200 }}>
         <TextField
           fullWidth
           size="small"
-          inputProps={{ 'aria-label': 'Search topics and messages' }}
-          placeholder="Search topics and messages..."
+          inputProps={{ 'aria-label': `Search ${searchMode}` }}
+          placeholder={searchMode === 'topics' ? 'Search topics...' : 'Search messages...'}
           value={query}
           onChange={(e): void => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
           onFocus={(): void => {
             if (query.trim().length >= 3) setIsOpen(true);
           }}
@@ -183,11 +198,24 @@ export const GlobalSearch = (): JSX.Element => {
                 <SearchIcon fontSize="small" />
               </InputAdornment>
             ),
-            endAdornment: isSearching ? (
-              <InputAdornment position="end">
-                <CircularProgress size={16} />
-              </InputAdornment>
-            ) : null,
+            endAdornment: (
+              <>
+                {isSearching && (
+                  <InputAdornment position="end">
+                    <CircularProgress size={16} />
+                  </InputAdornment>
+                )}
+                <InputAdornment position="end">
+                  <Chip
+                    icon={searchMode === 'topics' ? <TopicIcon /> : <ChatBubbleOutlineIcon />}
+                    label={searchMode === 'topics' ? 'Topics' : 'Messages'}
+                    size="small"
+                    variant="outlined"
+                    sx={{ height: 24, '& .MuiChip-label': { fontSize: '0.7rem', px: 0.5 }, '& .MuiChip-icon': { fontSize: 16, ml: 0.5 } }}
+                  />
+                </InputAdornment>
+              </>
+            ),
           }}
           sx={{
             '& .MuiOutlinedInput-root': {

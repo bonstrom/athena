@@ -82,7 +82,7 @@ describe('GlobalSearch', () => {
 
     render(<GlobalSearch />);
 
-    fireEvent.change(screen.getByLabelText('Search topics and messages'), { target: { value: 'topic' } });
+    fireEvent.change(screen.getByLabelText('Search topics'), { target: { value: 'topic' } });
 
     act(() => {
       jest.advanceTimersByTime(350);
@@ -128,7 +128,7 @@ describe('GlobalSearch', () => {
 
     render(<GlobalSearch />);
 
-    fireEvent.change(screen.getByLabelText('Search topics and messages'), { target: { value: 'none' } });
+    fireEvent.change(screen.getByLabelText('Search topics'), { target: { value: 'none' } });
 
     act(() => {
       jest.advanceTimersByTime(350);
