@@ -23,6 +23,7 @@ interface AuthState {
   messageTruncateChars: number;
   ragEnabled: boolean;
   maxContextTokens: number;
+  contextWindowRatio: number;
   messageRetrievalEnabled: boolean;
   askUserEnabled: boolean;
   aiSummaryEnabled: boolean;
@@ -40,6 +41,7 @@ interface AuthState {
   setSummaryModel: (model: string) => void;
   setRagEnabled: (enabled: boolean) => void;
   setMaxContextTokens: (tokens: number) => void;
+  setContextWindowRatio: (ratio: number) => void;
   setMessageRetrievalEnabled: (enabled: boolean) => void;
   setLlmSuggestionEnabled: (enabled: boolean) => void;
   setReplyPredictionEnabled: (enabled: boolean) => void;
@@ -85,6 +87,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedMessageTruncateChars = Number(localStorage.getItem('messageTruncateChars') ?? '500');
   const storedRagEnabled = localStorage.getItem('ragEnabled') === 'true'; // default false
   const storedMaxContextTokens = Number(localStorage.getItem('maxContextTokens') ?? '16000');
+  const storedContextWindowRatio = Number(localStorage.getItem('contextWindowRatio') ?? '0.75');
   const storedMessageRetrievalEnabled = localStorage.getItem('messageRetrievalEnabled') !== 'false'; // default true
   const storedAskUserEnabled = localStorage.getItem('askUserEnabled') !== 'false'; // default true
   const storedAiSummaryEnabled = localStorage.getItem('aiSummaryEnabled') === 'true';
@@ -113,6 +116,7 @@ export const useAuthStore = create<AuthState>((set) => {
     messageTruncateChars: storedMessageTruncateChars,
     ragEnabled: storedRagEnabled,
     maxContextTokens: storedMaxContextTokens,
+    contextWindowRatio: storedContextWindowRatio,
     messageRetrievalEnabled: storedMessageRetrievalEnabled,
     askUserEnabled: storedAskUserEnabled,
     aiSummaryEnabled: storedAiSummaryEnabled,
@@ -138,6 +142,7 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem('messageTruncateChars');
       localStorage.removeItem('ragEnabled');
       localStorage.removeItem('maxContextTokens');
+      localStorage.removeItem('contextWindowRatio');
       localStorage.removeItem('askUserEnabled');
       localStorage.removeItem('aiSummaryEnabled');
       localStorage.removeItem('summaryModel');
@@ -163,6 +168,7 @@ export const useAuthStore = create<AuthState>((set) => {
         llmModelDownloadStatus: {},
         ragEnabled: false,
         maxContextTokens: 16000,
+        contextWindowRatio: 0.75,
         messageRetrievalEnabled: true,
         askUserEnabled: true,
         aiSummaryEnabled: false,
@@ -226,6 +232,11 @@ export const useAuthStore = create<AuthState>((set) => {
     setMaxContextTokens: (tokens: number): void => {
       localStorage.setItem('maxContextTokens', String(tokens));
       set({ maxContextTokens: tokens });
+    },
+    setContextWindowRatio: (ratio: number): void => {
+      const clamped = Math.max(0.1, Math.min(0.95, ratio));
+      localStorage.setItem('contextWindowRatio', String(clamped));
+      set({ contextWindowRatio: clamped });
     },
     setMessageRetrievalEnabled: (enabled: boolean): void => {
       localStorage.setItem('messageRetrievalEnabled', String(enabled));

@@ -23,7 +23,7 @@ export interface LlmResult {
   completionTokens: number;
   aiNote?: string | null;
   aiNoteAction?: 'append' | 'replace';
-  promptTokensDetails?: { cached_tokens?: number };
+  promptTokensDetails?: { cached_tokens?: number; cache_creation_tokens?: number };
   completionTokensDetails?: { reasoning_tokens?: number };
   toolCalls?: { id: string; type: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[];
   searchCount: number;
@@ -337,7 +337,7 @@ interface ParsedResponse {
   reasoning: string;
   promptTokens: number;
   completionTokens: number;
-  promptTokensDetails?: { cached_tokens?: number };
+  promptTokensDetails?: { cached_tokens?: number; cache_creation_tokens?: number };
   completionTokensDetails?: { reasoning_tokens?: number };
   toolCalls?: ToolCall[];
   finishReason?: string;
@@ -353,7 +353,7 @@ interface StreamState {
   reasoning: string;
   promptTokens: number;
   completionTokens: number;
-  promptTokensDetails?: { cached_tokens?: number };
+  promptTokensDetails?: { cached_tokens?: number; cache_creation_tokens?: number };
   completionTokensDetails?: { reasoning_tokens?: number };
   toolCalls?: ToolCall[];
   finishReason?: string;
@@ -482,10 +482,23 @@ const OpenAiAdapter: IMessageAdapter = {
 const AnthropicAdapter: IMessageAdapter = {
   buildBody(payload, stream): string {
     const anthropicMessages = toAnthropicMessages(payload.messages);
+    const mergedSystem = payload.messages
+      .filter((m) => m.role === 'system')
+      .map((m) => (typeof m.content === 'string' ? m.content : ''))
+      .filter(Boolean)
+      .join('\n\n');
     return JSON.stringify({
       model: payload.model,
       messages: anthropicMessages,
-      system: payload.messages.find((m) => m.role === 'system')?.content,
+      system: mergedSystem
+        ? [
+            {
+              type: 'text',
+              text: mergedSystem,
+              cache_control: { type: 'ephemeral' },
+            },
+          ]
+        : undefined,
       max_tokens: payload.max_tokens ?? 4096,
       temperature: payload.temperature,
       stream,
@@ -514,22 +527,36 @@ const AnthropicAdapter: IMessageAdapter = {
             function: { name: b.name ?? '', arguments: JSON.stringify(b.input ?? {}) },
           }))
         : undefined;
+    const cacheRead = d.usage.cache_read_input_tokens;
+    const cacheCreation = d.usage.cache_creation_input_tokens;
     return {
       content: textBlock?.text?.trim() ?? '',
       reasoning: thinkingBlock?.thinking?.trim() ?? '',
       promptTokens: d.usage.input_tokens,
       completionTokens: d.usage.output_tokens,
+      promptTokensDetails:
+        cacheRead != null || cacheCreation != null
+          ? { cached_tokens: cacheRead, cache_creation_tokens: cacheCreation }
+          : undefined,
       toolCalls,
       finishReason: d.stop_reason,
       responseId: d.id,
       actualModel: d.model,
-      cacheCreationTokens: d.usage.cache_creation_input_tokens,
-      cacheReadTokens: d.usage.cache_read_input_tokens,
+      cacheCreationTokens: cacheCreation,
+      cacheReadTokens: cacheRead,
     };
   },
 
   handleStreamChunk(parsed: unknown, state: StreamState, onToken, onReasoning): void {
     const p = parsed as AnthropicStreamChunk;
+    const syncCacheDetails = (): void => {
+      if (state.cacheReadTokens != null || state.cacheCreationTokens != null) {
+        state.promptTokensDetails = {
+          cached_tokens: state.cacheReadTokens,
+          cache_creation_tokens: state.cacheCreationTokens,
+        };
+      }
+    };
     if (p.type === 'content_block_start') {
       const block = p.content_block;
       if (block?.type === 'tool_use') {
@@ -558,11 +585,13 @@ const AnthropicAdapter: IMessageAdapter = {
       if (p.message?.model && !state.actualModel) state.actualModel = p.message.model;
       if (p.message?.usage.cache_creation_input_tokens != null) state.cacheCreationTokens = p.message.usage.cache_creation_input_tokens;
       if (p.message?.usage.cache_read_input_tokens != null) state.cacheReadTokens = p.message.usage.cache_read_input_tokens;
+      syncCacheDetails();
     } else if (p.type === 'message_delta') {
       state.completionTokens = p.usage?.output_tokens ?? 0;
       if (p.delta?.stop_reason) state.finishReason = p.delta.stop_reason;
       if (p.usage?.cache_creation_input_tokens != null) state.cacheCreationTokens = p.usage.cache_creation_input_tokens;
       if (p.usage?.cache_read_input_tokens != null) state.cacheReadTokens = p.usage.cache_read_input_tokens;
+      syncCacheDetails();
     }
   },
 

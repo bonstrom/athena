@@ -181,6 +181,7 @@ describe('TopicStore.getTopicContext', () => {
     mockAuthGetState.mockReturnValue({
       defaultMaxContextMessages: 4,
       maxContextTokens: 10000,
+      contextWindowRatio: 0.75,
       messageRetrievalEnabled: true,
       ragEnabled: false,
     });
@@ -444,7 +445,8 @@ describe('TopicStore.getTopicContext', () => {
     expect(ids).toContain('a2');
   });
 
-  it('includes summary text when truncating older long messages', async () => {
+  it('keeps pinned messages full and truncates old non-pinned long messages', async () => {
+    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 5 })] });
     const longContent = 'L'.repeat(RAG_CONTENT_LIMIT + 40);
 
     const pinnedOld = createMessage({
@@ -457,13 +459,30 @@ describe('TopicStore.getTopicContext', () => {
       includeInContext: true,
       created: '2024-01-01T00:00:00.000Z',
     });
+    // Add enough messages to push old messages outside the keep-full window
+    const extraMessages = Array.from({ length: 6 }, (_, i) => [
+      createMessage({ topicId: 'topic-1', forkId: 'main',
+        id: `extra-u-${i}`,
+        type: 'user',
+        content: `Extra user ${i}`,
+        created: new Date(`2024-01-01T00:0${i + 1}:00.000Z`).toISOString(),
+      }),
+      createMessage({ topicId: 'topic-1', forkId: 'main',
+        id: `extra-a-${i}`,
+        type: 'assistant',
+        content: 'L'.repeat(RAG_CONTENT_LIMIT + 10), // long content to trigger truncation
+        created: new Date(`2024-01-01T00:0${i + 1}:30.000Z`).toISOString(),
+        parentMessageId: `extra-u-${i}`,
+      }),
+    ]).flat();
+
     const recentUser = createMessage({
       topicId: 'topic-1',
       forkId: 'main',
       id: 'recent-user',
       type: 'user',
       content: 'Recent user message',
-      created: '2024-01-01T00:01:00.000Z',
+      created: '2024-01-02T00:00:00.000Z',
     });
     const recentAssistant = createMessage({
       topicId: 'topic-1',
@@ -471,18 +490,24 @@ describe('TopicStore.getTopicContext', () => {
       id: 'recent-assistant',
       type: 'assistant',
       content: 'Recent assistant message',
-      created: '2024-01-01T00:02:00.000Z',
+      created: '2024-01-02T00:01:00.000Z',
       parentMessageId: 'recent-user',
     });
 
-    mockDbMessages = [pinnedOld, recentUser, recentAssistant];
+    mockDbMessages = [pinnedOld, ...extraMessages, recentUser, recentAssistant];
 
     const context = await useTopicStore.getState().getTopicContext('topic-1');
-    const oldInContext = context.find((m) => m.id === 'old-user-message');
+    const pinnedInContext = context.find((m) => m.id === 'old-user-message');
 
-    expect(oldInContext).toBeDefined();
-    expect(oldInContext?.content).toContain('[SUMMARY]: Key details from old message');
-    expect(oldInContext?.content).toContain("[TRUNCATED: Use 'read_messages'");
+    // Pinned messages are never truncated — should have full original content
+    expect(pinnedInContext).toBeDefined();
+    expect(pinnedInContext?.content).not.toContain('[TRUNCATED:');
+    expect(pinnedInContext?.content).toBe(longContent);
+
+    // Old non-pinned messages outside the keep-full window should be truncated
+    const oldNonPinned = context.find((m) => m.id === 'extra-a-4');
+    expect(oldNonPinned).toBeDefined();
+    expect(oldNonPinned?.content).toContain("[TRUNCATED: Use 'read_messages'");
   });
 
   it('excludes messages at and after excludeAfterId', async () => {

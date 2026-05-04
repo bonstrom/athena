@@ -12,13 +12,29 @@ function resolveModelFromSavedId(savedModelId: string | null, models: ChatModel[
   return models.find((m) => m.id === savedModelId) ?? models.find((m) => m.apiModelId === savedModelId);
 }
 
-export function calculateCostUSD(model: ChatModel, prompt: number, completion: number, promptDetails?: { cached_tokens?: number }): number {
+export function calculateCostUSD(
+  model: ChatModel,
+  prompt: number,
+  completion: number,
+  promptDetails?: { cached_tokens?: number; cache_creation_tokens?: number },
+): number {
   const cachedTokens = promptDetails?.cached_tokens ?? 0;
-  const regularPromptTokens = Math.max(0, prompt - cachedTokens);
-  return (regularPromptTokens / 1_000_000) * model.input + (cachedTokens / 1_000_000) * model.cachedInput + (completion / 1_000_000) * model.output;
+  const cacheCreationTokens = promptDetails?.cache_creation_tokens ?? 0;
+  const regularPromptTokens = Math.max(0, prompt - cachedTokens - cacheCreationTokens);
+  return (
+    (regularPromptTokens / 1_000_000) * model.input +
+    (cachedTokens / 1_000_000) * model.cachedInput +
+    (cacheCreationTokens / 1_000_000) * model.input * 1.25 +
+    (completion / 1_000_000) * model.output
+  );
 }
 
-export function calculateCostSEK(model: ChatModel, prompt: number, completion: number, promptDetails?: { cached_tokens?: number }): number {
+export function calculateCostSEK(
+  model: ChatModel,
+  prompt: number,
+  completion: number,
+  promptDetails?: { cached_tokens?: number; cache_creation_tokens?: number },
+): number {
   return calculateCostUSD(model, prompt, completion, promptDetails) * USD_TO_SEK;
 }
 

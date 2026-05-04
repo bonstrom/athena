@@ -6,7 +6,7 @@ export const USD_TO_SEK = 10;
 export const RAG_TOP_K = 5; // number of semantically similar messages to retrieve
 export const RAG_MIN_SCORE = 0.3; // discard weakly-related matches below this cosine similarity
 export const RAG_MAX_CHARS = 4000; // hard cap on total RAG block size injected into context
-export const RAG_CONTENT_LIMIT = 400; // truncate individual messages; LLM can fetch full content via read_messages
+export const RAG_CONTENT_LIMIT = 800; // truncate individual messages; LLM can fetch full content via read_messages
 export const MESSAGE_RETRIEVAL_INSTRUCTIONS = `You have access to historical messages via list_messages and read_messages tools.
 IMPORTANT: Messages in your context may be truncated (marked with [TRUNCATED]). When the user asks about specific past messages, quotes, or details from earlier in the conversation, you MUST call read_messages to fetch the full content before answering. Do NOT guess or rely on truncated previews — always verify with the tool.`;
 export const ASK_USER_INSTRUCTIONS = `When information is insufficient to answer confidently, follow this decision hierarchy:

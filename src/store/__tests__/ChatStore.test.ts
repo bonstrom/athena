@@ -1,6 +1,6 @@
 import type { Message, Topic } from '../../database/AthenaDb';
 import type { LlmProvider, UserChatModel } from '../../types/provider';
-import { createUserChatModel, createLlmProvider, createTopic, createMessage } from '../../testUtils';
+import { createUserChatModel, createLlmProvider, createTopic } from '../../testUtils';
 
 const mockDefaultModel: UserChatModel = createUserChatModel();
 

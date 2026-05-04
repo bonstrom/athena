@@ -202,8 +202,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     const defaultMessages = useAuthStore.getState().defaultMaxContextMessages || 10;
     const maxMessages = topic.maxContextMessages ?? defaultMessages;
     const userTokenBudget = useAuthStore.getState().maxContextTokens;
-    // Reserve ~40% for system prompts, RAG, and tool overhead; give 60% to the conversation window.
-    const windowTokenBudget = Math.floor(userTokenBudget * 0.6);
+    const contextWindowRatio = useAuthStore.getState().contextWindowRatio;
+    // Reserve a portion for system prompts, RAG, and tool overhead; give the rest to the conversation window.
+    const windowTokenBudget = Math.floor(userTokenBudget * contextWindowRatio);
     const conversationMessages = activeSequence.filter((m) => m.type === 'user' || m.type === 'assistant');
     const recent: Message[] = [];
     let windowTokens = 0;
@@ -228,13 +229,16 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     let base = unique.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
     // Truncate large messages in base to keep the window lean.
-    // Only the last message (the immediate previous response) is kept at full fidelity.
+    // Keep the last few messages at full fidelity so the LLM has enough context for
+    // multi-turn iteration without needing read_messages tool calls.
     // Everything else gets a short snippet — the LLM can fetch the full content via read_messages if needed.
+    // Pinned messages (includeInContext) are never truncated.
+    const KEEP_FULL_COUNT = 4;
     const retrievalEnabled = useAuthStore.getState().messageRetrievalEnabled;
     if (retrievalEnabled) {
       base = base.map((m, idx) => {
-        const isVeryRecent = idx === base.length - 1;
-        if (!isVeryRecent && (m.type === 'user' || m.type === 'assistant') && m.content.length > RAG_CONTENT_LIMIT) {
+        const isVeryRecent = idx >= base.length - KEEP_FULL_COUNT;
+        if (!isVeryRecent && !m.includeInContext && (m.type === 'user' || m.type === 'assistant') && m.content.length > RAG_CONTENT_LIMIT) {
           const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
           return {
             ...m,

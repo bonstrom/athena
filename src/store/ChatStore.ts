@@ -1063,9 +1063,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       // 5. Finalize DB Updates in atomic transaction
       const latencyMs = Date.now() - loopStartTime;
+      const dbCachedTokens = lastResult.promptTokensDetails?.cached_tokens ?? 0;
+      const dbCacheCreationTokens = lastResult.cacheCreationTokens ?? 0;
       const userPatch = {
         promptTokens: totalPromptTokens,
         totalCost: finalTotalCost,
+        cachedTokens: dbCachedTokens,
+        cacheCreationTokens: dbCacheCreationTokens,
         failed: false,
       };
       const assistantPatch = {
@@ -1076,6 +1080,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         reasoning: streamedThinking.trim(),
         completionTokens: totalCompletionTokens,
         totalCost: finalTotalCost,
+        cachedTokens: dbCachedTokens,
+        cacheCreationTokens: dbCacheCreationTokens,
         failed: false,
         latencyMs,
         model: selectedModel.apiModelId,
@@ -1303,7 +1309,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   maybeSummarize: async (messageId: string, content: string, force = false, contextMessages?: LlmMessage[]): Promise<void> => {
     const { aiSummaryEnabled } = useAuthStore.getState();
     const { summarizingMessageIds } = get();
-    if (!force && (!aiSummaryEnabled || content.length <= 250)) return;
+    if (!force && (!aiSummaryEnabled || content.length <= 500)) return;
     if (summarizingMessageIds.has(messageId)) return;
 
     set((state) => ({
@@ -1343,9 +1349,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Always read from DB to get full content — message.content in context may be truncated
       const dbMessage = await athenaDb.messages.get(messageId);
       const fullContent = dbMessage?.content ?? content;
-      const safeContent = fullContent.length > 1500 ? fullContent.slice(0, 1500) + '... (truncated)' : fullContent;
+      const SUMMARY_INPUT_MAX = 6000;
+      const safeContent = fullContent.length > SUMMARY_INPUT_MAX ? fullContent.slice(0, SUMMARY_INPUT_MAX) + '... (truncated)' : fullContent;
 
-      const summaryWordLimit = Math.max(8, Math.min(50, Math.floor(fullContent.length / 20)));
+      const summaryWordLimit = Math.max(15, Math.min(60, Math.floor(fullContent.length / 15)));
 
       let rawSummary: string;
 

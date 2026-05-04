@@ -164,6 +164,8 @@ export interface Message {
   failed: boolean;
   promptTokens: number;
   completionTokens: number;
+  cachedTokens?: number;
+  cacheCreationTokens?: number;
   totalCost: number;
   searchCount?: number;
   latencyMs?: number;

@@ -273,6 +273,26 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 <Typography variant="caption" display="block">
                   {`${message.totalCost.toFixed(3)} kr`}
                 </Typography>
+                {(message.promptTokens > 0 || message.completionTokens > 0) && (
+                  <Typography variant="caption" display="block">
+                    {[
+                      message.promptTokens > 0 ? `Prompt: ${message.promptTokens.toLocaleString()}` : null,
+                      message.completionTokens > 0 ? `Comp: ${message.completionTokens.toLocaleString()}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' | ')}
+                  </Typography>
+                )}
+                {((message.cachedTokens ?? 0) > 0 || (message.cacheCreationTokens ?? 0) > 0) && (
+                  <Typography variant="caption" display="block">
+                    {[
+                      message.cachedTokens ? `Cache hit: ${message.cachedTokens.toLocaleString()}` : null,
+                      message.cacheCreationTokens ? `Cache write: ${message.cacheCreationTokens.toLocaleString()}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' | ')}
+                  </Typography>
+                )}
                 {message.latencyMs && (
                   <>
                     <Typography variant="caption" display="block">
