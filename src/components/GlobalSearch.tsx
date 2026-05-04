@@ -84,11 +84,10 @@ export const GlobalSearch = (): JSX.Element => {
 
       const matchedTopics = [...prefixMatchedTopics, ...otherMatchedTopics];
 
-      // 2. Search Messages - Start with isDeleted index to avoid full table scan
+      // 2. Search Messages
       const matchedMessages = await athenaDb.messages
-        .where('isDeleted')
-        .equals(0)
-        .filter((m) => m.content.toLowerCase().includes(searchQuery))
+        .toCollection()
+        .filter((m) => !m.isDeleted && m.content.toLowerCase().includes(searchQuery))
         .toArray();
 
       // We need to fetch the parent topics for the matched messages to display their names

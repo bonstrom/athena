@@ -21,6 +21,7 @@ jest.mock('../database/AthenaDb', () => ({
     },
     messages: {
       where: jest.fn(),
+      toCollection: jest.fn(),
     },
   },
 }));
@@ -35,6 +36,7 @@ const mockAthenaDb = athenaDb as unknown as {
   };
   messages: {
     where: jest.Mock;
+    toCollection: jest.Mock;
   };
 };
 
@@ -64,11 +66,9 @@ describe('GlobalSearch', () => {
         toArray: jest.fn().mockResolvedValue([]),
       }),
     };
-    const messageDeletedChain = {
-      equals: jest.fn().mockReturnValue({
-        filter: jest.fn().mockReturnValue({
-          toArray: jest.fn().mockResolvedValue([]),
-        }),
+    const messageCollectionChain = {
+      filter: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([]),
       }),
     };
 
@@ -77,7 +77,7 @@ describe('GlobalSearch', () => {
       throw new Error(`Unexpected where field: ${field}`);
     });
     mockAthenaDb.topics.toCollection.mockReturnValue(collectionChain);
-    mockAthenaDb.messages.where.mockImplementation(() => messageDeletedChain);
+    mockAthenaDb.messages.toCollection.mockReturnValue(messageCollectionChain);
     mockAthenaDb.topics.bulkGet.mockResolvedValue([]);
 
     render(<GlobalSearch />);
@@ -112,11 +112,9 @@ describe('GlobalSearch', () => {
         toArray: jest.fn().mockResolvedValue([]),
       }),
     };
-    const messageDeletedChain = {
-      equals: jest.fn().mockReturnValue({
-        filter: jest.fn().mockReturnValue({
-          toArray: jest.fn().mockResolvedValue([]),
-        }),
+    const messageCollectionChain = {
+      filter: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([]),
       }),
     };
 
@@ -125,7 +123,7 @@ describe('GlobalSearch', () => {
       throw new Error(`Unexpected where field: ${field}`);
     });
     mockAthenaDb.topics.toCollection.mockReturnValue(collectionChain);
-    mockAthenaDb.messages.where.mockImplementation(() => messageDeletedChain);
+    mockAthenaDb.messages.toCollection.mockReturnValue(messageCollectionChain);
     mockAthenaDb.topics.bulkGet.mockResolvedValue([]);
 
     render(<GlobalSearch />);
