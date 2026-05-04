@@ -211,7 +211,12 @@ export const GlobalSearch = (): JSX.Element => {
                     label={searchMode === 'topics' ? 'Topics' : 'Messages'}
                     size="small"
                     variant="outlined"
-                    sx={{ height: 24, '& .MuiChip-label': { fontSize: '0.7rem', px: 0.5 }, '& .MuiChip-icon': { fontSize: 16, ml: 0.5 } }}
+                    clickable
+                    onClick={(e): void => {
+                      e.stopPropagation();
+                      setSearchMode((prev) => (prev === 'topics' ? 'messages' : 'topics'));
+                    }}
+                    sx={{ height: 24, cursor: 'pointer', '& .MuiChip-label': { fontSize: '0.7rem', px: 0.5 }, '& .MuiChip-icon': { fontSize: 16, ml: 0.5 } }}
                   />
                 </InputAdornment>
               </>
