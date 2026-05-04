@@ -20,13 +20,15 @@ import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
 import { athenaDb, Topic, Message } from '../database/AthenaDb';
 import { useUiStore } from '../store/UiStore';
+import { useChatStore } from '../store/ChatStore';
 
 interface SearchResult {
-  id: string; // Unique ID for the result item
-  topicId: string; // ID of the destination topic
+  id: string;
+  topicId: string;
+  messageId?: string;
   type: 'topic' | 'message';
   title: string;
-  snippet?: string; // Preview of message content
+  snippet?: string;
   date: string;
 }
 
@@ -143,6 +145,7 @@ export const GlobalSearch = (): JSX.Element => {
           messageResults.push({
             id: `msg-${r.item.id}`,
             topicId: r.item.topicId,
+            messageId: r.item.id,
             type: 'message',
             title: parentTopic.name,
             snippet,
@@ -161,10 +164,13 @@ export const GlobalSearch = (): JSX.Element => {
     }
   };
 
-  const handleResultClick = (topicId: string): void => {
+  const handleResultClick = (result: SearchResult): void => {
     setIsOpen(false);
-    setQuery(''); // Optional: clear search on navigation
-    void navigate(`/chat/${topicId}`);
+    setQuery('');
+    if (result.messageId) {
+      useChatStore.getState().setHighlightedMessageId(result.messageId);
+    }
+    void navigate(`/chat/${result.topicId}`);
     if (isMobile) {
       closeDrawer();
     }
@@ -266,7 +272,12 @@ export const GlobalSearch = (): JSX.Element => {
               <List disablePadding>
                 {results.map((result) => (
                   <ListItem key={result.id} disablePadding divider>
-                    <ListItemButton onClick={(): void => handleResultClick(result.topicId)}>
+                    <ListItemButton
+                      onMouseDown={(e: React.MouseEvent): void => {
+                        e.preventDefault();
+                      }}
+                      onClick={(): void => handleResultClick(result)}
+                    >
                       {result.type === 'topic' ? (
                         <TopicIcon sx={{ mr: 2, color: 'text.secondary', fontSize: 20 }} />
                       ) : (

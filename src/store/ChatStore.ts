@@ -116,6 +116,8 @@ interface ChatStore {
   _runSummarize: (messageId: string, content: string, contextMessages?: LlmMessage[]) => Promise<void>;
   summarizingMessageIds: Set<string>;
   failedSummaryMessageIds: Set<string>;
+  highlightedMessageId: string | null;
+  setHighlightedMessageId: (id: string | null) => void;
   initDefaults: () => void;
 }
 
@@ -147,6 +149,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   failedSummaryMessageIds: new Set<string>(),
   isSuggestionsLoading: false,
   pendingUserQuestion: null,
+  highlightedMessageId: null,
+
+  setHighlightedMessageId: (id: string | null): void => set({ highlightedMessageId: id }),
 
   initDefaults: (): void => {
     set({ selectedModel: getDefaultModel() });

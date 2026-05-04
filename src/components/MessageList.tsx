@@ -99,7 +99,7 @@ const Pane: React.FC<{
                 <Box sx={{ flex: 1, height: '1px', bgcolor: 'divider', opacity: 0.3 }} />
               </ListItem>
             )}
-            <ListItem component="div" disableGutters sx={{ px: 2 }}>
+            <ListItem id={`msg-${m.id}`} component="div" disableGutters sx={{ px: 2 }}>
               <MessageBubble
                 message={m.type === 'aiNote' && !showAllMessages ? { ...m, content: '⚠️ Assistant stored a hidden note here.' } : m}
                 versions={versions}
@@ -127,7 +127,7 @@ const FOLLOW_BUTTON_CLASS = css({ display: 'none' });
 
 const MessageList: React.FC<Props> = ({ messages, maxContextMessages, suggestions = [], isSuggestionsLoading = false, onSuggestionSelect }) => {
   const { topicId } = useParams();
-  const { visibleMessageCount, increaseVisibleMessageCount } = useChatStore();
+  const { visibleMessageCount, increaseVisibleMessageCount, highlightedMessageId, setHighlightedMessageId } = useChatStore();
   const { showAllMessages } = useUiStore();
 
   // 1. Filter, Sort, and Group
@@ -176,6 +176,36 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, suggestion
   const visibleGroups = React.useMemo(() => {
     return processedGroups.slice(-visibleMessageCount);
   }, [processedGroups, visibleMessageCount]);
+
+  // Scroll to highlighted message from search
+  useEffect(() => {
+    if (!highlightedMessageId) return;
+
+    const el = document.getElementById(`msg-${highlightedMessageId}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedMessageId(null);
+      return;
+    }
+
+    // Message not yet visible — expand visible count and try again on next render
+    const targetIndex = processedGroups.findIndex(
+      (g) => g.msg.id === highlightedMessageId || g.versions?.some((v) => v.id === highlightedMessageId),
+    );
+    if (targetIndex === -1) {
+      setHighlightedMessageId(null);
+      return;
+    }
+
+    const neededCount = processedGroups.length - targetIndex;
+    if (neededCount > visibleMessageCount) {
+      const rounds = Math.ceil((neededCount - visibleMessageCount) / 10);
+      const store = useChatStore.getState();
+      for (let i = 0; i < rounds; i++) {
+        store.increaseVisibleMessageCount();
+      }
+    }
+  }, [highlightedMessageId, processedGroups, visibleMessageCount, setHighlightedMessageId]);
 
   if (processedGroups.length === 0) {
     return (

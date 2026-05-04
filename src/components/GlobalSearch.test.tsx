@@ -2,8 +2,10 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { GlobalSearch } from './GlobalSearch';
 import { useNavigate } from 'react-router-dom';
 import { useUiStore } from '../store/UiStore';
+import { useChatStore } from '../store/ChatStore';
 import { athenaDb } from '../database/AthenaDb';
 import Fuse from 'fuse.js';
+import { MockStoreHookWithGetState } from '../testUtils';
 
 jest.mock('react-router-dom', () => ({
   useNavigate: jest.fn(),
@@ -11,6 +13,12 @@ jest.mock('react-router-dom', () => ({
 
 jest.mock('../store/UiStore', () => ({
   useUiStore: jest.fn(),
+}));
+
+jest.mock('../store/ChatStore', () => ({
+  useChatStore: Object.assign(jest.fn(), {
+    getState: jest.fn(),
+  }),
 }));
 
 jest.mock('../database/AthenaDb', () => ({
@@ -22,6 +30,9 @@ jest.mock('../database/AthenaDb', () => ({
     messages: {
       toCollection: jest.fn(),
     },
+    predefinedPrompts: {
+      toArray: jest.fn().mockResolvedValue([]),
+    },
   },
 }));
 
@@ -30,6 +41,10 @@ Fuse.prototype.search = mockSearch;
 
 const useNavigateMock = useNavigate as unknown as jest.Mock<(path: string) => void>;
 const useUiStoreMock = useUiStore as unknown as jest.Mock<{ isMobile: boolean; closeDrawer: () => void }>;
+const useChatStoreMock = useChatStore as unknown as MockStoreHookWithGetState<
+  jest.Mock<Record<string, unknown>>,
+  { highlightedMessageId?: string | null; setHighlightedMessageId: jest.Mock }
+>;
 const athenaDbMock = athenaDb as unknown as {
   topics: {
     bulkGet: jest.Mock;
@@ -44,6 +59,12 @@ describe('GlobalSearch', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
+
+    const setHighlightedMessageId = jest.fn();
+    (useChatStoreMock.getState as jest.Mock).mockReturnValue({
+      highlightedMessageId: null,
+      setHighlightedMessageId,
+    });
   });
 
   afterEach(() => {
@@ -170,6 +191,72 @@ describe('GlobalSearch', () => {
     await waitFor(() => {
       expect(screen.getByText('Aider install')).toBeInTheDocument();
     });
+  });
+
+  it('sets highlightedMessageId when clicking a message search result', async () => {
+    const navigate = jest.fn();
+    const closeDrawer = jest.fn();
+    useNavigateMock.mockReturnValue(navigate);
+    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer });
+
+    const messageItem = {
+      id: 'm1',
+      topicId: 't1',
+      content: 'To install Aider on CachyOS, use yay -S aider',
+      isDeleted: false,
+      created: '2026-04-17T12:00:00.000Z',
+    };
+    const parentTopic = {
+      id: 't1',
+      name: 'Aider install',
+      isDeleted: false,
+    };
+
+    const messageCollectionChain = {
+      filter: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([messageItem]),
+      }),
+    };
+    const topicChain = {
+      filter: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([]),
+      }),
+    };
+    athenaDbMock.topics.toCollection.mockReturnValue(topicChain);
+    athenaDbMock.messages.toCollection.mockReturnValue(messageCollectionChain);
+    athenaDbMock.topics.bulkGet.mockResolvedValue([parentTopic]);
+
+    mockSearch.mockReturnValue([
+      {
+        item: messageItem,
+        score: 0.15,
+        matches: [{ key: 'content', indices: [[13, 20]] }],
+      },
+    ]);
+
+    render(<GlobalSearch />);
+
+    const input = screen.getByLabelText('Search topics');
+    fireEvent.change(input, { target: { value: 'cachyos' } });
+
+    act(() => {
+      jest.advanceTimersByTime(350);
+    });
+
+    // Switch to messages mode
+    fireEvent.click(screen.getByText('Topics'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Aider install')).toBeInTheDocument();
+    });
+
+    // Get the setHighlightedMessageId mock from beforeEach setup
+    const mockSetHighlighted = (useChatStoreMock.getState as jest.Mock)().setHighlightedMessageId;
+
+    fireEvent.click(screen.getByText('Aider install'));
+
+    expect(mockSetHighlighted).toHaveBeenCalledWith('m1');
+    expect(navigate).toHaveBeenCalledWith('/chat/t1');
   });
 
   it('does not search with fewer than 3 characters', () => {
