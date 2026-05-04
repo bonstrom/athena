@@ -1126,6 +1126,9 @@ export async function askLlmStream(
 
   const state: StreamState = { accumulated: '', reasoning: '', promptTokens: 0, completionTokens: 0, done: false };
 
+  // Buffer for partial SSE lines that may be split across reader chunks
+  let lineBuffer = '';
+
   const onAbort = (): void => {
     reader.cancel().catch((err) => {
       console.warn('Reader cancel failed:', err);
@@ -1141,7 +1144,12 @@ export async function askLlmStream(
       if (signal?.aborted) break;
 
       const chunk = decoder.decode(value);
-      for (const line of chunk.split('\n')) {
+      // Prepend any partial line from the previous chunk
+      const lines = (lineBuffer + chunk).split('\n');
+      // The last element may be incomplete; save it for the next chunk
+      lineBuffer = lines.pop() ?? '';
+
+      for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed.startsWith('data: ')) continue;
         const json = trimmed.slice(6);

@@ -16,7 +16,7 @@ jest.mock('../../store/AuthStore', () => ({
 
 const mockGenerateMinimaxSpeech = generateMinimaxSpeech as jest.MockedFunction<typeof generateMinimaxSpeech>;
 
-type MockAudio = {
+interface MockAudio {
   play: jest.Mock<Promise<void>>;
   pause: jest.Mock<void>;
   addEventListener: jest.Mock<void, [string, EventListener]>;
@@ -24,7 +24,7 @@ type MockAudio = {
   src: string;
   load: jest.Mock<void>;
   removeAttribute: jest.Mock<void>;
-};
+}
 
 describe('TTS Lifecycle', () => {
   let audioInstance: MockAudio;

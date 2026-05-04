@@ -833,6 +833,66 @@ describe('askLlmStream — streaming API calls', () => {
     expect(mockEstimateTokens).not.toHaveBeenCalled();
     expect(reader.releaseLock).toHaveBeenCalledTimes(1);
   });
+
+  it('reassembles SSE data lines split across reader chunks', async () => {
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation((...args: unknown[]): void => {
+      void args;
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    // First chunk ends mid-JSON on the model field: "model":"test-  (line not finished)
+    const chunk1 = 'data: {"id":"resp-stream","model":"test-';
+    const chunk2 = [
+      'model","choices":[{"delta":{"content":"Hello "}}]}',
+      'data: {"choices":[{"delta":{"content":"world"},"finish_reason":"stop"}],"usage":{"prompt_tokens":21,"completion_tokens":7}}',
+      'data: [DONE]',
+      '',
+    ].join('\n');
+
+    let readCount = 0;
+    const reader = {
+      read: jest.fn((): Promise<ReadableStreamReadResult<Uint8Array>> => {
+        if (readCount === 0) {
+          readCount += 1;
+          return Promise.resolve({ done: false, value: Buffer.from(chunk1, 'utf8') });
+        }
+        if (readCount === 1) {
+          readCount += 1;
+          return Promise.resolve({ done: false, value: Buffer.from(chunk2, 'utf8') });
+        }
+        return Promise.resolve({ done: true, value: undefined });
+      }),
+      releaseLock: jest.fn((): void => undefined),
+      cancel: jest.fn((): Promise<void> => Promise.resolve()),
+    };
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: {
+        getReader: (): typeof reader => reader,
+      },
+    } as unknown as Response);
+
+    const onToken = jest.fn((token: string): void => {
+      void token;
+    });
+
+    const { askLlmStream } = await import('../llmService');
+    const result = await askLlmStream(model, 0.7, [user('Hi')], onToken);
+
+    expect(consoleWarnSpy).not.toHaveBeenCalledWith(expect.stringContaining('Invalid stream chunk'), expect.anything(), expect.anything());
+    expect(onToken).toHaveBeenNthCalledWith(1, 'Hello ');
+    expect(onToken).toHaveBeenNthCalledWith(2, 'world');
+    expect(result.content).toBe('Hello world');
+    expect(result.promptTokens).toBe(21);
+    expect(result.completionTokens).toBe(7);
+    expect(result.finishReason).toBe('stop');
+
+    consoleWarnSpy.mockRestore();
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
 });
 
 describe('estimateStreamedTokens', () => {
