@@ -17,7 +17,8 @@ import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import TopicIcon from '@mui/icons-material/Topic';
 import { useNavigate } from 'react-router-dom';
-import { athenaDb, Topic } from '../database/AthenaDb';
+import Fuse from 'fuse.js';
+import { athenaDb, Topic, Message } from '../database/AthenaDb';
 import { useUiStore } from '../store/UiStore';
 
 interface SearchResult {
@@ -61,7 +62,7 @@ export const GlobalSearch = (): JSX.Element => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
     debounceTimer.current = setTimeout(() => {
-      void performSearch(query.trim().toLowerCase(), searchMode);
+      void performSearch(query.trim(), searchMode);
     }, 300); // 300ms debounce
 
     return (): void => {
@@ -71,84 +72,87 @@ export const GlobalSearch = (): JSX.Element => {
 
   const performSearch = async (searchQuery: string, mode: 'topics' | 'messages'): Promise<void> => {
     try {
-      const combinedResults: SearchResult[] = [];
-
       if (mode === 'topics') {
-        // 1. Search Topics - Use index for prefix matches first
-        const prefixMatchedTopics = await athenaDb.topics
-          .where('name')
-          .startsWithIgnoreCase(searchQuery)
+        const allTopics = await athenaDb.topics
+          .toCollection()
           .filter((t) => !t.isDeleted)
           .toArray();
 
-        // Also search for partial matches if needed
-        const otherMatchedTopics = await athenaDb.topics
-          .toCollection()
-          .filter((t) => !t.isDeleted && t.name.toLowerCase().includes(searchQuery) && !t.name.toLowerCase().startsWith(searchQuery))
-          .toArray();
-
-        const matchedTopics = [...prefixMatchedTopics, ...otherMatchedTopics];
-
-        matchedTopics.forEach((t) => {
-          combinedResults.push({
-            id: `topic-${t.id}`,
-            topicId: t.id,
-            type: 'topic',
-            title: t.name,
-            date: t.updatedOn,
-          });
+        const fuse = new Fuse(allTopics, {
+          keys: ['name'],
+          threshold: 0.4,
+          includeScore: true,
+          minMatchCharLength: 2,
         });
+
+        const fuseResults = fuse.search(searchQuery);
+
+        const topicResults: SearchResult[] = fuseResults.map((r) => ({
+          id: `topic-${r.item.id}`,
+          topicId: r.item.id,
+          type: 'topic',
+          title: r.item.name,
+          date: r.item.updatedOn,
+        }));
+
+        setResults(topicResults.slice(0, 20));
       } else {
-        // 2. Search Messages
-        const matchedMessages = await athenaDb.messages
+        const allMessages: Message[] = await athenaDb.messages
           .toCollection()
-          .filter((m) => !m.isDeleted && m.content.toLowerCase().includes(searchQuery))
+          .filter((m) => !m.isDeleted)
           .toArray();
 
-        // We need to fetch the parent topics for the matched messages to display their names
-        const topicIdsFromMessages = Array.from(new Set<string>(matchedMessages.map((m) => m.topicId)));
-
-        // Fetch parents in bulk
+        const topicIdsFromMessages = Array.from(new Set<string>(allMessages.map((m) => m.topicId)));
         const topicsForMessages = await athenaDb.topics.bulkGet(topicIdsFromMessages);
 
-        // Create a lookup map for fast title retrieval
         const topicLookup = new Map<string, Topic>();
         topicsForMessages.forEach((t) => {
           if (t && !t.isDeleted) topicLookup.set(t.id, t);
         });
 
-        matchedMessages.forEach((m) => {
-          const parentTopic = topicLookup.get(m.topicId);
-          if (parentTopic) {
-            // Create a snippet around the search query for context
-            const lowercaseContent = m.content.toLowerCase();
-            const matchIndex = lowercaseContent.indexOf(searchQuery);
-            let snippet = m.content;
-            if (matchIndex !== -1) {
-              const start = Math.max(0, matchIndex - 30);
-              const end = Math.min(m.content.length, matchIndex + searchQuery.length + 30);
-              snippet = (start > 0 ? '...' : '') + m.content.substring(start, end).replace(/\n/g, ' ') + (end < m.content.length ? '...' : '');
-            } else {
-              snippet = m.content.substring(0, 60).replace(/\n/g, ' ') + (m.content.length > 60 ? '...' : '');
-            }
-
-            combinedResults.push({
-              id: `msg-${m.id}`,
-              topicId: m.topicId,
-              type: 'message',
-              title: parentTopic.name,
-              snippet: snippet,
-              date: m.created,
-            });
-          }
+        const fuse = new Fuse(allMessages, {
+          keys: ['content'],
+          threshold: 0.4,
+          includeScore: true,
+          includeMatches: true,
+          minMatchCharLength: 2,
+          ignoreLocation: true,
         });
+
+        const fuseResults = fuse.search(searchQuery);
+
+        const messageResults: SearchResult[] = [];
+
+        fuseResults.slice(0, 20).forEach((r) => {
+          const parentTopic = topicLookup.get(r.item.topicId);
+          if (!parentTopic) return;
+
+          const matchIndices = r.matches?.[0]?.indices[0];
+          let snippet: string;
+          if (matchIndices) {
+            const start = Math.max(0, matchIndices[0] - 30);
+            const end = Math.min(r.item.content.length, matchIndices[1] + 1 + 30);
+            snippet =
+              (start > 0 ? '...' : '') +
+              r.item.content.substring(start, end).replace(/\n/g, ' ') +
+              (end < r.item.content.length ? '...' : '');
+          } else {
+            snippet = r.item.content.substring(0, 60).replace(/\n/g, ' ') + (r.item.content.length > 60 ? '...' : '');
+          }
+
+          messageResults.push({
+            id: `msg-${r.item.id}`,
+            topicId: r.item.topicId,
+            type: 'message',
+            title: parentTopic.name,
+            snippet,
+            date: r.item.created,
+          });
+        });
+
+        setResults(messageResults);
       }
 
-      // Sort by date descending (newest first)
-      combinedResults.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-      // Limit results to keep UI responsive
-      setResults(combinedResults.slice(0, 20));
       setIsSearching(false);
     } catch (error) {
       console.error('Search failed:', error);
