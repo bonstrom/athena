@@ -181,8 +181,8 @@ export async function speakText(text: string, messageId?: string): Promise<void>
       }
     };
 
-    audio.addEventListener('ended', cleanup);
-    audio.addEventListener('error', cleanup);
+    audio.addEventListener('ended', cleanup, { once: true });
+    audio.addEventListener('error', cleanup, { once: true });
 
     await audio.play();
   } catch (err: unknown) {
@@ -190,9 +190,5 @@ export async function speakText(text: string, messageId?: string): Promise<void>
       return;
     }
     throw err;
-  } finally {
-    if (currentSpeechAbortController === abortController) {
-      currentSpeechAbortController = null;
-    }
   }
 }

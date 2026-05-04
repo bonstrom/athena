@@ -122,7 +122,6 @@ const mockUseNotificationStore = useNotificationStore as unknown as jest.Mock<No
 const mockUseUiStore = useUiStore as unknown as jest.Mock & { getState: jest.Mock };
 const mockSuggestionService = llmSuggestionService as jest.Mocked<typeof llmSuggestionService>;
 
-
 class MockFileReader {
   public result: string | ArrayBuffer | null = null;
   public onload: ((this: FileReader, ev: ProgressEvent<FileReader>) => unknown) | null = null;
@@ -363,7 +362,6 @@ describe('Composer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop Generation' }));
 
-
     await waitFor(() => {
       expect(chatStore.stopSending).toHaveBeenCalledTimes(1);
       expect(screen.getByDisplayValue('Recovered draft')).toBeInTheDocument();
@@ -547,5 +545,83 @@ describe('Composer', () => {
     const stopButton = screen.getByRole('button', { name: 'Stop Reading' });
     expect(stopButton).toBeInTheDocument();
     expect(stopButton).not.toBeDisabled();
+  });
+
+  it('notifies user when microphone permission is denied', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    const handler = mockRecognition.onerror;
+    expect(handler).not.toBeNull();
+
+    if (handler) {
+      handler({ error: 'not-allowed' } as SpeechRecognitionErrorEvent);
+    }
+
+    expect(notificationStore.addNotification).toHaveBeenCalledWith(
+      'Microphone access denied',
+      'Please allow microphone access in your browser settings.',
+    );
+  });
+
+  it('notifies user on speech recognition network error', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    const handler = mockRecognition.onerror;
+    expect(handler).not.toBeNull();
+
+    if (handler) {
+      handler({ error: 'network' } as SpeechRecognitionErrorEvent);
+    }
+
+    expect(notificationStore.addNotification).toHaveBeenCalledWith(
+      'Speech recognition error',
+      'A network error occurred. Please check your connection.',
+    );
+  });
+
+  it('does not notify on silent error types (aborted, no-speech)', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    const handler = mockRecognition.onerror;
+    expect(handler).not.toBeNull();
+
+    if (handler) {
+      handler({ error: 'aborted' } as SpeechRecognitionErrorEvent);
+      handler({ error: 'no-speech' } as SpeechRecognitionErrorEvent);
+    }
+
+    expect(notificationStore.addNotification).not.toHaveBeenCalled();
+  });
+
+  it('notifies user on unknown speech recognition error', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    const handler = mockRecognition.onerror;
+    expect(handler).not.toBeNull();
+
+    if (handler) {
+      handler({ error: 'audio-capture' } as SpeechRecognitionErrorEvent);
+    }
+
+    expect(notificationStore.addNotification).toHaveBeenCalledWith('Speech recognition error', 'Recognition failed: audio-capture');
+  });
+
+  it('stops speech recognition on unmount', () => {
+    const { unmount } = render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+    expect(mockRecognition.start).toHaveBeenCalledTimes(1);
+
+    unmount();
+
+    expect(mockRecognition.stop).toHaveBeenCalledTimes(1);
   });
 });

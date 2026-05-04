@@ -1,8 +1,6 @@
 import React from 'react';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import MessageBubble from './MessageBubble';
-import { Message } from '../database/AthenaDb';
-import theme from '../theme';
 import { createMessage, renderWithTheme } from '../testUtils';
 import { useAuthStore } from '../store/AuthStore';
 import { useChatStore } from '../store/ChatStore';
@@ -10,6 +8,7 @@ import { useNotificationStore } from '../store/NotificationStore';
 import { useTopicStore } from '../store/TopicStore';
 import { useUiStore } from '../store/UiStore';
 import { useProviderStore } from '../store/ProviderStore';
+import { speakText, stopSpeech } from '../services/mediaService';
 
 interface ChatStoreSlice {
   updateMessageContext: (id: string, includeInContext: boolean) => Promise<void>;
@@ -80,15 +79,25 @@ jest.mock('../store/ProviderStore', () => ({
   useProviderStore: Object.assign(jest.fn(), { getState: jest.fn() }),
 }));
 
+jest.mock('../services/mediaService', () => ({
+  speakText: jest.fn((): Promise<void> => Promise.resolve()),
+  stopSpeech: jest.fn(),
+}));
+
+jest.mock('../utils/stripMarkdown', () => ({
+  stripMarkdown: jest.fn((text: string): string => text),
+}));
+
 const mockUseAuthStore = useAuthStore as unknown as jest.Mock<AuthStoreSlice>;
 const mockUseChatStore = useChatStore as unknown as jest.Mock<ChatStoreSlice>;
 const mockUseNotificationStore = useNotificationStore as unknown as jest.Mock<NotificationStoreSlice>;
 const mockUseTopicStore = useTopicStore as unknown as jest.Mock<TopicStoreSlice>;
 const mockUseUiStore = useUiStore as unknown as jest.Mock<UiStoreSlice>;
 const mockUseProviderStore = useProviderStore as unknown as ProviderStoreHookMock;
+const mockSpeakText = speakText as jest.MockedFunction<typeof speakText>;
+const mockStopSpeech = stopSpeech as jest.MockedFunction<typeof stopSpeech>;
 
 let mockWriteText: jest.MockedFunction<(text: string) => Promise<void>>;
-
 
 function createChatStore(overrides?: Partial<ChatStoreSlice>): ChatStoreSlice {
   return {
@@ -357,5 +366,30 @@ describe('MessageBubble', () => {
 
     const stopButton = screen.getByRole('button', { name: 'Stop speech' });
     expect(stopButton).toBeInTheDocument();
+  });
+
+  it('passes message.id to speakText when Read aloud is clicked', () => {
+    mockSpeakText.mockResolvedValue(undefined);
+
+    renderWithTheme(<MessageBubble message={createMessage({ id: 'msg-42', type: 'assistant', content: 'Hello world' })} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }));
+
+    expect(mockSpeakText).toHaveBeenCalledTimes(1);
+    expect(mockSpeakText.mock.calls[0][1]).toBe('msg-42');
+  });
+
+  it('calls stopSpeech when Stop speech is clicked on the currently speaking message', () => {
+    mockUseUiStore.mockReturnValue({
+      currentlySpeakingMessageId: 'msg-42',
+      isMobile: false,
+    });
+
+    renderWithTheme(<MessageBubble message={createMessage({ id: 'msg-42', type: 'assistant', content: 'Hello world' })} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop speech' }));
+
+    expect(mockStopSpeech).toHaveBeenCalled();
+    expect(mockSpeakText).not.toHaveBeenCalled();
   });
 });

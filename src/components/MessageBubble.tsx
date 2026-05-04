@@ -463,7 +463,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       stopSpeech();
                     } else {
                       setSpeaking(true);
-                      void speakText(stripMarkdown(message.content.trim()))
+                      void speakText(stripMarkdown(message.content.trim()), message.id)
                         .catch(() => {
                           /* playback errors are non-critical */
                         })
@@ -489,7 +489,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       : {}),
                   }}
                 >
-                  {speaking && !isSpeaking ? <CircularProgress size={14} color="inherit" /> : isSpeaking ? <StopCircleIcon fontSize="small" /> : <VolumeUpIcon fontSize="small" />}
+                  {speaking && !isSpeaking ? (
+                    <CircularProgress size={14} color="inherit" />
+                  ) : isSpeaking ? (
+                    <StopCircleIcon fontSize="small" />
+                  ) : (
+                    <VolumeUpIcon fontSize="small" />
+                  )}
                 </IconButton>
               </Tooltip>
             )}
