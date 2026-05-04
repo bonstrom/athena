@@ -6,6 +6,20 @@ import "@testing-library/jest-dom";
 import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from 'util';
 import { ReadableStream as NodeReadableStream } from 'stream/web';
 
+const originalError = console.error;
+beforeAll(() => {
+  console.error = (...args: unknown[]): void => {
+    if (typeof args[0] === 'string' && /not wrapped in act\(/.test(args[0])) {
+      return;
+    }
+    originalError.call(console, ...args);
+  };
+});
+
+afterAll(() => {
+  console.error = originalError;
+});
+
 if (typeof globalThis.TextEncoder === 'undefined') {
   Object.defineProperty(globalThis, 'TextEncoder', { value: NodeTextEncoder, writable: true, configurable: true });
 }
