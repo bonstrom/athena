@@ -91,9 +91,7 @@ describe('GlobalSearch', () => {
     };
     athenaDbMock.topics.toCollection.mockReturnValue(topicCollectionChain);
 
-    mockSearch.mockReturnValue([
-      { item: topicItem, score: 0.1 },
-    ]);
+    mockSearch.mockReturnValue([{ item: topicItem, score: 0.1 }]);
 
     render(<GlobalSearch />);
 
@@ -251,7 +249,8 @@ describe('GlobalSearch', () => {
     });
 
     // Get the setHighlightedMessageId mock from beforeEach setup
-    const mockSetHighlighted = (useChatStoreMock.getState as jest.Mock)().setHighlightedMessageId;
+    const state = (useChatStoreMock.getState as jest.Mock<{ setHighlightedMessageId: jest.Mock }>)();
+    const mockSetHighlighted = state.setHighlightedMessageId;
 
     fireEvent.click(screen.getByText('Aider install'));
 
@@ -273,5 +272,71 @@ describe('GlobalSearch', () => {
     });
 
     expect(mockSearch).not.toHaveBeenCalled();
+  });
+
+  it('shows error message when search fails', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation((): void => {});
+    useNavigateMock.mockReturnValue(jest.fn());
+    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn() });
+
+    const topicCollectionChain = {
+      filter: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockRejectedValue(new Error('DB connection lost')),
+      }),
+    };
+    athenaDbMock.topics.toCollection.mockReturnValue(topicCollectionChain);
+
+    render(<GlobalSearch />);
+
+    fireEvent.change(screen.getByLabelText('Search topics'), { target: { value: 'test query' } });
+
+    act(() => {
+      jest.advanceTimersByTime(350);
+    });
+
+    expect(await screen.findByText('Search failed. Please try again.')).toBeInTheDocument();
+    expect(errorSpy).toHaveBeenCalledWith('Search failed:', expect.any(Error));
+    errorSpy.mockRestore();
+  });
+
+  it('re-opens dropdown on focus when query has 3+ characters', async () => {
+    useNavigateMock.mockReturnValue(jest.fn());
+    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn() });
+
+    const topicCollectionChain = {
+      filter: jest.fn().mockReturnValue({
+        toArray: jest.fn().mockResolvedValue([]),
+      }),
+    };
+    athenaDbMock.topics.toCollection.mockReturnValue(topicCollectionChain);
+    mockSearch.mockReturnValue([]);
+
+    render(<GlobalSearch />);
+
+    const input = screen.getByLabelText('Search topics');
+
+    // Type a query to open the dropdown
+    fireEvent.change(input, { target: { value: 'test' } });
+
+    act(() => {
+      jest.advanceTimersByTime(350);
+    });
+
+    // Wait for the async search to complete
+    await waitFor(() => {
+      expect(screen.getByText('No results found for "test"')).toBeInTheDocument();
+    });
+
+    // Simulate click away to close
+    fireEvent.click(document.body);
+
+    // Verify dropdown closed
+    expect(screen.queryByText('No results found for "test"')).not.toBeInTheDocument();
+
+    // Re-focus the input — dropdown should reopen
+    fireEvent.focus(input);
+
+    // The dropdown should be open again (the "No results" text appears)
+    expect(screen.getByText('No results found for "test"')).toBeInTheDocument();
   });
 });

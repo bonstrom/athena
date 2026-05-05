@@ -42,6 +42,9 @@ export const GlobalSearch = (): JSX.Element => {
   const navigate = useNavigate();
   const { isMobile, closeDrawer } = useUiStore();
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+  const topicFuseRef = useRef<Fuse<Topic> | null>(null);
+  const messageFuseRef = useRef<Fuse<Message> | null>(null);
+  const topicLookupRef = useRef<Map<string, Topic>>(new Map());
 
   useEffect(() => {
     if (!query.trim()) {
@@ -70,24 +73,34 @@ export const GlobalSearch = (): JSX.Element => {
     return (): void => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, searchMode]);
+
+  // Invalidate cached Fuse indices when search mode changes
+  useEffect(() => {
+    topicFuseRef.current = null;
+    messageFuseRef.current = null;
+    topicLookupRef.current = new Map();
+  }, [searchMode]);
 
   const performSearch = async (searchQuery: string, mode: 'topics' | 'messages'): Promise<void> => {
     try {
       if (mode === 'topics') {
-        const allTopics = await athenaDb.topics
-          .toCollection()
-          .filter((t) => !t.isDeleted)
-          .toArray();
+        if (!topicFuseRef.current) {
+          const allTopics = await athenaDb.topics
+            .toCollection()
+            .filter((t) => !t.isDeleted)
+            .toArray();
 
-        const fuse = new Fuse(allTopics, {
-          keys: ['name'],
-          threshold: 0.4,
-          includeScore: true,
-          minMatchCharLength: 2,
-        });
+          topicFuseRef.current = new Fuse(allTopics, {
+            keys: ['name'],
+            threshold: 0.4,
+            includeScore: true,
+            minMatchCharLength: 2,
+          });
+        }
 
-        const fuseResults = fuse.search(searchQuery);
+        const fuseResults = topicFuseRef.current.search(searchQuery);
 
         const topicResults: SearchResult[] = fuseResults.map((r) => ({
           id: `topic-${r.item.id}`,
@@ -99,34 +112,37 @@ export const GlobalSearch = (): JSX.Element => {
 
         setResults(topicResults.slice(0, 20));
       } else {
-        const allMessages: Message[] = await athenaDb.messages
-          .toCollection()
-          .filter((m) => !m.isDeleted)
-          .toArray();
+        if (!messageFuseRef.current) {
+          const allMessages: Message[] = await athenaDb.messages
+            .toCollection()
+            .filter((m) => !m.isDeleted)
+            .toArray();
 
-        const topicIdsFromMessages = Array.from(new Set<string>(allMessages.map((m) => m.topicId)));
-        const topicsForMessages = await athenaDb.topics.bulkGet(topicIdsFromMessages);
+          const topicIdsFromMessages = Array.from(new Set<string>(allMessages.map((m) => m.topicId)));
+          const topicsForMessages = await athenaDb.topics.bulkGet(topicIdsFromMessages);
 
-        const topicLookup = new Map<string, Topic>();
-        topicsForMessages.forEach((t) => {
-          if (t && !t.isDeleted) topicLookup.set(t.id, t);
-        });
+          const lookup = new Map<string, Topic>();
+          topicsForMessages.forEach((t) => {
+            if (t && !t.isDeleted) lookup.set(t.id, t);
+          });
+          topicLookupRef.current = lookup;
 
-        const fuse = new Fuse(allMessages, {
-          keys: ['content'],
-          threshold: 0.4,
-          includeScore: true,
-          includeMatches: true,
-          minMatchCharLength: 2,
-          ignoreLocation: true,
-        });
+          messageFuseRef.current = new Fuse(allMessages, {
+            keys: ['content'],
+            threshold: 0.4,
+            includeScore: true,
+            includeMatches: true,
+            minMatchCharLength: 2,
+            ignoreLocation: true,
+          });
+        }
 
-        const fuseResults = fuse.search(searchQuery);
+        const fuseResults = messageFuseRef.current.search(searchQuery);
 
         const messageResults: SearchResult[] = [];
 
         fuseResults.slice(0, 20).forEach((r) => {
-          const parentTopic = topicLookup.get(r.item.topicId);
+          const parentTopic = topicLookupRef.current.get(r.item.topicId);
           if (!parentTopic) return;
 
           const matchIndices = r.matches?.[0]?.indices[0];
@@ -135,9 +151,7 @@ export const GlobalSearch = (): JSX.Element => {
             const start = Math.max(0, matchIndices[0] - 30);
             const end = Math.min(r.item.content.length, matchIndices[1] + 1 + 30);
             snippet =
-              (start > 0 ? '...' : '') +
-              r.item.content.substring(start, end).replace(/\n/g, ' ') +
-              (end < r.item.content.length ? '...' : '');
+              (start > 0 ? '...' : '') + r.item.content.substring(start, end).replace(/\n/g, ' ') + (end < r.item.content.length ? '...' : '');
           } else {
             snippet = r.item.content.substring(0, 60).replace(/\n/g, ' ') + (r.item.content.length > 60 ? '...' : '');
           }
@@ -183,13 +197,15 @@ export const GlobalSearch = (): JSX.Element => {
     }
   };
 
-  const handleBlur = (): void => {
+  const handleBlur = (e: React.FocusEvent<HTMLDivElement>): void => {
+    // Don't reset mode if focus moved to a child element (e.g. clicking a result or chip)
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setSearchMode('topics');
   };
 
   return (
     <ClickAwayListener onClickAway={(): void => setIsOpen(false)}>
-      <Box sx={{ position: 'relative', width: '100%', px: 2, pb: 1, zIndex: 1200 }}>
+      <Box onBlur={handleBlur} sx={{ position: 'relative', width: '100%', px: 2, pb: 1, zIndex: 1200 }}>
         <TextField
           fullWidth
           size="small"
@@ -198,7 +214,6 @@ export const GlobalSearch = (): JSX.Element => {
           value={query}
           onChange={(e): void => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          onBlur={handleBlur}
           onFocus={(): void => {
             if (query.trim().length >= 3) setIsOpen(true);
           }}
@@ -226,7 +241,12 @@ export const GlobalSearch = (): JSX.Element => {
                       e.stopPropagation();
                       setSearchMode((prev) => (prev === 'topics' ? 'messages' : 'topics'));
                     }}
-                    sx={{ height: 24, cursor: 'pointer', '& .MuiChip-label': { fontSize: '0.7rem', px: 0.5 }, '& .MuiChip-icon': { fontSize: 16, ml: 0.5 } }}
+                    sx={{
+                      height: 24,
+                      cursor: 'pointer',
+                      '& .MuiChip-label': { fontSize: '0.7rem', px: 0.5 },
+                      '& .MuiChip-icon': { fontSize: 16, ml: 0.5 },
+                    }}
                   />
                 </InputAdornment>
               </>
