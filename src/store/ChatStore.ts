@@ -232,7 +232,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         message: {
           role: 'system',
           content:
-            "You have access to real-time internet search via the $web_search tool. Use it whenever you need up-to-date information or are unsure about recent events (like 'Vem vann Melodifestivalen 2024?').",
+            'You have a builtin $web_search function available in your tools. It is always active in this conversation — do not question its availability. Call $web_search whenever you need current or factual information you are not fully confident about. Do not attempt to answer from memory if a search would produce a more accurate result.',
         },
         sourceLabel: 'Web Search Instructions',
       });
@@ -623,7 +623,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       systems.push({
         role: 'system',
         content:
-          "You have access to real-time internet search via the $web_search tool. Use it whenever you need up-to-date information or are unsure about recent events (like 'Vem vann Melodifestivalen 2024?').",
+          'You have a builtin $web_search function available in your tools. It is always active in this conversation — do not question its availability. Call $web_search whenever you need current or factual information you are not fully confident about. Do not attempt to answer from memory if a search would produce a more accurate result.',
       });
     }
 
