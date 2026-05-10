@@ -209,8 +209,8 @@ export const GlobalSearch = (): JSX.Element => {
         <TextField
           fullWidth
           size="small"
-          inputProps={{ 'aria-label': `Search ${searchMode}` }}
-          placeholder={searchMode === 'topics' ? 'Search topics...' : 'Search messages...'}
+          inputProps={{ 'aria-label': 'Search' }}
+          placeholder="Search..."
           value={query}
           onChange={(e): void => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}

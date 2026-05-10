@@ -95,7 +95,7 @@ describe('GlobalSearch', () => {
 
     render(<GlobalSearch />);
 
-    fireEvent.change(screen.getByLabelText('Search topics'), { target: { value: 'cachy' } });
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'cachy' } });
 
     act(() => {
       jest.advanceTimersByTime(350);
@@ -126,7 +126,7 @@ describe('GlobalSearch', () => {
 
     render(<GlobalSearch />);
 
-    fireEvent.change(screen.getByLabelText('Search topics'), { target: { value: 'nonexistent' } });
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'nonexistent' } });
 
     act(() => {
       jest.advanceTimersByTime(350);
@@ -176,7 +176,7 @@ describe('GlobalSearch', () => {
 
     render(<GlobalSearch />);
 
-    const input = screen.getByLabelText('Search topics');
+    const input = screen.getByLabelText('Search');
     fireEvent.change(input, { target: { value: 'cachyos' } });
 
     act(() => {
@@ -234,7 +234,7 @@ describe('GlobalSearch', () => {
 
     render(<GlobalSearch />);
 
-    const input = screen.getByLabelText('Search topics');
+    const input = screen.getByLabelText('Search');
     fireEvent.change(input, { target: { value: 'cachyos' } });
 
     act(() => {
@@ -264,7 +264,7 @@ describe('GlobalSearch', () => {
 
     render(<GlobalSearch />);
 
-    const input = screen.getByLabelText('Search topics');
+    const input = screen.getByLabelText('Search');
     fireEvent.change(input, { target: { value: 'ab' } });
 
     act(() => {
@@ -275,7 +275,9 @@ describe('GlobalSearch', () => {
   });
 
   it('shows error message when search fails', async () => {
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation((): void => {});
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation((): void => {
+      /* ignore */
+    });
     useNavigateMock.mockReturnValue(jest.fn());
     useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn() });
 
@@ -288,7 +290,7 @@ describe('GlobalSearch', () => {
 
     render(<GlobalSearch />);
 
-    fireEvent.change(screen.getByLabelText('Search topics'), { target: { value: 'test query' } });
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'test query' } });
 
     act(() => {
       jest.advanceTimersByTime(350);
@@ -313,7 +315,7 @@ describe('GlobalSearch', () => {
 
     render(<GlobalSearch />);
 
-    const input = screen.getByLabelText('Search topics');
+    const input = screen.getByLabelText('Search');
 
     // Type a query to open the dropdown
     fireEvent.change(input, { target: { value: 'test' } });
