@@ -7,6 +7,7 @@ interface ProviderStoreState {
   addModel: (model: UserChatModel) => void;
   setProviderKey: (providerId: string, rawKey: string) => void;
   getAvailableModels: () => UserChatModel[];
+  getFirstWebSearchModel: () => UserChatModel | undefined;
   hasAnyApiKey: () => boolean;
   deleteProvider: (providerId: string) => void;
 }

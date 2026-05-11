@@ -278,7 +278,7 @@ describe('Composer', () => {
     providerStore = {
       getAvailableModels: (): UserChatModel[] => [selectedModel],
       getProviderForModel: (): LlmProvider => selectedProvider,
-      providers: [],
+      providers: [selectedProvider],
     };
 
     chatStore = {

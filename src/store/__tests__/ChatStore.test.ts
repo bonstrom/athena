@@ -17,6 +17,7 @@ interface TopicStoreState {
 interface ProviderStoreState {
   models: UserChatModel[];
   getProviderForModel: (model: UserChatModel) => LlmProvider;
+  getFirstWebSearchModel: () => UserChatModel | undefined;
 }
 
 interface AuthStoreState {
@@ -206,6 +207,7 @@ describe('ChatStore', () => {
     mockProviderGetState.mockReturnValue({
       models: [mockDefaultModel],
       getProviderForModel: () => testProvider,
+      getFirstWebSearchModel: () => undefined,
     });
 
     mockGetTopicContext.mockResolvedValue([]);

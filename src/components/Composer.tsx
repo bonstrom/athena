@@ -154,7 +154,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
     ttsVoiceId,
     setTtsVoiceId,
   } = useAuthStore();
-  const { getAvailableModels, getProviderForModel, providers } = useProviderStore();
+  const { getAvailableModels, providers } = useProviderStore();
   const {
     webSearchEnabled,
     setWebSearchEnabled,
@@ -182,9 +182,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
   const topic = topicStore.topics.find((t) => t.id === currentTopicId);
 
   const availableModels = getAvailableModels();
-  // Provider of the currently selected model (for capability-based UI)
-  const selectedProvider = getProviderForModel(selectedModel);
   const hasMiniMaxKey = providers.some((p) => p.id === 'builtin-minimax' && !!p.apiKeyEncrypted);
+  const hasWebSearchProvider = providers.some((p) => p.supportsWebSearch && !!p.apiKeyEncrypted);
   const openTempMenu = Boolean(anchorEl);
 
   useEffect(() => {
@@ -1069,7 +1068,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </IconButton>
             </Tooltip>
 
-            {selectedProvider?.id === 'builtin-minimax' && (
+            {hasMiniMaxKey && (
               <Tooltip title={imageGenerationEnabled ? 'Image Gen: Active' : 'Image Gen: Inactive'}>
                 <IconButton
                   onClick={(): void => {
@@ -1100,7 +1099,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </Tooltip>
             )}
 
-            {selectedProvider?.id === 'builtin-minimax' && (
+            {hasMiniMaxKey && (
               <Tooltip title={musicGenerationEnabled ? 'Music Gen: Active' : 'Music Gen: Inactive'}>
                 <IconButton
                   onClick={(): void => {
@@ -1344,7 +1343,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               </Tooltip>
             )}
 
-            {selectedProvider?.supportsWebSearch && (
+            {hasWebSearchProvider && (
               <Tooltip title={`Web Search (${webSearchEnabled ? 'Enabled' : 'Disabled'})`} disableTouchListener={isMobile}>
                 <span>
                   <IconButton
