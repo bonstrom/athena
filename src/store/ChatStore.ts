@@ -24,7 +24,7 @@ import { BackupService } from '../services/backupService';
 import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 
-import { LATEX_INSTRUCTIONS, SCRATCHPAD_LIMIT, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS } from '../constants';
+import { LATEX_INSTRUCTIONS, SCRATCHPAD_LIMIT, SHORTENED_ID_LENGTH, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS } from '../constants';
 
 /**
  * Heuristic: detect when the LLM response is primarily a clarification question
@@ -960,7 +960,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 .filter((m) => !m.isDeleted && (m.type === 'user' || m.type === 'assistant'))
                 .map((m) => {
                   const snippet = m.content.substring(0, 150).replace(/\n/g, ' ').trim();
-                  return `[ID: ${m.id.slice(0, 8)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
+                  return `[ID: ${m.id.slice(0, SHORTENED_ID_LENGTH)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
                 });
               return `CHRONOLOGICAL DIRECTORY OF TOPIC "${topic?.name ?? 'Untitled'}":\n\n${lines.join('\n')}\n\nUse 'read_messages' with any of these IDs to see full content.`;
             } catch (e) {

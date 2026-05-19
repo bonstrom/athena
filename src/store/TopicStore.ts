@@ -7,7 +7,7 @@ import { useProviderStore } from './ProviderStore';
 import { askLlm } from '../services/llmService';
 import { embeddingService, ScoredMessage } from '../services/embeddingService';
 import { getDefaultTopicNameModel } from '../components/ModelSelector';
-import { SCRATCHPAD_LIMIT, RAG_TOP_K, RAG_MIN_SCORE, RAG_MAX_CHARS, RAG_CONTENT_LIMIT } from '../constants';
+import { SHORTENED_ID_LENGTH, SCRATCHPAD_LIMIT, RAG_TOP_K, RAG_MIN_SCORE, RAG_MAX_CHARS, RAG_CONTENT_LIMIT } from '../constants';
 
 interface TopicState {
   topics: Topic[];
@@ -243,7 +243,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
           const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
           return {
             ...m,
-            content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, 8)} to reach full content]`,
+            content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, SHORTENED_ID_LENGTH)} to reach full content]`,
           };
         }
         return m;
@@ -303,7 +303,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
                 const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
                 return {
                   ...m,
-                  content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, 8)} to reach full content]`,
+            content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, SHORTENED_ID_LENGTH)} to reach full content]`,
                 };
               }
               return m;
@@ -353,7 +353,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         const visibleDirectory = directoryMessages.slice(-30);
         const directoryLines = visibleDirectory.map((m) => {
           const preview = m.summary ? `[S] ${m.summary}` : m.content.substring(0, 100).replace(/\n/g, ' ').trim();
-          return `${m.id.slice(0, 8)}|${m.type === 'user' ? 'U' : 'A'}|${preview}`;
+          return `${m.id.slice(0, SHORTENED_ID_LENGTH)}|${m.type === 'user' ? 'U' : 'A'}|${preview}`;
         });
 
         const moreNote =

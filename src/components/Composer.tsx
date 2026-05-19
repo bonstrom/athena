@@ -61,6 +61,7 @@ import { Attachment } from '../database/AthenaDb';
 import { useNotificationStore } from '../store/NotificationStore';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const SUGGESTION_DEBOUNCE_MS = 500;
 
 const MUSIC_TEMPLATE = `Genre:
 Mood:
@@ -516,7 +517,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
 
     suggestionTimeoutRef.current = setTimeout(() => {
       fetchSuggestion(inputValue).catch(console.error);
-    }, 500); // 500ms debounce
+    }, SUGGESTION_DEBOUNCE_MS);
 
     return () => {
       if (suggestionTimeoutRef.current) {

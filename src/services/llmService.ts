@@ -66,6 +66,8 @@ export interface LlmDebugPayload {
   timestamp: string;
 }
 
+export const TOOL_RESULT_PREVIEW_LIMIT = 500;
+
 export const SCRATCHPAD_TOOL: LlmTool = {
   type: 'function',
   function: {
@@ -1319,7 +1321,7 @@ export async function orchestrateLlmLoop(
         }
 
         if (onToolLog) {
-          const summary = toolResult.length > 500 ? toolResult.slice(0, 500) + '... *(display truncated — full content sent to LLM)*' : toolResult;
+          const summary = toolResult.length > TOOL_RESULT_PREVIEW_LIMIT ? toolResult.slice(0, TOOL_RESULT_PREVIEW_LIMIT) + '... *(display truncated — full content sent to LLM)*' : toolResult;
           onToolLog(`**Tool Result**: \`${tc.function.name}\`\n> ${summary.replace(/\n/g, '\n> ')}\n\n`);
         }
 

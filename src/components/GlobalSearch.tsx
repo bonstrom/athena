@@ -23,6 +23,9 @@ import { useUiStore } from '../store/UiStore';
 import { useChatStore } from '../store/ChatStore';
 
 const MIN_SEARCH_LENGTH = 2;
+const SEARCH_DEBOUNCE_MS = 300;
+const MAX_SEARCH_RESULTS = 20;
+const SEARCH_SNIPPET_LENGTH = 60;
 
 interface SearchResult {
   id: string;
@@ -70,7 +73,7 @@ export const GlobalSearch = (): JSX.Element => {
 
     debounceTimer.current = setTimeout(() => {
       void performSearch(query.trim(), searchMode);
-    }, 300); // 300ms debounce
+    }, SEARCH_DEBOUNCE_MS);
 
     return (): void => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -112,7 +115,7 @@ export const GlobalSearch = (): JSX.Element => {
           date: r.item.updatedOn,
         }));
 
-        setResults(topicResults.slice(0, 20));
+        setResults(topicResults.slice(0, MAX_SEARCH_RESULTS));
       } else {
         if (!messageFuseRef.current) {
           const allMessages: Message[] = await athenaDb.messages
@@ -143,7 +146,7 @@ export const GlobalSearch = (): JSX.Element => {
 
         const messageResults: SearchResult[] = [];
 
-        fuseResults.slice(0, 20).forEach((r) => {
+        fuseResults.slice(0, MAX_SEARCH_RESULTS).forEach((r) => {
           const parentTopic = topicLookupRef.current.get(r.item.topicId);
           if (!parentTopic) return;
 
@@ -155,7 +158,7 @@ export const GlobalSearch = (): JSX.Element => {
             snippet =
               (start > 0 ? '...' : '') + r.item.content.substring(start, end).replace(/\n/g, ' ') + (end < r.item.content.length ? '...' : '');
           } else {
-            snippet = r.item.content.substring(0, 60).replace(/\n/g, ' ') + (r.item.content.length > 60 ? '...' : '');
+            snippet = r.item.content.substring(0, SEARCH_SNIPPET_LENGTH).replace(/\n/g, ' ') + (r.item.content.length > SEARCH_SNIPPET_LENGTH ? '...' : '');
           }
 
           messageResults.push({

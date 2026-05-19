@@ -53,6 +53,8 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SummarizeIcon from '@mui/icons-material/Summarize';
 import BugReportIcon from '@mui/icons-material/BugReport';
 
+const AI_SUMMARY_MIN_CHARS = 250;
+
 interface MessageBubbleProps {
   message: Message;
   versions?: Message[];
@@ -318,7 +320,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
 
             {(aiSummaryEnabled || message.summary || failedSummaryMessageIds.has(message.id)) &&
               (message.type === 'user' || message.type === 'assistant') &&
-              (message.content.length > 250 ||
+              (message.content.length > AI_SUMMARY_MIN_CHARS ||
                 message.content.includes('[TRUNCATED:') ||
                 !!message.summary ||
                 failedSummaryMessageIds.has(message.id)) && (
