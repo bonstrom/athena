@@ -258,14 +258,14 @@ describe('GlobalSearch', () => {
     expect(navigate).toHaveBeenCalledWith('/chat/t1');
   });
 
-  it('does not search with fewer than 3 characters', () => {
+  it('does not search with fewer than 2 characters', () => {
     useNavigateMock.mockReturnValue(jest.fn());
     useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn() });
 
     render(<GlobalSearch />);
 
     const input = screen.getByLabelText('Search');
-    fireEvent.change(input, { target: { value: 'ab' } });
+    fireEvent.change(input, { target: { value: 'a' } });
 
     act(() => {
       jest.advanceTimersByTime(350);
@@ -301,7 +301,7 @@ describe('GlobalSearch', () => {
     errorSpy.mockRestore();
   });
 
-  it('re-opens dropdown on focus when query has 3+ characters', async () => {
+  it('re-opens dropdown on focus when query has 2+ characters', async () => {
     useNavigateMock.mockReturnValue(jest.fn());
     useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn() });
 

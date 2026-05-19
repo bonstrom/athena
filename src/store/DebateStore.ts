@@ -7,6 +7,8 @@ import { useNotificationStore } from './NotificationStore';
 import { useAuthStore } from './AuthStore';
 import { useChatStore } from './ChatStore';
 
+import { LATEX_INSTRUCTIONS } from '../constants';
+
 interface DebateState {
   debateModelA: ChatModel | null;
   debateModelB: ChatModel | null;
@@ -28,9 +30,13 @@ interface DebateState {
 const DEBATE_TEMPERATURE = 1.0;
 
 function buildSystemMessage(customInstructions: string): LlmMessage | null {
+  const parts: string[] = [];
   const trimmed = customInstructions.trim();
-  if (!trimmed) return null;
-  return { role: 'system', content: trimmed };
+  if (trimmed) {
+    parts.push(trimmed);
+  }
+  parts.push(LATEX_INSTRUCTIONS);
+  return { role: 'system', content: parts.join('\n\n') };
 }
 
 async function persistMessage(msg: Message): Promise<void> {

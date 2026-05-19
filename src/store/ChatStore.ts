@@ -24,7 +24,7 @@ import { BackupService } from '../services/backupService';
 import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 
-import { SCRATCHPAD_LIMIT, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS } from '../constants';
+import { LATEX_INSTRUCTIONS, SCRATCHPAD_LIMIT, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS } from '../constants';
 
 /**
  * Heuristic: detect when the LLM response is primarily a clarification question
@@ -211,6 +211,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (customInstructions) {
       entries.push({ message: { role: 'system', content: customInstructions }, sourceLabel: 'Custom Instructions' });
     }
+
+    // System: LaTeX formatting instructions
+    entries.push({ message: { role: 'system', content: LATEX_INSTRUCTIONS }, sourceLabel: 'Formatting' });
 
     // System: Scratchpad rules + content (shown as two entries for clarity in the inspector)
     const rawScratchpadRules = (topic?.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
@@ -613,6 +616,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
 
     const systems: LlmMessage[] = [];
+
+    // System: LaTeX formatting instructions
+    systems.push({ role: 'system', content: LATEX_INSTRUCTIONS });
+
     const rawScratchpadRules = (topic?.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
       '{{SCRATCHPAD_LIMIT}}',
       String(SCRATCHPAD_LIMIT),

@@ -22,6 +22,8 @@ import { athenaDb, Topic, Message } from '../database/AthenaDb';
 import { useUiStore } from '../store/UiStore';
 import { useChatStore } from '../store/ChatStore';
 
+const MIN_SEARCH_LENGTH = 2;
+
 interface SearchResult {
   id: string;
   topicId: string;
@@ -53,7 +55,7 @@ export const GlobalSearch = (): JSX.Element => {
       return;
     }
 
-    if (query.trim().length < 3) {
+    if (query.trim().length < MIN_SEARCH_LENGTH) {
       setResults([]);
       setIsSearching(false);
       setIsOpen(false);
@@ -215,7 +217,7 @@ export const GlobalSearch = (): JSX.Element => {
           onChange={(e): void => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={(): void => {
-            if (query.trim().length >= 3) setIsOpen(true);
+            if (query.trim().length >= MIN_SEARCH_LENGTH) setIsOpen(true);
           }}
           InputProps={{
             startAdornment: (
