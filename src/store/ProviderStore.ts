@@ -69,6 +69,7 @@ interface ProviderState {
   getAvailableModels: () => UserChatModel[];
   getProviderForModel: (model: UserChatModel) => LlmProvider | undefined;
   hasAnyApiKey: () => boolean;
+  getFirstWebSearchModel: () => UserChatModel | undefined;
 }
 
 function initStore(): Pick<ProviderState, 'providers' | 'models'> {
@@ -152,6 +153,18 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
     const nextModels = models.filter((m) => !m.isBuiltIn || currentDefaultIds.has(m.id));
     if (nextModels.length !== models.length) {
       models = nextModels;
+      modelsChanged = true;
+    }
+
+    // 3.5 Reorder built-in models to match DEFAULT_MODELS order
+    const builtinOrder = new Map(DEFAULT_MODELS.map((dm, i) => [dm.id, i]));
+    const builtins = models
+      .filter((m) => m.isBuiltIn)
+      .sort((a, b) => (builtinOrder.get(a.id) ?? 999) - (builtinOrder.get(b.id) ?? 999));
+    const customs = models.filter((m) => !m.isBuiltIn);
+    const reordered = [...builtins, ...customs];
+    if (JSON.stringify(reordered.map((m) => m.id)) !== JSON.stringify(models.map((m) => m.id))) {
+      models = reordered;
       modelsChanged = true;
     }
 
@@ -288,5 +301,17 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
 
   hasAnyApiKey: (): boolean => {
     return get().getAvailableModels().length > 0;
+  },
+
+  getFirstWebSearchModel: (): UserChatModel | undefined => {
+    const { models, providers } = get();
+    const available = models.filter((m) => {
+      if (!m.enabled) return false;
+      const provider = providers.find((p) => p.id === m.providerId);
+      if (!provider?.supportsWebSearch) return false;
+      const hasKey = getApiKey(provider).length > 0;
+      return hasKey || providerCanBeUsedWithoutKey(provider);
+    });
+    return available.length > 0 ? available[0] : undefined;
   },
 }));

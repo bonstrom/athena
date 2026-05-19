@@ -232,7 +232,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         message: {
           role: 'system',
           content:
-            'You have a builtin $web_search function available in your tools. It is always active in this conversation — do not question its availability. Call $web_search whenever you need current or factual information you are not fully confident about. Do not attempt to answer from memory if a search would produce a more accurate result.',
+            'Web search is available in this conversation. Search the internet whenever you need current or factual information you are not fully confident about.',
         },
         sourceLabel: 'Web Search Instructions',
       });
@@ -379,7 +379,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // If already cached and on the main fork, just switch to it instantly
     const cached = get().messagesByTopic[topicId];
     if (cached !== undefined && !forkId) {
-      set({ currentTopicId: topicId, isInitialLoad: true, visibleMessageCount: 10, autoReadEnabled: false });
+      set({ currentTopicId: topicId, isInitialLoad: true, visibleMessageCount: 10, autoReadEnabled: false, webSearchEnabled: false });
       return;
     }
 
@@ -395,6 +395,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       isInitialLoad: true,
       visibleMessageCount: 10,
       autoReadEnabled: false,
+      webSearchEnabled: false,
     }));
   },
 
@@ -536,6 +537,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     void BackupService.performAutoBackup(true);
 
     const { selectedModel } = get();
+
+    let effectiveModel = selectedModel;
+    if (get().webSearchEnabled) {
+      const webSearchModel = useProviderStore.getState().getFirstWebSearchModel();
+      if (webSearchModel) {
+        effectiveModel = webSearchModel;
+      }
+    }
+
     const topicStoreState = useTopicStore.getState();
 
     if (!content.trim() || !topicId) return;
@@ -578,10 +588,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const llmContext: LlmMessage[] = existingContext.map((m) => {
       const role = m.type === 'user' ? 'user' : m.type === 'assistant' ? 'assistant' : 'system';
-      if (m.attachments && m.attachments.length > 0 && (selectedModel.supportsVision || selectedModel.supportsFiles)) {
+      if (m.attachments && m.attachments.length > 0 && (effectiveModel.supportsVision || effectiveModel.supportsFiles)) {
         const parts: LlmContentPart[] = [{ type: 'text', text: m.content }];
         for (const att of m.attachments) {
-          if (att.type.startsWith('image/') && selectedModel.supportsVision) {
+          if (att.type.startsWith('image/') && effectiveModel.supportsVision) {
             parts.push({ type: 'image_url', image_url: { url: att.data } });
           }
         }
@@ -609,7 +619,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     );
     const scratchpadRules = topic?.scratchpad ? `${rawScratchpadRules}\n\n[Current Scratchpad Content]:\n${topic.scratchpad}` : rawScratchpadRules;
 
-    if (selectedModel.supportsTools) {
+    if (effectiveModel.supportsTools) {
       systems.push({ role: 'system', content: scratchpadRules });
     } else {
       systems.push({
@@ -618,12 +628,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       });
     }
 
-    const selectedProvider = useProviderStore.getState().getProviderForModel(selectedModel);
+    const selectedProvider = useProviderStore.getState().getProviderForModel(effectiveModel);
     if (get().webSearchEnabled && selectedProvider?.supportsWebSearch) {
       systems.push({
         role: 'system',
         content:
-          'You have a builtin $web_search function available in your tools. It is always active in this conversation — do not question its availability. Call $web_search whenever you need current or factual information you are not fully confident about. Do not attempt to answer from memory if a search would produce a more accurate result.',
+          'Web search is available in this conversation. Search the internet whenever you need current or factual information you are not fully confident about.',
       });
     }
 
@@ -639,10 +649,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     llmContext.unshift(...systems);
 
     // Add current user message to context before calling loop
-    if (userMessage.attachments && userMessage.attachments.length > 0 && (selectedModel.supportsVision || selectedModel.supportsFiles)) {
+    if (userMessage.attachments && userMessage.attachments.length > 0 && (effectiveModel.supportsVision || effectiveModel.supportsFiles)) {
       const parts: LlmContentPart[] = [{ type: 'text', text: userMessage.content }];
       for (const att of userMessage.attachments) {
-        if (att.type.startsWith('image/') && selectedModel.supportsVision) {
+        if (att.type.startsWith('image/') && effectiveModel.supportsVision) {
           parts.push({ type: 'image_url', image_url: { url: att.data } });
         }
       }
@@ -660,7 +670,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       type: 'assistant',
       content: '',
       created: new Date().toISOString(),
-      model: selectedModel.apiModelId,
+        model: effectiveModel.apiModelId,
       isDeleted: false,
       includeInContext: false,
       failed: false,
@@ -860,7 +870,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       // 4. Call the Orchestrator for the Primary Model
       const primaryResult = await orchestrateLlmLoop(
-        selectedModel,
+        effectiveModel,
         get().temperature,
         llmContext,
         onTokenCallback,
@@ -1010,7 +1020,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const totalPromptTokens = primaryResult.totalPromptTokens;
       const totalCompletionTokens = primaryResult.totalCompletionTokens;
       const lastResult = primaryResult.lastResult;
-      const finalTotalCost = calculateCostSEK(selectedModel, totalPromptTokens, totalCompletionTokens, lastResult.promptTokensDetails);
+      const finalTotalCost = calculateCostSEK(effectiveModel, totalPromptTokens, totalCompletionTokens, lastResult.promptTokensDetails);
 
       const debugPayload: LlmDebugPayload = {
         rawContent: lastResult.rawContent,
@@ -1034,10 +1044,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (!finalContent.trim()) console.warn('[verify:chat] Assistant response was empty');
       if (totalPromptTokens === 0) console.warn('[verify:chat] promptTokens is 0 — possible usage tracking issue');
       if (totalCompletionTokens === 0) console.warn('[verify:chat] completionTokens is 0 — possible usage tracking issue');
-      if (finalTotalCost <= 0) console.warn('[verify:chat] Calculated cost is 0 — model:', selectedModel.id);
+      if (finalTotalCost <= 0) console.warn('[verify:chat] Calculated cost is 0 — model:', effectiveModel.id);
       console.debug(
         '[verify:chat] model=%s prompt=%d completion=%d cost=%f latency=%dms context_messages=%d',
-        selectedModel.id,
+        effectiveModel.id,
         totalPromptTokens,
         totalCompletionTokens,
         finalTotalCost,
@@ -1089,7 +1099,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         cacheCreationTokens: dbCacheCreationTokens,
         failed: false,
         latencyMs,
-        model: selectedModel.apiModelId,
+      model: effectiveModel.apiModelId,
         rawResponse: JSON.stringify(debugPayload),
       };
 
