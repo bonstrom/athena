@@ -2,6 +2,8 @@ import { Box, Typography, IconButton } from '@mui/material';
 import { ContentCopy, Check } from '@mui/icons-material';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript';
@@ -192,7 +194,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) 
 
   return (
     <Box sx={{ wordBreak: 'break-word' }}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
         {children}
       </ReactMarkdown>
     </Box>
