@@ -255,4 +255,79 @@ describe('Settings page', () => {
     expect(added.name).toBe('Code style');
     expect(added.content).toBe('Prefer concise TypeScript.');
   });
+
+  it('handleDownloadModel calls loadModel with correct model id', () => {
+    const authState = buildAuthState();
+    mockUseAuthStore.mockReturnValue(authState);
+    const loadModelSpy = jest.spyOn(llmSuggestionService, 'loadModel').mockImplementation(jest.fn());
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /download/i }));
+
+    expect(loadModelSpy).toHaveBeenCalledWith('onnx-community/Qwen3.5-0.8B-ONNX', true);
+    loadModelSpy.mockRestore();
+  });
+
+  it('handleDeleteModel shows confirm dialog and calls deleteModel', async () => {
+    const authState = buildAuthState();
+    authState.llmModelDownloadStatus = { 'onnx-community/Qwen3.5-0.8B-ONNX': 'downloaded' };
+    mockUseAuthStore.mockReturnValue(authState);
+    const deleteModelSpy = jest.spyOn(llmSuggestionService, 'deleteModel').mockResolvedValue();
+    window.confirm = jest.fn(() => true);
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Delete downloaded model'));
+    await waitFor(() => {
+      expect(deleteModelSpy).toHaveBeenCalledWith('onnx-community/Qwen3.5-0.8B-ONNX');
+    });
+    deleteModelSpy.mockRestore();
+  });
+
+  it('handleResetDownload calls resetDownload and clears progress', () => {
+    const authState = buildAuthState();
+    authState.llmModelDownloadStatus = { 'onnx-community/Qwen3.5-0.8B-ONNX': 'downloading' };
+    mockUseAuthStore.mockReturnValue(authState);
+    const resetDownloadSpy = jest.spyOn(llmSuggestionService, 'resetDownload').mockImplementation(jest.fn());
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+    expect(resetDownloadSpy).toHaveBeenCalledWith('onnx-community/Qwen3.5-0.8B-ONNX');
+    resetDownloadSpy.mockRestore();
+  });
+
+  it('shows summary model dropdown when aiSummaryEnabled is true', () => {
+    const authState = buildAuthState();
+    authState.aiSummaryEnabled = true;
+    mockUseAuthStore.mockReturnValue(authState);
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
+
+    expect(screen.getByText('Same as active chat model')).toBeInTheDocument();
+  });
+
+  it('shows prediction model dropdown when replyPredictionEnabled is true', () => {
+    const authState = buildAuthState();
+    authState.replyPredictionEnabled = true;
+    mockUseAuthStore.mockReturnValue(authState);
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
+
+    expect(screen.getByText('Same as active chat model')).toBeInTheDocument();
+  });
 });

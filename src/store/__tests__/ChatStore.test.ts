@@ -1,6 +1,6 @@
 import type { Message, Topic } from '../../database/AthenaDb';
 import type { LlmProvider, UserChatModel } from '../../types/provider';
-import { createUserChatModel, createLlmProvider, createTopic } from '../../testUtils';
+import { createUserChatModel, createLlmProvider, createTopic, createMessage } from '../../testUtils';
 
 const mockDefaultModel: UserChatModel = createUserChatModel();
 
@@ -158,11 +158,12 @@ jest.mock('../../database/AthenaDb', () => ({
       update: (...args: [string, Partial<Message>]): Promise<number> => mockDbUpdate(...args),
       delete: (...args: [string]): Promise<void> => mockDbDelete(...args),
       bulkDelete: (...args: [string[]]): Promise<void> => mockDbBulkDelete(...args),
-      where: (): { equals: () => { and: () => { sortBy: (...args: [string]) => Promise<Message[]> } } } => ({
-        equals: (): { and: () => { sortBy: (...args: [string]) => Promise<Message[]> } } => ({
+      where: (): { equals: () => { and?: () => { sortBy: (...args: [string]) => Promise<Message[]> }; sortBy: (...args: [string]) => Promise<Message[]> } } => ({
+        equals: (): { and?: () => { sortBy: (...args: [string]) => Promise<Message[]> }; sortBy: (...args: [string]) => Promise<Message[]> } => ({
           and: (): { sortBy: (...args: [string]) => Promise<Message[]> } => ({
             sortBy: (...args: [string]): Promise<Message[]> => mockDbSortBy(...args),
           }),
+          sortBy: (...args: [string]): Promise<Message[]> => mockDbSortBy(...args),
         }),
       }),
     },
@@ -1133,5 +1134,51 @@ describe('ChatStore', () => {
 
     expect(sendSpy).toHaveBeenCalledWith('Use Node 20', 'topic-2');
     sendSpy.mockRestore();
+  });
+
+  it('setHighlightedMessageId sets and clears highlighted message id', () => {
+    useChatStore.setState({ highlightedMessageId: null });
+    useChatStore.getState().setHighlightedMessageId('msg-highlight');
+    expect(useChatStore.getState().highlightedMessageId).toBe('msg-highlight');
+    useChatStore.getState().setHighlightedMessageId(null);
+    expect(useChatStore.getState().highlightedMessageId).toBeNull();
+  });
+
+  it('initDefaults sets selectedModel to the default model', () => {
+    useChatStore.getState().initDefaults();
+    expect(mockGetDefaultModel).toHaveBeenCalled();
+    expect(useChatStore.getState().selectedModel).toBe(mockDefaultModel);
+  });
+
+  it('clearSuggestions clears pending suggestions and loading flag', () => {
+    useChatStore.setState({ pendingSuggestions: ['suggestion 1'], isSuggestionsLoading: true });
+    useChatStore.getState().clearSuggestions();
+    expect(useChatStore.getState().pendingSuggestions).toBeNull();
+    expect(useChatStore.getState().isSuggestionsLoading).toBe(false);
+  });
+
+  it('preloadTopics returns early when all topics are already loaded', async () => {
+    useChatStore.setState({ messagesByTopic: { 'topic-1': [], 'topic-2': [] } });
+    await useChatStore.getState().preloadTopics(['topic-1', 'topic-2']);
+    expect(mockDbSortBy).not.toHaveBeenCalled();
+  });
+
+  it('preloadTopics only fetches unloaded topics', async () => {
+    useChatStore.setState({ messagesByTopic: { 'topic-1': [] } });
+    mockDbSortBy.mockResolvedValue([createMessage({ id: 'msg-loaded', topicId: 'topic-2' })]);
+    await useChatStore.getState().preloadTopics(['topic-1', 'topic-2']);
+    expect(mockDbSortBy).toHaveBeenCalledTimes(1);
+  });
+
+  it('preloadTopics does nothing when given an empty array', async () => {
+    await useChatStore.getState().preloadTopics([]);
+    expect(mockDbSortBy).not.toHaveBeenCalled();
+  });
+
+  it('stopSending returns null when currentRequestMessageIds is null', async () => {
+    useChatStore.setState({ abortController: null, currentRequestMessageIds: null });
+    const result = await useChatStore.getState().stopSending();
+    expect(result).toBeNull();
+    expect(mockDbDelete).not.toHaveBeenCalled();
   });
 });
