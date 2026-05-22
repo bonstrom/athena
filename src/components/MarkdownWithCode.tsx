@@ -112,7 +112,7 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
     const container = containerRef.current;
     if (!container) return;
 
-    const renderDiagram = async () => {
+    const renderDiagram = async (): Promise<void> => {
       try {
         const id = `mermaid-${crypto.randomUUID()}`;
         const { svg } = await mermaid.render(id, children.trim());
