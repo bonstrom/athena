@@ -1,5 +1,19 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+
+const mockMermaidRender = jest.fn<Promise<{ svg: string }>, [string, string]>().mockResolvedValue({ svg: '<svg></svg>' });
+const mockMermaidInitialize = jest.fn();
+
+jest.mock('mermaid', () => {
+  const mermaidModule = {
+    initialize: mockMermaidInitialize,
+    render: mockMermaidRender,
+  };
+  return {
+    __esModule: true,
+    default: mermaidModule,
+  };
+});
 
 jest.mock('react-markdown', () => ({
   __esModule: true,
@@ -18,7 +32,7 @@ jest.mock('react-markdown', () => ({
     return (
       <div data-testid="markdown-root">
         {segments.map((segment, index) => {
-          const match = /^```(\w+)?\n([\s\S]*?)```$/.exec(segment);
+          const match = /^```(\w+)?\n([\s\S]*?)```$/s.exec(segment);
           if (!match || !codeRenderer) {
             return <span key={`text-${String(index)}`}>{segment}</span>;
           }
@@ -33,7 +47,12 @@ jest.mock('react-markdown', () => ({
 
 jest.mock('remark-gfm', () => jest.fn());
 
-
+jest.mock('../store/AuthStore', () => ({
+  useAuthStore: jest.fn((selector?: (state: { themeMode: string }) => string) => {
+    const state = { themeMode: 'dark' as const };
+    return selector ? selector(state) : state;
+  }),
+}));
 
 const { default: MarkdownWithCode } = jest.requireActual<typeof import('./MarkdownWithCode')>('./MarkdownWithCode');
 
@@ -44,6 +63,15 @@ describe('MarkdownWithCode', () => {
         writeText: jest.fn(() => Promise.resolve()),
       },
     });
+    jest.requireMock<{ useAuthStore: jest.Mock }>('../store/AuthStore').useAuthStore.mockImplementation(
+      (selector?: (state: { themeMode: string }) => string) => {
+        const state = { themeMode: 'dark' as const };
+        return selector ? selector(state) : state;
+      },
+    );
+    mockMermaidRender.mockResolvedValue({ svg: '<svg></svg>' });
+    mockMermaidInitialize.mockClear();
+    mockMermaidRender.mockClear();
   });
 
   it('renders markdown content container', () => {
@@ -81,5 +109,89 @@ describe('MarkdownWithCode', () => {
     render(<MarkdownWithCode fontSize={16}>Test</MarkdownWithCode>);
 
     expect(screen.getByTestId('markdown-root')).toHaveTextContent('Test');
+  });
+});
+
+describe('MarkdownWithCode — mermaid', () => {
+  let useAuthStoreMock: jest.Mock;
+
+  beforeEach(() => {
+    useAuthStoreMock = jest.requireMock<{ useAuthStore: jest.Mock }>('../store/AuthStore').useAuthStore;
+    useAuthStoreMock.mockImplementation((selector?: (state: { themeMode: string }) => string) => {
+      const state = { themeMode: 'dark' as const };
+      return selector ? selector(state) : state;
+    });
+    mockMermaidRender.mockResolvedValue({ svg: '<svg></svg>' });
+    mockMermaidInitialize.mockClear();
+    mockMermaidRender.mockClear();
+  });
+
+  it('renders mermaid diagram for mermaid code blocks', async () => {
+    mockMermaidRender.mockResolvedValue({ svg: '<svg data-testid="mermaid-svg"></svg>' });
+
+    render(<MarkdownWithCode>{'```mermaid\ngraph TD\n    A --> B\n```'}</MarkdownWithCode>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mermaid-svg')).toBeInTheDocument();
+    });
+  });
+
+  it('calls mermaid render with diagram content', async () => {
+    render(<MarkdownWithCode>{'```mermaid\nflowchart LR\n    X --> Y\n```'}</MarkdownWithCode>);
+
+    await waitFor(() => {
+      expect(mockMermaidRender).toHaveBeenCalledWith(expect.stringContaining('mermaid-'), 'flowchart LR\n    X --> Y');
+    });
+  });
+
+  it('does not render syntax highlighter for mermaid blocks', () => {
+    render(<MarkdownWithCode>{'```mermaid\ngraph TD\n    A --> B\n```'}</MarkdownWithCode>);
+
+    expect(screen.queryByTestId('syntax-highlighter')).not.toBeInTheDocument();
+  });
+
+  it('renders syntax highlighter for non-mermaid code blocks', () => {
+    render(<MarkdownWithCode>{'```javascript\nconst x = 1;\n```'}</MarkdownWithCode>);
+
+    expect(screen.getByTestId('syntax-highlighter')).toBeInTheDocument();
+  });
+
+  it('shows error when mermaid diagram is invalid', async () => {
+    mockMermaidRender.mockRejectedValueOnce(new Error('Parse error: expected valid mermaid syntax'));
+
+    render(<MarkdownWithCode>{'```mermaid\ninvalidsyntax!!!!\n```'}</MarkdownWithCode>);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Parse error/)).toBeInTheDocument();
+    });
+  });
+
+  it('reinitializes mermaid when theme changes', () => {
+    mockMermaidInitialize.mockClear();
+
+    const { rerender } = render(<MarkdownWithCode>{'text'}</MarkdownWithCode>);
+    expect(mockMermaidInitialize).toHaveBeenCalledWith(
+      expect.objectContaining({ theme: 'dark' }),
+    );
+
+    mockMermaidInitialize.mockClear();
+    useAuthStoreMock.mockImplementation((selector?: (state: { themeMode: string }) => string) => {
+      const state = { themeMode: 'light' as const };
+      return selector ? selector(state) : state;
+    });
+
+    rerender(<MarkdownWithCode>{'text'}</MarkdownWithCode>);
+
+    expect(mockMermaidInitialize).toHaveBeenCalledWith(
+      expect.objectContaining({ theme: 'default' }),
+    );
+  });
+
+  it('initializes mermaid with dark theme on mount', () => {
+    render(<MarkdownWithCode>{'text'}</MarkdownWithCode>);
+
+    expect(mockMermaidInitialize).toHaveBeenCalledWith(
+      expect.objectContaining({ theme: 'dark', startOnLoad: false, securityLevel: 'loose' }),
+    );
   });
 });

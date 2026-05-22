@@ -318,7 +318,21 @@ export const useAuthStore = create<AuthState>((set) => {
 void athenaDb.predefinedPrompts
   .toArray()
   .then((prompts) => {
-    useAuthStore.getState().setPredefinedPrompts(prompts);
+    if (prompts.length === 0) {
+      const seedPrompts: PredefinedPrompt[] = [
+        {
+          id: 'seed-mermaid-capability',
+          name: 'Mermaid Diagrams',
+          content:
+            'You can generate mermaid diagrams when they would help visualize concepts, processes, architectures, or relationships. Use ```mermaid code blocks for diagram definitions.',
+        },
+      ];
+      void athenaDb.predefinedPrompts.bulkAdd(seedPrompts).then(() => {
+        useAuthStore.getState().setPredefinedPrompts(seedPrompts);
+      });
+    } else {
+      useAuthStore.getState().setPredefinedPrompts(prompts);
+    }
   })
   .catch((err: unknown) => {
     console.error('Failed to load predefined prompts:', err);

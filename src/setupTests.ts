@@ -65,3 +65,17 @@ try {
 } catch {
   // jsdom may have it defined already
 }
+
+// jsdom polyfill: crypto.randomUUID is not available in jsdom
+const gCrypto = globalThis.crypto as { randomUUID?: () => string } | undefined;
+if (!gCrypto) {
+  Object.defineProperty(globalThis, 'crypto', { value: {}, writable: true, configurable: true });
+}
+if (!(globalThis.crypto as { randomUUID?: () => string }).randomUUID) {
+  let counter = 0;
+  Object.defineProperty(globalThis.crypto, 'randomUUID', {
+    value: (): string => `00000000-0000-4000-8000-${String(counter++).padStart(12, '0')}`,
+    writable: true,
+    configurable: true,
+  });
+}

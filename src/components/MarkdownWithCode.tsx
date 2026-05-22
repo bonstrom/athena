@@ -22,6 +22,8 @@ import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx';
 import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
 import { useState, useEffect, useRef, CSSProperties } from 'react';
 import { useTheme, alpha } from '@mui/material/styles';
+import mermaid from 'mermaid';
+import { useAuthStore } from '../store/AuthStore';
 
 SyntaxHighlighter.registerLanguage('javascript', javascript);
 SyntaxHighlighter.registerLanguage('js', javascript);
@@ -98,8 +100,79 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
+interface MermaidProps {
+  children: string;
+}
+
+const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const renderDiagram = async () => {
+      try {
+        const id = `mermaid-${crypto.randomUUID()}`;
+        const { svg } = await mermaid.render(id, children.trim());
+        container.innerHTML = svg;
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to render diagram');
+      }
+    };
+
+    void renderDiagram();
+  }, [children]);
+
+  if (error) {
+    return (
+      <Box
+        sx={{
+          my: 1,
+          p: 2,
+          border: '1px solid',
+          borderColor: 'error.main',
+          borderRadius: 1,
+          backgroundColor: 'error.dark',
+          color: 'error.contrastText',
+          fontSize: '0.875rem',
+          fontFamily: 'monospace',
+        }}
+      >
+        {error}
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      ref={containerRef}
+      sx={{
+        my: 2,
+        display: 'flex',
+        justifyContent: 'center',
+        '& svg': {
+          maxWidth: '100%',
+          height: 'auto',
+        },
+      }}
+    />
+  );
+};
+
 const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) => {
   const theme = useTheme();
+  const themeMode = useAuthStore((s) => s.themeMode);
+
+  useEffect(() => {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: themeMode === 'dark' ? 'dark' : 'default',
+      securityLevel: 'loose',
+    });
+  }, [themeMode]);
   const markdownComponents: Components = {
     p: ({ children }) => (
       <Typography variant="body2" sx={{ lineHeight: 1.4, mb: 1, fontSize: `${fontSize}px` }} component="p">
@@ -147,6 +220,9 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) 
       const lightSyntaxStyle = oneLight as Record<string, CSSProperties>;
       const syntaxStyle: Record<string, CSSProperties> = theme.palette.mode === 'dark' ? darkSyntaxStyle : lightSyntaxStyle;
       return !inline && match ? (
+        match[1] === 'mermaid' ? (
+          <MermaidDiagram key={codeString}>{codeString}</MermaidDiagram>
+        ) : (
         <Box
           sx={{
             position: 'relative',
@@ -174,6 +250,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) 
             {codeString}
           </SyntaxHighlighter>
         </Box>
+        )
       ) : (
         <code
           className={className}

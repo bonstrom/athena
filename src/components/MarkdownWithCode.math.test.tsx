@@ -31,6 +31,24 @@ jest.mock('react-markdown', () => ({
 
 jest.mock('remark-gfm', () => jest.fn());
 
+jest.mock('mermaid', () => {
+  const mermaidModule = {
+    initialize: jest.fn(),
+    render: jest.fn(),
+  };
+  return {
+    __esModule: true,
+    default: mermaidModule,
+  };
+});
+
+jest.mock('../store/AuthStore', () => ({
+  useAuthStore: jest.fn((selector?: (state: { themeMode: string }) => string) => {
+    const state = { themeMode: 'dark' as const };
+    return selector ? selector(state) : state;
+  }),
+}));
+
 const { default: MarkdownWithCode } = jest.requireActual<typeof import('./MarkdownWithCode')>('./MarkdownWithCode');
 
 beforeEach(() => {
