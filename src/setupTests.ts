@@ -7,17 +7,46 @@ import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from '
 import { ReadableStream as NodeReadableStream } from 'stream/web';
 
 const originalError = console.error;
+const originalWarn = console.warn;
 beforeAll(() => {
   console.error = (...args: unknown[]): void => {
-    if (typeof args[0] === 'string' && args[0].includes('not wrapped in act(')) {
-      return;
+    if (typeof args[0] === 'string') {
+      if (args[0].includes('not wrapped in act(')) {
+        return;
+      }
+      if (args[0].includes('Not supported') || args[0].includes('Auto-backup requires')) {
+        return;
+      }
+      if (args[0].includes('Failed to update context pin')) {
+        return;
+      }
+      if (args[0].includes('Failed to copy message')) {
+        return;
+      }
+      if (args[0].includes('Failed to fork conversation')) {
+        return;
+      }
+      if (args[0].includes('Failed to delete message')) {
+        return;
+      }
+      const joined = args.map((a) => (typeof a === 'string' ? a : String(a))).join(' ');
+      if (joined.includes('Not supported') || joined.includes('Auto-backup requires')) {
+        return;
+      }
     }
     originalError.call(console, ...args);
+  };
+  console.warn = (...args: unknown[]): void => {
+    if (typeof args[0] === 'string' && args[0].includes('MUI: You are providing a disabled')) {
+      return;
+    }
+    originalWarn.call(console, ...args);
   };
 });
 
 afterAll(() => {
   console.error = originalError;
+  console.warn = originalWarn;
 });
 
 if (typeof globalThis.TextEncoder === 'undefined') {
@@ -28,4 +57,11 @@ if (typeof globalThis.TextDecoder === 'undefined') {
 }
 if (typeof globalThis.ReadableStream === 'undefined') {
   Object.defineProperty(globalThis, 'ReadableStream', { value: NodeReadableStream, writable: true, configurable: true });
+}
+
+// jsdom polyfill: scrollIntoView is not implemented in jsdom
+try {
+  Element.prototype.scrollIntoView = jest.fn();
+} catch {
+  // jsdom may have it defined already
 }

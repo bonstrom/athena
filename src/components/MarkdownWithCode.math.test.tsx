@@ -13,11 +13,11 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
 // Capture the props that ReactMarkdown receives so we can assert on plugins.
-type ReactMarkdownProps = {
+interface ReactMarkdownProps {
   children?: string;
   remarkPlugins?: unknown[];
   rehypePlugins?: unknown[];
-};
+}
 
 let capturedProps: ReactMarkdownProps = {};
 

@@ -5,8 +5,14 @@ interface ProviderStoreState {
   models: UserChatModel[];
   addProvider: (provider: LlmProvider) => void;
   addModel: (model: UserChatModel) => void;
+  updateProvider: (provider: LlmProvider) => void;
+  updateModel: (model: UserChatModel) => void;
+  deleteModel: (modelId: string) => void;
   setProviderKey: (providerId: string, rawKey: string) => void;
+  getProviderById: (id: string) => LlmProvider | undefined;
+  getModelById: (id: string) => UserChatModel | undefined;
   getAvailableModels: () => UserChatModel[];
+  getProviderForModel: (model: UserChatModel) => LlmProvider | undefined;
   getFirstWebSearchModel: () => UserChatModel | undefined;
   hasAnyApiKey: () => boolean;
   deleteProvider: (providerId: string) => void;
@@ -166,5 +172,617 @@ describe('ProviderStore', () => {
 
     const available = store.getState().getAvailableModels();
     expect(available.some((m) => m.id === 'custom-local-model')).toBe(true);
+  });
+});
+
+describe('ProviderStore selectors', () => {
+  let store: ProviderStoreLike;
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    localStorage.clear();
+    store = loadProviderStore();
+  });
+
+  it('getProviderById returns existing provider', () => {
+    const provider = store.getState().getProviderById('builtin-openai');
+    expect(provider).toBeDefined();
+    expect(provider?.name).toBe('OpenAI');
+  });
+
+  it('getProviderById returns undefined for nonexistent provider', () => {
+    expect(store.getState().getProviderById('nonexistent')).toBeUndefined();
+  });
+
+  it('getModelById returns existing model', () => {
+    const model = store.getState().getModelById('builtin-deepseek-v4-flash');
+    expect(model).toBeDefined();
+    expect(model?.label).toBe('DeepSeek V4 Flash');
+  });
+
+  it('getModelById returns undefined for nonexistent model', () => {
+    expect(store.getState().getModelById('nonexistent-model')).toBeUndefined();
+  });
+
+  it('getProviderForModel returns provider for a given model', () => {
+    const model = store.getState().models.find((m) => m.providerId === 'builtin-openai');
+    expect(model).toBeDefined();
+    if (model) {
+      const provider = store.getState().getProviderForModel(model);
+      expect(provider).toBeDefined();
+      expect(provider?.id).toBe('builtin-openai');
+    }
+  });
+
+  it('getProviderForModel returns undefined for model with missing provider', () => {
+    const orphanModel: UserChatModel = {
+      id: 'orphan-model',
+      label: 'Orphan',
+      apiModelId: 'orphan',
+      providerId: 'nonexistent-provider',
+      input: 0,
+      cachedInput: 0,
+      output: 0,
+      streaming: true,
+      supportsTemperature: true,
+      supportsTools: true,
+      supportsVision: false,
+      supportsFiles: false,
+      supportsThinking: false,
+      contextWindow: 8192,
+      forceTemperature: null,
+      enforceAlternatingRoles: false,
+      maxTokensOverride: null,
+      isBuiltIn: false,
+      enabled: true,
+    };
+
+    expect(store.getState().getProviderForModel(orphanModel)).toBeUndefined();
+  });
+
+  it('getFirstWebSearchModel returns model when provider has key and supports webSearch', () => {
+    store.getState().setProviderKey('builtin-moonshot', 'test-key');
+
+    const wsModel = store.getState().getFirstWebSearchModel();
+    expect(wsModel).toBeDefined();
+    expect(wsModel?.providerId).toBe('builtin-moonshot');
+  });
+
+  it('getFirstWebSearchModel returns undefined when no web search provider has key', () => {
+    const wsModel = store.getState().getFirstWebSearchModel();
+    expect(wsModel).toBeUndefined();
+  });
+
+  it('getAvailableModels excludes disabled models', () => {
+    store.getState().setProviderKey('builtin-openai', 'test-key');
+
+    const models = store.getState().models;
+    const openAiModel = models.find((m) => m.providerId === 'builtin-openai');
+    expect(openAiModel).toBeDefined();
+
+    if (openAiModel) {
+      store.getState().updateModel({ ...openAiModel, enabled: false });
+
+      const available = store.getState().getAvailableModels();
+      expect(available.some((m) => m.id === openAiModel.id)).toBe(false);
+    }
+  });
+
+  it('getAvailableModels sorts by provider name then model label', () => {
+    store.getState().setProviderKey('builtin-openai', 'test-key');
+    store.getState().setProviderKey('builtin-deepseek', 'test-key');
+
+    const available = store.getState().getAvailableModels();
+    expect(available.length).toBeGreaterThan(1);
+
+    for (let i = 1; i < available.length; i++) {
+      const prev = available[i - 1];
+      const curr = available[i];
+      const prevProvider = store.getState().getProviderForModel(prev);
+      const currProvider = store.getState().getProviderForModel(curr);
+      expect(prevProvider).toBeDefined();
+      expect(currProvider).toBeDefined();
+      if (prevProvider && currProvider) {
+        const order =
+          prevProvider.name.localeCompare(currProvider.name) ||
+          prev.label.localeCompare(curr.label);
+        expect(order).toBeLessThanOrEqual(0);
+      }
+    }
+  });
+});
+
+describe('ProviderStore CRUD operations', () => {
+  let store: ProviderStoreLike;
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    localStorage.clear();
+    store = loadProviderStore();
+  });
+
+  it('updateModel updates a model and persists', () => {
+    const model = store.getState().models[0];
+    expect(model).toBeDefined();
+
+    const updated = { ...model, label: 'Updated Label' };
+    store.getState().updateModel(updated);
+
+    const stored = JSON.parse(localStorage.getItem('athena_models') ?? '[]') as UserChatModel[];
+    const found = stored.find((m) => m.id === model.id);
+    expect(found?.label).toBe('Updated Label');
+  });
+
+  it('updateProvider updates a provider and persists', () => {
+    const provider = store.getState().providers[0];
+    expect(provider).toBeDefined();
+
+    const updated = { ...provider, name: 'Renamed Provider' };
+    store.getState().updateProvider(updated);
+
+    const stored = JSON.parse(localStorage.getItem('athena_providers') ?? '[]') as LlmProvider[];
+    const found = stored.find((p) => p.id === provider.id);
+    expect(found?.name).toBe('Renamed Provider');
+  });
+
+  it('deleteModel removes a model and persists', () => {
+    const model = store.getState().models[0];
+    expect(model).toBeDefined();
+
+    store.getState().deleteModel(model.id);
+
+    const stored = JSON.parse(localStorage.getItem('athena_models') ?? '[]') as UserChatModel[];
+    expect(stored.some((m) => m.id === model.id)).toBe(false);
+  });
+
+  it('addProvider and addModel persist to localStorage', () => {
+    const newProvider: LlmProvider = {
+      id: 'custom-static',
+      name: 'Custom Static',
+      baseUrl: 'https://api.example.com/v1',
+      messageFormat: 'openai',
+      apiKeyEncrypted: '',
+      supportsWebSearch: false,
+      requiresReasoningFallback: false,
+      payloadOverridesJson: '',
+      isBuiltIn: false,
+    };
+
+    const newModel: UserChatModel = {
+      id: 'custom-static-model',
+      label: 'Custom Static Model',
+      apiModelId: 'static-model',
+      providerId: 'custom-static',
+      input: 0.5,
+      cachedInput: 0.05,
+      output: 1.0,
+      streaming: true,
+      supportsTemperature: true,
+      supportsTools: true,
+      supportsVision: false,
+      supportsFiles: false,
+      supportsThinking: false,
+      contextWindow: 32768,
+      forceTemperature: null,
+      enforceAlternatingRoles: false,
+      maxTokensOverride: null,
+      isBuiltIn: false,
+      enabled: true,
+    };
+
+    store.getState().addProvider(newProvider);
+    store.getState().addModel(newModel);
+
+    const providers = store.getState().providers;
+    const models = store.getState().models;
+    expect(providers.some((p) => p.id === 'custom-static')).toBe(true);
+    expect(models.some((m) => m.id === 'custom-static-model')).toBe(true);
+
+    const storedProviders = JSON.parse(localStorage.getItem('athena_providers') ?? '[]') as LlmProvider[];
+    const storedModels = JSON.parse(localStorage.getItem('athena_models') ?? '[]') as UserChatModel[];
+    expect(storedProviders.some((p) => p.id === 'custom-static')).toBe(true);
+    expect(storedModels.some((m) => m.id === 'custom-static-model')).toBe(true);
+  });
+});
+
+describe('ProviderStore migrations', () => {
+  function seedProvider(...ids: string[]): void {
+    const allProviders = [
+      {
+        id: 'builtin-openai',
+        name: 'OpenAI',
+        baseUrl: 'https://api.openai.com/v1/chat/completions',
+        messageFormat: 'openai',
+        apiKeyEncrypted: '',
+        supportsWebSearch: false,
+        requiresReasoningFallback: false,
+        payloadOverridesJson: '',
+        isBuiltIn: true,
+      },
+      {
+        id: 'builtin-deepseek',
+        name: 'DeepSeek',
+        baseUrl: 'https://api.deepseek.com/v1/chat/completions',
+        messageFormat: 'openai',
+        apiKeyEncrypted: '',
+        supportsWebSearch: false,
+        requiresReasoningFallback: false,
+        payloadOverridesJson: '',
+        isBuiltIn: true,
+      },
+      {
+        id: 'builtin-google',
+        name: 'Google',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+        messageFormat: 'openai',
+        apiKeyEncrypted: '',
+        supportsWebSearch: false,
+        requiresReasoningFallback: false,
+        payloadOverridesJson: '',
+        isBuiltIn: true,
+      },
+      {
+        id: 'builtin-moonshot',
+        name: 'Moonshot',
+        baseUrl: 'https://api.moonshot.ai/v1/chat/completions',
+        messageFormat: 'openai',
+        apiKeyEncrypted: '',
+        supportsWebSearch: true,
+        requiresReasoningFallback: true,
+        payloadOverridesJson: '',
+        isBuiltIn: true,
+      },
+      {
+        id: 'builtin-minimax',
+        name: 'MiniMax',
+        baseUrl: 'https://api.minimax.io/anthropic/v1/messages',
+        messageFormat: 'anthropic',
+        apiKeyEncrypted: '',
+        supportsWebSearch: false,
+        requiresReasoningFallback: false,
+        payloadOverridesJson: JSON.stringify({ max_tokens: 4096 }),
+        isBuiltIn: true,
+      },
+    ];
+    localStorage.setItem('athena_providers', JSON.stringify(ids.length > 0 ? allProviders.filter((p) => ids.includes(p.id)) : allProviders));
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('migrates DeepSeek Chat to V4 Flash selection key', () => {
+    seedProvider('builtin-deepseek');
+    localStorage.setItem('athena_selected_model', 'builtin-deepseek-chat');
+
+    const store = loadProviderStore();
+    const selected = localStorage.getItem('athena_selected_model');
+    expect(selected).toBe('builtin-deepseek-v4-flash');
+    // The store should have models loaded after migration
+    expect(store.getState().models.length).toBeGreaterThan(0);
+  });
+
+  it('migrates DeepSeek Reasoner to V4 Pro selection key', () => {
+    seedProvider('builtin-deepseek');
+    localStorage.setItem('athena_selected_model', 'builtin-deepseek-reasoner');
+
+    const store = loadProviderStore();
+    const selected = localStorage.getItem('athena_selected_model');
+    expect(selected).toBe('builtin-deepseek-v4-pro');
+    expect(store.getState().models.length).toBeGreaterThan(0);
+  });
+
+  it('updates built-in model properties from new defaults', () => {
+    // Must include at least one provider so migration path is taken
+    localStorage.setItem(
+      'athena_providers',
+      JSON.stringify([
+        {
+          id: 'builtin-deepseek',
+          name: 'DeepSeek',
+          baseUrl: 'https://api.deepseek.com/v1/chat/completions',
+          messageFormat: 'openai',
+          apiKeyEncrypted: '',
+          supportsWebSearch: false,
+          requiresReasoningFallback: false,
+          payloadOverridesJson: '',
+          isBuiltIn: true,
+        },
+      ]),
+    );
+    const oldModels: UserChatModel[] = [
+      {
+        id: 'builtin-deepseek-v4-flash',
+        label: 'DeepSeek V4 Flash',
+        apiModelId: 'deepseek-v4-flash',
+        providerId: 'builtin-deepseek',
+        input: 99, // old/wrong value
+        cachedInput: 99,
+        output: 99,
+        streaming: true,
+        supportsTemperature: true,
+        supportsTools: true,
+        supportsVision: false,
+        supportsFiles: false,
+        supportsThinking: true,
+        contextWindow: 999, // old value
+        forceTemperature: null,
+        enforceAlternatingRoles: false,
+        maxTokensOverride: null,
+        isBuiltIn: true,
+        enabled: true,
+      },
+    ];
+
+    localStorage.setItem('athena_models', JSON.stringify(oldModels));
+    seedProvider('builtin-deepseek');
+
+    const store = loadProviderStore();
+    const updated = store.getState().models.find((m) => m.id === 'builtin-deepseek-v4-flash');
+    expect(updated).toBeDefined();
+    if (updated) {
+      expect(updated.input).not.toBe(99);
+      expect(updated.contextWindow).not.toBe(999);
+    }
+  });
+
+  it('adds missing built-in models to existing storage', () => {
+    localStorage.setItem(
+      'athena_providers',
+      JSON.stringify([
+        {
+          id: 'builtin-deepseek',
+          name: 'DeepSeek',
+          baseUrl: 'https://api.deepseek.com/v1/chat/completions',
+          messageFormat: 'openai',
+          apiKeyEncrypted: '',
+          supportsWebSearch: false,
+          requiresReasoningFallback: false,
+          payloadOverridesJson: '',
+          isBuiltIn: true,
+        },
+      ]),
+    );
+    localStorage.setItem(
+      'athena_models',
+      JSON.stringify([
+        {
+          id: 'builtin-deepseek-v4-flash',
+          label: 'DeepSeek V4 Flash',
+          apiModelId: 'deepseek-v4-flash',
+          providerId: 'builtin-deepseek',
+          input: 0.14,
+          cachedInput: 0.028,
+          output: 0.28,
+          streaming: true,
+          supportsTemperature: true,
+          supportsTools: true,
+          supportsVision: false,
+          supportsFiles: false,
+          supportsThinking: true,
+          contextWindow: 1000000,
+          forceTemperature: null,
+          enforceAlternatingRoles: false,
+          maxTokensOverride: null,
+          isBuiltIn: true,
+          enabled: true,
+        },
+      ]),
+    );
+
+    const store = loadProviderStore();
+    expect(store.getState().models.length).toBeGreaterThan(1);
+  });
+
+  it('removes built-in models no longer in defaults', () => {
+    localStorage.setItem(
+      'athena_models',
+      JSON.stringify([
+        {
+          id: 'builtin-deepseek-v4-flash',
+          label: 'DeepSeek V4 Flash',
+          apiModelId: 'deepseek-v4-flash',
+          providerId: 'builtin-deepseek',
+          input: 0.14,
+          cachedInput: 0.028,
+          output: 0.28,
+          streaming: true,
+          supportsTemperature: true,
+          supportsTools: true,
+          supportsVision: false,
+          supportsFiles: false,
+          supportsThinking: true,
+          contextWindow: 1000000,
+          forceTemperature: null,
+          enforceAlternatingRoles: false,
+          maxTokensOverride: null,
+          isBuiltIn: true,
+          enabled: true,
+        },
+        {
+          id: 'obsolete-builtin',
+          label: 'Obsolete Model',
+          apiModelId: 'obsolete-id',
+          providerId: 'builtin-deepseek',
+          input: 0.1,
+          cachedInput: 0.01,
+          output: 0.2,
+          streaming: true,
+          supportsTemperature: true,
+          supportsTools: true,
+          supportsVision: false,
+          supportsFiles: false,
+          supportsThinking: false,
+          contextWindow: 4096,
+          forceTemperature: null,
+          enforceAlternatingRoles: false,
+          maxTokensOverride: null,
+          isBuiltIn: true,
+          enabled: true,
+        },
+      ]),
+    );
+    seedProvider('builtin-deepseek');
+
+    const store = loadProviderStore();
+    const hasObsolete = store.getState().models.some((m) => m.id === 'obsolete-builtin');
+    expect(hasObsolete).toBe(false);
+  });
+
+  it('preserves custom (non-builtin) models during migration', () => {
+    const customModel: UserChatModel = {
+      id: 'my-custom-model',
+      label: 'My Custom',
+      apiModelId: 'my-custom',
+      providerId: 'builtin-openai',
+      input: 1.0,
+      cachedInput: 0.1,
+      output: 2.0,
+      streaming: true,
+      supportsTemperature: true,
+      supportsTools: true,
+      supportsVision: false,
+      supportsFiles: false,
+      supportsThinking: false,
+      contextWindow: 16000,
+      forceTemperature: null,
+      enforceAlternatingRoles: false,
+      maxTokensOverride: null,
+      isBuiltIn: false,
+      enabled: true,
+    };
+
+    localStorage.setItem(
+      'athena_models',
+      JSON.stringify([
+        {
+          id: 'builtin-deepseek-v4-flash',
+          label: 'DeepSeek V4 Flash',
+          apiModelId: 'deepseek-v4-flash',
+          providerId: 'builtin-deepseek',
+          input: 0.14,
+          cachedInput: 0.028,
+          output: 0.28,
+          streaming: true,
+          supportsTemperature: true,
+          supportsTools: true,
+          supportsVision: false,
+          supportsFiles: false,
+          supportsThinking: true,
+          contextWindow: 1000000,
+          forceTemperature: null,
+          enforceAlternatingRoles: false,
+          maxTokensOverride: null,
+          isBuiltIn: true,
+          enabled: true,
+        },
+        customModel,
+      ]),
+    );
+    seedProvider('builtin-openai', 'builtin-deepseek');
+
+    const store = loadProviderStore();
+    expect(store.getState().models.some((m) => m.id === 'my-custom-model')).toBe(true);
+  });
+
+  it('updates built-in provider names from new defaults', () => {
+    localStorage.setItem(
+      'athena_providers',
+      JSON.stringify([
+        {
+          id: 'builtin-openai',
+          name: 'Old OpenAI Name',
+          baseUrl: 'https://api.openai.com/v1/chat/completions',
+          messageFormat: 'openai',
+          apiKeyEncrypted: '',
+          supportsWebSearch: false,
+          requiresReasoningFallback: false,
+          payloadOverridesJson: '',
+          isBuiltIn: true,
+        },
+      ]),
+    );
+    localStorage.setItem('athena_models', JSON.stringify([]));
+
+    const store = loadProviderStore();
+    const provider = store.getState().getProviderById('builtin-openai');
+    expect(provider).toBeDefined();
+    expect(provider?.name).toBe('OpenAI');
+  });
+
+  it('reorders built-in models to match DEFAULT_MODELS order', () => {
+    localStorage.setItem(
+      'athena_models',
+      JSON.stringify([
+        {
+          id: 'builtin-gpt-5-4',
+          label: 'GPT-5.4',
+          apiModelId: 'gpt-5.4',
+          providerId: 'builtin-openai',
+          input: 2.5,
+          cachedInput: 0.25,
+          output: 15,
+          streaming: true,
+          supportsTemperature: false,
+          supportsTools: true,
+          supportsVision: true,
+          supportsFiles: true,
+          supportsThinking: false,
+          contextWindow: 128000,
+          forceTemperature: null,
+          enforceAlternatingRoles: false,
+          maxTokensOverride: null,
+          isBuiltIn: true,
+          enabled: true,
+        },
+        {
+          id: 'builtin-deepseek-v4-flash',
+          label: 'DeepSeek V4 Flash',
+          apiModelId: 'deepseek-v4-flash',
+          providerId: 'builtin-deepseek',
+          input: 0.14,
+          cachedInput: 0.028,
+          output: 0.28,
+          streaming: true,
+          supportsTemperature: true,
+          supportsTools: true,
+          supportsVision: false,
+          supportsFiles: false,
+          supportsThinking: true,
+          contextWindow: 1000000,
+          forceTemperature: null,
+          enforceAlternatingRoles: false,
+          maxTokensOverride: null,
+          isBuiltIn: true,
+          enabled: true,
+        },
+      ]),
+    );
+    seedProvider('builtin-openai', 'builtin-deepseek');
+
+    const store = loadProviderStore();
+    const builtinIds = store
+      .getState()
+      .models.filter((m) => m.isBuiltIn)
+      .map((m) => m.id);
+
+    const deepseekIdx = builtinIds.indexOf('builtin-deepseek-v4-flash');
+    const gpt4Idx = builtinIds.indexOf('builtin-gpt-5-4');
+    expect(deepseekIdx).toBeLessThan(gpt4Idx);
+  });
+
+  it('handles corrupt model storage and re-seeds', () => {
+    localStorage.setItem('athena_models', '{not-json');
+    localStorage.setItem('athena_providers', '[{"id":"builtin-openai","name":"OpenAI","baseUrl":"https://api.openai.com/v1/chat/completions","messageFormat":"openai","apiKeyEncrypted":"","supportsWebSearch":false,"requiresReasoningFallback":false,"payloadOverridesJson":"","isBuiltIn":true}]');
+
+    const store = loadProviderStore();
+    expect(store.getState().models.length).toBeGreaterThan(0);
+
+    const stored = JSON.parse(localStorage.getItem('athena_models') ?? 'null') as unknown;
+    expect(stored).not.toBeNull();
   });
 });
