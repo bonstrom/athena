@@ -89,7 +89,8 @@
       "/node_modules/",
       "src/services/llmWorkerFactory\\.ts",
       "src/services/embeddingWorkerFactory\\.ts",
-      "src/reportWebVitals\\.ts"
+      "src/reportWebVitals\\.ts",
+      "src/testUtils/storeMocks\\.ts"
     ]
   },
   "devDependencies": {

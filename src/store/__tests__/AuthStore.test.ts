@@ -3,12 +3,14 @@ const mockClearPredefinedPrompts = jest.fn<Promise<void>, []>(() => Promise.reso
 const mockAddPredefinedPrompt = jest.fn<Promise<string>, [unknown]>(() => Promise.resolve('id-1'));
 const mockPutPredefinedPrompt = jest.fn<Promise<string>, [unknown]>(() => Promise.resolve('id-1'));
 const mockDeletePredefinedPrompt = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
+const mockBulkAddPredefinedPrompts = jest.fn<Promise<unknown>, [unknown[]]>(() => Promise.resolve());
 
 jest.mock('../../database/AthenaDb', () => ({
   athenaDb: {
     predefinedPrompts: {
       clear: (...args: []): Promise<void> => mockClearPredefinedPrompts(...args),
       add: (...args: [unknown]): Promise<string> => mockAddPredefinedPrompt(...args),
+      bulkAdd: (...args: [unknown[]]): Promise<unknown> => mockBulkAddPredefinedPrompts(...args),
       put: (...args: [unknown]): Promise<string> => mockPutPredefinedPrompt(...args),
       delete: (...args: [string]): Promise<void> => mockDeletePredefinedPrompt(...args),
       toArray: (): Promise<unknown[]> => Promise.resolve([]),
@@ -23,6 +25,9 @@ interface AuthStoreSlice {
   ragEnabled: boolean;
   maxContextTokens: number;
   messageRetrievalEnabled: boolean;
+  llmModelSelected: 'qwen3.5-0.8b' | 'qwen3.5-2b';
+  llmModelDownloadStatus: Record<string, 'not_downloaded' | 'downloading' | 'downloaded' | undefined>;
+  contextWindowRatio: number;
   predefinedPrompts: { id: string; name: string; content: string }[];
   setBackupInterval: (minutes: number) => void;
   setThemeMode: (mode: 'light' | 'dark') => void;
@@ -32,6 +37,9 @@ interface AuthStoreSlice {
   updatePredefinedPrompt: (prompt: { id: string; name: string; content: string }) => void;
   deletePredefinedPrompt: (id: string) => void;
   setRagEnabled: (enabled: boolean) => void;
+  setLlmModelSelected: (model: 'qwen3.5-0.8b' | 'qwen3.5-2b') => void;
+  setLlmModelDownloadStatus: (modelId: string, status: 'not_downloaded' | 'downloading' | 'downloaded') => void;
+  setContextWindowRatio: (ratio: number) => void;
   clearAuth: () => void;
 }
 
@@ -65,6 +73,7 @@ describe('AuthStore', () => {
     mockAddPredefinedPrompt.mockImplementation((): Promise<string> => Promise.resolve('id-1'));
     mockPutPredefinedPrompt.mockImplementation((): Promise<string> => Promise.resolve('id-1'));
     mockDeletePredefinedPrompt.mockImplementation((): Promise<void> => Promise.resolve());
+    mockBulkAddPredefinedPrompts.mockImplementation((): Promise<unknown> => Promise.resolve());
     localStorage.clear();
   });
 
@@ -167,5 +176,61 @@ describe('AuthStore', () => {
     expect(logSpy).toHaveBeenCalled();
 
     logSpy.mockRestore();
+  });
+
+  it('setLlmModelDownloadStatus updates state and persists to localStorage', () => {
+    const store = loadAuthStore();
+
+    store.getState().setLlmModelDownloadStatus('qwen3.5-2b', 'downloading');
+
+    expect(store.getState().llmModelDownloadStatus['qwen3.5-2b']).toBe('downloading');
+    expect(localStorage.getItem('llmModelDownloadStatus')).toBe('{"qwen3.5-2b":"downloading"}');
+  });
+
+  it('setLlmModelDownloadStatus merges with existing status', () => {
+    const store = loadAuthStore();
+
+    store.getState().setLlmModelDownloadStatus('model-a', 'downloaded');
+    store.getState().setLlmModelDownloadStatus('model-b', 'downloading');
+
+    const status = store.getState().llmModelDownloadStatus;
+    expect(status['model-a']).toBe('downloaded');
+    expect(status['model-b']).toBe('downloading');
+  });
+
+  it('setContextWindowRatio clamps values below 0.1 to 0.1', () => {
+    const store = loadAuthStore();
+
+    store.getState().setContextWindowRatio(0.01);
+
+    expect(store.getState().contextWindowRatio).toBe(0.1);
+    expect(localStorage.getItem('contextWindowRatio')).toBe('0.1');
+  });
+
+  it('setContextWindowRatio clamps values above 0.95 to 0.95', () => {
+    const store = loadAuthStore();
+
+    store.getState().setContextWindowRatio(1.5);
+
+    expect(store.getState().contextWindowRatio).toBe(0.95);
+    expect(localStorage.getItem('contextWindowRatio')).toBe('0.95');
+  });
+
+  it('setContextWindowRatio accepts values within range', () => {
+    const store = loadAuthStore();
+
+    store.getState().setContextWindowRatio(0.75);
+
+    expect(store.getState().contextWindowRatio).toBe(0.75);
+    expect(localStorage.getItem('contextWindowRatio')).toBe('0.75');
+  });
+
+  it('setLlmModelSelected persists to localStorage', () => {
+    const store = loadAuthStore();
+
+    store.getState().setLlmModelSelected('qwen3.5-2b');
+
+    expect(store.getState().llmModelSelected).toBe('qwen3.5-2b');
+    expect(localStorage.getItem('llmModelSelected')).toBe('qwen3.5-2b');
   });
 });
