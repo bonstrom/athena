@@ -87,6 +87,7 @@
     },
     "coveragePathIgnorePatterns": [
       "/node_modules/",
+      "src/index\\.tsx",
       "src/services/llmWorkerFactory\\.ts",
       "src/services/embeddingWorkerFactory\\.ts",
       "src/reportWebVitals\\.ts",

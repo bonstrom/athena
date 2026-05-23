@@ -65,6 +65,8 @@ interface AuthStoreSlice {
   llmModelDownloadStatus: Record<string, 'not_downloaded' | 'downloading' | 'downloaded' | undefined>;
   defaultMaxContextMessages: number;
   showCameraButton: 'auto' | 'always' | 'never';
+  ttsEnabled: boolean;
+  ttsVoiceId: string;
 }
 
 interface ProviderStoreSlice {
@@ -248,6 +250,8 @@ describe('Composer', () => {
       llmModelDownloadStatus: {},
       defaultMaxContextMessages: 10,
       showCameraButton: 'never',
+      ttsEnabled: false,
+      ttsVoiceId: 'English_Graceful_Lady',
     };
 
     const selectedModel = createUserChatModel({
@@ -623,5 +627,140 @@ describe('Composer', () => {
     unmount();
 
     expect(mockRecognition.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens Inspect dialog when Inspect button is clicked', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect the full LLM context payload' }));
+
+    expect(screen.getByText('Topic Context Dialog')).toBeInTheDocument();
+  });
+
+  it('opens Scratchpad dialog when Scratchpad button is clicked', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View AI persistent memory' }));
+
+    expect(screen.getByText('Scratchpad Dialog')).toBeInTheDocument();
+  });
+
+  it('changes chat width when width button is clicked', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Extra Wide (1500px)' }));
+
+    expect(authStore.setChatWidth).toHaveBeenCalledWith('xl');
+  });
+
+  it('changes font size when font size button is clicked', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByText('18'));
+
+    expect(authStore.setChatFontSize).toHaveBeenCalledWith(18);
+  });
+
+  it('calls handleSend on Enter key press when not on mobile', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Type your message...'), { target: { value: 'Hello' } });
+    fireEvent.keyDown(screen.getByPlaceholderText('Type your message...'), { key: 'Enter', keyCode: 13, shiftKey: false });
+
+    expect(onSend).toHaveBeenCalled();
+  });
+
+  it('does not call handleSend on Enter key press when on mobile', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.change(screen.getByPlaceholderText('Message...'), { target: { value: 'Hello' } });
+    fireEvent.keyDown(screen.getByPlaceholderText('Message...'), { key: 'Enter', keyCode: 13, shiftKey: false });
+
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('shows thinking toggle when model supports thinking', () => {
+    const thinkingModel = createUserChatModel({
+      id: 'test-reasoning',
+      label: 'Test Reasoning',
+      supportsThinking: true,
+      thinkingToggle: null,
+      reasoningEffort: null,
+    });
+    chatStore.selectedModel = thinkingModel;
+    providerStore.getAvailableModels = (): UserChatModel[] => [thinkingModel];
+    mockUseChatStore.mockReturnValue(chatStore);
+    mockUseProviderStore.mockReturnValue(providerStore);
+
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+
+    expect(screen.getByText('Thinking & Effort')).toBeInTheDocument();
+    expect(screen.getByText('On')).toBeInTheDocument();
+    expect(screen.getByText('Off')).toBeInTheDocument();
+  });
+
+  it('shows reasoning effort toggle when model supports reasoning', () => {
+    const reasoningModel = createUserChatModel({
+      id: 'test-reasoning',
+      label: 'Test Reasoning',
+      supportsThinking: true,
+      thinkingToggle: 'enabled',
+      reasoningEffort: null,
+    });
+    chatStore.selectedModel = reasoningModel;
+    providerStore.getAvailableModels = (): UserChatModel[] => [reasoningModel];
+    mockUseChatStore.mockReturnValue(chatStore);
+    mockUseProviderStore.mockReturnValue(providerStore);
+
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+
+    expect(screen.getByText('High')).toBeInTheDocument();
+    expect(screen.getByText('Max')).toBeInTheDocument();
+  });
+
+  it('shows TTS voice select when ttsEnabled is true', async () => {
+    authStore.ttsEnabled = true;
+    mockUseAuthStore.mockReturnValue(authStore);
+
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('TTS Voice')).toBeInTheDocument();
+    });
+  });
+
+  it('disables Inspect button when currentTopicId is null', () => {
+    chatStore.currentTopicId = null;
+    mockUseChatStore.mockReturnValue(chatStore);
+
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+
+    const inspectButton = screen.getByRole('button', { name: 'Inspect the full LLM context payload' });
+    expect(inspectButton).toBeDisabled();
+  });
+
+it('stops sending when stop button is clicked', async () => {
+    chatStore.stopSending.mockResolvedValue('draft content');
+    mockUseChatStore.mockReturnValue(chatStore);
+
+    render(<Composer sending onSend={onSend} isMobile={false} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop Generation' }));
+
+    await waitFor(() => {
+      expect(chatStore.stopSending).toHaveBeenCalled();
+    });
   });
 });

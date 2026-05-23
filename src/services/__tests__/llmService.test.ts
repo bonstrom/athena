@@ -1171,11 +1171,10 @@ describe('askLlm — temperature resolution', () => {
     expect(body.temperature).toBe(1.0);
   });
 
-  it('uses forced temperature in streaming requests (orchestrateLlmLoop)', async () => {
+it('uses forced temperature in streaming requests (orchestrateLlmLoop)', async () => {
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
 
-    // Mock a streaming response (simplified)
     const mockStream = new ReadableStream({
       start(controller): void {
         controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"streaming response"}}]}\n\ndata: [DONE]\n\n'));
@@ -1189,8 +1188,6 @@ describe('askLlm — temperature resolution', () => {
     } as unknown as Response);
 
     const { orchestrateLlmLoop } = await import('../llmService');
-    // Model is streaming: true, so it will call askLlmStream
-    // We request 0.5, but model has forceTemperature: 1.0
     await orchestrateLlmLoop(model, 0.5, [user('Hi')], () => {
       /* no-op */
     });
@@ -1198,5 +1195,147 @@ describe('askLlm — temperature resolution', () => {
     const requestInit = mockFetch.mock.calls[0][1];
     const body = JSON.parse(String(requestInit?.body)) as { temperature: number };
     expect(body.temperature).toBe(1.0);
+  });
+});
+
+describe('generateMinimaxImage', () => {
+  beforeEach(() => {
+    mockProviderGetState.mockReturnValue({
+      providers: [{ id: 'builtin-minimax', apiKeyEncrypted: 'minimax-key' }],
+    });
+  });
+
+  it('returns base64 image data on success', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> =>
+        Promise.resolve({
+          data: { image_base64: ['base64-image-data-here'] },
+        }),
+    } as unknown as Response);
+
+    const { generateMinimaxImage } = await import('../llmService');
+    const result = await generateMinimaxImage('a cute cat');
+
+    expect(result.base64).toBe('base64-image-data-here');
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('image_generation'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('throws when API returns an error', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+    } as unknown as Response);
+
+    const { generateMinimaxImage } = await import('../llmService');
+    await expect(generateMinimaxImage('test')).rejects.toThrow();
+  });
+});
+
+describe('generateMinimaxMusic', () => {
+  beforeEach(() => {
+    mockProviderGetState.mockReturnValue({
+      providers: [{ id: 'builtin-minimax', apiKeyEncrypted: 'minimax-key' }],
+    });
+  });
+
+  it('returns audioHex on success', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> =>
+        Promise.resolve({
+          base_resp: { status_code: 0, status_msg: 'success' },
+          data: { audio: 'deadbeef1234' },
+        }),
+    } as unknown as Response);
+
+    const { generateMinimaxMusic } = await import('../llmService');
+    const result = await generateMinimaxMusic('jazz melody', 'lyrics here');
+
+    expect(result.audioHex).toBe('deadbeef1234');
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('music'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('throws when API returns an error', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 } as unknown as Response);
+
+    const { generateMinimaxMusic } = await import('../llmService');
+    await expect(generateMinimaxMusic('test')).rejects.toThrow();
+  });
+});
+
+describe('generateMinimaxSpeech', () => {
+  beforeEach(() => {
+    mockProviderGetState.mockReturnValue({
+      providers: [{ id: 'builtin-minimax', apiKeyEncrypted: 'minimax-key' }],
+    });
+  });
+
+  it('returns audioHex on success', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> =>
+        Promise.resolve({
+          base_resp: { status_code: 0, status_msg: 'success' },
+          data: { audio: 'cafebabe5678' },
+        }),
+    } as unknown as Response);
+
+    const { generateMinimaxSpeech } = await import('../llmService');
+    const result = await generateMinimaxSpeech('Hello world', 'English_Graceful_Lady');
+
+    expect(result.audioHex).toBe('cafebabe5678');
+  });
+
+  it('sends correct payload to MiniMax speech API', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> => Promise.resolve({ base_resp: { status_code: 0 }, data: { audio: 'test' } }),
+    } as unknown as Response);
+
+    const { generateMinimaxSpeech } = await import('../llmService');
+    await generateMinimaxSpeech('Hello', 'English_Graceful_Lady');
+
+    const callBody = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    expect(callBody.voice_setting.voice_id).toBe('English_Graceful_Lady');
+    expect(callBody.voice_setting.speed).toBe(1);
+    expect(callBody.voice_setting.vol).toBe(1);
+  });
+});
+
+describe('estimateStreamedTokens — with cost calculation', () => {
+  it('returns costSEK when calculateCostSEK succeeds', async () => {
+    const model = createUserChatModel({ enforceAlternatingRoles: false });
+    mockEstimateTokens.mockReturnValue({ promptTokens: 100, completionTokens: 50, totalTokens: 150 });
+    mockCalculateCostSEK.mockReturnValue(2.5);
+
+    const { estimateStreamedTokens } = await import('../llmService');
+    const result = estimateStreamedTokens(model, [user('hi')], 'short answer');
+
+    expect(result.costSEK).toBe(2.5);
   });
 });

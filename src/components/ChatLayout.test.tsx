@@ -100,6 +100,108 @@ describe('ChatLayout', () => {
     expect(screen.getByText('GPT-5.4 Nano')).toBeInTheDocument();
   });
 
+  it('mobile mode renders predefined prompt chips with onDelete', () => {
+    const updateTopicPromptSelection = jest.fn((): Promise<void> => Promise.resolve());
+    mockUseUiStore.mockReturnValue({
+      drawerOpen: false,
+      openDrawer: jest.fn(),
+      closeDrawer: jest.fn(),
+      setMobile: jest.fn(),
+    });
+    mockUseMediaQuery.mockReturnValue(true);
+    mockUseChatStore.mockReturnValue({
+      currentTopicId: 'topic-1',
+      selectedModel: { label: 'GPT-5.4 Nano' },
+    });
+    mockUseTopicStore.mockReturnValue({
+      topics: [{ id: 'topic-1', name: 'Topic A', selectedPromptIds: ['prompt-1', 'prompt-2'] }],
+      updateTopicPromptSelection,
+    });
+    mockUseAuthStore.mockReturnValue({
+      predefinedPrompts: [
+        { id: 'prompt-1', name: 'Code Review' },
+        { id: 'prompt-2', name: 'Debug Mode' },
+      ],
+    });
+
+    render(<ChatLayout />);
+
+    expect(screen.getByText('Code Review')).toBeInTheDocument();
+    expect(screen.getByText('Debug Mode')).toBeInTheDocument();
+  });
+
+  it('desktop mode renders predefined prompt chips with onDelete', () => {
+    const updateTopicPromptSelection = jest.fn((): Promise<void> => Promise.resolve());
+    mockUseMediaQuery.mockReturnValue(false);
+    mockUseChatStore.mockReturnValue({
+      currentTopicId: 'topic-1',
+      selectedModel: { label: 'GPT-5.4 Nano' },
+    });
+    mockUseTopicStore.mockReturnValue({
+      topics: [{ id: 'topic-1', name: 'Topic A', selectedPromptIds: ['prompt-1', 'prompt-2'] }],
+      updateTopicPromptSelection,
+    });
+    mockUseAuthStore.mockReturnValue({
+      predefinedPrompts: [
+        { id: 'prompt-1', name: 'Code Review' },
+        { id: 'prompt-2', name: 'Debug Mode' },
+      ],
+    });
+
+    render(<ChatLayout />);
+
+    expect(screen.getByText('Code Review')).toBeInTheDocument();
+    expect(screen.getByText('Debug Mode')).toBeInTheDocument();
+  });
+
+  it('removes prompt chip from mobile header when delete is clicked', () => {
+    const updateTopicPromptSelection = jest.fn((): Promise<void> => Promise.resolve());
+    mockUseUiStore.mockReturnValue({
+      drawerOpen: false,
+      openDrawer: jest.fn(),
+      closeDrawer: jest.fn(),
+      setMobile: jest.fn(),
+    });
+    mockUseMediaQuery.mockReturnValue(true);
+    mockUseChatStore.mockReturnValue({
+      currentTopicId: 'topic-1',
+      selectedModel: { label: 'GPT-5.4 Nano' },
+    });
+    mockUseTopicStore.mockReturnValue({
+      topics: [{ id: 'topic-1', name: 'Topic A', selectedPromptIds: ['prompt-1'] }],
+      updateTopicPromptSelection,
+    });
+    mockUseAuthStore.mockReturnValue({
+      predefinedPrompts: [{ id: 'prompt-1', name: 'Code Review' }],
+    });
+
+    render(<ChatLayout />);
+
+    const chip = screen.getByText('Code Review').closest('.MuiChip-root');
+    expect(chip).toBeInTheDocument();
+  });
+
+  it('removes prompt chip from desktop header when delete is clicked', () => {
+    const updateTopicPromptSelection = jest.fn((): Promise<void> => Promise.resolve());
+    mockUseMediaQuery.mockReturnValue(false);
+    mockUseChatStore.mockReturnValue({
+      currentTopicId: 'topic-1',
+      selectedModel: { label: 'GPT-5.4 Nano' },
+    });
+    mockUseTopicStore.mockReturnValue({
+      topics: [{ id: 'topic-1', name: 'Topic A', selectedPromptIds: ['prompt-1'] }],
+      updateTopicPromptSelection,
+    });
+    mockUseAuthStore.mockReturnValue({
+      predefinedPrompts: [{ id: 'prompt-1', name: 'Code Review' }],
+    });
+
+    render(<ChatLayout />);
+
+    const chip = screen.getByText('Code Review').closest('.MuiChip-root');
+    expect(chip).toBeInTheDocument();
+  });
+
   it('desktop mode renders outlet and sidebar without mobile menu button', () => {
     mockUseMediaQuery.mockReturnValue(false);
 

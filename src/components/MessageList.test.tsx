@@ -47,7 +47,12 @@ jest.mock('./SuggestedReplies', () => ({
 const mockUseParams = useParams as unknown as jest.Mock<{ topicId?: string }>;
 const mockUseScrollToBottom = useScrollToBottom as unknown as jest.Mock<(...args: unknown[]) => void>;
 const mockUseSticky = useSticky as unknown as jest.Mock<[boolean]>;
-const mockUseChatStore = useChatStore as unknown as jest.Mock<{ visibleMessageCount: number; increaseVisibleMessageCount: () => void }>;
+const mockUseChatStore = useChatStore as unknown as jest.Mock<{
+  visibleMessageCount: number;
+  increaseVisibleMessageCount: () => void;
+  highlightedMessageId?: string;
+  setHighlightedMessageId?: (id: string | null) => void;
+}>;
 const mockUseUiStore = useUiStore as unknown as jest.Mock<{ showAllMessages: boolean }>;
 
 describe('MessageList', () => {
@@ -105,5 +110,124 @@ describe('MessageList', () => {
     fireEvent.click(screen.getByRole('button', { name: 'suggested-replies' }));
 
     expect(onSuggestionSelect).toHaveBeenCalledWith('Try this');
+  });
+
+  it('shows context window indicator when messages exceed maxContextMessages', () => {
+    const increaseVisibleMessageCount: jest.MockedFunction<() => void> = jest.fn();
+    mockUseChatStore.mockReturnValue({
+      visibleMessageCount: 20,
+      increaseVisibleMessageCount,
+    });
+
+    const messages: Message[] = [];
+    for (let i = 0; i < 25; i++) {
+      messages.push(
+        createMessage({ id: `u${i}`, type: 'user', content: `Message ${i}`, created: `2026-04-17T10:${String(i).padStart(2, '0')}:00.000Z`, includeInContext: true }),
+      );
+    }
+
+    render(<MessageList messages={messages} maxContextMessages={10} />);
+
+    expect(screen.getByText('Context Window')).toBeInTheDocument();
+  });
+
+  it('renders standalone assistant and system messages', () => {
+    mockUseChatStore.mockReturnValue({
+      visibleMessageCount: 20,
+      increaseVisibleMessageCount: jest.fn(),
+    });
+
+    const messages: Message[] = [
+      createMessage({ id: 'sys1', type: 'system', content: 'System prompt', created: '2026-04-17T10:00:00.000Z', includeInContext: true }),
+      createMessage({ id: 'ai1', type: 'assistant', content: 'AI response', created: '2026-04-17T10:00:01.000Z', includeInContext: true }),
+      createMessage({ id: 'note1', type: 'aiNote', content: 'Hidden note', created: '2026-04-17T10:00:02.000Z', includeInContext: false }),
+    ];
+
+    render(<MessageList messages={messages} maxContextMessages={10} />);
+
+    expect(screen.getByText('System prompt')).toBeInTheDocument();
+    expect(screen.getByText('AI response')).toBeInTheDocument();
+  });
+
+  it('shows generating suggestions indicator when isSuggestionsLoading is true', () => {
+    mockUseChatStore.mockReturnValue({
+      visibleMessageCount: 20,
+      increaseVisibleMessageCount: jest.fn(),
+    });
+
+    const messages: Message[] = [createMessage({ id: 'u1', type: 'user', content: 'Hello', created: '2026-04-17T10:00:00.000Z', includeInContext: true })];
+
+    render(<MessageList messages={messages} maxContextMessages={10} suggestions={['Try this']} isSuggestionsLoading={true} onSuggestionSelect={jest.fn()} />);
+
+    expect(screen.getByText('Generating suggestions...')).toBeInTheDocument();
+  });
+
+  it('scrolls to highlighted message when highlightedMessageId is set', () => {
+    const setHighlightedMessageId = jest.fn();
+    mockUseChatStore.mockReturnValue({
+      visibleMessageCount: 50,
+      increaseVisibleMessageCount: jest.fn(),
+      highlightedMessageId: 'highlighted-msg',
+      setHighlightedMessageId,
+    });
+
+    const messages: Message[] = [
+      createMessage({ id: 'highlighted-msg', type: 'user', content: 'Highlighted message', created: '2026-04-17T10:00:00.000Z', includeInContext: true }),
+    ];
+
+    render(<MessageList messages={messages} maxContextMessages={10} />);
+
+    expect(setHighlightedMessageId).toHaveBeenCalledWith(null);
+  });
+
+  it('groups user messages with their assistant versions', () => {
+    mockUseChatStore.mockReturnValue({
+      visibleMessageCount: 20,
+      increaseVisibleMessageCount: jest.fn(),
+    });
+
+    const messages: Message[] = [
+      createMessage({ id: 'u1', type: 'user', content: 'Hello', created: '2026-04-17T10:00:00.000Z', includeInContext: true }),
+      createMessage({ id: 'a1', type: 'assistant', content: 'Version 1', created: '2026-04-17T10:00:01.000Z', includeInContext: true, parentMessageId: 'u1' }),
+      createMessage({ id: 'a2', type: 'assistant', content: 'Version 2', created: '2026-04-17T10:00:02.000Z', includeInContext: true, parentMessageId: 'u1' }),
+    ];
+
+    render(<MessageList messages={messages} maxContextMessages={10} />);
+
+    expect(screen.getByText('Hello')).toBeInTheDocument();
+    expect(screen.getByText('Version 2')).toBeInTheDocument();
+  });
+
+  it('hides aiNote content when showAllMessages is false', () => {
+    mockUseUiStore.mockReturnValue({ showAllMessages: false });
+    mockUseChatStore.mockReturnValue({
+      visibleMessageCount: 20,
+      increaseVisibleMessageCount: jest.fn(),
+    });
+
+    const messages: Message[] = [
+      createMessage({ id: 'note1', type: 'aiNote', content: 'This should be hidden', created: '2026-04-17T10:00:00.000Z', includeInContext: true }),
+    ];
+
+    render(<MessageList messages={messages} maxContextMessages={10} />);
+
+    expect(screen.queryByText('This should be hidden')).not.toBeInTheDocument();
+    expect(screen.getByText('⚠️ Assistant stored a hidden note here.')).toBeInTheDocument();
+  });
+
+  it('shows aiNote content when showAllMessages is true', () => {
+    mockUseUiStore.mockReturnValue({ showAllMessages: true });
+    mockUseChatStore.mockReturnValue({
+      visibleMessageCount: 20,
+      increaseVisibleMessageCount: jest.fn(),
+    });
+
+    const messages: Message[] = [
+      createMessage({ id: 'note1', type: 'aiNote', content: 'This should be visible', created: '2026-04-17T10:00:00.000Z', includeInContext: true }),
+    ];
+
+    render(<MessageList messages={messages} maxContextMessages={10} />);
+
+    expect(screen.getByText('This should be visible')).toBeInTheDocument();
   });
 });

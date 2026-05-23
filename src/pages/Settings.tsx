@@ -445,6 +445,7 @@ const Settings: React.FC = () => {
                       value={chatWidth}
                       label="Max Chat Width"
                       onChange={(e): void => setChatWidth(e.target.value as 'sm' | 'md' | 'lg' | 'xl' | 'full')}
+                      inputProps={{ 'data-testid': 'chat-width-select' } as React.InputHTMLAttributes<HTMLInputElement>}
                     >
                       <MenuItem value="full">Full Width</MenuItem>
                       <MenuItem value="xl">Extra Wide (1600px)</MenuItem>
@@ -455,7 +456,7 @@ const Settings: React.FC = () => {
                   </FormControl>
                   <FormControl fullWidth size="small">
                     <InputLabel>Chat Font Size</InputLabel>
-                    <Select value={chatFontSize} label="Chat Font Size" onChange={(e): void => setChatFontSize(e.target.value as number)}>
+                    <Select value={chatFontSize} label="Chat Font Size" onChange={(e): void => setChatFontSize(e.target.value as number)} inputProps={{ 'data-testid': 'chat-font-size-select' } as React.InputHTMLAttributes<HTMLInputElement>}>
                       <MenuItem value={12}>Small (12px)</MenuItem>
                       <MenuItem value={14}>Compact (14px)</MenuItem>
                       <MenuItem value={16}>Standard (16px)</MenuItem>
@@ -478,6 +479,7 @@ const Settings: React.FC = () => {
                       value={topicPreloadCount}
                       label="Topic Preload Count"
                       onChange={(e): void => setTopicPreloadCount(e.target.value as number)}
+                      inputProps={{ 'data-testid': 'topic-preload-select' } as React.InputHTMLAttributes<HTMLInputElement>}
                     >
                       <MenuItem value={0}>Disabled</MenuItem>
                       <MenuItem value={3}>3 topics</MenuItem>
@@ -493,6 +495,7 @@ const Settings: React.FC = () => {
                       value={messageTruncateChars}
                       label="Message Preview Length"
                       onChange={(e): void => setMessageTruncateChars(e.target.value as number)}
+                      inputProps={{ 'data-testid': 'message-preview-select' } as React.InputHTMLAttributes<HTMLInputElement>}
                     >
                       <MenuItem value={0}>Always show full messages</MenuItem>
                       <MenuItem value={100}>Tiny (100 characters)</MenuItem>
@@ -509,6 +512,7 @@ const Settings: React.FC = () => {
                       value={showCameraButton}
                       label="Camera Button"
                       onChange={(e): void => setShowCameraButton(e.target.value as 'auto' | 'always' | 'never')}
+                      inputProps={{ 'data-testid': 'camera-button-select' } as React.InputHTMLAttributes<HTMLInputElement>}
                     >
                       <MenuItem value="auto">Auto (mobile only)</MenuItem>
                       <MenuItem value="always">Always show</MenuItem>
@@ -546,6 +550,7 @@ const Settings: React.FC = () => {
                         value={ttsVoiceId}
                         label="Voice"
                         onChange={(e): void => setTtsVoiceId(e.target.value)}
+                        inputProps={{ 'data-testid': 'voice-select' } as React.InputHTMLAttributes<HTMLInputElement>}
                       >
                         {ENGLISH_VOICES.map((voice) => (
                           <MenuItem key={voice.id} value={voice.id}>
@@ -598,7 +603,7 @@ const Settings: React.FC = () => {
                 <Stack spacing={2}>
                   <FormControl fullWidth size="small">
                     <InputLabel>Max Context Tokens</InputLabel>
-                    <Select value={maxContextTokens} label="Max Context Tokens" onChange={(e): void => setMaxContextTokens(e.target.value as number)}>
+                    <Select value={maxContextTokens} label="Max Context Tokens" onChange={(e): void => setMaxContextTokens(e.target.value as number)} inputProps={{ 'data-testid': 'max-context-tokens-select' } as React.InputHTMLAttributes<HTMLInputElement>}>
                       <MenuItem value={4000}>4k — Minimal (cheap)</MenuItem>
                       <MenuItem value={8000}>8k — Compact</MenuItem>
                       <MenuItem value={16000}>16k — Default</MenuItem>
@@ -612,6 +617,7 @@ const Settings: React.FC = () => {
                       value={defaultMaxContextMessages}
                       label="Default Recent Messages"
                       onChange={(e): void => setDefaultMaxContextMessages(e.target.value as number)}
+                      inputProps={{ 'data-testid': 'default-recent-select' } as React.InputHTMLAttributes<HTMLInputElement>}
                     >
                       <MenuItem value={5}>5 messages</MenuItem>
                       <MenuItem value={10}>10 messages (default)</MenuItem>
@@ -716,6 +722,7 @@ const Settings: React.FC = () => {
                     value={llmModelSelected}
                     label="Model"
                     onChange={(e): void => setLlmModelSelected(e.target.value as 'qwen3.5-0.8b' | 'qwen3.5-2b')}
+                    inputProps={{ 'data-testid': 'local-model-select' } as React.InputHTMLAttributes<HTMLInputElement>}
                   >
                     <MenuItem value="qwen3.5-0.8b">Qwen3.5 0.8B (Recommended • ~500MB)</MenuItem>
                     <MenuItem value="qwen3.5-2b">Qwen3.5 2B (~1.5GB)</MenuItem>
@@ -1034,6 +1041,7 @@ const Settings: React.FC = () => {
                             }}
                             color="primary"
                             size="small"
+                            inputProps={{ 'data-testid': 'backup-external-toggle' } as React.InputHTMLAttributes<HTMLInputElement>}
                           />
                         </Box>
                         {!isFsSupported && isBrave && (
@@ -1104,6 +1112,7 @@ const Settings: React.FC = () => {
                             }}
                             color="primary"
                             size="small"
+                            inputProps={{ 'data-testid': 'backup-internal-toggle' } as React.InputHTMLAttributes<HTMLInputElement>}
                           />
                         </Box>
                         {backupMode === 'internal' && (
@@ -1133,7 +1142,7 @@ const Settings: React.FC = () => {
                             </Box>
                             <FormControl fullWidth size="small">
                               <InputLabel>Frequency</InputLabel>
-                              <Select value={backupInterval} label="Frequency" onChange={(e): void => setBackupInterval(e.target.value as number)}>
+                              <Select value={backupInterval} label="Frequency" onChange={(e): void => setBackupInterval(e.target.value as number)} inputProps={{ 'data-testid': 'backup-frequency-select' } as React.InputHTMLAttributes<HTMLInputElement>}>
                                 <MenuItem value={1}>1 Minute</MenuItem>
                                 <MenuItem value={5}>5 Minutes</MenuItem>
                                 <MenuItem value={30}>30 Minutes</MenuItem>
