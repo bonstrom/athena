@@ -530,6 +530,40 @@ describe('ProviderStore migrations', () => {
     }
   });
 
+  it('migrates Kimi 2.6 forceTemperature from 0.6 to 1.0', () => {
+    seedProvider('builtin-moonshot');
+    const oldModels: UserChatModel[] = [
+      {
+        id: 'builtin-kimi-k2-6',
+        label: 'Kimi 2.6',
+        apiModelId: 'kimi-k2.6',
+        providerId: 'builtin-moonshot',
+        input: 0.95,
+        cachedInput: 0.16,
+        output: 4.0,
+        streaming: true,
+        supportsTemperature: true,
+        supportsTools: true,
+        supportsVision: true,
+        supportsFiles: true,
+        supportsThinking: false,
+        contextWindow: 262_144,
+        forceTemperature: 0.6,
+        enforceAlternatingRoles: false,
+        maxTokensOverride: null,
+        isBuiltIn: true,
+        enabled: true,
+      },
+    ];
+
+    localStorage.setItem('athena_models', JSON.stringify(oldModels));
+
+    const store = loadProviderStore();
+    const updated = store.getState().models.find((m) => m.id === 'builtin-kimi-k2-6');
+    expect(updated).toBeDefined();
+    expect(updated!.forceTemperature).toBe(1.0);
+  });
+
   it('adds missing built-in models to existing storage', () => {
     localStorage.setItem(
       'athena_providers',

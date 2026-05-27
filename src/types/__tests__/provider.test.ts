@@ -1,4 +1,4 @@
-import { getPayloadOverrides, LlmProvider } from '../provider';
+import { DEFAULT_MODELS, getPayloadOverrides, LlmProvider } from '../provider';
 
 const baseProvider: LlmProvider = {
   id: 'provider-id',
@@ -56,5 +56,25 @@ describe('getPayloadOverrides', () => {
     };
 
     expect(getPayloadOverrides(provider)).toEqual({});
+  });
+});
+
+describe('DEFAULT_MODELS', () => {
+  it('has forceTemperature 1.0 for Kimi 2.6', () => {
+    const kimi26 = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-6');
+    expect(kimi26).toBeDefined();
+    expect(kimi26!.forceTemperature).toBe(1.0);
+  });
+
+  it('has forceTemperature 1.0 for Kimi 2.5', () => {
+    const kimi25 = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-5');
+    expect(kimi25).toBeDefined();
+    expect(kimi25!.forceTemperature).toBe(1.0);
+  });
+
+  it('has forceTemperature 1.0 for Kimi K2 Turbo Preview', () => {
+    const kimiTurbo = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-turbo');
+    expect(kimiTurbo).toBeDefined();
+    expect(kimiTurbo!.forceTemperature).toBe(1.0);
   });
 });

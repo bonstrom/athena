@@ -240,7 +240,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsFiles: true,
     supportsThinking: false,
     contextWindow: 262_144,
-    forceTemperature: 0.6,
+    forceTemperature: 1.0,
     enforceAlternatingRoles: false,
     maxTokensOverride: null,
     isBuiltIn: true,
