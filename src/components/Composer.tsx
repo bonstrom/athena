@@ -1322,7 +1322,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             {(showCameraButton === 'always' || (showCameraButton === 'auto' && isMobile)) && (
               <Tooltip title="Camera" disableTouchListener={isMobile}>
                 <span>
-                  <IconButton disabled={sending} aria-label="Camera">
+                  <IconButton
+                    onClick={(): void => cameraInputRef.current?.click()}
+                    disabled={sending}
+                    aria-label="Camera">
                     <PhotoCameraIcon />
                   </IconButton>
                 </span>

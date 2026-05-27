@@ -88,7 +88,7 @@ interface ChatStoreSlice {
   temperature: number;
   setTemperature: (temp: number) => void;
   currentTopicId: string | null;
-  stopSending: () => Promise<string | null>;
+  stopSending: jest.Mock<Promise<string | null>>;
   messagesByTopic: Record<string, Message[] | undefined>;
   pendingUserQuestion: PendingUserQuestionState | null;
   resolvePendingQuestion: (answer: string) => void;
@@ -749,6 +749,24 @@ describe('Composer', () => {
 
     const inspectButton = screen.getByRole('button', { name: 'Inspect the full LLM context payload' });
     expect(inspectButton).toBeDisabled();
+  });
+
+  it('triggers the camera input when the camera button is clicked', () => {
+    authStore.showCameraButton = 'always';
+    mockUseAuthStore.mockReturnValue(authStore);
+
+    const { container } = render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    const cameraInput = container.querySelector('input[type="file"][capture]') as HTMLInputElement | null;
+    expect(cameraInput).not.toBeNull();
+
+    const clickSpy = jest.spyOn(cameraInput!, 'click');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Camera' }));
+
+    expect(clickSpy).toHaveBeenCalled();
+
+    clickSpy.mockRestore();
   });
 
 it('stops sending when stop button is clicked', async () => {

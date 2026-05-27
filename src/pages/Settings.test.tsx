@@ -225,7 +225,7 @@ function getComboboxByLabel(labelText: string): HTMLElement {
   if (!formControl) throw new Error(`No FormControl found for label "${labelText}"`);
   const combobox: Element | null = formControl.querySelector('[role="combobox"]');
   if (!combobox) throw new Error(`No combobox found for label "${labelText}"`);
-  return combobox;
+  return combobox as HTMLElement;
 }
 
 describe('Settings page', () => {
