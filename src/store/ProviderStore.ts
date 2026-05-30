@@ -140,6 +140,10 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
         next.supportsThinking = def.supportsThinking;
         updated = true;
       }
+      if (m.supportsTemperature !== def.supportsTemperature) {
+        next.supportsTemperature = def.supportsTemperature;
+        updated = true;
+      }
 
       if (updated) {
         modelsChanged = true;
