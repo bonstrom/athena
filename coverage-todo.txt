@@ -1,0 +1,10 @@
+# Test Coverage Issues - Files under 80%
+
+- [ ] ChatLayout.tsx (79.2%) - Lines 116-136, 170-190
+- [ ] Composer.tsx (76.72%) - Many uncovered lines
+- [ ] MessageList.tsx (73.86%) - Lines 11-13, 25-53, 75, 94-100, 167-170, 183-207, 276-281
+- [ ] Settings.tsx (78.03%) - Many uncovered lines
+- [ ] llmService.ts (68.37%) - Missing coverage
+- [ ] ChatStore.ts (54.86%) - Lowest coverage
+
+# Pages directory (79.94%) - Overall under 80%

@@ -104,8 +104,11 @@ interface MermaidProps {
   children: string;
 }
 
+const MERMAID_DEBOUNCE_MS = 300;
+
 const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -123,7 +126,19 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
       }
     };
 
-    void renderDiagram();
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    debounceRef.current = setTimeout(() => {
+      void renderDiagram();
+    }, MERMAID_DEBOUNCE_MS);
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
   }, [children]);
 
   if (error) {
