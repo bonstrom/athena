@@ -34,7 +34,7 @@ beforeAll(() => {
         return;
       }
     }
-    if (args[0] instanceof Error && args[0].message?.includes('Not implemented: navigation')) {
+    if (args[0] instanceof Error && args[0].message.includes('Not implemented: navigation')) {
       return;
     }
     const errorStr = args.map((a) => (a instanceof Error ? a.message : typeof a === 'string' ? a : '')).join(' ');

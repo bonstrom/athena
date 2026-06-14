@@ -1243,6 +1243,9 @@ describe('generateMinimaxImage', () => {
 
 describe('generateMinimaxMusic', () => {
   beforeEach(() => {
+    jest.spyOn(console, 'debug').mockImplementation((...args: unknown[]): void => {
+      void args;
+    });
     mockProviderGetState.mockReturnValue({
       providers: [{ id: 'builtin-minimax', apiKeyEncrypted: 'minimax-key' }],
     });

@@ -757,10 +757,10 @@ describe('Composer', () => {
 
     const { container } = render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
-    const cameraInput = container.querySelector('input[type="file"][capture]') as HTMLInputElement | null;
+    const cameraInput = container.querySelector('input[type="file"][capture]') ;
     expect(cameraInput).not.toBeNull();
 
-    const clickSpy = jest.spyOn(cameraInput!, 'click');
+    const clickSpy = jest.spyOn(HTMLInputElement.prototype, 'click');
 
     fireEvent.click(screen.getByRole('button', { name: 'Camera' }));
 

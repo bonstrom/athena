@@ -157,7 +157,7 @@ describe('MessageList', () => {
 
     const messages: Message[] = [createMessage({ id: 'u1', type: 'user', content: 'Hello', created: '2026-04-17T10:00:00.000Z', includeInContext: true })];
 
-    render(<MessageList messages={messages} maxContextMessages={10} suggestions={['Try this']} isSuggestionsLoading={true} onSuggestionSelect={jest.fn()} />);
+    render(<MessageList messages={messages} maxContextMessages={10} suggestions={['Try this']} isSuggestionsLoading onSuggestionSelect={jest.fn()} />);
 
     expect(screen.getByText('Generating suggestions...')).toBeInTheDocument();
   });

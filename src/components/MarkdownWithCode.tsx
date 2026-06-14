@@ -49,6 +49,7 @@ SyntaxHighlighter.registerLanguage('tsx', tsx);
 interface MarkdownProps {
   children: string;
   fontSize?: number;
+  disableMermaid?: boolean;
 }
 
 const CopyButton: React.FC<{ text: string }> = ({ text }) => {
@@ -177,7 +178,7 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
   );
 };
 
-const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) => {
+const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, disableMermaid = false }) => {
   const theme = useTheme();
   const themeMode = useAuthStore((s) => s.themeMode);
 
@@ -235,7 +236,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16 }) 
       const lightSyntaxStyle = oneLight as Record<string, CSSProperties>;
       const syntaxStyle: Record<string, CSSProperties> = theme.palette.mode === 'dark' ? darkSyntaxStyle : lightSyntaxStyle;
       return !inline && match ? (
-        match[1] === 'mermaid' ? (
+        match[1] === 'mermaid' && !disableMermaid ? (
           <MermaidDiagram key={codeString}>{codeString}</MermaidDiagram>
         ) : (
         <Box

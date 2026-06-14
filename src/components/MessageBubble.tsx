@@ -606,7 +606,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   {JSON.stringify(JSON.parse(message.rawResponse) as unknown, null, 2)}
                 </Box>
               ) : (
-                <MarkdownWithCode fontSize={chatFontSize}>{displayContent}</MarkdownWithCode>
+                <MarkdownWithCode fontSize={chatFontSize} disableMermaid={isLong && !isExpanded}>{displayContent}</MarkdownWithCode>
               )}
               {(isLong || message.reasoning) && (
                 <Box mt={0.5} display="flex" alignItems="center" gap={1}>
