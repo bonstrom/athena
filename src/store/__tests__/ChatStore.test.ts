@@ -83,6 +83,7 @@ const mockBaseTopic: Topic = createTopic({
 jest.mock('../../components/ModelSelector', () => ({
   calculateCostSEK: jest.fn(() => 1),
   getDefaultModel: (): UserChatModel => mockGetDefaultModel(),
+  getPeakMultiplier: jest.fn(() => 1),
 }));
 
 jest.mock('../../store/TopicStore', () => ({

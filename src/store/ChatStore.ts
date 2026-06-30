@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { calculateCostSEK, ChatModel, getDefaultModel } from '../components/ModelSelector';
+import { calculateCostSEK, getPeakMultiplier, ChatModel, getDefaultModel } from '../components/ModelSelector';
 import { useProviderStore } from './ProviderStore';
 import { useTopicStore } from './TopicStore';
 import { useNotificationStore } from './NotificationStore';
@@ -1027,7 +1027,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const totalPromptTokens = primaryResult.totalPromptTokens;
       const totalCompletionTokens = primaryResult.totalCompletionTokens;
       const lastResult = primaryResult.lastResult;
-      const finalTotalCost = calculateCostSEK(effectiveModel, totalPromptTokens, totalCompletionTokens, lastResult.promptTokensDetails);
+      const finalTotalCost = calculateCostSEK(effectiveModel, totalPromptTokens, totalCompletionTokens, lastResult.promptTokensDetails, getPeakMultiplier(effectiveModel));
 
       const debugPayload: LlmDebugPayload = {
         rawContent: lastResult.rawContent,

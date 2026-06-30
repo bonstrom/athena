@@ -63,6 +63,9 @@ interface ProviderState {
   updateModel: (model: UserChatModel) => void;
   deleteModel: (modelId: string) => void;
 
+  // Reset built-in provider to defaults
+  resetProvider: (providerId: string) => void;
+
   // Selectors
   getProviderById: (id: string) => LlmProvider | undefined;
   getModelById: (id: string) => UserChatModel | undefined;
@@ -241,6 +244,19 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   setProviderKey: (providerId: string, rawKey: string): void => {
     set((state) => {
       const next = state.providers.map((p) => (p.id === providerId ? { ...p, apiKeyEncrypted: rawKey ? encodeApiKey(rawKey) : '' } : p));
+      saveProviders(next);
+      return { providers: next };
+    });
+  },
+
+  resetProvider: (providerId: string): void => {
+    set((state) => {
+      const def = DEFAULT_PROVIDERS.find((dp) => dp.id === providerId);
+      if (!def) return state;
+      const next = state.providers.map((p) => {
+        if (p.id !== providerId) return p;
+        return { ...def, apiKeyEncrypted: p.apiKeyEncrypted };
+      });
       saveProviders(next);
       return { providers: next };
     });

@@ -96,6 +96,18 @@ describe('DEFAULT_MODELS', () => {
     expect(kimiTurbo!.supportsTemperature).toBe(false);
   });
 
+  it('has forceTemperature 1.0 for Kimi 2.7 Code', () => {
+    const kimi27Code = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-7-code');
+    expect(kimi27Code).toBeDefined();
+    expect(kimi27Code!.forceTemperature).toBe(1.0);
+  });
+
+  it('has supportsTemperature false for Kimi 2.7 Code (API rejects custom temperature)', () => {
+    const kimi27Code = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-7-code');
+    expect(kimi27Code).toBeDefined();
+    expect(kimi27Code!.supportsTemperature).toBe(false);
+  });
+
   it('has supportsTemperature false for Kimi v1 8k (API rejects custom temperature)', () => {
     const kimiV1 = DEFAULT_MODELS.find((m) => m.id === 'builtin-moonshot-v1-8k');
     expect(kimiV1).toBeDefined();

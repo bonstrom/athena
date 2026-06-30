@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { athenaDb, DebatePhase, Message } from '../database/AthenaDb';
-import { ChatModel, calculateCostSEK, getAvailableModels, getDefaultModel } from '../components/ModelSelector';
+import { ChatModel, calculateCostSEK, getPeakMultiplier, getAvailableModels, getDefaultModel } from '../components/ModelSelector';
 import { askLlmStream, LlmMessage } from '../services/llmService';
 import { useTopicStore } from './TopicStore';
 import { useNotificationStore } from './NotificationStore';
@@ -145,8 +145,8 @@ async function runDebatePhase(
     ),
   ]);
 
-  const costA = calculateCostSEK(debateModelA, resultA.promptTokens, resultA.completionTokens, resultA.promptTokensDetails);
-  const costB = calculateCostSEK(debateModelB, resultB.promptTokens, resultB.completionTokens, resultB.promptTokensDetails);
+  const costA = calculateCostSEK(debateModelA, resultA.promptTokens, resultA.completionTokens, resultA.promptTokensDetails, getPeakMultiplier(debateModelA));
+  const costB = calculateCostSEK(debateModelB, resultB.promptTokens, resultB.completionTokens, resultB.promptTokensDetails, getPeakMultiplier(debateModelB));
 
   await Promise.all([
     updateMessage(msgIdA, {
@@ -358,6 +358,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         consensusResult.promptTokens,
         consensusResult.completionTokens,
         consensusResult.promptTokensDetails,
+        getPeakMultiplier(debateModelA),
       );
       await updateMessage(consensusId, {
         content: consensusResult.content,
@@ -578,6 +579,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
           consensusResult.promptTokens,
           consensusResult.completionTokens,
           consensusResult.promptTokensDetails,
+          getPeakMultiplier(debateModelA),
         );
         await updateMessage(consensusId, {
           content: consensusResult.content,

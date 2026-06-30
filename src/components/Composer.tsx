@@ -46,6 +46,7 @@ import BrushIcon from '@mui/icons-material/Brush';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import MicIcon from '@mui/icons-material/Mic';
+import WhatshotIcon from '@mui/icons-material/Whatshot';
 import { stopSpeech } from '../services/mediaService';
 import TopicContextDialog from './TopicContextDialog';
 import ScratchpadDialog from './ScratchpadDialog';
@@ -56,6 +57,7 @@ import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
 import { useUiStore } from '../store/UiStore';
 import { USD_TO_SEK } from '../constants';
+import { isDeepSeekPeakHours } from './ModelSelector';
 import { ENGLISH_VOICES } from '../constants/voices';
 import { Attachment } from '../database/AthenaDb';
 import { useNotificationStore } from '../store/NotificationStore';
@@ -617,14 +619,27 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 }}
                 renderValue={(selected): React.ReactNode => {
                   const model = availableModels.find((m) => m.id === selected);
-                  return model ? model.label : selected;
+                  if (!model) return selected;
+                  return (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      {isDeepSeekPeakHours() && model.providerId === 'builtin-deepseek' && (
+                        <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                      )}
+                      {model.label}
+                    </Box>
+                  );
                 }}
               >
                 {availableModels.map((m) => (
                   <MenuItem key={m.id} value={m.id}>
                     <Box display="flex" justifyContent="space-between" width="100%" alignItems="center">
                       <Typography variant="body2">{m.label}</Typography>
-                      <Typography variant="caption" color="text.secondary" ml={2}>
+                      <Typography variant="caption" color="text.secondary" ml={2} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {isDeepSeekPeakHours() && m.providerId === 'builtin-deepseek' && (
+                          <Tooltip title="DeepSeek peak hours — 2x pricing">
+                            <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                          </Tooltip>
+                        )}
                         {`${(m.input * USD_TO_SEK).toFixed(0)}kr | ${(m.output * USD_TO_SEK).toFixed(0)}kr / 1M`}
                       </Typography>
                     </Box>

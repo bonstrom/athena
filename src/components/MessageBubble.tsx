@@ -41,6 +41,7 @@ import { useTopicStore } from '../store/TopicStore';
 import { useUiStore } from '../store/UiStore';
 import { speakText, stopSpeech } from '../services/mediaService';
 import { stripMarkdown } from '../utils/stripMarkdown';
+import { isDeepSeekPeakHours } from './ModelSelector';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
@@ -52,6 +53,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SummarizeIcon from '@mui/icons-material/Summarize';
 import BugReportIcon from '@mui/icons-material/BugReport';
+import WhatshotIcon from '@mui/icons-material/Whatshot';
 
 const AI_SUMMARY_MIN_CHARS = 250;
 
@@ -150,6 +152,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
       return parts.map((p) => models.find((m) => m.apiModelId === p || m.id === p)?.label ?? p).join(' - ');
     }
     return models.find((m) => m.apiModelId === id || m.id === id)?.label ?? id;
+  };
+
+  const getModelProviderId = (id?: string): string | undefined => {
+    if (!id) return undefined;
+    const { models } = useProviderStore.getState();
+    const firstId = id.split(' - ')[0];
+    return models.find((m) => m.apiModelId === firstId || m.id === firstId)?.providerId;
   };
 
   const handleInfoClick = (event: React.MouseEvent<HTMLElement>): void => {
@@ -253,6 +262,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 <Typography variant="subtitle2" color="text.secondary" sx={{ transition: 'color 0.2s', display: 'inline-block' }}>
                   {message.type === 'user' ? userName : getModelLabel(message.model)}
                 </Typography>
+                {message.type !== 'user' &&
+                  isDeepSeekPeakHours() &&
+                  getModelProviderId(message.model) === 'builtin-deepseek' && (
+                    <Tooltip title="DeepSeek peak hours — 2x pricing">
+                      <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                    </Tooltip>
+                  )}
               </Box>
               <Popover
                 open={Boolean(infoAnchorEl)}
@@ -583,8 +599,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
 
         <Box sx={{ overflowX: 'auto', fontSize: `${chatFontSize}px` }}>
           {message.type === 'aiNote' ? (
-            <Typography variant="body2" fontStyle="italic" color="text.secondary" sx={{ fontSize: 'inherit' }}>
-              {getModelLabel(message.model)} stored a hidden note here.
+            <Typography variant="body2" fontStyle="italic" color="text.secondary" sx={{ fontSize: 'inherit', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              {getModelLabel(message.model)}
+              {isDeepSeekPeakHours() && getModelProviderId(message.model) === 'builtin-deepseek' && (
+                <Tooltip title="DeepSeek peak hours — 2x pricing">
+                  <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
+                </Tooltip>
+              )}
+              {' '}stored a hidden note here.
             </Typography>
           ) : (
             <>

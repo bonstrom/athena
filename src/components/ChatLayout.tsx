@@ -1,12 +1,14 @@
 import React, { useEffect } from 'react';
-import { Box, CssBaseline, Drawer, useMediaQuery, useTheme, IconButton, Typography, Chip, alpha } from '@mui/material';
+import { Box, CssBaseline, Drawer, useMediaQuery, useTheme, IconButton, Tooltip, Typography, Chip, alpha } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
+import WhatshotIcon from '@mui/icons-material/Whatshot';
 import { Outlet } from 'react-router-dom';
 import { useUiStore } from '../store/UiStore';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
 import { useAuthStore } from '../store/AuthStore';
 import { Sidebar } from './Sidebar';
+import { isDeepSeekPeakHours } from './ModelSelector';
 
 const drawerWidth = 300;
 
@@ -108,7 +110,12 @@ const ChatLayout: React.FC = () => {
                     <Typography variant="subtitle2" fontWeight="bold" noWrap>
                       {topic.name || 'New Topic'}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0 }}>
+                    <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                      {isDeepSeekPeakHours() && selectedModel.providerId === 'builtin-deepseek' && (
+                        <Tooltip title="DeepSeek peak hours — 2x pricing">
+                          <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
+                        </Tooltip>
+                      )}
                       {selectedModel.label}
                     </Typography>
                   </Box>
@@ -162,7 +169,12 @@ const ChatLayout: React.FC = () => {
                 <Typography variant="subtitle1" fontWeight="bold" noWrap>
                   {topic.name || 'New Topic'}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0 }}>
+                <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                  {isDeepSeekPeakHours() && selectedModel.providerId === 'builtin-deepseek' && (
+                    <Tooltip title="DeepSeek peak hours — 2x pricing">
+                      <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
+                    </Tooltip>
+                  )}
                   {selectedModel.label}
                 </Typography>
               </Box>

@@ -302,7 +302,7 @@ interface ProviderSettingsFormProps {
 }
 
 const ProviderSettingsForm: React.FC<ProviderSettingsFormProps> = ({ provider, onClose }) => {
-  const { updateProvider } = useProviderStore();
+  const { updateProvider, resetProvider } = useProviderStore();
   const [form, setForm] = useState<Omit<LlmProvider, 'id'>>({ ...provider });
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [expandedAdvanced, setExpandedAdvanced] = useState(false);
@@ -421,13 +421,28 @@ const ProviderSettingsForm: React.FC<ProviderSettingsFormProps> = ({ provider, o
       </Collapse>
 
       <Divider sx={{ mb: 1.5 }} />
-      <Box display="flex" justifyContent="flex-end" gap={1}>
-        <Button size="small" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button size="small" variant="contained" disabled={!isValid} onClick={handleSave}>
-          Save Changes
-        </Button>
+      <Box display="flex" justifyContent="space-between">
+        {provider.isBuiltIn && (
+          <Button
+            size="small"
+            color="warning"
+            variant="outlined"
+            onClick={(): void => {
+              resetProvider(provider.id);
+              onClose();
+            }}
+          >
+            Reset to defaults
+          </Button>
+        )}
+        <Box display="flex" justifyContent="flex-end" gap={1} ml="auto">
+          <Button size="small" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="small" variant="contained" disabled={!isValid} onClick={handleSave}>
+            Save Changes
+          </Button>
+        </Box>
       </Box>
     </Paper>
   );

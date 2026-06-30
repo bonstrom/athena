@@ -16,6 +16,7 @@ interface ProviderStoreState {
   getFirstWebSearchModel: () => UserChatModel | undefined;
   hasAnyApiKey: () => boolean;
   deleteProvider: (providerId: string) => void;
+  resetProvider: (providerId: string) => void;
 }
 
 interface ProviderStoreLike {
@@ -818,5 +819,78 @@ describe('ProviderStore migrations', () => {
 
     const stored = JSON.parse(localStorage.getItem('athena_models') ?? 'null') as unknown;
     expect(stored).not.toBeNull();
+  });
+});
+
+describe('resetProvider', () => {
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    localStorage.clear();
+  });
+
+  it('resets a built-in provider to default values while preserving the API key', () => {
+    localStorage.setItem(
+      'athena_providers',
+      JSON.stringify([
+        {
+          id: 'builtin-openai',
+          name: 'My Custom Name',
+          baseUrl: 'https://custom.example.com/v1',
+          messageFormat: 'anthropic',
+          apiKeyEncrypted: 'pretend-encrypted-key-xyz',
+          supportsWebSearch: true,
+          requiresReasoningFallback: true,
+          payloadOverridesJson: '{"max_tokens":1}',
+          isBuiltIn: true,
+        },
+      ]),
+    );
+
+    const store = loadProviderStore();
+    store.getState().resetProvider('builtin-openai');
+
+    const provider = store.getState().providers.find((p) => p.id === 'builtin-openai');
+    expect(provider).toBeDefined();
+    expect(provider!.name).toBe('OpenAI');
+    expect(provider!.baseUrl).toBe('https://api.openai.com/v1/chat/completions');
+    expect(provider!.messageFormat).toBe('openai');
+    expect(provider!.supportsWebSearch).toBe(false);
+    expect(provider!.requiresReasoningFallback).toBe(false);
+    expect(provider!.payloadOverridesJson).toBe('');
+    expect(provider!.apiKeyEncrypted).toBe('pretend-encrypted-key-xyz');
+  });
+
+  it('does nothing for a non-built-in provider', () => {
+    const customProvider: LlmProvider = {
+      id: 'custom-test-provider',
+      name: 'Custom Test',
+      baseUrl: 'https://custom.example.com/v1',
+      messageFormat: 'openai',
+      apiKeyEncrypted: 'custom-key',
+      supportsWebSearch: true,
+      requiresReasoningFallback: false,
+      payloadOverridesJson: '{"something":1}',
+      isBuiltIn: false,
+    };
+
+    localStorage.setItem('athena_providers', JSON.stringify([customProvider]));
+
+    const store = loadProviderStore();
+    store.getState().resetProvider('custom-test-provider');
+
+    const provider = store.getState().providers.find((p) => p.id === 'custom-test-provider');
+    expect(provider).toBeDefined();
+    expect(provider!.name).toBe('Custom Test');
+    expect(provider!.baseUrl).toBe('https://custom.example.com/v1');
+    expect(provider!.supportsWebSearch).toBe(true);
+    expect(provider!.payloadOverridesJson).toBe('{"something":1}');
+  });
+
+  it('does nothing for an unknown provider ID', () => {
+    const store = loadProviderStore();
+    const initialCount = store.getState().providers.length;
+    store.getState().resetProvider('nonexistent-id');
+    expect(store.getState().providers).toHaveLength(initialCount);
   });
 });

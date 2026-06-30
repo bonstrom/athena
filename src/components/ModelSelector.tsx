@@ -1,8 +1,9 @@
 import React from 'react';
-import { FormControl, InputLabel, MenuItem, Select, Box, Typography } from '@mui/material';
+import { FormControl, InputLabel, MenuItem, Select, Box, Tooltip, Typography } from '@mui/material';
+import WhatshotIcon from '@mui/icons-material/Whatshot';
 import { useProviderStore } from '../store/ProviderStore';
 import { UserChatModel } from '../types/provider';
-import { USD_TO_SEK } from '../constants';
+import { USD_TO_SEK, DEEPSEEK_PEAK_HOURS_UTC, DEEPSEEK_PEAK_MULTIPLIER } from '../constants';
 
 export type ChatModel = UserChatModel;
 export type { ProviderId } from '../services/llmService';
@@ -12,20 +13,34 @@ function resolveModelFromSavedId(savedModelId: string | null, models: ChatModel[
   return models.find((m) => m.id === savedModelId) ?? models.find((m) => m.apiModelId === savedModelId);
 }
 
+export function isDeepSeekPeakHours(): boolean {
+  const utcHour = new Date().getUTCHours();
+  return DEEPSEEK_PEAK_HOURS_UTC.some((r) => utcHour >= r.start && utcHour < r.end);
+}
+
+export function getPeakMultiplier(model: ChatModel): number {
+  if (model.providerId === 'builtin-deepseek' && isDeepSeekPeakHours()) {
+    return DEEPSEEK_PEAK_MULTIPLIER;
+  }
+  return 1;
+}
+
 export function calculateCostUSD(
   model: ChatModel,
   prompt: number,
   completion: number,
   promptDetails?: { cached_tokens?: number; cache_creation_tokens?: number },
+  peakMultiplier?: number,
 ): number {
   const cachedTokens = promptDetails?.cached_tokens ?? 0;
   const cacheCreationTokens = promptDetails?.cache_creation_tokens ?? 0;
   const regularPromptTokens = Math.max(0, prompt - cachedTokens - cacheCreationTokens);
+  const multiplier = peakMultiplier ?? 1;
   return (
-    (regularPromptTokens / 1_000_000) * model.input +
-    (cachedTokens / 1_000_000) * model.cachedInput +
-    (cacheCreationTokens / 1_000_000) * model.input * 1.25 +
-    (completion / 1_000_000) * model.output
+    (regularPromptTokens / 1_000_000) * model.input * multiplier +
+    (cachedTokens / 1_000_000) * model.cachedInput * multiplier +
+    (cacheCreationTokens / 1_000_000) * model.input * 1.25 * multiplier +
+    (completion / 1_000_000) * model.output * multiplier
   );
 }
 
@@ -34,8 +49,9 @@ export function calculateCostSEK(
   prompt: number,
   completion: number,
   promptDetails?: { cached_tokens?: number; cache_creation_tokens?: number },
+  peakMultiplier?: number,
 ): number {
-  return calculateCostUSD(model, prompt, completion, promptDetails) * USD_TO_SEK;
+  return calculateCostUSD(model, prompt, completion, promptDetails, peakMultiplier) * USD_TO_SEK;
 }
 
 interface Props {
@@ -90,7 +106,12 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
                   </Typography>
                   <Typography>{m.label}</Typography>
                 </Box>
-                <Typography variant="caption" color="text.secondary" ml={2} whiteSpace="nowrap">
+                <Typography variant="caption" color="text.secondary" ml={2} whiteSpace="nowrap" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  {isDeepSeekPeakHours() && m.providerId === 'builtin-deepseek' && (
+                    <Tooltip title="DeepSeek peak hours — 2x pricing">
+                      <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                    </Tooltip>
+                  )}
                   {`${(m.input * USD_TO_SEK).toFixed(0)}kr | ${(m.output * USD_TO_SEK).toFixed(0)}kr / 1M`}
                 </Typography>
               </Box>

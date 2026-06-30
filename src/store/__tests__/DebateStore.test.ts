@@ -13,6 +13,7 @@ const mockAskLlmStream = jest.fn<unknown, unknown[]>();
 const mockGetAvailableModels = jest.fn<unknown, unknown[]>();
 const mockGetDefaultModel = jest.fn<unknown, unknown[]>();
 const mockCalculateCostSEK = jest.fn<number, unknown[]>().mockReturnValue(0.5);
+const mockGetPeakMultiplier = jest.fn<number, unknown[]>().mockReturnValue(1);
 const mockAddNotification = jest.fn<undefined, [string, string?]>();
 const mockTopicStoreSetState = jest.fn<undefined, unknown[]>();
 const mockGenerateTopicName = jest.fn<Promise<undefined>, [string, string]>().mockResolvedValue(undefined);
@@ -47,6 +48,7 @@ jest.mock('../../components/ModelSelector', () => ({
   getAvailableModels: (): unknown => mockGetAvailableModels(),
   getDefaultModel: (): unknown => mockGetDefaultModel(),
   calculateCostSEK: (...args: unknown[]): number => mockCalculateCostSEK(...args),
+  getPeakMultiplier: (...args: unknown[]): number => mockGetPeakMultiplier(...args),
 }));
 
 jest.mock('../../store/TopicStore', () => ({

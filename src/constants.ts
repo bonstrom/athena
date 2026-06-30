@@ -6,6 +6,13 @@ export const SCRATCHPAD_LIMIT = 8000;
 export const SHORT_SCRATCHPAD_RULES = `You have a private scratchpad for long-term memory (max {{SCRATCHPAD_LIMIT}} chars). Proactively store user preferences, goals, key decisions, and message bookmarks. Prefer 'replace' over 'append' to stay concise.`;
 export const USD_TO_SEK = 10;
 
+export const DEEPSEEK_PEAK_HOURS_UTC: { start: number; end: number }[] = [
+  { start: 1, end: 4 },  // 01:00–04:00 UTC
+  { start: 6, end: 10 }, // 06:00–10:00 UTC
+];
+
+export const DEEPSEEK_PEAK_MULTIPLIER = 2;
+
 // RAG (Retrieval-Augmented Generation) tuning constants
 export const RAG_TOP_K = 5; // number of semantically similar messages to retrieve
 export const RAG_MIN_SCORE = 0.3; // discard weakly-related matches below this cosine similarity

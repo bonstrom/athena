@@ -1,6 +1,7 @@
-import { Box, Paper, Typography } from "@mui/material";
+import { Box, Paper, Tooltip, Typography } from "@mui/material";
 import TypingIndicator from "./TypingIndicator";
-import { ChatModel } from "./ModelSelector";
+import { ChatModel, isDeepSeekPeakHours } from "./ModelSelector";
+import WhatshotIcon from "@mui/icons-material/Whatshot";
 
 interface MessageBubbleTypingProps {
   model: ChatModel;
@@ -23,8 +24,14 @@ const MessageBubbleTyping: React.FC<MessageBubbleTypingProps> = ({ model }) => {
           mb={0.5}>
           <Typography
             variant="subtitle2"
-            color="text.secondary">
+            color="text.secondary"
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             {model.label}
+            {isDeepSeekPeakHours() && model.providerId === 'builtin-deepseek' && (
+              <Tooltip title="DeepSeek peak hours — 2x pricing">
+                <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+              </Tooltip>
+            )}
           </Typography>
         </Box>
 
