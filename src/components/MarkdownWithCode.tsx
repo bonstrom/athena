@@ -178,6 +178,31 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
   );
 };
 
+const SvgDiagram: React.FC<MermaidProps> = ({ children }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    container.innerHTML = children.trim();
+  }, [children]);
+
+  return (
+    <Box
+      ref={containerRef}
+      sx={{
+        my: 2,
+        display: 'flex',
+        justifyContent: 'center',
+        '& svg': {
+          maxWidth: '100%',
+          height: 'auto',
+        },
+      }}
+    />
+  );
+};
+
 const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, disableMermaid = false }) => {
   const theme = useTheme();
   const themeMode = useAuthStore((s) => s.themeMode);
@@ -238,6 +263,8 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, di
       return !inline && match ? (
         match[1] === 'mermaid' && !disableMermaid ? (
           <MermaidDiagram key={codeString}>{codeString}</MermaidDiagram>
+        ) : match[1] === 'svg' ? (
+          <SvgDiagram key={codeString}>{codeString}</SvgDiagram>
         ) : (
         <Box
           sx={{
