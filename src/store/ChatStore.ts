@@ -24,7 +24,7 @@ import { BackupService } from '../services/backupService';
 import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 
-import { LATEX_INSTRUCTIONS, SCRATCHPAD_LIMIT, SHORTENED_ID_LENGTH, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS } from '../constants';
+import { LATEX_INSTRUCTIONS, SVG_INSTRUCTIONS, SCRATCHPAD_LIMIT, SHORTENED_ID_LENGTH, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS } from '../constants';
 
 /**
  * Heuristic: detect when the LLM response is primarily a clarification question
@@ -214,6 +214,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     // System: LaTeX formatting instructions
     entries.push({ message: { role: 'system', content: LATEX_INSTRUCTIONS }, sourceLabel: 'Formatting' });
+
+    // System: SVG visualization instructions
+    entries.push({ message: { role: 'system', content: SVG_INSTRUCTIONS }, sourceLabel: 'SVG' });
 
     // System: Scratchpad rules + content (shown as two entries for clarity in the inspector)
     const rawScratchpadRules = (topic?.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
@@ -619,6 +622,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     // System: LaTeX formatting instructions
     systems.push({ role: 'system', content: LATEX_INSTRUCTIONS });
+
+    // System: SVG visualization instructions
+    systems.push({ role: 'system', content: SVG_INSTRUCTIONS });
 
     const rawScratchpadRules = (topic?.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
       '{{SCRATCHPAD_LIMIT}}',

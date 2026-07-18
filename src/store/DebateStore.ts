@@ -7,7 +7,7 @@ import { useNotificationStore } from './NotificationStore';
 import { useAuthStore } from './AuthStore';
 import { useChatStore } from './ChatStore';
 
-import { LATEX_INSTRUCTIONS } from '../constants';
+import { LATEX_INSTRUCTIONS, SVG_INSTRUCTIONS } from '../constants';
 
 interface DebateState {
   debateModelA: ChatModel | null;
@@ -36,6 +36,7 @@ function buildSystemMessage(customInstructions: string): LlmMessage | null {
     parts.push(trimmed);
   }
   parts.push(LATEX_INSTRUCTIONS);
+  parts.push(SVG_INSTRUCTIONS);
   return { role: 'system', content: parts.join('\n\n') };
 }
 
