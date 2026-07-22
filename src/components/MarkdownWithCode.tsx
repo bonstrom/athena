@@ -179,17 +179,9 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
 };
 
 const SvgDiagram: React.FC<MermaidProps> = ({ children }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    container.innerHTML = children.trim();
-  }, [children]);
-
   return (
     <Box
-      ref={containerRef}
+      dangerouslySetInnerHTML={{ __html: children.trim() }}
       sx={{
         my: 2,
         display: 'flex',
@@ -202,6 +194,61 @@ const SvgDiagram: React.FC<MermaidProps> = ({ children }) => {
     />
   );
 };
+
+/**
+ * Ensures all fenced code blocks are properly closed.
+ * If the LLM forgets a closing ```, react-markdown would swallow the rest
+ * of the content into the code block — everything after the unclosed fence
+ * would render as plain text instead of formatted markdown.
+ *
+ * Uses two-phase approach:
+ * 1. General: balance any unmatched ``` fences by appending at end.
+ * 2. SVG-specific: when a ```svg fence opens and an </svg> tag appears
+ *    inside it, insert a closing ``` right after </svg> so the remaining
+ *    content is properly parsed as markdown.
+ */
+function ensureClosedFences(content: string): string {
+  const lines = content.split('\n');
+  const openFences: string[] = [];
+  const result: string[] = [];
+  let svgFenceOpen = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    const isFence = trimmed.startsWith('```');
+
+    if (isFence) {
+      if (openFences.length === 0) {
+        openFences.push('```');
+        if (trimmed === '```svg') {
+          svgFenceOpen = true;
+        }
+      } else {
+        openFences.pop();
+        svgFenceOpen = false;
+      }
+      result.push(line);
+    } else if (svgFenceOpen && trimmed.endsWith('</svg>')) {
+      const lookAhead = lines.slice(i + 1, i + 5).map((l) => l.trim());
+      const hasCloseFence = lookAhead.some((la) => la.startsWith('```'));
+      result.push(line);
+      if (!hasCloseFence) {
+        result.push('```');
+        openFences.pop();
+        svgFenceOpen = false;
+      }
+    } else {
+      result.push(line);
+    }
+  }
+
+  if (openFences.length > 0) {
+    result.push('```');
+  }
+
+  return result.join('\n');
+}
 
 const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, disableMermaid = false }) => {
   const theme = useTheme();
@@ -315,7 +362,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, di
   return (
     <Box sx={{ wordBreak: 'break-word' }}>
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
-        {children}
+        {ensureClosedFences(children)}
       </ReactMarkdown>
     </Box>
   );

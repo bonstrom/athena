@@ -1,6 +1,14 @@
 export const LATEX_INSTRUCTIONS = `You can use LaTeX syntax for mathematical expressions: \`$...$\` for inline math and \`$$...$$\` for display (block) math.`;
 
-export const SVG_INSTRUCTIONS = `You can output SVG code to create visualizations, diagrams, charts, or illustrations directly in your responses. Wrap the SVG in a markdown code block with the language tag \`\`\`svg. The SVG will be rendered inline in the chat. Keep SVGs reasonably sized and use viewBox for responsiveness.`;
+export const SVG_INSTRUCTIONS = `You can output SVG code to create visualizations, diagrams, charts, or illustrations directly in your responses. Wrap the SVG in a markdown code block with the language tag \`\`\`svg, and ALWAYS close the code block with \`\`\` on its own line after the SVG. The SVG will be rendered inline in the chat. Keep SVGs reasonably sized and use viewBox for responsiveness.
+
+Example:
+\`\`\`svg
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="50" cy="50" r="40" fill="blue" />
+</svg>
+\`\`\`
+Note: it is critical to end the code block with \`\`\` after the closing </svg> tag, otherwise the rest of your response will not render correctly.`;
 
 export const SHORTENED_ID_LENGTH = 8; // prefix length for shortened UUID display
 

@@ -194,4 +194,34 @@ describe('MarkdownWithCode — mermaid', () => {
       expect.objectContaining({ theme: 'dark', startOnLoad: false, securityLevel: 'loose' }),
     );
   });
+
+  it('auto-closes unclosed SVG code fence so following markdown is not swallowed', () => {
+    const content = `Some text before.
+
+\`\`\`svg
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40" fill="blue" /></svg>
+
+---
+
+## This heading should be formatted
+
+Normal paragraph text after.`;
+
+    render(<MarkdownWithCode>{content}</MarkdownWithCode>);
+
+    expect(screen.getByText('Some text before.')).toBeInTheDocument();
+    expect(screen.getByTestId('markdown-root')).toBeInTheDocument();
+  });
+
+  it('does not duplicate closing fence when SVG block is properly closed', () => {
+    const content = `\`\`\`svg
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40" fill="blue" /></svg>
+\`\`\`
+
+Some text after.`;
+
+    render(<MarkdownWithCode>{content}</MarkdownWithCode>);
+
+    expect(screen.getByText('Some text after.')).toBeInTheDocument();
+  });
 });
