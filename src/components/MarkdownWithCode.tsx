@@ -360,7 +360,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, di
   };
 
   return (
-    <Box sx={{ wordBreak: 'break-word' }}>
+    <Box sx={{ overflowWrap: 'break-word', wordBreak: 'normal' }}>
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
         {ensureClosedFences(children)}
       </ReactMarkdown>

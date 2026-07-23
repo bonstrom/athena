@@ -339,8 +339,8 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
                       color="text.primary"
                       sx={{
                         whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        overflowWrap: 'anywhere',
+                        overflowWrap: 'break-word',
+                        wordBreak: 'normal',
                         lineHeight: 1.5,
                       }}
                     >
