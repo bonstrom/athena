@@ -35,6 +35,7 @@ interface TopicState {
   getTopicTotalCost: (topicId: string) => Promise<number>;
   updateTopicMaxContextMessages: (id: string, maxContextMessages: number) => Promise<void>;
   updateTopicPromptSelection: (id: string, selectedPromptIds: string[]) => Promise<void>;
+  updateTopicModelId: (id: string, modelId: string) => Promise<void>;
 }
 
 export const useTopicStore = create<TopicState>((set, get) => ({
@@ -62,6 +63,32 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
     try {
       const topics = await athenaDb.topics.orderBy('updatedOn').reverse().toArray();
+
+      // One-time backfill: populate modelId from last assistant message for topics missing it
+      const topicsNeedingBackfill = topics.filter((t) => !t.modelId);
+      if (topicsNeedingBackfill.length > 0) {
+        const allMessages = await athenaDb.messages.toArray();
+        const lastModelByTopic = new Map<string, string>();
+        const lastCreatedByTopic = new Map<string, string>();
+
+        for (const m of allMessages) {
+          if (m.type === 'assistant' && m.model) {
+            const prevCreated = lastCreatedByTopic.get(m.topicId);
+            if (!prevCreated || m.created > prevCreated) {
+              lastCreatedByTopic.set(m.topicId, m.created);
+              lastModelByTopic.set(m.topicId, m.model);
+            }
+          }
+        }
+
+        for (const topic of topicsNeedingBackfill) {
+          const modelId = lastModelByTopic.get(topic.id);
+          if (modelId) {
+            topic.modelId = modelId;
+            void athenaDb.topics.update(topic.id, { modelId });
+          }
+        }
+      }
 
       set({ topics });
     } catch (err) {
@@ -695,6 +722,18 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       console.error('Failed to update topic max context messages', err);
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification('Failed to update context limit', message);
+    }
+  },
+  updateTopicModelId: async (id, modelId): Promise<void> => {
+    try {
+      await athenaDb.topics.update(id, { modelId });
+      set((state) => ({
+        topics: state.topics.map((t) => (t.id === id ? { ...t, modelId } : t)),
+      }));
+    } catch (err) {
+      console.error('Failed to update topic model ID', err);
+      const message = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification('Failed to save model', message);
     }
   },
   updateTopicPromptSelection: async (id, selectedPromptIds): Promise<void> => {

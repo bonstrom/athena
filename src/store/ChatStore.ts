@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { calculateCostSEK, getPeakMultiplier, ChatModel, getDefaultModel } from '../components/ModelSelector';
+import { calculateCostSEK, getPeakMultiplier, ChatModel, getDefaultModel, getAvailableModels } from '../components/ModelSelector';
 import { useProviderStore } from './ProviderStore';
 import { useTopicStore } from './TopicStore';
 import { useNotificationStore } from './NotificationStore';
@@ -382,6 +382,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       set({ pendingUserQuestion: null });
     }
 
+    // Restore per-chat model if the topic has one saved
+    if (topic?.modelId) {
+      const available = getAvailableModels();
+      const savedModel = available.find((m) => m.apiModelId === topic.modelId);
+      if (savedModel) {
+        set({ selectedModel: savedModel });
+      }
+    }
+
     // If already cached and on the main fork, just switch to it instantly
     const cached = get().messagesByTopic[topicId];
     if (cached !== undefined && !forkId) {
@@ -553,6 +562,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     const topicStoreState = useTopicStore.getState();
+
+    // Persist the effective model as the per-chat default
+    void topicStoreState.updateTopicModelId(topicId, effectiveModel.apiModelId);
 
     if (!content.trim() || !topicId) return;
     const controller = new AbortController();

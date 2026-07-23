@@ -60,6 +60,14 @@ interface MessageV5Like extends MessageV2Like {
   parentMessageId?: string;
 }
 
+interface MessageV9Like extends MessageV5Like {
+  model?: string;
+}
+
+interface TopicV9Like extends TopicLike {
+  modelId?: string;
+}
+
 function loadAthenaDbModule(): void {
   jest.isolateModules(() => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -81,13 +89,21 @@ describe('AthenaDb migrations', () => {
     mockVersionRecords.clear();
   });
 
-  it('registers schema versions 1 through 7', () => {
+  it('registers schema versions 1 through 9', () => {
     loadAthenaDbModule();
 
-    for (const version of [1, 2, 3, 4, 5, 6, 7]) {
+    for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
       expect(mockVersionRecords.has(version)).toBe(true);
       expect(mockVersionRecords.get(version)?.storesSchema).toBeDefined();
     }
+  });
+
+  it('v9 topics schema includes modelId index', () => {
+    loadAthenaDbModule();
+
+    const v9Schema = mockVersionRecords.get(9)?.storesSchema?.topics;
+    expect(v9Schema).toBeDefined();
+    expect(v9Schema).toContain('modelId');
   });
 
   it('v2 upgrade backfills topic forks and message forkId', async () => {
@@ -227,5 +243,94 @@ describe('AthenaDb migrations', () => {
       { id: 'a1', parentMessageId: 'u1' },
       { id: 'a2', parentMessageId: 'u2' },
     ]);
+  });
+
+  it('v9 upgrade backfills topic.modelId from last assistant message with a model', async () => {
+    loadAthenaDbModule();
+
+    const messages: MessageV9Like[] = [
+      {
+        id: 'm-u1',
+        topicId: 't1',
+        type: 'user',
+        created: '2024-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'm-a1',
+        topicId: 't1',
+        type: 'assistant',
+        created: '2024-01-01T00:01:00.000Z',
+        model: 'gpt-4',
+      },
+      {
+        id: 'm-a2',
+        topicId: 't1',
+        type: 'assistant',
+        created: '2024-01-01T00:02:00.000Z',
+        model: 'gpt-5',
+      },
+      // t2: assistant without model, should not be backfilled
+      {
+        id: 'm-a3',
+        topicId: 't2',
+        type: 'assistant',
+        created: '2024-01-01T00:00:00.000Z',
+      },
+      // t3: already has modelId, should not be overwritten
+      {
+        id: 'm-a4',
+        topicId: 't3',
+        type: 'assistant',
+        created: '2024-01-01T00:00:00.000Z',
+        model: 'claude-3',
+      },
+      // t4: user message only, no assistant message
+      {
+        id: 'm-u2',
+        topicId: 't4',
+        type: 'user',
+        created: '2024-01-01T00:00:00.000Z',
+      },
+    ];
+
+    const topics: TopicV9Like[] = [
+      { id: 't1', createdOn: '2024-01-01T00:00:00.000Z' },
+      { id: 't2', createdOn: '2024-01-01T00:00:00.000Z' },
+      { id: 't3', createdOn: '2024-01-01T00:00:00.000Z', modelId: 'existing-model' },
+      { id: 't4', createdOn: '2024-01-01T00:00:00.000Z' },
+    ];
+
+    const topicUpdates: { id: string; modelId: string }[] = [];
+
+    const v9Transaction = {
+      table: (
+        tableName: string,
+      ): {
+        toArray: () => Promise<MessageV9Like[] | TopicV9Like[]>;
+        update: (id: string, patch: Partial<TopicV9Like>) => Promise<number>;
+      } => ({
+        toArray: (): Promise<MessageV9Like[] | TopicV9Like[]> => {
+          if (tableName === 'messages') {
+            return Promise.resolve(messages);
+          }
+          if (tableName === 'topics') {
+            return Promise.resolve(topics);
+          }
+          return Promise.resolve([]);
+        },
+        update: (id: string, patch: Partial<TopicV9Like>): Promise<number> => {
+          if (typeof patch.modelId === 'string') {
+            topicUpdates.push({ id, modelId: patch.modelId });
+          }
+          return Promise.resolve(1);
+        },
+      }),
+    };
+
+    await getUpgradeCallback(9)(v9Transaction);
+
+    // t1: most recent assistant is m-a2 with model 'gpt-5'
+    // t3: already has modelId, should NOT be in updates
+    expect(topicUpdates).toEqual([{ id: 't1', modelId: 'gpt-5' }]);
   });
 });

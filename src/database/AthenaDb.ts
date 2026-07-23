@@ -117,6 +117,42 @@ class AthenaDatabase extends Dexie {
       predefinedPrompts: 'id, name',
       userSettings: 'id',
     });
+
+    // Version 9: add modelId index to topics for per-chat model memory,
+    // and backfill existing topics from the last assistant message with a model.
+    this.version(9)
+      .stores({
+        topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+        messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+        predefinedPrompts: 'id, name',
+        userSettings: 'id',
+      })
+      .upgrade(async (trans) => {
+        const allMessages = (await trans.table('messages').toArray()) as Message[];
+
+        // Find the last (most recent) assistant message per topic that has a model
+        const lastModelByTopic = new Map<string, string>();
+        const lastCreatedByTopic = new Map<string, string>();
+
+        for (const m of allMessages) {
+          if (m.type === 'assistant' && m.model) {
+            const prevCreated = lastCreatedByTopic.get(m.topicId);
+            if (!prevCreated || m.created > prevCreated) {
+              lastCreatedByTopic.set(m.topicId, m.created);
+              lastModelByTopic.set(m.topicId, m.model);
+            }
+          }
+        }
+
+        // Update only topics that don't already have a modelId
+        const allTopics = (await trans.table('topics').toArray()) as Topic[];
+        for (const topic of allTopics) {
+          const modelId = lastModelByTopic.get(topic.id);
+          if (modelId && !topic.modelId) {
+            await trans.table('topics').update(topic.id, { modelId });
+          }
+        }
+      });
   }
 }
 
@@ -195,6 +231,7 @@ export interface Topic {
   activeForkId?: string;
   maxContextMessages?: number;
   selectedPromptIds?: string[];
+  modelId?: string;
   // Debate fields
   mode?: TopicMode;
   debateModelAId?: string;

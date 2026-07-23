@@ -26,6 +26,7 @@ const mockMessagesDelete = jest.fn<Promise<number>, [Message[]]>();
 const _mockMessagesAnyOfDelete = jest.fn<Promise<number>, []>();
 const mockTopicsUpdate = jest.fn<Promise<number>, [string, Partial<Topic>]>();
 const mockDbTransaction = jest.fn<Promise<void>, [string, unknown[], () => Promise<void>]>();
+const mockMessagesToArray = jest.fn<Promise<Message[]>, []>();
 
 jest.mock('gpt-tokenizer', () => ({
   encode: jest.fn((text: string): number[] => new Array<number>(text.length).fill(0)),
@@ -125,6 +126,7 @@ jest.mock('../../database/AthenaDb', () => ({
         }),
       }),
       bulkAdd: (...args: [Message[]]): Promise<void> => mockDbBulkAdd(...args),
+      toArray: (): Promise<Message[]> => mockMessagesToArray(),
     },
     transaction: (...args: [string, unknown[], () => Promise<void>]): Promise<void> => mockDbTransaction(...args),
   },
@@ -150,6 +152,7 @@ describe('TopicStore.getTopicContext', () => {
     mockMessagesDelete.mockReset();
     mockTopicsUpdate.mockReset();
     mockDbTransaction.mockReset();
+    mockMessagesToArray.mockReset();
     mockHasAnyApiKey.mockReset();
     mockAskLlm.mockReset();
     mockGetDefaultTopicNameModel.mockReset();
@@ -168,6 +171,7 @@ describe('TopicStore.getTopicContext', () => {
     mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
       await callback();
     });
+    mockMessagesToArray.mockResolvedValue([]);
 
     const uuidSequence = ['uuid-default-1', 'uuid-default-2', 'uuid-default-3'];
     let uuidIndex = 0;
@@ -903,6 +907,7 @@ describe('TopicStore actions', () => {
     mockMessagesDelete.mockReset();
     mockDbBulkAdd.mockReset();
     mockDbTransaction.mockReset();
+    mockMessagesToArray.mockReset();
     mockHasAnyApiKey.mockReset();
     mockAskLlm.mockReset();
     mockGetDefaultTopicNameModel.mockReset();
@@ -920,6 +925,7 @@ describe('TopicStore actions', () => {
     mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
       await callback();
     });
+    mockMessagesToArray.mockResolvedValue([]);
 
     useTopicStore.setState({
       topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main' })],
@@ -1184,6 +1190,31 @@ describe('TopicStore actions', () => {
     await useTopicStore.getState().updateTopicPromptSelection('topic-1', ['p1']);
 
     expect(mockAddNotification).toHaveBeenCalledWith('Failed to update selection', 'selection update failed');
+  });
+
+  it('updateTopicModelId persists model to DB and updates state', async () => {
+    useTopicStore.setState({
+      topics: [createTopic({ id: 't1', name: 'Topic A' }), createTopic({ id: 't2', name: 'Topic B' })],
+    });
+
+    await useTopicStore.getState().updateTopicModelId('t1', 'model-gpt');
+
+    expect(mockTopicsUpdate).toHaveBeenCalledTimes(1);
+    expect(mockTopicsUpdate.mock.calls[0][0]).toBe('t1');
+    expect(mockTopicsUpdate.mock.calls[0][1]).toMatchObject({ modelId: 'model-gpt' });
+
+    const updated = useTopicStore.getState().topics.find((t) => t.id === 't1');
+    expect(updated?.modelId).toBe('model-gpt');
+    expect(useTopicStore.getState().topics.find((t) => t.id === 't2')?.modelId).toBeUndefined();
+    expect(mockAddNotification).not.toHaveBeenCalled();
+  });
+
+  it('updateTopicModelId notifies when DB update fails', async () => {
+    mockTopicsUpdate.mockRejectedValueOnce(new Error('model update failed'));
+
+    await useTopicStore.getState().updateTopicModelId('topic-1', 'model-fail');
+
+    expect(mockAddNotification).toHaveBeenCalledWith('Failed to save model', 'model update failed');
   });
 
   it('switchFork updates active fork and state', async () => {

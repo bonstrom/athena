@@ -12,6 +12,7 @@ interface TopicStoreState {
   updateTopicTimestamp: (topicId: string) => Promise<void>;
   generateTopicName: (topicId: string, userMessage: string) => Promise<void>;
   updateTopicScratchpad: (topicId: string, scratchpad: string) => Promise<void>;
+  updateTopicModelId: (topicId: string, modelId: string) => Promise<void>;
 }
 
 interface ProviderStoreState {
@@ -54,6 +55,7 @@ const mockGetTopicContext = jest.fn<Promise<Message[]>, [string, string | undefi
 const mockUpdateTopicTimestamp = jest.fn<Promise<void>, [string]>();
 const mockGenerateTopicName = jest.fn<Promise<void>, [string, string]>();
 const mockUpdateTopicScratchpad = jest.fn<Promise<void>, [string, string]>();
+const mockUpdateTopicModelId = jest.fn<Promise<void>, [string, string]>();
 const mockOrchestrateLlmLoop = jest.fn<Promise<LlmLoopResult>, unknown[]>();
 const mockAskLlm = jest.fn<Promise<AskLlmResult>, unknown[]>();
 const mockAuthGetState = jest.fn<AuthStoreState, []>();
@@ -61,6 +63,7 @@ const mockProviderGetState = jest.fn<ProviderStoreState, []>();
 const mockAddNotification = jest.fn();
 const mockGenerateEmbedding = jest.fn<Promise<number[]>, [string]>();
 const mockGetDefaultModel = jest.fn<UserChatModel, []>();
+const mockGetAvailableModels = jest.fn<UserChatModel[], []>();
 
 const mockDbGet = jest.fn<Promise<Message | undefined>, [string]>();
 const mockDbAdd = jest.fn<Promise<string>, [Message]>();
@@ -83,6 +86,7 @@ const mockBaseTopic: Topic = createTopic({
 jest.mock('../../components/ModelSelector', () => ({
   calculateCostSEK: jest.fn(() => 1),
   getDefaultModel: (): UserChatModel => mockGetDefaultModel(),
+  getAvailableModels: (): UserChatModel[] => mockGetAvailableModels(),
   getPeakMultiplier: jest.fn(() => 1),
 }));
 
@@ -94,6 +98,7 @@ jest.mock('../../store/TopicStore', () => ({
       updateTopicTimestamp: (...args: [string]) => mockUpdateTopicTimestamp(...args),
       generateTopicName: (...args: [string, string]) => mockGenerateTopicName(...args),
       updateTopicScratchpad: (...args: [string, string]) => mockUpdateTopicScratchpad(...args),
+      updateTopicModelId: (...args: [string, string]) => mockUpdateTopicModelId(...args),
     }),
   },
 }));
@@ -185,6 +190,8 @@ describe('ChatStore', () => {
     jest.clearAllMocks();
 
     mockGetDefaultModel.mockReturnValue(mockDefaultModel);
+    mockGetAvailableModels.mockReturnValue([mockDefaultModel]);
+    mockUpdateTopicModelId.mockResolvedValue();
 
     Object.defineProperty(globalThis, 'crypto', {
       value: {
@@ -1344,6 +1351,7 @@ describe('ChatStore', () => {
       updateTopicTimestamp: mockUpdateTopicTimestamp,
       generateTopicName: mockGenerateTopicName,
       updateTopicScratchpad: mockUpdateTopicScratchpad,
+      updateTopicModelId: mockUpdateTopicModelId,
     });
 
     mockAuthGetState.mockReturnValue({
@@ -1474,6 +1482,7 @@ describe('ChatStore', () => {
       updateTopicTimestamp: mockUpdateTopicTimestamp,
       generateTopicName: mockGenerateTopicName,
       updateTopicScratchpad: mockUpdateTopicScratchpad,
+      updateTopicModelId: mockUpdateTopicModelId,
     });
 
     mockAuthGetState.mockReturnValue({
@@ -1923,6 +1932,7 @@ describe('ChatStore', () => {
       updateTopicTimestamp: mockUpdateTopicTimestamp,
       generateTopicName: mockGenerateTopicName,
       updateTopicScratchpad: mockUpdateTopicScratchpad,
+      updateTopicModelId: mockUpdateTopicModelId,
     });
 
     try {
@@ -2423,5 +2433,157 @@ describe('ChatStore', () => {
     await useChatStore.getState().sendMessageStream('Existing question', 'topic-1', 'u-existing');
 
     expect(mockDbUpdate).toHaveBeenCalledWith('u-existing', expect.objectContaining({ activeResponseId: expect.any(String) }));
+  });
+
+  it('fetchMessages restores model from topic.modelId when switching topics', async () => {
+    const savedModel: UserChatModel = createUserChatModel({ id: 'some-uuid-123', apiModelId: 'api-saved-model', label: 'Saved Model' });
+    const otherModel: UserChatModel = createUserChatModel({ id: 'other-uuid', apiModelId: 'other-api', label: 'Other' });
+    mockGetAvailableModels.mockReturnValue([otherModel, mockDefaultModel, savedModel]);
+
+    const topicWithModel: Topic = createTopic({
+      id: 'topic-saved',
+      name: 'Topic with model',
+      modelId: 'api-saved-model',
+    });
+
+    const { useTopicStore } = require('../../store/TopicStore') as {
+      useTopicStore: { getState: () => TopicStoreState };
+    };
+    const originalGetState = useTopicStore.getState;
+    useTopicStore.getState = (): TopicStoreState => ({
+      topics: [topicWithModel],
+      getTopicContext: mockGetTopicContext,
+      updateTopicTimestamp: mockUpdateTopicTimestamp,
+      generateTopicName: mockGenerateTopicName,
+      updateTopicScratchpad: mockUpdateTopicScratchpad,
+      updateTopicModelId: mockUpdateTopicModelId,
+    });
+
+    try {
+      await useChatStore.getState().fetchMessages('topic-saved');
+
+      expect(useChatStore.getState().selectedModel).toEqual(savedModel);
+    } finally {
+      useTopicStore.getState = originalGetState;
+    }
+  });
+
+  it('fetchMessages does not change model when topic has no modelId', async () => {
+    const defaultModel: UserChatModel = createUserChatModel({ id: 'default-model' });
+    useChatStore.setState({ selectedModel: defaultModel });
+
+    const topicWithoutModel: Topic = createTopic({ id: 'topic-no-model', name: 'Topic without model' });
+
+    const { useTopicStore } = require('../../store/TopicStore') as {
+      useTopicStore: { getState: () => TopicStoreState };
+    };
+    const originalGetState = useTopicStore.getState;
+    useTopicStore.getState = (): TopicStoreState => ({
+      topics: [topicWithoutModel],
+      getTopicContext: mockGetTopicContext,
+      updateTopicTimestamp: mockUpdateTopicTimestamp,
+      generateTopicName: mockGenerateTopicName,
+      updateTopicScratchpad: mockUpdateTopicScratchpad,
+      updateTopicModelId: mockUpdateTopicModelId,
+    });
+
+    try {
+      await useChatStore.getState().fetchMessages('topic-no-model');
+
+      expect(useChatStore.getState().selectedModel).toEqual(defaultModel);
+    } finally {
+      useTopicStore.getState = originalGetState;
+    }
+  });
+
+  it('fetchMessages does not change model when saved modelId is unavailable', async () => {
+    const defaultModel: UserChatModel = createUserChatModel({ id: 'default-model' });
+    useChatStore.setState({ selectedModel: defaultModel });
+    mockGetAvailableModels.mockReturnValue([mockDefaultModel]);
+
+    const topicWithStaleModel: Topic = createTopic({
+      id: 'topic-stale',
+      name: 'Topic with stale model',
+      modelId: 'non-existent-model',
+    });
+
+    const { useTopicStore } = require('../../store/TopicStore') as {
+      useTopicStore: { getState: () => TopicStoreState };
+    };
+    const originalGetState = useTopicStore.getState;
+    useTopicStore.getState = (): TopicStoreState => ({
+      topics: [topicWithStaleModel],
+      getTopicContext: mockGetTopicContext,
+      updateTopicTimestamp: mockUpdateTopicTimestamp,
+      generateTopicName: mockGenerateTopicName,
+      updateTopicScratchpad: mockUpdateTopicScratchpad,
+      updateTopicModelId: mockUpdateTopicModelId,
+    });
+
+    try {
+      await useChatStore.getState().fetchMessages('topic-stale');
+
+      expect(useChatStore.getState().selectedModel).toEqual(defaultModel);
+    } finally {
+      useTopicStore.getState = originalGetState;
+    }
+  });
+
+  it('sendMessageStream persists effective model to the topic', async () => {
+    const effectiveModel: UserChatModel = createUserChatModel({ id: 'uuid-effective', apiModelId: 'api-effective-model', label: 'Effective' });
+    mockGetAvailableModels.mockReturnValue([mockDefaultModel, effectiveModel]);
+
+    useChatStore.setState({ selectedModel: effectiveModel });
+
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: 'Response with model',
+      totalPromptTokens: 10,
+      totalCompletionTokens: 5,
+      totalSearchCount: 0,
+      toolLoopTrace: [],
+      lastResult: {
+        content: 'Response with model',
+        rawContent: 'Response with model',
+        promptTokens: 10,
+        completionTokens: 5,
+        searchCount: 0,
+      },
+    });
+
+    await useChatStore.getState().sendMessageStream('Test message', 'topic-1');
+
+    expect(mockUpdateTopicModelId).toHaveBeenCalledWith('topic-1', 'api-effective-model');
+  });
+
+  it('sendMessageStream persists web search model when web search is enabled', async () => {
+    const webSearchModel: UserChatModel = createUserChatModel({ id: 'uuid-web', apiModelId: 'api-web-model', label: 'Web' });
+    mockGetAvailableModels.mockReturnValue([mockDefaultModel, webSearchModel]);
+
+    mockProviderGetState.mockReturnValue({
+      models: [mockDefaultModel, webSearchModel],
+      getProviderForModel: (): LlmProvider => testProvider,
+      getFirstWebSearchModel: (): UserChatModel | undefined => webSearchModel,
+    });
+
+    useChatStore.setState({ webSearchEnabled: true, selectedModel: mockDefaultModel });
+
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: 'Web search response',
+      totalPromptTokens: 10,
+      totalCompletionTokens: 5,
+      totalSearchCount: 2,
+      toolLoopTrace: [],
+      lastResult: {
+        content: 'Web search response',
+        rawContent: 'Web search response',
+        promptTokens: 10,
+        completionTokens: 5,
+        searchCount: 2,
+      },
+    });
+
+    await useChatStore.getState().sendMessageStream('Search query', 'topic-1');
+
+    expect(mockUpdateTopicModelId).toHaveBeenCalledWith('topic-1', 'api-web-model');
   });
 });
