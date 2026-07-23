@@ -31,6 +31,7 @@ interface TopicState {
   renameFork: (topicId: string, forkId: string, name: string) => Promise<void>;
   switchFork: (topicId: string, forkId: string) => Promise<void>;
   deleteFork: (topicId: string, forkId: string) => Promise<void>;
+  reorderFork: (topicId: string, fromIndex: number, toIndex: number) => Promise<void>;
   getTopicTokenCount: (topicId: string) => Promise<number>;
   getTopicTotalCost: (topicId: string) => Promise<number>;
   updateTopicMaxContextMessages: (id: string, maxContextMessages: number) => Promise<void>;
@@ -666,6 +667,28 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       console.error('Failed to rename fork', err);
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification('Failed to rename branch', message);
+    }
+  },
+  reorderFork: async (topicId: string, fromIndex: number, toIndex: number): Promise<void> => {
+    try {
+      const topic = get().topics.find((t) => t.id === topicId);
+      if (!topic?.forks || topic.forks.length <= 1) return;
+      if (fromIndex === toIndex) return;
+      if (fromIndex < 0 || toIndex < 0 || fromIndex >= topic.forks.length || toIndex >= topic.forks.length) return;
+
+      const updatedForks = [...topic.forks];
+      const [moved] = updatedForks.splice(fromIndex, 1);
+      updatedForks.splice(toIndex, 0, moved);
+
+      await athenaDb.topics.update(topicId, { forks: updatedForks });
+
+      set((state) => ({
+        topics: state.topics.map((t) => (t.id === topicId ? { ...t, forks: updatedForks } : t)),
+      }));
+    } catch (err) {
+      console.error('Failed to reorder forks', err);
+      const message = err instanceof Error ? err.message : String(err);
+      useNotificationStore.getState().addNotification('Failed to reorder branches', message);
     }
   },
   getTopicTokenCount: async (topicId: string): Promise<number> => {

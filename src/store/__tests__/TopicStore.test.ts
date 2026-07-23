@@ -1420,6 +1420,119 @@ describe('TopicStore actions', () => {
     expect(mockAddNotification).toHaveBeenCalledWith('Failed to rename branch', 'rename failed');
   });
 
+  describe('reorderFork', () => {
+    it('reorders forks and persists to DB', async () => {
+      useTopicStore.setState({
+        topics: [
+          createTopic({
+            id: 't1',
+            activeForkId: 'main',
+            forks: [
+              { id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' },
+              { id: 'fork-2', name: 'Fork 2', createdOn: '2024-01-02T00:00:00.000Z' },
+              { id: 'fork-3', name: 'Fork 3', createdOn: '2024-01-03T00:00:00.000Z' },
+            ],
+          }),
+        ],
+      });
+
+      await useTopicStore.getState().reorderFork('t1', 0, 2);
+
+      expect(mockTopicsUpdate).toHaveBeenCalledTimes(1);
+      expect(mockTopicsUpdate.mock.calls[0][0]).toBe('t1');
+
+      const updateArg = mockTopicsUpdate.mock.calls[0][1];
+      expect(updateArg.forks?.map((f) => f.id)).toEqual(['fork-2', 'fork-3', 'main']);
+
+      const updated = useTopicStore.getState().topics.find((t) => t.id === 't1');
+      expect(updated?.forks?.map((f) => f.id)).toEqual(['fork-2', 'fork-3', 'main']);
+    });
+
+    it('does nothing when fromIndex equals toIndex', async () => {
+      useTopicStore.setState({
+        topics: [
+          createTopic({
+            id: 't1',
+            activeForkId: 'main',
+            forks: [
+              { id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' },
+              { id: 'fork-2', name: 'Fork 2', createdOn: '2024-01-02T00:00:00.000Z' },
+            ],
+          }),
+        ],
+      });
+
+      await useTopicStore.getState().reorderFork('t1', 0, 0);
+
+      expect(mockTopicsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when topic has only one fork', async () => {
+      useTopicStore.setState({
+        topics: [
+          createTopic({
+            id: 't1',
+            activeForkId: 'main',
+            forks: [{ id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' }],
+          }),
+        ],
+      });
+
+      await useTopicStore.getState().reorderFork('t1', 0, 0);
+
+      expect(mockTopicsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when topic not found', async () => {
+      useTopicStore.setState({ topics: [] });
+
+      await useTopicStore.getState().reorderFork('missing', 0, 3);
+
+      expect(mockTopicsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for out-of-bounds indices', async () => {
+      useTopicStore.setState({
+        topics: [
+          createTopic({
+            id: 't1',
+            activeForkId: 'main',
+            forks: [
+              { id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' },
+              { id: 'fork-2', name: 'Fork 2', createdOn: '2024-01-02T00:00:00.000Z' },
+            ],
+          }),
+        ],
+      });
+
+      await useTopicStore.getState().reorderFork('t1', -1, 1);
+      expect(mockTopicsUpdate).not.toHaveBeenCalled();
+
+      await useTopicStore.getState().reorderFork('t1', 0, 5);
+      expect(mockTopicsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('notifies when DB update fails', async () => {
+      useTopicStore.setState({
+        topics: [
+          createTopic({
+            id: 't1',
+            activeForkId: 'main',
+            forks: [
+              { id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' },
+              { id: 'fork-2', name: 'Fork 2', createdOn: '2024-01-02T00:00:00.000Z' },
+            ],
+          }),
+        ],
+      });
+      mockTopicsUpdate.mockRejectedValueOnce(new Error('reorder failed'));
+
+      await useTopicStore.getState().reorderFork('t1', 0, 1);
+
+      expect(mockAddNotification).toHaveBeenCalledWith('Failed to reorder branches', 'reorder failed');
+    });
+  });
+
   it('deleteTopic removes topic from store on success', async () => {
     useTopicStore.setState({
       topics: [
