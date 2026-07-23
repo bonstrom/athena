@@ -213,6 +213,21 @@ Normal paragraph text after.`;
     expect(screen.getByTestId('markdown-root')).toBeInTheDocument();
   });
 
+  it('uses overflowWrap instead of deprecated wordBreak: break-word on the wrapper', () => {
+    const { container } = render(<MarkdownWithCode>0.00001 per translation via an API</MarkdownWithCode>);
+
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper).toBeInTheDocument();
+
+    const styleTags = document.querySelectorAll('style');
+    let combinedCSS = '';
+    styleTags.forEach((tag) => {
+      combinedCSS += tag.textContent || '';
+    });
+
+    expect(combinedCSS).not.toContain('word-break:break-word');
+  });
+
   it('does not duplicate closing fence when SVG block is properly closed', () => {
     const content = `\`\`\`svg
 <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40" fill="blue" /></svg>

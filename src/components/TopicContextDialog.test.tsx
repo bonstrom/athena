@@ -92,6 +92,21 @@ describe('TopicContextDialog', () => {
     });
   });
 
+  it('uses standard word-break on content preview text, not aggressive anywhere breaking', async () => {
+    render(<TopicContextDialog open topicId="topic-1" onClose={jest.fn()} />);
+
+    await screen.findByText('Hello context');
+
+    const styleTags = document.querySelectorAll('style');
+    let combinedCSS = '';
+    styleTags.forEach((tag) => {
+      combinedCSS += tag.textContent || '';
+    });
+
+    expect(combinedCSS).not.toContain('overflow-wrap:anywhere');
+    expect(combinedCSS).not.toContain('word-break:break-word');
+  });
+
   it('loads context entries, supports copy, and closes dialog', async () => {
     const onClose = jest.fn((): void => undefined);
 
