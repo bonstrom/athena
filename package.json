@@ -51,6 +51,7 @@
   "scripts": {
     "predeploy": "CI=true react-scripts test --watchAll=false && npm run build",
     "deploy": "gh-pages -d build",
+    "prestart": "npm run prebuild",
     "start": "react-scripts start",
     "prebuild": "node -e \"const fs=require('fs');const d=new Date();const pad=n=>String(n).padStart(2,'0');fs.writeFileSync('public/build-version.txt','Deployed: '+d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()))\"",
     "build": "react-scripts build",
