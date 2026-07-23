@@ -267,12 +267,14 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     // Everything else gets a short snippet — the LLM can fetch the full content via read_messages if needed.
     // Pinned messages (includeInContext) are never truncated.
     const KEEP_FULL_COUNT = 4;
+    const retrievedSummaryIds = new Set<string>();
     const retrievalEnabled = useAuthStore.getState().messageRetrievalEnabled;
     if (retrievalEnabled) {
       base = base.map((m, idx) => {
         const isVeryRecent = idx >= base.length - KEEP_FULL_COUNT;
         if (!isVeryRecent && !m.includeInContext && (m.type === 'user' || m.type === 'assistant') && m.content.length > RAG_CONTENT_LIMIT) {
           const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
+          if (m.summary) retrievedSummaryIds.add(m.id);
           return {
             ...m,
             content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, SHORTENED_ID_LENGTH)} to reach full content]`,
@@ -333,6 +335,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
             const processedMessages = messages.map((m) => {
               if (m.content.length > RAG_CONTENT_LIMIT) {
                 const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
+                if (m.summary) retrievedSummaryIds.add(m.id);
                 return {
                   ...m,
             content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, SHORTENED_ID_LENGTH)} to reach full content]`,
@@ -407,6 +410,21 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         };
         base.push(directoryMessage);
       }
+    }
+
+    if (retrievedSummaryIds.size > 0) {
+      void (async (): Promise<void> => {
+        try {
+          for (const id of retrievedSummaryIds) {
+            const msg = await athenaDb.messages.get(id);
+            if (msg) {
+              await athenaDb.messages.update(id, { summaryReadCount: (msg.summaryReadCount ?? 0) + 1 });
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to update summary read counts:', err);
+        }
+      })();
     }
 
     if (ragMessage) {

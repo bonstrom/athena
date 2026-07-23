@@ -8,7 +8,7 @@ import AddIcon from '@mui/icons-material/Add';
 const Home: React.FC = () => {
   const navigate = useNavigate();
   const _logout = useLogout();
-  const { userName } = useAuthStore();
+  const { userName, dateFormat } = useAuthStore();
   const { topics, createTopic } = useTopicStore();
 
   const handleCreateTopic = async (): Promise<void> => {
@@ -116,7 +116,7 @@ const Home: React.FC = () => {
                   <ListItemButton component={Link} to={`/chat/${topic.id}`}>
                     <ListItemText
                       primary={topic.name || 'Untitled Conversation'}
-                      secondary={new Date(topic.updatedOn).toLocaleString()}
+                      secondary={new Date(topic.updatedOn).toLocaleString(dateFormat)}
                       primaryTypographyProps={{
                         variant: 'body2',
                         sx: {

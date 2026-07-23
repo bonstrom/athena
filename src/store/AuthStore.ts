@@ -4,8 +4,18 @@ import { PredefinedPrompt, athenaDb } from '../database/AthenaDb';
 import { DEFAULT_SCRATCHPAD_RULES } from '../constants';
 import { DEFAULT_VOICE_ID } from '../constants/voices';
 
+function getDeviceId(): string {
+  let deviceId = localStorage.getItem('analyticsDeviceId');
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem('analyticsDeviceId', deviceId);
+  }
+  return deviceId;
+}
+
 interface AuthState {
   userName: string;
+  deviceId: string;
   backupInterval: number;
   customInstructions: string;
   scratchpadRules: string;
@@ -13,6 +23,7 @@ interface AuthState {
   chatFontSize: number;
   themeMode: 'light' | 'dark';
   colorTheme: string;
+  dateFormat: 'sv-SE' | 'en-GB' | 'en-US';
   predefinedPrompts: PredefinedPrompt[];
   llmSuggestionEnabled: boolean;
   replyPredictionEnabled: boolean;
@@ -59,6 +70,7 @@ interface AuthState {
   setChatFontSize: (size: number) => void;
   setThemeMode: (mode: 'light' | 'dark') => void;
   setColorTheme: (theme: string) => void;
+  setDateFormat: (format: 'sv-SE' | 'en-GB' | 'en-US') => void;
   setPredefinedPrompts: (prompts: PredefinedPrompt[]) => void;
   addPredefinedPrompt: (prompt: PredefinedPrompt) => void;
   updatePredefinedPrompt: (prompt: PredefinedPrompt) => void;
@@ -75,6 +87,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedChatFontSize = Number(localStorage.getItem('chatFontSize') ?? '16');
   const storedThemeMode = (localStorage.getItem('themeMode') as 'light' | 'dark' | null) ?? 'dark';
   const storedColorTheme = localStorage.getItem('colorTheme') ?? 'default';
+  const storedDateFormat = (localStorage.getItem('dateFormat') as 'sv-SE' | 'en-GB' | 'en-US' | null) ?? 'sv-SE';
   const storedLlmSuggestionEnabled = localStorage.getItem('llmSuggestionEnabled') === 'true';
   const storedReplyPredictionEnabled = localStorage.getItem('replyPredictionEnabled') === 'true';
   const storedReplyPredictionModel = localStorage.getItem('replyPredictionModel') ?? 'same';
@@ -98,6 +111,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedTtsVoiceId = localStorage.getItem('ttsVoiceId') ?? DEFAULT_VOICE_ID;
   return {
     userName: userName,
+    deviceId: getDeviceId(),
     backupInterval: storedBackupInterval,
     customInstructions: storedCustomInstructions,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -106,6 +120,7 @@ export const useAuthStore = create<AuthState>((set) => {
     chatFontSize: storedChatFontSize,
     themeMode: storedThemeMode,
     colorTheme: storedColorTheme,
+    dateFormat: storedDateFormat,
     predefinedPrompts: [],
     llmSuggestionEnabled: storedLlmSuggestionEnabled,
     replyPredictionEnabled: storedReplyPredictionEnabled,
@@ -160,6 +175,7 @@ export const useAuthStore = create<AuthState>((set) => {
         chatFontSize: 16,
         themeMode: 'dark',
         colorTheme: 'default',
+        dateFormat: 'sv-SE',
         predefinedPrompts: [],
         llmSuggestionEnabled: false,
         replyPredictionEnabled: false,
@@ -285,6 +301,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setColorTheme: (theme: string): void => {
       localStorage.setItem('colorTheme', theme);
       set({ colorTheme: theme });
+    },
+    setDateFormat: (format: 'sv-SE' | 'en-GB' | 'en-US'): void => {
+      localStorage.setItem('dateFormat', format);
+      set({ dateFormat: format });
     },
     setPredefinedPrompts: (predefinedPrompts: PredefinedPrompt[]): void => {
       set({ predefinedPrompts });

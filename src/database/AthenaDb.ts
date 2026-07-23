@@ -173,6 +173,29 @@ class AthenaDatabase extends Dexie {
       predefinedPrompts: 'id, name',
       userSettings: 'id',
     });
+
+    // Version 11: add summaryReadCount field to messages (no new index needed)
+    this.version(11)
+      .stores({
+        topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+        messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+        predefinedPrompts: 'id, name',
+        userSettings: 'id',
+      })
+      .upgrade(async (trans) => {
+        try {
+          await trans
+            .table('messages')
+            .toCollection()
+            .modify((msg: Message) => {
+              if (msg.summary && msg.summaryReadCount === undefined) {
+                msg.summaryReadCount = 0;
+              }
+            });
+        } catch (err) {
+          console.error('AthenaDb v11 migration failed', err);
+        }
+      });
   }
 }
 
@@ -234,6 +257,7 @@ export interface Message {
   summary?: string;
   summaryTokens?: number;
   summaryCost?: number;
+  summaryReadCount?: number;
   rawResponse?: string;
   // Debate fields
   debateSide?: DebateSide;

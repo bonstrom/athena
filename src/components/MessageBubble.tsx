@@ -75,7 +75,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   } = useChatStore();
   const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
-  const { userName, chatFontSize, messageTruncateChars, aiSummaryEnabled } = useAuthStore();
+  const { userName, chatFontSize, messageTruncateChars, aiSummaryEnabled, dateFormat } = useAuthStore();
   const { isMobile, currentlySpeakingMessageId } = useUiStore();
 
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
@@ -279,14 +279,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 slotProps={{ paper: { sx: { p: 1.5, maxWidth: 300, userSelect: 'text' } } }}
               >
                 <Typography variant="caption" display="block">
-                  {new Intl.DateTimeFormat('sv-SE', {
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: false,
-                  }).format(new Date(message.created))}
+                  {new Date(message.created).toLocaleString(dateFormat)}
                 </Typography>
                 <Typography variant="caption" display="block">
                   {`${message.totalCost.toFixed(3)} kr`}

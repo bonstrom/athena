@@ -28,6 +28,7 @@ import {
   Cloud as CloudIcon,
   AutoAwesome as AutoAwesomeIcon,
   Storage as StorageIcon,
+  BarChart as BarChartIcon,
   Info as InfoIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../store/AuthStore';
@@ -42,6 +43,7 @@ import { ENGLISH_VOICES } from '../constants/voices';
 import ThemeSelector from '../components/ThemeSelector';
 import ImportDialog from '../components/ImportDialog';
 import { ProviderCard, AddProviderCard } from '../components/ProviderCard';
+import Analytics from '../components/Analytics';
 import { PredefinedPrompt } from '../database/AthenaDb';
 import { athenaDb } from '../database/AthenaDb';
 
@@ -121,6 +123,8 @@ const Settings: React.FC = () => {
     ttsVoiceId,
     setTtsEnabled,
     setTtsVoiceId,
+    dateFormat,
+    setDateFormat,
   } = useAuthStore();
 
   const { providers } = useProviderStore();
@@ -423,6 +427,7 @@ const Settings: React.FC = () => {
           <Tab icon={<CloudIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />} label={isMobile ? 'Providers' : 'Providers'} />
           <Tab icon={<AutoAwesomeIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />} label={isMobile ? 'AI' : 'AI Intelligence'} />
           <Tab icon={<StorageIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />} label={isMobile ? 'Data' : 'Prompts & Data'} />
+          <Tab icon={<BarChartIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />} label={isMobile ? 'Stats' : 'Analysis'} />
         </Tabs>
 
         <Box sx={{ p: { xs: 2, sm: 4 }, flexGrow: 1, overflowY: 'auto', scrollbarGutter: 'stable' }}>
@@ -447,6 +452,19 @@ const Settings: React.FC = () => {
                   Appearance
                 </Typography>
                 <ThemeSelector />
+                <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+                  <InputLabel>Date Format</InputLabel>
+                  <Select
+                    value={dateFormat}
+                    label="Date Format"
+                    onChange={(e): void => setDateFormat(e.target.value as 'sv-SE' | 'en-GB' | 'en-US')}
+                    inputProps={{ 'data-testid': 'date-format-select' } as React.InputHTMLAttributes<HTMLInputElement>}
+                  >
+                    <MenuItem value="sv-SE">YYYY-MM-DD (ISO)</MenuItem>
+                    <MenuItem value="en-GB">DD/MM/YYYY</MenuItem>
+                    <MenuItem value="en-US">MM/DD/YYYY</MenuItem>
+                  </Select>
+                </FormControl>
               </Box>
 
               <Box>
@@ -1180,6 +1198,11 @@ const Settings: React.FC = () => {
                 </Stack>
               </Box>
             </Stack>
+          </TabPanel>
+
+          {/* ── TAB 4: ANALYSIS ── */}
+          <TabPanel value={activeTab} index={4}>
+            <Analytics />
           </TabPanel>
         </Box>
       </Paper>
