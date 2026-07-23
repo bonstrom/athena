@@ -1340,6 +1340,7 @@ describe('ChatStore', () => {
       scratchpad: 'User prefers TypeScript',
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { useTopicStore } = require('../../store/TopicStore') as {
       useTopicStore: { getState: () => TopicStoreState };
     };
@@ -1471,6 +1472,7 @@ describe('ChatStore', () => {
       selectedPromptIds: ['prompt-1'],
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { useTopicStore } = require('../../store/TopicStore') as {
       useTopicStore: { getState: () => TopicStoreState };
     };
@@ -1921,6 +1923,7 @@ describe('ChatStore', () => {
       activeForkId: 'alt-fork',
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { useTopicStore } = require('../../store/TopicStore') as {
       useTopicStore: { getState: () => TopicStoreState };
     };
@@ -2432,6 +2435,7 @@ describe('ChatStore', () => {
 
     await useChatStore.getState().sendMessageStream('Existing question', 'topic-1', 'u-existing');
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     expect(mockDbUpdate).toHaveBeenCalledWith('u-existing', expect.objectContaining({ activeResponseId: expect.any(String) }));
   });
 
@@ -2446,6 +2450,7 @@ describe('ChatStore', () => {
       modelId: 'api-saved-model',
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { useTopicStore } = require('../../store/TopicStore') as {
       useTopicStore: { getState: () => TopicStoreState };
     };
@@ -2474,6 +2479,7 @@ describe('ChatStore', () => {
 
     const topicWithoutModel: Topic = createTopic({ id: 'topic-no-model', name: 'Topic without model' });
 
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { useTopicStore } = require('../../store/TopicStore') as {
       useTopicStore: { getState: () => TopicStoreState };
     };
@@ -2507,6 +2513,7 @@ describe('ChatStore', () => {
       modelId: 'non-existent-model',
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { useTopicStore } = require('../../store/TopicStore') as {
       useTopicStore: { getState: () => TopicStoreState };
     };

@@ -100,7 +100,7 @@ describe('TopicContextDialog', () => {
     const styleTags = document.querySelectorAll('style');
     let combinedCSS = '';
     styleTags.forEach((tag) => {
-      combinedCSS += tag.textContent || '';
+      combinedCSS += tag.textContent ?? '';
     });
 
     expect(combinedCSS).not.toContain('overflow-wrap:anywhere');

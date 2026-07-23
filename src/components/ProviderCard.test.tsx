@@ -287,7 +287,7 @@ describe('ProviderCard and AddProviderCard', () => {
       updateModel,
     });
 
-    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One' })} />);
+    render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One' })} />);
 
     fireEvent.click(screen.getByLabelText('Edit model'));
 

@@ -1323,7 +1323,9 @@ describe('generateMinimaxSpeech', () => {
     const { generateMinimaxSpeech } = await import('../llmService');
     await generateMinimaxSpeech('Hello', 'English_Graceful_Lady');
 
-    const callBody = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    const callBody = JSON.parse(mockFetch.mock.calls[0][1].body as string) as {
+      voice_setting: { voice_id: string; speed: number; vol: number };
+    };
     expect(callBody.voice_setting.voice_id).toBe('English_Graceful_Lady');
     expect(callBody.voice_setting.speed).toBe(1);
     expect(callBody.voice_setting.vol).toBe(1);

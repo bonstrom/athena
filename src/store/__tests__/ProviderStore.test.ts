@@ -562,7 +562,8 @@ describe('ProviderStore migrations', () => {
     const store = loadProviderStore();
     const updated = store.getState().models.find((m) => m.id === 'builtin-kimi-k2-6');
     expect(updated).toBeDefined();
-    expect(updated!.forceTemperature).toBe(1.0);
+    if (!updated) { throw new Error('Expected model to be defined'); }
+    expect(updated.forceTemperature).toBe(1.0);
   });
 
   it('adds missing built-in models to existing storage', () => {
@@ -852,13 +853,14 @@ describe('resetProvider', () => {
 
     const provider = store.getState().providers.find((p) => p.id === 'builtin-openai');
     expect(provider).toBeDefined();
-    expect(provider!.name).toBe('OpenAI');
-    expect(provider!.baseUrl).toBe('https://api.openai.com/v1/chat/completions');
-    expect(provider!.messageFormat).toBe('openai');
-    expect(provider!.supportsWebSearch).toBe(false);
-    expect(provider!.requiresReasoningFallback).toBe(false);
-    expect(provider!.payloadOverridesJson).toBe('');
-    expect(provider!.apiKeyEncrypted).toBe('pretend-encrypted-key-xyz');
+    if (!provider) { throw new Error('Expected provider to be defined'); }
+    expect(provider.name).toBe('OpenAI');
+    expect(provider.baseUrl).toBe('https://api.openai.com/v1/chat/completions');
+    expect(provider.messageFormat).toBe('openai');
+    expect(provider.supportsWebSearch).toBe(false);
+    expect(provider.requiresReasoningFallback).toBe(false);
+    expect(provider.payloadOverridesJson).toBe('');
+    expect(provider.apiKeyEncrypted).toBe('pretend-encrypted-key-xyz');
   });
 
   it('does nothing for a non-built-in provider', () => {
@@ -881,10 +883,11 @@ describe('resetProvider', () => {
 
     const provider = store.getState().providers.find((p) => p.id === 'custom-test-provider');
     expect(provider).toBeDefined();
-    expect(provider!.name).toBe('Custom Test');
-    expect(provider!.baseUrl).toBe('https://custom.example.com/v1');
-    expect(provider!.supportsWebSearch).toBe(true);
-    expect(provider!.payloadOverridesJson).toBe('{"something":1}');
+    if (!provider) { throw new Error('Expected provider to be defined'); }
+    expect(provider.name).toBe('Custom Test');
+    expect(provider.baseUrl).toBe('https://custom.example.com/v1');
+    expect(provider.supportsWebSearch).toBe(true);
+    expect(provider.payloadOverridesJson).toBe('{"something":1}');
   });
 
   it('does nothing for an unknown provider ID', () => {

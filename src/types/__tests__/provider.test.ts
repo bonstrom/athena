@@ -63,54 +63,63 @@ describe('DEFAULT_MODELS', () => {
   it('has forceTemperature 1.0 for Kimi 2.6', () => {
     const kimi26 = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-6');
     expect(kimi26).toBeDefined();
-    expect(kimi26!.forceTemperature).toBe(1.0);
+    if (!kimi26) { throw new Error('Expected kimi26 to be defined'); }
+    expect(kimi26.forceTemperature).toBe(1.0);
   });
 
   it('has forceTemperature 1.0 for Kimi 2.5', () => {
     const kimi25 = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-5');
     expect(kimi25).toBeDefined();
-    expect(kimi25!.forceTemperature).toBe(1.0);
+    if (!kimi25) { throw new Error('Expected kimi25 to be defined'); }
+    expect(kimi25.forceTemperature).toBe(1.0);
   });
 
   it('has forceTemperature 1.0 for Kimi K2 Turbo Preview', () => {
     const kimiTurbo = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-turbo');
     expect(kimiTurbo).toBeDefined();
-    expect(kimiTurbo!.forceTemperature).toBe(1.0);
+    if (!kimiTurbo) { throw new Error('Expected kimiTurbo to be defined'); }
+    expect(kimiTurbo.forceTemperature).toBe(1.0);
   });
 
   it('has supportsTemperature false for Kimi 2.6 (API rejects custom temperature)', () => {
     const kimi26 = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-6');
     expect(kimi26).toBeDefined();
-    expect(kimi26!.supportsTemperature).toBe(false);
+    if (!kimi26) { throw new Error('Expected kimi26 to be defined'); }
+    expect(kimi26.supportsTemperature).toBe(false);
   });
 
   it('has supportsTemperature false for Kimi 2.5 (API rejects custom temperature)', () => {
     const kimi25 = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-5');
     expect(kimi25).toBeDefined();
-    expect(kimi25!.supportsTemperature).toBe(false);
+    if (!kimi25) { throw new Error('Expected kimi25 to be defined'); }
+    expect(kimi25.supportsTemperature).toBe(false);
   });
 
   it('has supportsTemperature false for Kimi K2 Turbo Preview (API rejects custom temperature)', () => {
     const kimiTurbo = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-turbo');
     expect(kimiTurbo).toBeDefined();
-    expect(kimiTurbo!.supportsTemperature).toBe(false);
+    if (!kimiTurbo) { throw new Error('Expected kimiTurbo to be defined'); }
+    expect(kimiTurbo.supportsTemperature).toBe(false);
   });
 
   it('has forceTemperature 1.0 for Kimi 2.7 Code', () => {
     const kimi27Code = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-7-code');
     expect(kimi27Code).toBeDefined();
-    expect(kimi27Code!.forceTemperature).toBe(1.0);
+    if (!kimi27Code) { throw new Error('Expected kimi27Code to be defined'); }
+    expect(kimi27Code.forceTemperature).toBe(1.0);
   });
 
   it('has supportsTemperature false for Kimi 2.7 Code (API rejects custom temperature)', () => {
     const kimi27Code = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k2-7-code');
     expect(kimi27Code).toBeDefined();
-    expect(kimi27Code!.supportsTemperature).toBe(false);
+    if (!kimi27Code) { throw new Error('Expected kimi27Code to be defined'); }
+    expect(kimi27Code.supportsTemperature).toBe(false);
   });
 
   it('has supportsTemperature false for Kimi v1 8k (API rejects custom temperature)', () => {
     const kimiV1 = DEFAULT_MODELS.find((m) => m.id === 'builtin-moonshot-v1-8k');
     expect(kimiV1).toBeDefined();
-    expect(kimiV1!.supportsTemperature).toBe(false);
+    if (!kimiV1) { throw new Error('Expected kimiV1 to be defined'); }
+    expect(kimiV1.supportsTemperature).toBe(false);
   });
 });
