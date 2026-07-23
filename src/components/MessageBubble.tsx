@@ -626,7 +626,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     overflowX: 'auto',
                   }}
                 >
-                  {JSON.stringify(JSON.parse(message.rawResponse) as unknown, null, 2)}
+                  {/* eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- IIFE in render */}
+                  {(() => {
+                    try {
+                      return JSON.stringify(JSON.parse(message.rawResponse) as unknown, null, 2);
+                    } catch {
+                      return message.rawResponse || 'Unable to parse raw response';
+                    }
+                  })()}
                 </Box>
               ) : (
                 <MarkdownWithCode fontSize={chatFontSize} disableMermaid={isLong && !isExpanded}>{displayContent}</MarkdownWithCode>

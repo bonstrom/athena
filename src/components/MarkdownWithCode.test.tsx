@@ -222,7 +222,7 @@ Normal paragraph text after.`;
     const styleTags = document.querySelectorAll('style');
     let combinedCSS = '';
     styleTags.forEach((tag) => {
-      combinedCSS += tag.textContent || '';
+      combinedCSS += tag.textContent ?? '';
     });
 
     expect(combinedCSS).not.toContain('word-break:break-word');

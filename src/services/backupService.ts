@@ -2,6 +2,7 @@ import { exportDB, importInto } from 'dexie-export-import';
 import { athenaDb } from '../database/AthenaDb';
 import { get, set } from 'idb-keyval';
 import { useBackupStore } from '../store/BackupStore';
+import { useNotificationStore } from '../store/NotificationStore';
 
 interface FileSystemWritableFileStream extends WritableStream {
   write(data: BufferSource | Blob | string): Promise<void>;
@@ -67,6 +68,7 @@ export const BackupService = {
 
   /**
    * Imports a JSON File into the Athena database, replacing existing data.
+   * Creates an in-memory safety backup before clearing; attempts rollback on failure.
    */
   async restoreBackup(file: File): Promise<void> {
     // Validate the backup file before destroying existing data
@@ -77,11 +79,37 @@ export const BackupService = {
       throw new Error(`Backup validation failed: ${msg}`);
     }
 
+    // Create an in-memory safety backup before clearing existing data
+    let safetyBackup: Blob | null = null;
     try {
-      // Use importInto with clearTablesBeforeImport instead of delete+importDB.
-      // This avoids permanently destroying the database if the import fails midway.
+      safetyBackup = await exportDB(athenaDb, { prettyJson: true });
+    } catch {
+      // If we can't export, proceed anyway — data is already at risk
+    }
+
+    try {
       await importInto(athenaDb, file, { overwriteValues: true, clearTablesBeforeImport: true });
     } catch (error) {
+      // Attempt to restore from safety backup
+      if (safetyBackup) {
+        try {
+          await importInto(athenaDb, safetyBackup, { overwriteValues: true, clearTablesBeforeImport: true });
+          useNotificationStore.getState().addNotification(
+            'Import failed. Your previous data has been restored from a safety backup.',
+          );
+        } catch (rollbackError) {
+          useNotificationStore.getState().addNotification(
+            'Import failed and safety backup restoration also failed. Some data may have been lost.',
+          );
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Failed to restore safety backup after failed import', rollbackError);
+          }
+        }
+      } else {
+        useNotificationStore.getState().addNotification(
+          'Import failed. A safety backup could not be created. Please reload the page.',
+        );
+      }
       if (process.env.NODE_ENV === 'development') {
         console.error('Failed to restore database', error);
       }

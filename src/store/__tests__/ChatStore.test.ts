@@ -67,6 +67,7 @@ const mockGetAvailableModels = jest.fn<UserChatModel[], []>();
 
 const mockDbGet = jest.fn<Promise<Message | undefined>, [string]>();
 const mockDbAdd = jest.fn<Promise<string>, [Message]>();
+const mockDbPut = jest.fn<Promise<string>, [Message]>();
 const mockDbBulkGet = jest.fn<Promise<(Message | undefined)[]>, [string[]]>();
 const mockDbBulkAdd = jest.fn<Promise<unknown>, [Message[]]>();
 const mockDbUpdate = jest.fn<Promise<number>, [string, Partial<Message>]>();
@@ -159,6 +160,7 @@ jest.mock('../../database/AthenaDb', () => ({
     messages: {
       get: (...args: [string]): Promise<Message | undefined> => mockDbGet(...args),
       add: (...args: [Message]): Promise<string> => mockDbAdd(...args),
+      put: (...args: [Message]): Promise<string> => mockDbPut(...args),
       bulkGet: (...args: [string[]]): Promise<(Message | undefined)[]> => mockDbBulkGet(...args),
       bulkAdd: (...args: [Message[]]): Promise<unknown> => mockDbBulkAdd(...args),
       update: (...args: [string, Partial<Message>]): Promise<number> => mockDbUpdate(...args),
@@ -228,6 +230,7 @@ describe('ChatStore', () => {
       await callback();
     });
     mockDbAdd.mockResolvedValue('ok');
+    mockDbPut.mockResolvedValue('ok');
     mockDbBulkGet.mockResolvedValue([]);
     mockDbBulkAdd.mockResolvedValue(undefined);
     mockDbUpdate.mockResolvedValue(1);
@@ -492,12 +495,12 @@ describe('ChatStore', () => {
 
     await useChatStore.getState().addMessage(message);
 
-    expect(mockDbAdd).toHaveBeenCalledWith(message);
+    expect(mockDbPut).toHaveBeenCalledWith(message);
     const messages = useChatStore.getState().messagesByTopic['topic-1'] ?? [];
     expect(messages).toContainEqual(message);
   });
 
-  it('addMessage does not re-add an existing message', async () => {
+  it('addMessage overwrites an existing message via put', async () => {
     const message: Message = {
       id: 'msg-dup',
       topicId: 'topic-1',
@@ -513,11 +516,11 @@ describe('ChatStore', () => {
       totalCost: 0,
     };
 
-    mockDbGet.mockResolvedValue(message);
+    mockDbPut.mockResolvedValue('ok');
 
     await useChatStore.getState().addMessage(message);
 
-    expect(mockDbAdd).not.toHaveBeenCalled();
+    expect(mockDbPut).toHaveBeenCalledWith(message);
   });
 
   it('addMessages adds multiple messages and deduplicates existing ones', async () => {
@@ -2092,6 +2095,42 @@ describe('ChatStore', () => {
 
     expect(useChatStore.getState().sending).toBe(false);
     expect(useChatStore.getState().abortController).toBeNull();
+  });
+
+  it('sendMessageStream handles AbortError during image generation', async () => {
+    useChatStore.setState({ imageGenerationEnabled: true });
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { generateImage } = require('../../services/mediaService') as {
+      generateImage: jest.Mock<Promise<{ content: string; attachment: object; model: string }>, [string, AbortSignal]>;
+    };
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    generateImage.mockRejectedValueOnce(abortError);
+
+    await useChatStore.getState().sendMessageStream('Generate an image', 'topic-1');
+
+    const assistant = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant');
+    expect(assistant?.failed).toBe(false);
+    expect(useChatStore.getState().sending).toBe(false);
+  });
+
+  it('sendMessageStream handles AbortError during music generation', async () => {
+    useChatStore.setState({ musicGenerationEnabled: true });
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { generateMusic } = require('../../services/mediaService') as {
+      generateMusic: jest.Mock<Promise<{ content: string; attachment: object; model: string }>, [string, AbortSignal]>;
+    };
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    generateMusic.mockRejectedValueOnce(abortError);
+
+    await useChatStore.getState().sendMessageStream('Generate music', 'topic-1');
+
+    const assistant = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant');
+    expect(assistant?.failed).toBe(false);
+    expect(useChatStore.getState().sending).toBe(false);
   });
 
   it('sendMessageStream handles reply prediction with cloud model', async () => {

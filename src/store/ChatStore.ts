@@ -426,18 +426,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   addMessage: async (message: Message): Promise<void> => {
-    const { topicId, id } = message;
+    const { topicId } = message;
 
-    const existing = await athenaDb.messages.get(id);
-    if (existing) return;
-
-    await athenaDb.messages.add(message);
+    await athenaDb.messages.put(message);
 
     // Fire-and-forget embedding
     if (embeddingService.isReady && message.content.trim()) {
       void embeddingService
         .generateEmbedding(message.content)
-        .then((vector) => athenaDb.messages.update(id, { embedding: vector }))
+        .then((vector) => athenaDb.messages.update(message.id, { embedding: vector }))
         .catch((err: unknown) => {
           console.warn('Failed to generate embedding for message:', err);
         });
@@ -455,7 +452,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
 
     // Fire-and-forget summarization
-    void get().maybeSummarize(id, message.content);
+    void get().maybeSummarize(message.id, message.content);
   },
 
   addMessages: async (messages: Message[]): Promise<void> => {
@@ -751,6 +748,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ]);
         void topicStoreState.generateTopicName(topicId, content);
       } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
+        }
         console.error('Image generation failed:', err);
         const errorPatch = { content: `Error: ${err instanceof Error ? err.message : String(err)}`, failed: true };
         await athenaDb.messages.update(assistantId, errorPatch);
@@ -807,6 +807,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ]);
         void topicStoreState.generateTopicName(topicId, content);
       } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
+        }
         console.error('Music generation failed:', err);
         const errorPatch = { content: `Error: ${err instanceof Error ? err.message : String(err)}`, failed: true };
         await athenaDb.messages.update(assistantId, errorPatch);
@@ -1070,20 +1073,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (totalPromptTokens === 0) console.warn('[verify:chat] promptTokens is 0 — possible usage tracking issue');
       if (totalCompletionTokens === 0) console.warn('[verify:chat] completionTokens is 0 — possible usage tracking issue');
       if (finalTotalCost <= 0) console.warn('[verify:chat] Calculated cost is 0 — model:', effectiveModel.id);
-      console.debug(
-        '[verify:chat] model=%s prompt=%d completion=%d cost=%f latency=%dms context_messages=%d',
-        effectiveModel.id,
-        totalPromptTokens,
-        totalCompletionTokens,
-        finalTotalCost,
-        Date.now() - loopStartTime,
-        llmContext.length,
-      );
 
       // ── Fallback: detect inline clarification questions when ask_user tool wasn't called ──
       const askUserWasCalled = get().pendingUserQuestion != null;
       if (useAuthStore.getState().askUserEnabled && !askUserWasCalled && looksLikeClarificationQuestion(finalContent)) {
-        console.debug('[ask_user:fallback] Detected inline clarification question — activating answer mode');
         const capturedTopicId = topicId;
         set({
           pendingUserQuestion: {
@@ -1252,13 +1245,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               if (!jsonMatch) console.warn('[verify:replies] Failed to parse JSON array from response:', raw.slice(0, 200));
               else if (!suggestions || suggestions.length === 0)
                 console.warn('[verify:replies] Parsed JSON but got 0 suggestions:', raw.slice(0, 200));
-              else if (suggestions.length < 3) console.warn('[verify:replies] Expected 3 suggestions, got %d', suggestions.length);
-              console.debug(
-                '[verify:replies] model=%s prompt_tokens=%d context_messages=%d',
-                targetModel.id,
-                result.promptTokens,
-                suggestionContext.length,
-              );
+              else               if (suggestions.length < 3) console.warn('[verify:replies] Expected 3 suggestions, got %d', suggestions.length);
             }
 
             if (suggestions && suggestions.length > 0) {
@@ -1432,11 +1419,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             summaryWordLimit,
             rawSummary,
           );
-        if (useCacheContext) {
-          console.debug('[verify:summary] Cache path — prompt_tokens=%d context_messages=%d', result.promptTokens, messages.length);
-        } else {
-          console.debug('[verify:summary] Standalone path — prompt_tokens=%d', result.promptTokens);
-        }
+
       }
 
       if (rawSummary.trim()) {

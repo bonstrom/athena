@@ -21,6 +21,7 @@ class AthenaDatabase extends Dexie {
         messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext',
       })
       .upgrade(async (trans) => {
+        try {
         const DEFAULT_FORK_ID = 'main';
 
         // Migrate topics
@@ -49,6 +50,9 @@ class AthenaDatabase extends Dexie {
               message.forkId = DEFAULT_FORK_ID;
             }
           });
+        } catch (err) {
+          console.error('AthenaDb v2 migration failed', err);
+        }
       });
 
     // Version 3 was never shipped; this stub ensures a clean upgrade path
@@ -68,6 +72,7 @@ class AthenaDatabase extends Dexie {
         messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
       })
       .upgrade(async (trans) => {
+        try {
         const allMessages = (await trans.table('messages').toArray()) as Message[];
 
         // Sort by topic and created time
@@ -92,6 +97,9 @@ class AthenaDatabase extends Dexie {
 
         for (const update of updates) {
           await trans.table('messages').update(update.id, { parentMessageId: update.parentMessageId });
+        }
+        } catch (err) {
+          console.error('AthenaDb v5 migration failed', err);
         }
       });
 
@@ -128,6 +136,7 @@ class AthenaDatabase extends Dexie {
         userSettings: 'id',
       })
       .upgrade(async (trans) => {
+        try {
         const allMessages = (await trans.table('messages').toArray()) as Message[];
 
         // Find the last (most recent) assistant message per topic that has a model
@@ -151,6 +160,9 @@ class AthenaDatabase extends Dexie {
           if (modelId && !topic.modelId) {
             await trans.table('topics').update(topic.id, { modelId });
           }
+        }
+        } catch (err) {
+          console.error('AthenaDb v9 migration failed', err);
         }
       });
   }

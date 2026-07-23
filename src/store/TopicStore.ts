@@ -9,6 +9,15 @@ import { embeddingService, ScoredMessage } from '../services/embeddingService';
 import { getDefaultTopicNameModel } from '../components/ModelSelector';
 import { SHORTENED_ID_LENGTH, SCRATCHPAD_LIMIT, RAG_TOP_K, RAG_MIN_SCORE, RAG_MAX_CHARS, RAG_CONTENT_LIMIT } from '../constants';
 
+function updateTopicAndSort(topics: Topic[], id: string, patch: Partial<Topic>, now: string): Topic[] {
+  const idx = topics.findIndex((t) => t.id === id);
+  if (idx < 0) return topics;
+  const updated = { ...topics[idx], ...patch, updatedOn: now };
+  const next = topics.slice();
+  next.splice(idx, 1, updated);
+  return next.sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime());
+}
+
 interface TopicState {
   topics: Topic[];
   loading: boolean;
@@ -130,9 +139,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       const now = new Date().toISOString();
       await athenaDb.topics.update(id, { name, updatedOn: now });
       set((state) => ({
-        topics: state.topics
-          .map((t) => (t.id === id ? { ...t, name, updatedOn: now } : t))
-          .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
+        topics: updateTopicAndSort(state.topics, id, { name }, now),
       }));
     } catch (err) {
       console.error('Failed to rename topic', err);
@@ -146,9 +153,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       const now = new Date().toISOString();
       await athenaDb.topics.update(id, { scratchpad, updatedOn: now });
       set((state) => ({
-        topics: state.topics
-          .map((t) => (t.id === id ? { ...t, scratchpad, updatedOn: now } : t))
-          .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
+        topics: updateTopicAndSort(state.topics, id, { scratchpad }, now),
       }));
     } catch (err) {
       console.error('Failed to update topic scratchpad', err);
@@ -162,9 +167,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       const now = new Date().toISOString();
       await athenaDb.topics.update(id, { updatedOn: now });
       set((state) => ({
-        topics: state.topics
-          .map((t) => (t.id === id ? { ...t, updatedOn: now } : t))
-          .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
+        topics: updateTopicAndSort(state.topics, id, {}, now),
       }));
     } catch (err) {
       console.error('Failed to update topic timestamp', err);
@@ -228,7 +231,8 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       }
     }
 
-    const defaultMessages = useAuthStore.getState().defaultMaxContextMessages || 10;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive against runtime falsy values
+    const defaultMessages = useAuthStore.getState().defaultMaxContextMessages ?? 10;
     const maxMessages = topic.maxContextMessages ?? defaultMessages;
     const userTokenBudget = useAuthStore.getState().maxContextTokens;
     const contextWindowRatio = useAuthStore.getState().contextWindowRatio;
@@ -421,9 +425,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     const now = new Date().toISOString();
     await athenaDb.topics.update(topicId, { updatedOn: now });
     set((state) => ({
-      topics: state.topics
-        .map((t) => (t.id === topicId ? { ...t, updatedOn: now } : t))
-        .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
+      topics: updateTopicAndSort(state.topics, topicId, {}, now),
     }));
 
     if (topic.name !== 'New Topic' && topic.name !== 'New Debate') return;
@@ -461,7 +463,6 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       // ── Verification: Topic name ──
       if (!name) console.warn('[verify:topic-name] LLM returned empty topic name for topic:', topicId);
       else if (name.split(/\s+/).length > 8) console.warn('[verify:topic-name] Name too long (%d words):', name.split(/\s+/).length, name);
-      console.debug('[verify:topic-name] model=%s name="%s" prompt_tokens=%d', model.id, name, result.promptTokens);
 
       if (name) {
         await renameTopic(topicId, name);
@@ -598,9 +599,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       //    safely calls fetchMessages with data already present in the DB.
       const now = new Date().toISOString();
       set((state) => ({
-        topics: state.topics
-          .map((t) => (t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newForkId, updatedOn: now } : t))
-          .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
+        topics: updateTopicAndSort(state.topics, topicId, { forks: updatedForks, activeForkId: newForkId }, now),
       }));
     } catch (err) {
       console.error('Failed to fork topic', err);
@@ -630,9 +629,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       });
 
       set((state) => ({
-        topics: state.topics
-          .map((t) => (t.id === topicId ? { ...t, forks: updatedForks, activeForkId: newActiveForkId, updatedOn: now } : t))
-          .sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime()),
+        topics: updateTopicAndSort(state.topics, topicId, { forks: updatedForks, activeForkId: newActiveForkId }, now),
       }));
 
       // Delete messages unique to this fork

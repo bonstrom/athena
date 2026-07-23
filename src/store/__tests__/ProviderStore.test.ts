@@ -19,6 +19,26 @@ interface ProviderStoreState {
   resetProvider: (providerId: string) => void;
 }
 
+const mockAddNotification = jest.fn<undefined, [string, string | undefined]>();
+const mockRemoveNotification = jest.fn<undefined, [string]>();
+
+jest.mock('../../store/NotificationStore', () => ({
+  useNotificationStore: Object.assign(
+    jest.fn(() => ({
+      notifications: [],
+      addNotification: mockAddNotification,
+      removeNotification: mockRemoveNotification,
+    })),
+    {
+      getState: () => ({
+        notifications: [],
+        addNotification: mockAddNotification,
+        removeNotification: mockRemoveNotification,
+      }),
+    },
+  ),
+}));
+
 interface ProviderStoreLike {
   getState: () => ProviderStoreState;
 }
@@ -895,5 +915,246 @@ describe('resetProvider', () => {
     const initialCount = store.getState().providers.length;
     store.getState().resetProvider('nonexistent-id');
     expect(store.getState().providers).toHaveLength(initialCount);
+  });
+});
+
+describe('ProviderStore — localStorage resilience', () => {
+  let originalSetItem: (key: string, value: string) => void;
+  let originalGetItem: (key: string) => string | null;
+  let originalRemoveItem: (key: string) => void;
+
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    localStorage.clear();
+    mockAddNotification.mockReset();
+    originalSetItem = Storage.prototype.setItem.bind(localStorage);
+    originalGetItem = Storage.prototype.getItem.bind(localStorage);
+    originalRemoveItem = Storage.prototype.removeItem.bind(localStorage);
+  });
+
+  afterEach(() => {
+    Storage.prototype.setItem = originalSetItem;
+    Storage.prototype.getItem = originalGetItem;
+    Storage.prototype.removeItem = originalRemoveItem;
+  });
+
+  it('surfaces a notification when saveProviders fails due to quota exceeded', () => {
+    Storage.prototype.setItem = jest.fn((): void => {
+      throw new Error('QuotaExceededError');
+    });
+
+    const store = loadProviderStore();
+
+    const newProvider: LlmProvider = {
+      id: 'custom-quota',
+      name: 'Custom Quota Test',
+      baseUrl: 'https://api.example.com/v1',
+      messageFormat: 'openai',
+      apiKeyEncrypted: '',
+      supportsWebSearch: false,
+      requiresReasoningFallback: false,
+      payloadOverridesJson: '',
+      isBuiltIn: false,
+    };
+
+    store.getState().addProvider(newProvider);
+
+    expect(mockAddNotification).toHaveBeenCalledWith('Storage is full — your latest changes were not saved.');
+    expect(store.getState().providers.some((p) => p.id === 'custom-quota')).toBe(true);
+  });
+
+  it('surfaces a notification when saveModels fails due to quota exceeded', () => {
+    Storage.prototype.setItem = jest.fn((): void => {
+      throw new Error('QuotaExceededError');
+    });
+
+    const store = loadProviderStore();
+
+    const newModel: UserChatModel = {
+      id: 'custom-quota-model',
+      label: 'Custom Quota Model',
+      apiModelId: 'quota-model',
+      providerId: 'builtin-openai',
+      input: 0,
+      cachedInput: 0,
+      output: 0,
+      streaming: true,
+      supportsTemperature: true,
+      supportsTools: true,
+      supportsVision: false,
+      supportsFiles: false,
+      supportsThinking: false,
+      contextWindow: 8192,
+      forceTemperature: null,
+      enforceAlternatingRoles: false,
+      maxTokensOverride: null,
+      isBuiltIn: false,
+      enabled: true,
+    };
+
+    store.getState().addModel(newModel);
+
+    expect(mockAddNotification).toHaveBeenCalledWith('Storage is full — your latest changes were not saved.');
+    expect(store.getState().models.some((m) => m.id === 'custom-quota-model')).toBe(true);
+  });
+
+  it('surfaces a notification when setProviderKey fails due to quota exceeded', () => {
+    const store = loadProviderStore();
+
+    Storage.prototype.setItem = jest.fn((): void => {
+      throw new Error('QuotaExceededError');
+    });
+
+    store.getState().setProviderKey('builtin-openai', 'test-key');
+
+    expect(mockAddNotification).toHaveBeenCalledWith('Storage is full — your latest changes were not saved.');
+  });
+
+  it('initStore returns defaults when localStorage.getItem throws (unavailable storage)', () => {
+    Storage.prototype.getItem = jest.fn((): null => {
+      throw new Error('SecurityError: Access denied');
+    });
+    Storage.prototype.setItem = jest.fn();
+
+    const store = loadProviderStore();
+
+    expect(store.getState().providers.length).toBeGreaterThan(0);
+    expect(store.getState().models.length).toBeGreaterThan(0);
+  });
+
+  it('deleteProvider handles selected_model fallback when setItem throws', () => {
+    const store = loadProviderStore();
+    const state = store.getState();
+
+    const selectedOpenAiModel = state.models.find((m) => m.providerId === 'builtin-openai');
+    if (!selectedOpenAiModel) {
+      throw new Error('Expected at least one OpenAI model in defaults');
+    }
+    localStorage.setItem('athena_selected_model', selectedOpenAiModel.id);
+
+    Storage.prototype.setItem = jest.fn((): void => {
+      throw new Error('QuotaExceededError');
+    });
+    Storage.prototype.removeItem = jest.fn();
+
+    store.getState().deleteProvider('builtin-openai');
+
+    const remainingModels = store.getState().models;
+    expect(remainingModels.some((m) => m.providerId === 'builtin-openai')).toBe(false);
+  });
+
+  it('deleteProvider removes selected_model key when no models remain and removeItem throws', () => {
+    const store = loadProviderStore();
+    const initialModel = store.getState().models[0] as UserChatModel | undefined;
+    if (initialModel) {
+      localStorage.setItem('athena_selected_model', initialModel.id);
+    }
+
+    Storage.prototype.setItem = jest.fn((): void => {
+      throw new Error('QuotaExceededError');
+    });
+    Storage.prototype.removeItem = jest.fn((): void => {
+      throw new Error('QuotaExceededError');
+    });
+
+    const providerIds = store.getState().providers.map((p) => p.id);
+    for (const id of providerIds) {
+      store.getState().deleteProvider(id);
+    }
+
+    expect(store.getState().models).toHaveLength(0);
+  });
+
+  it('initStore handles DeepSeek V4 migration when setItem throws', () => {
+    localStorage.setItem('athena_selected_model', 'builtin-deepseek-chat');
+    localStorage.setItem(
+      'athena_providers',
+      JSON.stringify([
+        {
+          id: 'builtin-deepseek',
+          name: 'DeepSeek',
+          baseUrl: 'https://api.deepseek.com/v1/chat/completions',
+          messageFormat: 'openai',
+          apiKeyEncrypted: '',
+          supportsWebSearch: false,
+          requiresReasoningFallback: false,
+          payloadOverridesJson: '',
+          isBuiltIn: true,
+        },
+      ]),
+    );
+
+    Storage.prototype.setItem = jest.fn((): void => {
+      throw new Error('QuotaExceededError');
+    });
+
+    const store = loadProviderStore();
+    expect(store.getState().models.length).toBeGreaterThan(0);
+  });
+});
+
+describe('ProviderStore — input validation', () => {
+  beforeEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+    localStorage.clear();
+    mockAddNotification.mockReset();
+  });
+
+  const validProvider: LlmProvider = {
+    id: 'custom-valid',
+    name: 'Valid Provider',
+    baseUrl: 'https://api.example.com/v1/chat/completions',
+    messageFormat: 'openai',
+    apiKeyEncrypted: '',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: false,
+  };
+
+  it('addProvider accepts a valid provider', () => {
+    const store = loadProviderStore();
+    store.getState().addProvider(validProvider);
+    expect(store.getState().providers.some((p) => p.id === 'custom-valid')).toBe(true);
+  });
+
+  it('addProvider rejects empty trimmed name', () => {
+    const store = loadProviderStore();
+    expect(() => store.getState().addProvider({ ...validProvider, name: '   ' })).toThrow('Provider name is required.');
+  });
+
+  it('addProvider rejects empty baseUrl', () => {
+    const store = loadProviderStore();
+    expect(() => store.getState().addProvider({ ...validProvider, baseUrl: '' })).toThrow('Provider base URL is required.');
+  });
+
+  it('addProvider rejects invalid URL format', () => {
+    const store = loadProviderStore();
+    expect(() => store.getState().addProvider({ ...validProvider, baseUrl: 'not-a-url' })).toThrow(
+      'Provider base URL is not a valid URL.',
+    );
+  });
+
+  it('addProvider rejects invalid messageFormat', () => {
+    const store = loadProviderStore();
+    expect(() => store.getState().addProvider({ ...validProvider, messageFormat: 'invalid' as 'openai' })).toThrow(
+      'Provider message format must be "openai" or "anthropic".',
+    );
+  });
+
+  it('addProvider accepts anthropic messageFormat', () => {
+    const store = loadProviderStore();
+    store.getState().addProvider({ ...validProvider, messageFormat: 'anthropic' });
+    expect(store.getState().providers.some((p) => p.id === 'custom-valid')).toBe(true);
+  });
+
+  it('updateProvider applies the same validation', () => {
+    const store = loadProviderStore();
+    // First add a valid provider that we can then try to update
+    store.getState().addProvider(validProvider);
+
+    expect(() => store.getState().updateProvider({ ...validProvider, name: '' })).toThrow('Provider name is required.');
   });
 });

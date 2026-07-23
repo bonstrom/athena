@@ -1,6 +1,6 @@
 export {};
 const mockExportDB = jest.fn<Promise<Blob>, [unknown, { prettyJson: boolean }]>();
-const mockImportInto = jest.fn<Promise<void>, [unknown, File, { overwriteValues: boolean; clearTablesBeforeImport: boolean }]>();
+const mockImportInto = jest.fn<Promise<void>, [unknown, File | Blob, { overwriteValues: boolean; clearTablesBeforeImport: boolean }]>();
 const mockGet = jest.fn<Promise<unknown>, [string]>();
 const mockSet = jest.fn<Promise<void>, [string, unknown]>();
 
@@ -8,9 +8,11 @@ const mockSetStatus: jest.MockedFunction<(status: string) => void> = jest.fn();
 const mockSetLastBackupTime: jest.MockedFunction<(time: string) => void> = jest.fn();
 const mockSetErrorMessage: jest.MockedFunction<(message: string | null) => void> = jest.fn();
 
+const mockAddNotification = jest.fn<undefined, [string, string | undefined]>();
+
 jest.mock('dexie-export-import', () => ({
   exportDB: (...args: [unknown, { prettyJson: boolean }]): Promise<Blob> => mockExportDB(...args),
-  importInto: (...args: [unknown, File, { overwriteValues: boolean; clearTablesBeforeImport: boolean }]): Promise<void> => mockImportInto(...args),
+  importInto: (...args: [unknown, File | Blob, { overwriteValues: boolean; clearTablesBeforeImport: boolean }]): Promise<void> => mockImportInto(...args),
 }));
 
 jest.mock('idb-keyval', () => ({
@@ -34,6 +36,16 @@ jest.mock('../../store/BackupStore', () => ({
       setLastBackupTime: mockSetLastBackupTime,
       setErrorMessage: mockSetErrorMessage,
       backupMode: 'external',
+    }),
+  },
+}));
+
+jest.mock('../../store/NotificationStore', () => ({
+  useNotificationStore: {
+    getState: (): {
+      addNotification: (title: string, message?: string) => void;
+    } => ({
+      addNotification: mockAddNotification,
     }),
   },
 }));
@@ -470,6 +482,7 @@ describe('BackupService download/restore/merge', () => {
 
     await service.restoreBackup(file);
 
+    expect(mockExportDB).toHaveBeenCalledWith({}, { prettyJson: true }); // safety backup
     expect(mockImportInto).toHaveBeenCalledWith({}, file, { overwriteValues: true, clearTablesBeforeImport: true });
   });
 
@@ -478,6 +491,7 @@ describe('BackupService download/restore/merge', () => {
     const file = createMockFile('invalid');
 
     await expect(service.restoreBackup(file)).rejects.toThrow('Backup validation failed');
+    expect(mockExportDB).not.toHaveBeenCalled(); // no safety backup created for invalid file
   });
 
   it('restoreBackup rethrows import errors', async () => {
@@ -486,6 +500,48 @@ describe('BackupService download/restore/merge', () => {
     const file = createMockFile(JSON.stringify({ data: { messages: [] } }));
 
     await expect(service.restoreBackup(file)).rejects.toThrow('Import crashed');
+  });
+
+  it('restoreBackup attempts safety backup rollback on import failure', async () => {
+    mockExportDB.mockResolvedValue(new Blob(['{"data":{"messages":[]}}'], { type: 'application/json' }));
+    mockImportInto.mockRejectedValueOnce(new Error('Import crashed'));
+    mockImportInto.mockResolvedValueOnce(undefined);
+
+    const service = loadBackupService();
+    const file = createMockFile(JSON.stringify({ data: { messages: [] } }));
+
+    await expect(service.restoreBackup(file)).rejects.toThrow('Import crashed');
+    expect(mockImportInto).toHaveBeenCalledTimes(2); // first import + rollback
+    expect(mockAddNotification).toHaveBeenCalledWith(
+      'Import failed. Your previous data has been restored from a safety backup.',
+    );
+  });
+
+  it('restoreBackup notifies when both import and safety backup rollback fail', async () => {
+    mockExportDB.mockResolvedValue(new Blob(['{"data":{"messages":[]}}'], { type: 'application/json' }));
+    mockImportInto.mockRejectedValue(new Error('Import crashed'));
+
+    const service = loadBackupService();
+    const file = createMockFile(JSON.stringify({ data: { messages: [] } }));
+
+    await expect(service.restoreBackup(file)).rejects.toThrow('Import crashed');
+    expect(mockImportInto).toHaveBeenCalledTimes(2); // first import + failed rollback
+    expect(mockAddNotification).toHaveBeenCalledWith(
+      'Import failed and safety backup restoration also failed. Some data may have been lost.',
+    );
+  });
+
+  it('restoreBackup notifies when safety backup cannot be created', async () => {
+    mockExportDB.mockRejectedValueOnce(new Error('Export failed')); // safety backup creation fails
+    mockImportInto.mockRejectedValueOnce(new Error('Import crashed'));
+
+    const service = loadBackupService();
+    const file = createMockFile(JSON.stringify({ data: { messages: [] } }));
+
+    await expect(service.restoreBackup(file)).rejects.toThrow('Import crashed');
+    expect(mockAddNotification).toHaveBeenCalledWith(
+      'Import failed. A safety backup could not be created. Please reload the page.',
+    );
   });
 
   it('createPreImportBackup exports with timestamped filename', async () => {

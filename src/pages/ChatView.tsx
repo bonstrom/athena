@@ -16,7 +16,7 @@ const ChatView: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const { chatWidth, defaultMaxContextMessages } = useAuthStore();
-  const { messagesByTopic, sending, sendMessageStream, fetchMessages, pendingSuggestions, clearSuggestions, isSuggestionsLoading } = useChatStore();
+  const { messagesByTopic, sending, sendMessageStream, fetchMessages, pendingSuggestions, clearSuggestions, isSuggestionsLoading, stopSending } = useChatStore();
   const [displayTopicId, setDisplayTopicId] = useState<string | undefined>(topicId);
   const [isVisible, setIsVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,23 +27,39 @@ const ChatView: React.FC = () => {
   const messages = displayTopicId ? (messagesByTopic[displayTopicId] ?? []) : [];
 
   useEffect(() => {
+    let cancelled = false;
     setError(null);
     clearSuggestions();
 
     const fetchPromise = topicId ? fetchMessages(topicId) : Promise.resolve();
 
-    void fetchPromise.then(() => {
-      const topicStoreState = useTopicStore.getState();
-      const exists = topicId ? topicStoreState.topics.some((t) => t.id === topicId) : true;
+    void fetchPromise
+      .then(() => {
+        if (cancelled) return;
+        const topicStoreState = useTopicStore.getState();
+        const exists = topicId ? topicStoreState.topics.some((t) => t.id === topicId) : true;
 
-      if (!exists && topicStoreState.topics.length > 0) {
-        setError('Topic not found');
-      } else {
-        setDisplayTopicId(topicId);
-        setIsVisible(true);
+        if (!exists && topicStoreState.topics.length > 0) {
+          setError('Topic not found');
+        } else {
+          setDisplayTopicId(topicId);
+          setIsVisible(true);
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.error('Failed to load messages', err);
+        setError('Failed to load messages. Please try again or reload the page.');
+      });
+
+    return () => {
+      cancelled = true;
+      const chatState = useChatStore.getState();
+      if (chatState.sending) {
+        void chatState.stopSending();
       }
-    });
-  }, [fetchMessages, topicId, clearSuggestions]);
+    };
+  }, [fetchMessages, topicId, clearSuggestions, stopSending]);
 
   return (
     <Box display="flex" flexDirection="column" height="100%" width="100%" sx={{ overflow: 'hidden' }}>

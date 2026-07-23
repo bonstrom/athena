@@ -1,14 +1,42 @@
 import { create } from 'zustand';
 import { DEFAULT_MODELS, DEFAULT_PROVIDERS, LlmProvider, UserChatModel, encodeApiKey, getApiKey } from '../types/provider';
+import { useNotificationStore } from './NotificationStore';
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
 const STORAGE_KEY_PROVIDERS = 'athena_providers';
 const STORAGE_KEY_MODELS = 'athena_models';
+const STORAGE_KEY_SELECTED_MODEL = 'athena_selected_model';
+
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetItem(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    useNotificationStore.getState().addNotification('Storage is full — your latest changes were not saved.');
+    return false;
+  }
+}
+
+function safeRemoveItem(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // non-critical
+  }
+}
 
 function loadProviders(): LlmProvider[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_PROVIDERS);
+    const raw = safeGetItem(STORAGE_KEY_PROVIDERS);
     if (raw) return JSON.parse(raw) as LlmProvider[];
   } catch {
     // corrupt storage
@@ -18,7 +46,7 @@ function loadProviders(): LlmProvider[] {
 
 function loadModels(): UserChatModel[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_MODELS);
+    const raw = safeGetItem(STORAGE_KEY_MODELS);
     if (raw) return JSON.parse(raw) as UserChatModel[];
   } catch {
     // corrupt storage
@@ -27,11 +55,11 @@ function loadModels(): UserChatModel[] {
 }
 
 function saveProviders(providers: LlmProvider[]): void {
-  localStorage.setItem(STORAGE_KEY_PROVIDERS, JSON.stringify(providers));
+  safeSetItem(STORAGE_KEY_PROVIDERS, JSON.stringify(providers));
 }
 
 function saveModels(models: UserChatModel[]): void {
-  localStorage.setItem(STORAGE_KEY_MODELS, JSON.stringify(models));
+  safeSetItem(STORAGE_KEY_MODELS, JSON.stringify(models));
 }
 
 function isLocalBaseUrl(baseUrl: string): boolean {
@@ -41,6 +69,24 @@ function isLocalBaseUrl(baseUrl: string): boolean {
 
 function providerCanBeUsedWithoutKey(provider: LlmProvider): boolean {
   return isLocalBaseUrl(provider.baseUrl);
+}
+
+function validateProvider(provider: LlmProvider): void {
+  if (!provider.name.trim()) {
+    throw new Error('Provider name is required.');
+  }
+  if (!provider.baseUrl.trim()) {
+    throw new Error('Provider base URL is required.');
+  }
+  try {
+    new URL(provider.baseUrl);
+  } catch {
+    throw new Error('Provider base URL is not a valid URL.');
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- explicit validation
+  if (provider.messageFormat !== 'openai' && provider.messageFormat !== 'anthropic') {
+    throw new Error('Provider message format must be "openai" or "anthropic".');
+  }
 }
 
 // ── Seeding (first run) ───────────────────────────────────────────────────────
@@ -92,11 +138,11 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
     let modelsChanged = false;
     
     // Migration: DeepSeek V4
-    const selected = localStorage.getItem('athena_selected_model');
+    const selected = safeGetItem(STORAGE_KEY_SELECTED_MODEL);
     if (selected === 'builtin-deepseek-chat') {
-      localStorage.setItem('athena_selected_model', 'builtin-deepseek-v4-flash');
+      safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-deepseek-v4-flash');
     } else if (selected === 'builtin-deepseek-reasoner') {
-      localStorage.setItem('athena_selected_model', 'builtin-deepseek-v4-pro');
+      safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-deepseek-v4-pro');
     }
 
     const existingModelIds = new Set(models.map((m) => m.id));
@@ -201,6 +247,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   models: initialModels,
 
   addProvider: (provider: LlmProvider): void => {
+    validateProvider(provider);
     set((state) => {
       const next = [...state.providers, provider];
       saveProviders(next);
@@ -209,6 +256,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   },
 
   updateProvider: (provider: LlmProvider): void => {
+    validateProvider(provider);
     set((state) => {
       const next = state.providers.map((p) => (p.id === provider.id ? provider : p));
       saveProviders(next);
@@ -223,14 +271,14 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       const nextModels = state.models.filter((m) => m.providerId !== providerId);
 
       // If the currently persisted selection points to a removed model, fall back.
-      const selected = localStorage.getItem('athena_selected_model');
+      const selected = safeGetItem(STORAGE_KEY_SELECTED_MODEL);
       if (selected) {
         const removed = removedModels.some((m) => m.id === selected || m.apiModelId === selected);
         if (removed) {
           if (nextModels.length > 0) {
-            localStorage.setItem('athena_selected_model', nextModels[0].id);
+            safeSetItem(STORAGE_KEY_SELECTED_MODEL, nextModels[0].id);
           } else {
-            localStorage.removeItem('athena_selected_model');
+            safeRemoveItem(STORAGE_KEY_SELECTED_MODEL);
           }
         }
       }

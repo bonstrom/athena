@@ -7,6 +7,8 @@ import { estimateTokens } from './estimateTokens';
 
 export type LlmContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
+const MAX_LINE_BUFFER = 1_000_000;
+
 export interface LlmMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string | LlmContentPart[] | null;
@@ -182,8 +184,17 @@ function resolveProvider(model: ChatModel): LlmProvider {
 function resolveModelAndProvider(model: ChatModel): { model: ChatModel; provider: LlmProvider } {
   const store = useProviderStore.getState();
   const availableModels = store.getAvailableModels();
-  const resolvedModel =
-    store.models.find((m) => m.id === model.id) ?? store.models.find((m) => m.apiModelId === model.apiModelId) ?? availableModels.at(0);
+  const byId = store.models.find((m) => m.id === model.id);
+  const byApiModelId = byId ? undefined : store.models.find((m) => m.apiModelId === model.apiModelId);
+  const fallback = availableModels.at(0);
+  const resolvedModel = byId ?? byApiModelId ?? fallback;
+
+  if (resolvedModel && !byId && !byApiModelId) {
+    console.warn(
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive against runtime data
+      `Model "${model.label ?? model.id ?? model.apiModelId ?? 'unknown'}" not found; falling back to "${resolvedModel.label}".`,
+    );
+  }
 
   if (!resolvedModel) {
     throw new Error('No models are configured. Add a model in Settings.');
@@ -781,7 +792,6 @@ export async function generateMinimaxMusic(prompt: string, lyrics = '', signal?:
   }
 
   const data = (await res.json()) as { base_resp?: { status_code: number; status_msg?: string }; data?: { audio?: string }; audio?: string };
-  console.debug('[Minimax Music] API Response:', data);
 
   if (data.base_resp?.status_code !== 0) {
     throw new Error(`Minimax API Error: ${String(data.base_resp?.status_msg ?? 'Unknown error')}`);
@@ -1151,6 +1161,12 @@ export async function askLlmStream(
       const lines = (lineBuffer + chunk).split('\n');
       // The last element may be incomplete; save it for the next chunk
       lineBuffer = lines.pop() ?? '';
+
+      // Prevent unbounded growth from a stream that never emits newlines
+      if (lineBuffer.length > MAX_LINE_BUFFER) {
+        console.warn('[llmService] Line buffer exceeded 1 MB — flushing and resetting');
+        lineBuffer = '';
+      }
 
       for (const line of lines) {
         const trimmed = line.trim();

@@ -334,3 +334,61 @@ describe('AthenaDb migrations', () => {
     expect(topicUpdates).toEqual([{ id: 't1', modelId: 'gpt-5' }]);
   });
 });
+
+describe('AthenaDb migration error safety', () => {
+  beforeEach(() => {
+    jest.resetModules();
+    mockVersionRecords.clear();
+  });
+
+  it('v2 migration swallows errors and does not crash on schema load', async () => {
+    loadAthenaDbModule();
+
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation((): void => undefined);
+
+    const throwingTransaction = {
+      table: (): never => {
+        throw new Error('v2 migration data error');
+      },
+    };
+
+    await expect(getUpgradeCallback(2)(throwingTransaction)).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith('AthenaDb v2 migration failed', expect.any(Error));
+
+    errorSpy.mockRestore();
+  });
+
+  it('v5 migration swallows errors and does not crash on schema load', async () => {
+    loadAthenaDbModule();
+
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation((): void => undefined);
+
+    const throwingTransaction = {
+      table: (): never => {
+        throw new Error('v5 migration data error');
+      },
+    };
+
+    await expect(getUpgradeCallback(5)(throwingTransaction)).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith('AthenaDb v5 migration failed', expect.any(Error));
+
+    errorSpy.mockRestore();
+  });
+
+  it('v9 migration swallows errors and does not crash on schema load', async () => {
+    loadAthenaDbModule();
+
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation((): void => undefined);
+
+    const throwingTransaction = {
+      table: (): never => {
+        throw new Error('v9 migration data error');
+      },
+    };
+
+    await expect(getUpgradeCallback(9)(throwingTransaction)).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith('AthenaDb v9 migration failed', expect.any(Error));
+
+    errorSpy.mockRestore();
+  });
+});

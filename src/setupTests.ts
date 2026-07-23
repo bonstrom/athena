@@ -29,6 +29,12 @@ beforeAll(() => {
       if (args[0].includes('Failed to delete message')) {
         return;
       }
+      if (args[0].includes('Failed to fetch messages')) {
+        return;
+      }
+      if (args[0].includes('Failed to load messages')) {
+        return;
+      }
       const joined = args.map((a) => (typeof a === 'string' ? a : String(a))).join(' ');
       if (joined.includes('Not supported') || joined.includes('Auto-backup requires')) {
         return;

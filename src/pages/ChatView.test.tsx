@@ -53,9 +53,22 @@ jest.mock('../store/AuthStore', () => ({
   useAuthStore: jest.fn(),
 }));
 
-jest.mock('../store/ChatStore', () => ({
-  useChatStore: jest.fn(),
-}));
+jest.mock('../store/ChatStore', () => {
+  const getStateMock = jest.fn().mockReturnValue({ sending: false, stopSending: jest.fn() });
+  const hookFn = jest.fn(() => ({
+    messagesByTopic: {},
+    sending: false,
+    sendMessageStream: jest.fn((): Promise<void> => Promise.resolve()),
+    fetchMessages: jest.fn((): Promise<void> => Promise.resolve()),
+    pendingSuggestions: null,
+    clearSuggestions: jest.fn(),
+    isSuggestionsLoading: false,
+    stopSending: jest.fn(),
+  }));
+  return {
+    useChatStore: Object.assign(hookFn, { getState: getStateMock }),
+  };
+});
 
 jest.mock('../store/TopicStore', () => ({
   useTopicStore: Object.assign(jest.fn(), { getState: jest.fn() }),
@@ -71,6 +84,7 @@ const mockUseChatStore = useChatStore as unknown as jest.Mock<{
   pendingSuggestions: string[] | null;
   clearSuggestions: () => void;
   isSuggestionsLoading: boolean;
+  stopSending: () => void;
 }>;
 
 type UseTopicStoreMock = jest.Mock<unknown> & {
@@ -85,6 +99,12 @@ describe('ChatView page', () => {
 
     mockUseParams.mockReturnValue({ topicId: 'topic-1' });
     mockUseAuthStore.mockReturnValue({ chatWidth: 'lg', defaultMaxContextMessages: 10 });
+
+    (useChatStore as unknown as { getState: jest.Mock }).getState.mockReturnValue({
+      sending: false,
+      stopSending: jest.fn(),
+    });
+
     mockUseChatStore.mockReturnValue({
       messagesByTopic: { 'topic-1': [] },
       sending: false,
@@ -93,6 +113,7 @@ describe('ChatView page', () => {
       pendingSuggestions: ['suggested reply'],
       clearSuggestions: jest.fn(),
       isSuggestionsLoading: false,
+      stopSending: jest.fn(),
     });
 
     mockUseTopicStore.mockImplementation((selector: (state: { topics: { id: string; maxContextMessages?: number }[] }) => unknown): unknown =>
@@ -114,6 +135,7 @@ describe('ChatView page', () => {
       pendingSuggestions: ['suggested reply'],
       clearSuggestions,
       isSuggestionsLoading: false,
+      stopSending: jest.fn(),
     });
 
     render(<ChatView />);
@@ -139,11 +161,78 @@ describe('ChatView page', () => {
       pendingSuggestions: null,
       clearSuggestions: jest.fn(),
       isSuggestionsLoading: false,
+      stopSending: jest.fn(),
     });
     mockUseTopicStore.getState.mockReturnValue({ topics: [{ id: 'other-topic' }] });
 
     render(<ChatView />);
 
     expect(await screen.findByText('Topic not found')).toBeInTheDocument();
+  });
+
+  it('shows error message when fetchMessages fails', async () => {
+    const fetchMessages = jest.fn<Promise<void>, [string]>(() => Promise.reject(new Error('IndexedDB error')));
+    mockUseChatStore.mockReturnValue({
+      messagesByTopic: {},
+      sending: false,
+      sendMessageStream: jest.fn((): Promise<void> => Promise.resolve()),
+      fetchMessages,
+      pendingSuggestions: null,
+      clearSuggestions: jest.fn(),
+      isSuggestionsLoading: false,
+      stopSending: jest.fn(),
+    });
+
+    render(<ChatView />);
+
+    expect(await screen.findByText('Failed to load messages. Please try again or reload the page.')).toBeInTheDocument();
+  });
+
+  it('calls stopSending on unmount when sending is true', () => {
+    const stopSending = jest.fn();
+    (useChatStore as unknown as { getState: jest.Mock }).getState.mockReturnValue({
+      sending: true,
+      stopSending,
+    });
+
+    mockUseChatStore.mockReturnValue({
+      messagesByTopic: { 'topic-1': [] },
+      sending: true,
+      sendMessageStream: jest.fn((): Promise<void> => Promise.resolve()),
+      fetchMessages: jest.fn((): Promise<void> => Promise.resolve()),
+      pendingSuggestions: null,
+      clearSuggestions: jest.fn(),
+      isSuggestionsLoading: false,
+      stopSending,
+    });
+
+    const { unmount } = render(<ChatView />);
+    unmount();
+
+    expect(stopSending).toHaveBeenCalled();
+  });
+
+  it('does not call stopSending on unmount when not sending', () => {
+    const stopSending = jest.fn();
+    (useChatStore as unknown as { getState: jest.Mock }).getState.mockReturnValue({
+      sending: false,
+      stopSending,
+    });
+
+    mockUseChatStore.mockReturnValue({
+      messagesByTopic: { 'topic-1': [] },
+      sending: false,
+      sendMessageStream: jest.fn((): Promise<void> => Promise.resolve()),
+      fetchMessages: jest.fn((): Promise<void> => Promise.resolve()),
+      pendingSuggestions: null,
+      clearSuggestions: jest.fn(),
+      isSuggestionsLoading: false,
+      stopSending,
+    });
+
+    const { unmount } = render(<ChatView />);
+    unmount();
+
+    expect(stopSending).not.toHaveBeenCalled();
   });
 });
