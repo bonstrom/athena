@@ -222,10 +222,39 @@ Normal paragraph text after.`;
     const styleTags = document.querySelectorAll('style');
     let combinedCSS = '';
     styleTags.forEach((tag) => {
-      combinedCSS += tag.textContent ?? '';
+      combinedCSS += tag.textContent || '';
     });
 
     expect(combinedCSS).not.toContain('word-break:break-word');
+  });
+
+  it('renders text with dollar amounts without confusing them as math', () => {
+    render(<MarkdownWithCode>{'$0.00001 per translation via an API'}</MarkdownWithCode>);
+    const root = screen.getByTestId('markdown-root');
+    expect(root).toBeInTheDocument();
+    expect(root.textContent).toContain('0.00001');
+    expect(root.textContent).toContain('per translation');
+  });
+
+  it('renders intentional inline math normally', () => {
+    render(<MarkdownWithCode>{'$E = mc^2$'}</MarkdownWithCode>);
+    const root = screen.getByTestId('markdown-root');
+    expect(root).toBeInTheDocument();
+    expect(root.textContent).not.toMatch(/\\\$/);
+  });
+
+  it('preserves LaTeX commands in math mode', () => {
+    render(<MarkdownWithCode>{'$\\frac{1}{2}$'}</MarkdownWithCode>);
+    const root = screen.getByTestId('markdown-root');
+    expect(root).toBeInTheDocument();
+    expect(root.textContent).not.toMatch(/\\\$/);
+  });
+
+  it('escapes dollar-digit but may break rare math starting with a digit', () => {
+    render(<MarkdownWithCode>{'$2x + 3y = 5$'}</MarkdownWithCode>);
+    const root = screen.getByTestId('markdown-root');
+    expect(root).toBeInTheDocument();
+    expect(root.textContent).toMatch(/\\\$/);
   });
 
   it('does not duplicate closing fence when SVG block is properly closed', () => {

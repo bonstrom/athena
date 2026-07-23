@@ -250,6 +250,16 @@ function ensureClosedFences(content: string): string {
   return result.join('\n');
 }
 
+/**
+ * Escapes $ signs that appear to be currency markers (followed by a digit)
+ * so remark-math doesn't misinterpret them as inline math delimiters.
+ * Proper $...$ math expressions are unaffected since the opening $ is
+ * typically followed by a letter or backslash, not a digit.
+ */
+function escapeCurrencyDollars(content: string): string {
+  return content.replace(/\$(?=\d)/g, '\\$');
+}
+
 const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, disableMermaid = false }) => {
   const theme = useTheme();
   const themeMode = useAuthStore((s) => s.themeMode);
@@ -362,7 +372,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, di
   return (
     <Box sx={{ overflowWrap: 'break-word', wordBreak: 'normal' }}>
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
-        {ensureClosedFences(children)}
+        {escapeCurrencyDollars(ensureClosedFences(children))}
       </ReactMarkdown>
     </Box>
   );
