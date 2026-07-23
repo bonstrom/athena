@@ -329,6 +329,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     <Typography variant="caption" display="block" sx={{ fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.3 }}>
                       {message.summary}
                     </Typography>
+                    {(message.summaryTokens ?? 0) > 0 && (
+                      <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                        {`Summary cost: ${(message.summaryCost ?? 0).toFixed(3)} kr | Prompt: ${(message.summaryTokens ?? 0).toLocaleString()} tok`}
+                      </Typography>
+                    )}
                   </Box>
                 )}
               </Popover>

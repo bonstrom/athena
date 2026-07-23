@@ -1380,6 +1380,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const safeContent = fullContent.length > SUMMARY_INPUT_MAX ? fullContent.slice(0, SUMMARY_INPUT_MAX) + '... (truncated)' : fullContent;
 
       const summaryWordLimit = Math.max(15, Math.min(60, Math.floor(fullContent.length / 15)));
+      let summaryTokens = 0;
+      let summaryCost = 0;
 
       let rawSummary: string;
 
@@ -1409,6 +1411,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             ];
         const result = await askLlm(cloudModel, 0.3, messages);
         rawSummary = result.content;
+        summaryTokens = result.promptTokens + result.completionTokens;
+        summaryCost = calculateCostSEK(cloudModel, result.promptTokens, result.completionTokens, result.promptTokensDetails, getPeakMultiplier(cloudModel));
 
         // ── Verification: Summary generation ──
         if (!rawSummary.trim()) console.warn('[verify:summary] Cloud summary returned empty for message:', messageId);
@@ -1436,7 +1440,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           return;
         }
 
-        await athenaDb.messages.update(messageId, { summary: cleanSummary });
+        await athenaDb.messages.update(messageId, { summary: cleanSummary, summaryTokens, summaryCost });
 
         set((state) => {
           const { currentTopicId, messagesByTopic } = state;
@@ -1449,7 +1453,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             failedSummaryMessageIds: nextFailed,
             messagesByTopic: {
               ...messagesByTopic,
-              [currentTopicId]: (messagesByTopic[currentTopicId] ?? []).map((m) => (m.id === messageId ? { ...m, summary: cleanSummary } : m)),
+              [currentTopicId]: (messagesByTopic[currentTopicId] ?? []).map((m) => (m.id === messageId ? { ...m, summary: cleanSummary, summaryTokens, summaryCost } : m)),
             },
           };
         });

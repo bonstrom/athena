@@ -165,6 +165,14 @@ class AthenaDatabase extends Dexie {
           console.error('AthenaDb v9 migration failed', err);
         }
       });
+
+    // Version 10: add summaryTokens and summaryCost fields to messages (no new index needed)
+    this.version(10).stores({
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
+    });
   }
 }
 
@@ -224,6 +232,8 @@ export interface Message {
   attachments?: Attachment[];
   embedding?: number[] | null;
   summary?: string;
+  summaryTokens?: number;
+  summaryCost?: number;
   rawResponse?: string;
   // Debate fields
   debateSide?: DebateSide;

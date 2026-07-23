@@ -89,10 +89,10 @@ describe('AthenaDb migrations', () => {
     mockVersionRecords.clear();
   });
 
-  it('registers schema versions 1 through 9', () => {
+  it('registers schema versions 1 through 10', () => {
     loadAthenaDbModule();
 
-    for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+    for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
       expect(mockVersionRecords.has(version)).toBe(true);
       expect(mockVersionRecords.get(version)?.storesSchema).toBeDefined();
     }

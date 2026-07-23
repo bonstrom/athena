@@ -137,6 +137,14 @@ jest.mock('../services/llmService', () => ({
   getDeepSeekBalance: jest.fn(),
 }));
 
+jest.mock('../database/AthenaDb', () => ({
+  athenaDb: {
+    messages: {
+      toArray: jest.fn(),
+    },
+  },
+}));
+
 const mockUseAuthStore = useAuthStore as unknown as jest.Mock<AuthState>;
 const mockUseProviderStore = useProviderStore as unknown as jest.Mock;
 const mockUseBackupStore = useBackupStore as unknown as jest.Mock<BackupStoreState>;

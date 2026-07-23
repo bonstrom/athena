@@ -43,6 +43,7 @@ import ThemeSelector from '../components/ThemeSelector';
 import ImportDialog from '../components/ImportDialog';
 import { ProviderCard, AddProviderCard } from '../components/ProviderCard';
 import { PredefinedPrompt } from '../database/AthenaDb';
+import { athenaDb } from '../database/AthenaDb';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -135,6 +136,7 @@ const Settings: React.FC = () => {
   const [_autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [moonshotBalance, setMoonshotBalance] = useState<number | null>(null);
   const [deepSeekBalance, setDeepSeekBalance] = useState<{ balance: number; currency: string } | null>(null);
+  const [summaryStats, setSummaryStats] = useState<{ count: number; totalCost: number } | null>(null);
 
   const [showPromptForm, setShowPromptForm] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<PredefinedPrompt | null>(null);
@@ -229,6 +231,19 @@ const Settings: React.FC = () => {
       }
     });
   }, [backupMode, setBackupMode]);
+
+  useEffect(() => {
+    void (async (): Promise<void> => {
+      try {
+        const allMessages = await athenaDb.messages.toArray();
+        const messagesWithSummary = allMessages.filter((m) => !!m.summary);
+        const totalCost = messagesWithSummary.reduce((sum, m) => sum + (m.summaryCost ?? 0), 0);
+        setSummaryStats({ count: messagesWithSummary.length, totalCost });
+      } catch {
+        // Stats query failed — leave summaryStats null
+      }
+    })();
+  }, []);
 
   function handleSave(): void {
     setUserName(userNameInput.trim());
@@ -667,20 +682,27 @@ const Settings: React.FC = () => {
                       <Box>
                         <Typography variant="body2">AI Message Summaries</Typography>
                         <Typography variant="caption" color="text.secondary">
-                          Automatically generates a short AI summary for messages exceeding 300 characters.
+                          Automatically generates a short AI summary for messages exceeding 500 characters.
                         </Typography>
                       </Box>
                     }
                     sx={{ alignItems: 'flex-start' }}
                   />
                   {aiSummaryEnabled && (
-                    <FormControl fullWidth size="small" sx={{ mt: 1, ml: 4, width: 'calc(100% - 32px)' }}>
-                      <InputLabel>Summary Model</InputLabel>
-                      <Select value={summaryModel} label="Summary Model" onChange={(e): void => setSummaryModel(e.target.value)}>
-                        <MenuItem value="same">Same as active chat model</MenuItem>
-                        <MenuItem value="local">Local LLM (browser model)</MenuItem>
-                      </Select>
-                    </FormControl>
+                    <>
+                      {summaryStats != null ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: 0.5, display: 'block' }}>
+                          {summaryStats.count === 0 ? 'No summaries generated yet.' : (String(summaryStats.count) + ' summaries generated | Total cost: ' + summaryStats.totalCost.toFixed(3) + ' kr')}
+                        </Typography>
+                      ) : null}
+                      <FormControl fullWidth size="small" sx={{ mt: 1, ml: 4, width: 'calc(100% - 32px)' }}>
+                        <InputLabel>Summary Model</InputLabel>
+                        <Select value={summaryModel} label="Summary Model" onChange={(e): void => setSummaryModel(e.target.value)}>
+                          <MenuItem value="same">Same as active chat model</MenuItem>
+                          <MenuItem value="local">Local LLM (browser model)</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </>
                   )}
                   <FormControlLabel
                     control={

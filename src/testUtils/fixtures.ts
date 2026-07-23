@@ -15,6 +15,8 @@ export function createMessage(overrides?: Partial<Message>): Message {
     promptTokens: 0,
     completionTokens: 0,
     totalCost: 0,
+    summaryTokens: 0,
+    summaryCost: 0,
     ...overrides,
   };
 }
