@@ -93,9 +93,8 @@ class AthenaDatabase extends Dexie {
             if (parentId) {
               updates.push({ id: m.id, parentMessageId: parentId });
             }
-          } else if (m.type !== 'user' && m.type !== 'assistant') {
-            // aiNote / system messages do not reset the last-user-message tracking
           }
+          // aiNote / system messages do not reset the last-user-message tracking
         }
 
         for (const update of updates) {
