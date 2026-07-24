@@ -51,7 +51,8 @@ class AthenaDatabase extends Dexie {
             }
           });
         } catch (err) {
-          console.error('AthenaDb v2 migration failed', err);
+          console.error('[migration-error] AthenaDb v2 migration failed', err);
+          throw err;
         }
       });
 
@@ -92,6 +93,8 @@ class AthenaDatabase extends Dexie {
             if (parentId) {
               updates.push({ id: m.id, parentMessageId: parentId });
             }
+          } else if (m.type !== 'user' && m.type !== 'assistant') {
+            // aiNote / system messages do not reset the last-user-message tracking
           }
         }
 
@@ -99,7 +102,8 @@ class AthenaDatabase extends Dexie {
           await trans.table('messages').update(update.id, { parentMessageId: update.parentMessageId });
         }
         } catch (err) {
-          console.error('AthenaDb v5 migration failed', err);
+          console.error('[migration-error] AthenaDb v5 migration failed', err);
+          throw err;
         }
       });
 
@@ -146,7 +150,8 @@ class AthenaDatabase extends Dexie {
         for (const m of allMessages) {
           if (m.type === 'assistant' && m.model) {
             const prevCreated = lastCreatedByTopic.get(m.topicId);
-            if (!prevCreated || m.created > prevCreated) {
+            const prevModel = lastModelByTopic.get(m.topicId);
+            if (!prevCreated || m.created > prevCreated || (m.created === prevCreated && m.id > (prevModel ?? ''))) {
               lastCreatedByTopic.set(m.topicId, m.created);
               lastModelByTopic.set(m.topicId, m.model);
             }
@@ -162,7 +167,8 @@ class AthenaDatabase extends Dexie {
           }
         }
         } catch (err) {
-          console.error('AthenaDb v9 migration failed', err);
+          console.error('[migration-error] AthenaDb v9 migration failed', err);
+          throw err;
         }
       });
 
@@ -193,7 +199,8 @@ class AthenaDatabase extends Dexie {
               }
             });
         } catch (err) {
-          console.error('AthenaDb v11 migration failed', err);
+          console.error('[migration-error] AthenaDb v11 migration failed', err);
+          throw err;
         }
       });
   }

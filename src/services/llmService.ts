@@ -11,7 +11,7 @@ const MAX_LINE_BUFFER = 1_000_000;
 
 export interface LlmMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string | LlmContentPart[] | null;
+  content: string | LlmContentPart[] | AnthropicContentBlock[] | null;
   reasoning_content?: string;
   tool_calls?: { id: string; type: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[];
   tool_call_id?: string;
@@ -378,6 +378,26 @@ interface StreamState {
   cacheReadTokens?: number;
 }
 
+interface AnthropicContentBlockText {
+  type: 'text';
+  text: string;
+}
+
+interface AnthropicContentBlockToolUse {
+  type: 'tool_use';
+  id: string;
+  name: string;
+  input: unknown;
+}
+
+interface AnthropicContentBlockToolResult {
+  type: 'tool_result';
+  tool_use_id: string;
+  content: string;
+}
+
+type AnthropicContentBlock = AnthropicContentBlockText | AnthropicContentBlockToolUse | AnthropicContentBlockToolResult;
+
 interface IMessageAdapter {
   buildBody(payload: LlmPayload, stream: boolean): string;
   parseResponse(data: unknown): ParsedResponse;
@@ -392,6 +412,9 @@ const OpenAiAdapter: IMessageAdapter = {
   },
 
   parseResponse(data: unknown): ParsedResponse {
+    if (typeof data !== 'object' || data === null) {
+      throw new Error('OpenAI adapter: expected an object in API response');
+    }
     const d = data as {
       id?: string;
       model?: string;
@@ -413,7 +436,13 @@ const OpenAiAdapter: IMessageAdapter = {
         completion_tokens_details?: { reasoning_tokens?: number };
       };
     };
+    if (!Array.isArray(d.choices) || d.choices.length === 0) {
+      throw new Error('OpenAI adapter: API response is missing choices array');
+    }
     const message = d.choices[0].message;
+    if (!message || (typeof message.content !== 'string' && message.content != null)) {
+      throw new Error('OpenAI adapter: API response has unexpected message format');
+    }
     const finishReason = d.choices[0].finish_reason;
     const toolCalls = message.tool_calls?.map((tc, i) => ({
       id: tc.id ?? `call_${i}`,
@@ -522,6 +551,9 @@ const AnthropicAdapter: IMessageAdapter = {
   },
 
   parseResponse(data: unknown): ParsedResponse {
+    if (typeof data !== 'object' || data === null) {
+      throw new Error('Anthropic adapter: expected an object in API response');
+    }
     const d = data as {
       id?: string;
       model?: string;
@@ -529,6 +561,9 @@ const AnthropicAdapter: IMessageAdapter = {
       content: { type: string; text?: string; thinking?: string; id?: string; name?: string; input?: Record<string, unknown> }[];
       usage: { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
     };
+    if (!Array.isArray(d.content)) {
+      throw new Error('Anthropic adapter: API response is missing content array');
+    }
     const textBlock = d.content.find((c) => c.type === 'text');
     const thinkingBlock = d.content.find((c) => c.type === 'thinking');
     const toolUseBlocks = d.content.filter((c) => c.type === 'tool_use');
@@ -609,7 +644,7 @@ const AnthropicAdapter: IMessageAdapter = {
   },
 
   buildAssistantContextMsg(result: LlmResult, _provider: LlmProvider): LlmMessage {
-    const blocks: unknown[] = [];
+    const blocks: AnthropicContentBlock[] = [];
     if (result.content) blocks.push({ type: 'text', text: result.content });
     for (const tc of result.toolCalls ?? []) {
       let input: unknown = {};
@@ -622,8 +657,7 @@ const AnthropicAdapter: IMessageAdapter = {
     }
     return {
       role: 'assistant',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      content: blocks as any,
+      content: blocks,
       ...(result.reasoning && { reasoning_content: result.reasoning }),
     };
   },
@@ -631,8 +665,7 @@ const AnthropicAdapter: IMessageAdapter = {
   buildToolResultContextMsg(tc: ToolCall, toolResult: string): LlmMessage {
     return {
       role: 'user',
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      content: [{ type: 'tool_result', tool_use_id: tc.id, content: toolResult }] as any,
+      content: [{ type: 'tool_result', tool_use_id: tc.id, content: toolResult }] as AnthropicContentBlock[],
     };
   },
 };
@@ -672,7 +705,10 @@ function buildPayload(
   // Safety cap: drop oldest non-system messages until tokens fit within the user's max context budget
   // Also respects the hard model context window (whichever is smaller)
   const userTokenBudget = useAuthStore.getState().maxContextTokens;
-  const tokenBudget = Math.min(userTokenBudget, Math.floor(resolvedModel.contextWindow * 0.9));
+  const reservedCompletionTokens = resolvedModel.maxTokensOverride ?? 4096;
+  const effectiveBudget = Math.min(userTokenBudget, Math.floor(resolvedModel.contextWindow * 0.9)) - reservedCompletionTokens;
+  // Floor at a sane minimum so a single message always fits
+  const tokenBudget = Math.max(1, effectiveBudget);
   while (finalMessages.length > 1) {
     const { promptTokens } = estimateTokens(finalMessages);
     if (promptTokens <= tokenBudget) break;
@@ -705,7 +741,7 @@ function buildPayload(
     model: resolvedModel.apiModelId,
     messages: finalMessages.map((m) => ({
       role: m.role,
-      content: m.content as string | (LlmContentPart & { type: 'text' | 'image_url' })[] | null,
+      content: m.content as string | (LlmContentPart & { type: 'text' | 'image_url' })[] | AnthropicContentBlock[] | null,
       ...(m.role === 'assistant' && m.reasoning_content && { reasoning_content: m.reasoning_content }),
       ...(m.role !== 'assistant' && m.reasoning_content !== undefined && { reasoning_content: m.reasoning_content }),
       ...(m.tool_calls && { tool_calls: m.tool_calls }),
@@ -1157,6 +1193,7 @@ export async function askLlmStream(
       if (signal?.aborted) break;
 
       const chunk = decoder.decode(value);
+      if (signal?.aborted) break;
       // Prepend any partial line from the previous chunk
       const lines = (lineBuffer + chunk).split('\n');
       // The last element may be incomplete; save it for the next chunk
@@ -1179,7 +1216,7 @@ export async function askLlmStream(
         try {
           adapter.handleStreamChunk(JSON.parse(json) as unknown, state, activeOnToken, activeOnReasoning);
         } catch (e) {
-          console.warn('Invalid stream chunk:', trimmed, e);
+          console.warn('Invalid stream chunk:', trimmed.slice(0, 80), e);
         }
       }
     }

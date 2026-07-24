@@ -92,10 +92,14 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         }
 
         for (const topic of topicsNeedingBackfill) {
-          const modelId = lastModelByTopic.get(topic.id);
-          if (modelId) {
-            topic.modelId = modelId;
-            void athenaDb.topics.update(topic.id, { modelId });
+          try {
+            const modelId = lastModelByTopic.get(topic.id);
+            if (modelId) {
+              topic.modelId = modelId;
+              void athenaDb.topics.update(topic.id, { modelId });
+            }
+          } catch (backfillErr) {
+            console.warn(`[TopicStore] Backfill failed for topic ${topic.id}:`, backfillErr);
           }
         }
       }

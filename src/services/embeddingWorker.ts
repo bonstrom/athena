@@ -43,6 +43,9 @@ async function loadModel(): Promise<void> {
 }
 
 function meanPool(embeddings: number[][], attentionMask: number[]): number[] {
+  if (embeddings.length === 0) {
+    throw new Error('meanPool received empty embeddings array — cannot compute pooled vector');
+  }
   const seqLen = embeddings.length;
   const dim = embeddings[0].length;
   const result = new Array<number>(dim).fill(0);

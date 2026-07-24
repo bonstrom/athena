@@ -84,8 +84,9 @@ jest.mock('../../store/NotificationStore', () => ({
 
 jest.mock('../ChatStore', () => ({
   useChatStore: {
-    getState: (): { updateMessageStateOnly: () => void } => ({
+    getState: (): { updateMessageStateOnly: () => void; refreshTopicMessages: (topicId: string) => Promise<void> } => ({
       updateMessageStateOnly: (): void => undefined,
+      refreshTopicMessages: (_topicId: string): Promise<void> => Promise.resolve(),
     }),
     setState: (...args: unknown[]): void => {
       mockChatStoreSetState(...args);

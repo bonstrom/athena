@@ -268,4 +268,33 @@ Some text after.`;
 
     expect(screen.getByText('Some text after.')).toBeInTheDocument();
   });
+
+  it('sanitizes SVG content to strip script tags', async () => {
+    const { container } = render(
+      <MarkdownWithCode>{'```svg\n<svg><script>alert("xss")</script></svg>\n```'}</MarkdownWithCode>,
+    );
+
+    await waitFor(() => {
+      const svgContainer = container.querySelector('[class*="MuiBox-root"]');
+      expect(svgContainer).toBeInTheDocument();
+    });
+
+    const innerHTML = container.innerHTML;
+    expect(innerHTML).not.toContain('<script>');
+    expect(innerHTML).not.toContain('alert');
+  });
+
+  it('sanitizes SVG content to strip onload event handlers', async () => {
+    const { container } = render(
+      <MarkdownWithCode>{'```svg\n<svg onload="alert(1)"><circle cx="50" cy="50" r="40" fill="red"/></svg>\n```'}</MarkdownWithCode>,
+    );
+
+    await waitFor(() => {
+      const svgContainer = container.querySelector('[class*="MuiBox-root"]');
+      expect(svgContainer).toBeInTheDocument();
+    });
+
+    const innerHTML = container.innerHTML;
+    expect(innerHTML).not.toContain('onload');
+  });
 });

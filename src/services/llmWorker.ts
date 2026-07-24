@@ -109,6 +109,11 @@ async function generateSuggestion(text: string, context?: string): Promise<void>
 
         // Explicitly truncate characters to stay safe (approx 2 tokens per char worst case)
         const safeText = prompt.length > 512 ? prompt.slice(-512) : prompt;
+        if (prompt.length > 512) {
+          console.warn(
+            `[llmWorker] Prompt truncated to 512 chars — original: ${prompt.length}, truncated: ${safeText.length}`,
+          );
+        }
 
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const output = await (generator as unknown as (input: string, options: Record<string, unknown>) => Promise<{ generated_text: string }[]>)(

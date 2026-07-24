@@ -20,9 +20,10 @@ import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
 import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown';
 import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx';
 import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
-import { useState, useEffect, useRef, CSSProperties } from 'react';
+import { useState, useEffect, useRef, CSSProperties, useMemo } from 'react';
 import { useTheme, alpha } from '@mui/material/styles';
 import mermaid from 'mermaid';
+import DOMPurify from 'dompurify';
 import { useAuthStore } from '../store/AuthStore';
 
 SyntaxHighlighter.registerLanguage('javascript', javascript);
@@ -179,9 +180,28 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
 };
 
 const SvgDiagram: React.FC<MermaidProps> = ({ children }) => {
+  const sanitized = useMemo(() => {
+    return DOMPurify.sanitize(children.trim(), {
+      ADD_TAGS: ['svg', 'circle', 'rect', 'path', 'line', 'polygon', 'polyline', 'ellipse', 'text', 'tspan', 'g', 'defs',
+        'linearGradient', 'radialGradient', 'stop', 'use', 'clipPath', 'mask', 'pattern', 'symbol', 'marker',
+        'animate', 'animateTransform', 'animateMotion', 'filter', 'feGaussianBlur', 'feOffset', 'feMerge',
+        'feMergeNode', 'feColorMatrix', 'feBlend', 'image', 'foreignObject', 'switch', 'title', 'desc',
+        'metadata', 'style'],
+      ADD_ATTR: ['d', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'x2', 'y1', 'y2', 'width', 'height',
+        'viewBox', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray',
+        'opacity', 'transform', 'dx', 'dy', 'text-anchor', 'font-size', 'font-family', 'font-weight',
+        'font-style', 'text-decoration', 'dominant-baseline', 'alignment-baseline', 'clip-path',
+        'clip-rule', 'fill-rule', 'fill-opacity', 'stroke-opacity', 'marker-end', 'marker-start',
+        'marker-mid', 'filter', 'offset', 'stdDeviation', 'in', 'in2', 'mode', 'result', 'values',
+        'keyTimes', 'keySplines', 'repeatCount', 'begin', 'dur', 'attributeName', 'from', 'to',
+        'gradientUnits', 'gradientTransform', 'xlink:href', 'href', 'style', 'class', 'id',
+        'vector-effect', 'shape-rendering', 'text-rendering'],
+    });
+  }, [children]);
+
   return (
     <Box
-      dangerouslySetInnerHTML={{ __html: children.trim() }}
+      dangerouslySetInnerHTML={{ __html: sanitized }}
       sx={{
         my: 2,
         display: 'flex',

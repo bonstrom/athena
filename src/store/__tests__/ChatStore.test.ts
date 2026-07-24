@@ -1074,7 +1074,12 @@ describe('ChatStore', () => {
     await expect(useChatStore.getState().addMessage(message)).resolves.toBeUndefined();
 
     await Promise.resolve();
-    expect(warnSpy).toHaveBeenCalledWith('Failed to generate embedding for message:', expect.any(Error));
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[ChatStore] Failed to generate embedding for message',
+      'msg-embe',
+      '— message will not appear in RAG results:',
+      expect.any(Error),
+    );
 
     embeddingService.isReady = false;
     warnSpy.mockRestore();

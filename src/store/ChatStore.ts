@@ -97,6 +97,7 @@ interface ChatStore {
   deleteMessage: (messageId: string) => Promise<void>;
   regenerateResponse: (assistantMessageId: string) => Promise<void>;
   switchMessageVersion: (userMessageId: string, assistantMessageId: string) => Promise<void>;
+  refreshTopicMessages: (topicId: string) => Promise<void>;
   temperature: number;
   setTemperature: (temp: number) => void;
   reasoningEffort: 'high' | 'max' | null;
@@ -121,9 +122,12 @@ interface ChatStore {
   initDefaults: () => void;
 }
 
-// Serialize summarization requests — llmSuggestionService has a single completion slot
+let preloadInFlight = new Set<string>();
+
+// Mutex-like summarization gate — llmSuggestionService has a single completion slot
 // so concurrent calls would overwrite each other's resolve callback and hang.
-let summarizeQueue: Promise<void> = Promise.resolve();
+let summarizeBusy = false;
+const summarizePending: (() => void)[] = [];
 const ASK_USER_TIMEOUT_MS = 5 * 60 * 1000;
 const ASK_USER_TIMEOUT_REPLY = 'User did not respond in time. Continue with your best effort based on available context.';
 
@@ -169,28 +173,38 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   preloadTopics: async (topicIds: string[]): Promise<void> => {
     const { messagesByTopic } = get();
-    const unloaded = topicIds.filter((id) => messagesByTopic[id] === undefined);
+    const unloaded = topicIds.filter((id) => messagesByTopic[id] === undefined && !preloadInFlight.has(id));
     if (unloaded.length === 0) return;
 
-    const results = await Promise.all(
-      unloaded.map((topicId) =>
-        athenaDb.messages
-          .where('topicId')
-          .equals(topicId)
-          .sortBy('created')
-          .then((msgs) => ({ topicId, msgs })),
-      ),
-    );
+    const newInFlight = new Set(preloadInFlight);
+    for (const id of unloaded) newInFlight.add(id);
+    preloadInFlight = newInFlight;
 
-    set((state) => {
-      const updates: Record<string, Message[]> = {};
-      for (const { topicId, msgs } of results) {
-        if (state.messagesByTopic[topicId] === undefined) {
-          updates[topicId] = msgs;
+    try {
+      const results = await Promise.all(
+        unloaded.map((topicId) =>
+          athenaDb.messages
+            .where('topicId')
+            .equals(topicId)
+            .sortBy('created')
+            .then((msgs) => ({ topicId, msgs })),
+        ),
+      );
+
+      set((state) => {
+        const updates: Record<string, Message[]> = {};
+        for (const { topicId, msgs } of results) {
+          if (state.messagesByTopic[topicId] === undefined) {
+            updates[topicId] = msgs;
+          }
         }
-      }
-      return { messagesByTopic: { ...state.messagesByTopic, ...updates } };
-    });
+        return { messagesByTopic: { ...state.messagesByTopic, ...updates } };
+      });
+    } finally {
+      const cleared = new Set(preloadInFlight);
+      for (const id of unloaded) cleared.delete(id);
+      preloadInFlight = cleared;
+    }
   },
 
   setWebSearchEnabled: (value: boolean): void => set({ webSearchEnabled: value }),
@@ -201,13 +215,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   buildFullContext: async (topicId: string, userMessagePreview?: string): Promise<ContextEntry[]> => {
     const { selectedModel, webSearchEnabled } = get();
     const topicStoreState = useTopicStore.getState();
+    const authStoreState = useAuthStore.getState();
+    const providerStoreState = useProviderStore.getState();
     const topic = topicStoreState.topics.find((t) => t.id === topicId);
+    const customInstructions = authStoreState.customInstructions.trim();
+    const askUserEnabled = authStoreState.askUserEnabled;
+    const messageRetrievalEnabled = authStoreState.messageRetrievalEnabled;
+    const allPrompts = authStoreState.predefinedPrompts;
+    const scratchpadRulesTemplate = authStoreState.scratchpadRules;
+    const selectedProvider = providerStoreState.getProviderForModel(selectedModel);
 
     const existingContext = await topicStoreState.getTopicContext(topicId, undefined, userMessagePreview?.trim());
     const entries: ContextEntry[] = [];
 
     // System: Custom instructions (prepended first, same as buildPayload in llmService)
-    const customInstructions = useAuthStore.getState().customInstructions.trim();
     if (customInstructions) {
       entries.push({ message: { role: 'system', content: customInstructions }, sourceLabel: 'Custom Instructions' });
     }
@@ -219,7 +240,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     entries.push({ message: { role: 'system', content: SVG_INSTRUCTIONS }, sourceLabel: 'SVG' });
 
     // System: Scratchpad rules + content (shown as two entries for clarity in the inspector)
-    const rawScratchpadRules = (topic?.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
+    const rawScratchpadRules = (topic?.scratchpad ? scratchpadRulesTemplate : SHORT_SCRATCHPAD_RULES).replace(
       '{{SCRATCHPAD_LIMIT}}',
       String(SCRATCHPAD_LIMIT),
     );
@@ -232,7 +253,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     // System: Web search instructions
-    const selectedProvider = useProviderStore.getState().getProviderForModel(selectedModel);
     if (webSearchEnabled && selectedProvider?.supportsWebSearch) {
       entries.push({
         message: {
@@ -245,7 +265,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     // System: Ask-user clarification instructions
-    if (useAuthStore.getState().askUserEnabled) {
+    if (askUserEnabled) {
       entries.push({
         message: { role: 'system', content: ASK_USER_INSTRUCTIONS },
         sourceLabel: 'Ask User Instructions',
@@ -253,7 +273,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     // System: Message retrieval instructions
-    if (useAuthStore.getState().messageRetrievalEnabled) {
+    if (messageRetrievalEnabled) {
       entries.push({
         message: { role: 'system', content: MESSAGE_RETRIEVAL_INSTRUCTIONS },
         sourceLabel: 'Message Retrieval Instructions',
@@ -263,7 +283,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // System: Predefined prompts
     const selectedPromptIds = topic?.selectedPromptIds ?? [];
     if (selectedPromptIds.length > 0) {
-      const allPrompts = useAuthStore.getState().predefinedPrompts;
       const selectedPrompts = allPrompts.filter((p) => selectedPromptIds.includes(p.id));
       for (const p of selectedPrompts) {
         entries.push({ message: { role: 'system', content: p.content }, sourceLabel: `Predefined Prompt: ${p.name}` });
@@ -350,6 +369,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const idsToDelete = [id, ...pairedAssistantIds];
 
     try {
+      // Dexie rw transactions provide atomicity via rollback-on-throw: if any operation
+      // inside the callback throws, all mutations are rolled back. This ensures the bulk
+      // delete and the paired includeInContext update succeed or fail as a single unit.
       await athenaDb.transaction('rw', athenaDb.messages, async () => {
         await athenaDb.messages.bulkDelete(idsToDelete);
         if (pairedUserMessageId) {
@@ -412,9 +434,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       autoReadEnabled: false,
       webSearchEnabled: false,
     }));
-  },
+    },
 
-  updateMessageContext: async (id, include): Promise<void> => {
+    refreshTopicMessages: async (topicId: string): Promise<void> => {
+      const topic = useTopicStore.getState().topics.find((t) => t.id === topicId);
+      const activeForkId = topic?.activeForkId ?? 'main';
+      const all = await athenaDb.messages
+        .where('topicId')
+        .equals(topicId)
+        .and((m) => m.forkId === activeForkId)
+        .sortBy('created');
+      set((state) => ({
+        messagesByTopic: { ...state.messagesByTopic, [topicId]: all },
+      }));
+    },
+
+    updateMessageContext: async (id, include): Promise<void> => {
     await athenaDb.messages.update(id, { includeInContext: include });
 
     const { currentTopicId, messagesByTopic } = get();
@@ -436,7 +471,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         .generateEmbedding(message.content)
         .then((vector) => athenaDb.messages.update(message.id, { embedding: vector }))
         .catch((err: unknown) => {
-          console.warn('Failed to generate embedding for message:', err);
+          console.warn('[ChatStore] Failed to generate embedding for message', message.id.slice(0, 8), '— message will not appear in RAG results:', err);
         });
     }
 
@@ -601,6 +636,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // 2. Build Context
     const existingContext = await topicStoreState.getTopicContext(topicId, isRetry ? messageId : undefined, content.trim());
 
+    // Re-fetch topic store after await — topic may have been deleted
+    const refreshedTopicStore = useTopicStore.getState();
+    const refreshedTopic = refreshedTopicStore.topics.find((t) => t.id === topicId);
+    if (!refreshedTopic) {
+      throw new DOMException('Topic deleted mid-stream', 'AbortError');
+    }
+
     const llmContext: LlmMessage[] = existingContext.map((m) => {
       const role = m.type === 'user' ? 'user' : m.type === 'assistant' ? 'assistant' : 'system';
       if (m.attachments && m.attachments.length > 0 && (effectiveModel.supportsVision || effectiveModel.supportsFiles)) {
@@ -635,11 +677,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // System: SVG visualization instructions
     systems.push({ role: 'system', content: SVG_INSTRUCTIONS });
 
-    const rawScratchpadRules = (topic?.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
+    const rawScratchpadRules = (refreshedTopic.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
       '{{SCRATCHPAD_LIMIT}}',
       String(SCRATCHPAD_LIMIT),
     );
-    const scratchpadRules = topic?.scratchpad ? `${rawScratchpadRules}\n\n[Current Scratchpad Content]:\n${topic.scratchpad}` : rawScratchpadRules;
+    const scratchpadRules = refreshedTopic.scratchpad ? `${rawScratchpadRules}\n\n[Current Scratchpad Content]:\n${refreshedTopic.scratchpad}` : rawScratchpadRules;
 
     if (effectiveModel.supportsTools) {
       systems.push({ role: 'system', content: scratchpadRules });
@@ -659,7 +701,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       });
     }
 
-    const selectedPromptIds = topic?.selectedPromptIds ?? [];
+    const selectedPromptIds = refreshedTopic.selectedPromptIds ?? [];
     if (selectedPromptIds.length > 0) {
       const allPrompts = useAuthStore.getState().predefinedPrompts;
       const selectedPrompts = allPrompts.filter((p) => selectedPromptIds.includes(p.id));
@@ -929,7 +971,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 return 'Error: No messages array provided in arguments.';
               }
 
-              const activeForkId = topic?.activeForkId ?? 'main';
+              const activeForkId = useTopicStore.getState().topics.find((t) => t.id === topicId)?.activeForkId ?? 'main';
               const allMessagesInTopic = await athenaDb.messages
                 .where('topicId')
                 .equals(topicId)
@@ -971,7 +1013,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           }
           if (toolName === 'list_messages') {
             try {
-              const activeForkId = topic?.activeForkId ?? 'main';
+              const activeForkId = useTopicStore.getState().topics.find((t) => t.id === topicId)?.activeForkId ?? 'main';
               const allMessages = await athenaDb.messages
                 .where('topicId')
                 .equals(topicId)
@@ -983,7 +1025,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                   const snippet = m.content.substring(0, 150).replace(/\n/g, ' ').trim();
                   return `[ID: ${m.id.slice(0, SHORTENED_ID_LENGTH)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
                 });
-              return `CHRONOLOGICAL DIRECTORY OF TOPIC "${topic?.name ?? 'Untitled'}":\n\n${lines.join('\n')}\n\nUse 'read_messages' with any of these IDs to see full content.`;
+              return `CHRONOLOGICAL DIRECTORY OF TOPIC "${useTopicStore.getState().topics.find((t) => t.id === topicId)?.name ?? 'Untitled'}":\n\n${lines.join('\n')}\n\nUse 'read_messages' with any of these IDs to see full content.`;
             } catch (e) {
               return `Error listing messages: ${String(e)}`;
             }
@@ -1043,6 +1085,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         get().webSearchEnabled,
         controller.signal,
       );
+
+      // Re-fetch topic after async ops — it may have been deleted mid-stream
+      const refreshedTopic = useTopicStore.getState().topics.find((t) => t.id === topicId);
+      if (!refreshedTopic) {
+        throw new DOMException('Topic deleted mid-stream', 'AbortError');
+      }
 
       const finalContent = primaryResult.finalContent;
       const totalPromptTokens = primaryResult.totalPromptTokens;
@@ -1132,7 +1180,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           .generateEmbedding(assistantPatch.content)
           .then((vector) => athenaDb.messages.update(assistantId, { embedding: vector }))
           .catch((err: unknown) => {
-            console.warn('Failed to generate embedding for assistant response:', err);
+            console.warn('[ChatStore] Failed to generate embedding for assistant response', assistantId.slice(0, 8), '— message will not appear in RAG results:', err);
           });
       }
 
@@ -1349,8 +1397,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       next.delete(messageId);
       return { failedSummaryMessageIds: next };
     });
-    summarizeQueue = summarizeQueue.then(() => get()._runSummarize(messageId, content, contextMessages ? [...contextMessages] : undefined));
-    await summarizeQueue;
+
+    // Mutex: if a summarization is already in flight, enqueue the next one
+    if (summarizeBusy) {
+      await new Promise<void>((resolve) => {
+        summarizePending.push(resolve);
+      });
+      // Re-check dedup after wait — a prior run may have already summarized this msg
+      if (!get().summarizingMessageIds.has(messageId)) return;
+    }
+
+    summarizeBusy = true;
+    try {
+      await get()._runSummarize(messageId, content, contextMessages ? [...contextMessages] : undefined);
+    } finally {
+      summarizeBusy = false;
+      const next = summarizePending.shift();
+      if (next) next();
+    }
   },
 
   _runSummarize: async (messageId: string, content: string, contextMessages?: LlmMessage[]): Promise<void> => {

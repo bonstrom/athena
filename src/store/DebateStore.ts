@@ -49,14 +49,7 @@ async function updateMessage(id: string, patch: Partial<Message>): Promise<void>
 }
 
 async function refreshDebateMessages(topicId: string): Promise<void> {
-  const all = await athenaDb.messages
-    .where('topicId')
-    .equals(topicId)
-    .and((m) => m.forkId === 'main')
-    .sortBy('created');
-  useChatStore.setState((state) => ({
-    messagesByTopic: { ...state.messagesByTopic, [topicId]: all },
-  }));
+  await useChatStore.getState().refreshTopicMessages(topicId);
 }
 
 async function runDebatePhase(
@@ -117,34 +110,45 @@ async function runDebatePhase(
   let accA = '';
   let accB = '';
 
-  const [resultA, resultB] = await Promise.all([
-    askLlmStream(
-      debateModelA,
-      DEBATE_TEMPERATURE,
-      messagesA,
-      (token) => {
-        accA += token;
-        setStore({ streamingContentA: accA });
-      },
-      undefined,
-      undefined,
-      false,
-      controller.signal,
-    ),
-    askLlmStream(
-      debateModelB,
-      DEBATE_TEMPERATURE,
-      messagesB,
-      (token) => {
-        accB += token;
-        setStore({ streamingContentB: accB });
-      },
-      undefined,
-      undefined,
-      false,
-      controller.signal,
-    ),
-  ]);
+  let resultA: { content: string; promptTokens: number; completionTokens: number; promptTokensDetails?: { cached_tokens?: number; cache_creation_tokens?: number }; reasoning?: string };
+  let resultB: { content: string; promptTokens: number; completionTokens: number; promptTokensDetails?: { cached_tokens?: number; cache_creation_tokens?: number }; reasoning?: string };
+
+  try {
+    [resultA, resultB] = await Promise.all([
+      askLlmStream(
+        debateModelA,
+        DEBATE_TEMPERATURE,
+        messagesA,
+        (token) => {
+          accA += token;
+          setStore({ streamingContentA: accA });
+        },
+        undefined,
+        undefined,
+        false,
+        controller.signal,
+      ),
+      askLlmStream(
+        debateModelB,
+        DEBATE_TEMPERATURE,
+        messagesB,
+        (token) => {
+          accB += token;
+          setStore({ streamingContentB: accB });
+        },
+        undefined,
+        undefined,
+        false,
+        controller.signal,
+      ),
+    ]);
+  } catch (err) {
+    await Promise.all([
+      updateMessage(msgIdA, { failed: true }),
+      updateMessage(msgIdB, { failed: true }),
+    ]);
+    throw err;
+  }
 
   const costA = calculateCostSEK(debateModelA, resultA.promptTokens, resultA.completionTokens, resultA.promptTokensDetails, getPeakMultiplier(debateModelA));
   const costB = calculateCostSEK(debateModelB, resultB.promptTokens, resultB.completionTokens, resultB.promptTokensDetails, getPeakMultiplier(debateModelB));
@@ -219,8 +223,11 @@ export const useDebateStore = create<DebateState>((set, get) => ({
     set({ debateSending: true, abortController: controller, streamingContentA: '', streamingContentB: '', streamingConsensus: '' });
 
     const now = new Date().toISOString();
-    const customInstructions = useAuthStore.getState().customInstructions;
-    const systemMsg = buildSystemMessage(customInstructions);
+    const baseMessages = (msgs: LlmMessage[]): LlmMessage[] => {
+      const instructions = useAuthStore.getState().customInstructions;
+      const systemMsg = buildSystemMessage(instructions);
+      return systemMsg ? [systemMsg, ...msgs] : msgs;
+    };
 
     const userMessageId = crypto.randomUUID();
     const userMessage: Message = {
@@ -254,8 +261,6 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       runDebatePhase(phase, messagesA, messagesB, parentIdA, parentIdB, debateModelA, debateModelB, topicId, controller, set);
 
     try {
-      const baseMessages = (msgs: LlmMessage[]): LlmMessage[] => (systemMsg ? [systemMsg, ...msgs] : msgs);
-
       // Refresh messages so the user message is visible immediately
       await refreshDebateMessages(topicId);
 
@@ -448,9 +453,11 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       streamingConsensus: '',
     });
 
-    const customInstructions = useAuthStore.getState().customInstructions;
-    const systemMsg = buildSystemMessage(customInstructions);
-    const baseMessages = (msgs: LlmMessage[]): LlmMessage[] => (systemMsg ? [systemMsg, ...msgs] : msgs);
+    const baseMessages = (msgs: LlmMessage[]): LlmMessage[] => {
+      const instructions = useAuthStore.getState().customInstructions;
+      const systemMsg = buildSystemMessage(instructions);
+      return systemMsg ? [systemMsg, ...msgs] : msgs;
+    };
 
     const runPhase = (
       phase: DebatePhase,
