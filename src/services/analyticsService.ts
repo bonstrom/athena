@@ -335,6 +335,7 @@ async function computeProviderBreakdownFromMessages(): Promise<ProviderBreakdown
   const merged: Record<string, { messages: number; cost: number; tokens: number }> = {};
   for (const m of messages) {
     const name = resolveProviderName(m.model);
+    if (name === null) continue;
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     merged[name] = merged[name] ?? { messages: 0, cost: 0, tokens: 0 };
     merged[name].messages++;

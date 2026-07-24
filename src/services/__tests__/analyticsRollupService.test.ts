@@ -110,13 +110,13 @@ describe('resolveProviderName', () => {
     expect(resolveProviderName('gpt-4')).toBe('OpenAI');
   });
 
-  it('returns unknown when model not found', () => {
+  it('returns null when model not found', () => {
     mockGetState.mockReturnValue({ models: [], providers: [] });
-    expect(resolveProviderName('nonexistent')).toBe('unknown');
+    expect(resolveProviderName('nonexistent')).toBeNull();
   });
 
-  it('returns unknown when modelApiId is undefined', () => {
-    expect(resolveProviderName(undefined)).toBe('unknown');
+  it('returns null when modelApiId is undefined', () => {
+    expect(resolveProviderName(undefined)).toBeNull();
   });
 });
 
@@ -204,7 +204,6 @@ describe('rollupAnalytics', () => {
     expect(merged.latencySamples).toEqual([100, 200]);
     expect(merged.providerStats).toEqual({
       OpenAI: { cost: 0.10, tokens: 150, messageCount: 3 },
-      unknown: { cost: 0.05, tokens: 75, messageCount: 1 },
     });
   });
 

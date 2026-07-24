@@ -55,12 +55,12 @@ const mockModels: UserChatModel[] = [];
 const mockProviders: LlmProvider[] = [];
 
 jest.mock('../../services/analyticsRollupService', () => ({
-  resolveProviderName: (modelApiId: string | undefined): string => {
-    if (!modelApiId) return 'unknown';
+  resolveProviderName: (modelApiId: string | undefined): string | null => {
+    if (!modelApiId) return null;
     const model = mockModels.find((m) => m.apiModelId === modelApiId);
-    if (!model) return 'unknown';
+    if (!model) return null;
     const provider = mockProviders.find((p) => p.id === model.providerId);
-    return provider?.name ?? 'unknown';
+    return provider?.name ?? null;
   },
 }));
 

@@ -34,13 +34,13 @@ function setRollupState(marker: string, lastId: string): void {
   }
 }
 
-export function resolveProviderName(modelApiId: string | undefined): string {
-  if (!modelApiId) return 'unknown';
+export function resolveProviderName(modelApiId: string | undefined): string | null {
+  if (!modelApiId) return null;
   const { models, providers } = useProviderStore.getState();
   const model = models.find((m) => m.apiModelId === modelApiId);
-  if (!model) return 'unknown';
+  if (!model) return null;
   const provider = providers.find((p) => p.id === model.providerId);
-  return provider?.name ?? 'unknown';
+  return provider?.name ?? null;
 }
 
 function parseToolUsage(rawResponse: string | undefined): Record<string, { calls: number; successCount: number }> {
@@ -183,12 +183,14 @@ export async function rollupAnalytics(): Promise<void> {
     }
 
     const providerName = resolveProviderName(m.model);
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    const pStat = snap.providerStats[providerName] ?? { cost: 0, tokens: 0, messageCount: 0 };
-    pStat.cost += m.totalCost;
-    pStat.tokens += m.promptTokens + m.completionTokens;
-    pStat.messageCount++;
-    snap.providerStats[providerName] = pStat;
+    if (providerName !== null) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      const pStat = snap.providerStats[providerName] ?? { cost: 0, tokens: 0, messageCount: 0 };
+      pStat.cost += m.totalCost;
+      pStat.tokens += m.promptTokens + m.completionTokens;
+      pStat.messageCount++;
+      snap.providerStats[providerName] = pStat;
+    }
 
     const toolUsage = parseToolUsage(m.rawResponse);
     for (const [toolName, stats] of Object.entries(toolUsage)) {
