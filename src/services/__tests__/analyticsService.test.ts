@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type, unused-imports/no-unused-vars, @typescript-eslint/no-non-null-assertion */
 import type { AnalyticsSnapshot } from '../../database/AthenaDb';
 
 let mockSnapshots: AnalyticsSnapshot[] = [];

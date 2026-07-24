@@ -65,6 +65,7 @@ function parseToolUsage(rawResponse: string | undefined): Record<string, { calls
         const resultStr = trObj.result;
         if (typeof toolName !== 'string') continue;
 
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         result[toolName] = result[toolName] ?? { calls: 0, successCount: 0 };
         result[toolName].calls++;
         if (typeof resultStr !== 'string' || !resultStr.startsWith('Error')) {
@@ -76,7 +77,8 @@ function parseToolUsage(rawResponse: string | undefined): Record<string, { calls
     // rawResponse may not be valid JSON (e.g. older messages)
   }
 
-  return result;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  return result as Record<string, { calls: number; successCount: number }>;
 }
 
 function mergeSnapshots(existing: AnalyticsSnapshot, incoming: AnalyticsSnapshot): AnalyticsSnapshot {
@@ -87,6 +89,7 @@ function mergeSnapshots(existing: AnalyticsSnapshot, incoming: AnalyticsSnapshot
 
   const mergedProviderStats: Record<string, { cost: number; tokens: number; messageCount: number }> = { ...existing.providerStats ?? {} };
   for (const [key, val] of Object.entries(incoming.providerStats ?? {})) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     mergedProviderStats[key] = mergedProviderStats[key] ?? { cost: 0, tokens: 0, messageCount: 0 };
     mergedProviderStats[key].cost += val.cost;
     mergedProviderStats[key].tokens += val.tokens;
@@ -95,6 +98,7 @@ function mergeSnapshots(existing: AnalyticsSnapshot, incoming: AnalyticsSnapshot
 
   const mergedToolStats: Record<string, { calls: number; successCount: number }> = { ...existing.toolStats ?? {} };
   for (const [key, val] of Object.entries(incoming.toolStats ?? {})) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     mergedToolStats[key] = mergedToolStats[key] ?? { calls: 0, successCount: 0 };
     mergedToolStats[key].calls += val.calls;
     mergedToolStats[key].successCount += val.successCount;
@@ -179,6 +183,7 @@ export async function rollupAnalytics(): Promise<void> {
     }
 
     const providerName = resolveProviderName(m.model);
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     const pStat = snap.providerStats[providerName] ?? { cost: 0, tokens: 0, messageCount: 0 };
     pStat.cost += m.totalCost;
     pStat.tokens += m.promptTokens + m.completionTokens;
@@ -187,6 +192,7 @@ export async function rollupAnalytics(): Promise<void> {
 
     const toolUsage = parseToolUsage(m.rawResponse);
     for (const [toolName, stats] of Object.entries(toolUsage)) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const existing = snap.toolStats[toolName] ?? { calls: 0, successCount: 0 };
       existing.calls += stats.calls;
       existing.successCount += stats.successCount;

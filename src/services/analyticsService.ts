@@ -261,6 +261,7 @@ export async function computeProviderBreakdown(): Promise<ProviderBreakdown[]> {
   const merged: Record<string, { messages: number; cost: number; tokens: number }> = {};
   for (const snap of snapshots) {
     for (const [provider, stats] of Object.entries(snap.providerStats ?? {})) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       merged[provider] = merged[provider] ?? { messages: 0, cost: 0, tokens: 0 };
       merged[provider].messages += stats.messageCount;
       merged[provider].cost += stats.cost;
@@ -283,6 +284,7 @@ export async function computeToolUsageBreakdown(): Promise<ToolUsageRow[]> {
   const merged: Record<string, { calls: number; successCount: number }> = {};
   for (const snap of snapshots) {
     for (const [tool, stats] of Object.entries(snap.toolStats ?? {})) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       merged[tool] = merged[tool] ?? { calls: 0, successCount: 0 };
       merged[tool].calls += stats.calls;
       merged[tool].successCount += stats.successCount;
@@ -304,6 +306,7 @@ async function computeProviderBreakdownFromMessages(): Promise<ProviderBreakdown
   const merged: Record<string, { messages: number; cost: number; tokens: number }> = {};
   for (const m of messages) {
     const name = resolveProviderName(m.model);
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     merged[name] = merged[name] ?? { messages: 0, cost: 0, tokens: 0 };
     merged[name].messages++;
     merged[name].cost += m.totalCost;
@@ -339,6 +342,7 @@ async function computeToolUsageFromMessages(): Promise<ToolUsageRow[]> {
           const resultStr = trObj.result;
           if (typeof toolName !== 'string') continue;
 
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           merged[toolName] = merged[toolName] ?? { calls: 0, successCount: 0 };
           merged[toolName].calls++;
           if (typeof resultStr !== 'string' || !resultStr.startsWith('Error')) {
