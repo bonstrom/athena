@@ -59,8 +59,8 @@ jest.mock('../../services/analyticsService', () => ({
     { provider: 'DeepSeek', messages: 12, cost: 0.50, tokens: 2500 },
   ]),
   computeToolUsageBreakdown: (): Promise<unknown[]> => Promise.resolve([
-    { tool: 'update_scratchpad', calls: 20, successRate: 90 },
-    { tool: 'read_messages', calls: 5, successRate: 60 },
+    { tool: 'update_scratchpad', calls: 20, successRate: 90, errors: [] },
+    { tool: 'read_messages', calls: 5, successRate: 60, errors: [] },
   ]),
 }));
 

@@ -310,7 +310,7 @@ export interface AnalyticsSnapshot {
   cost: number;
   latencySamples?: number[];
   providerStats?: Record<string, { cost: number; tokens: number; messageCount: number }>;
-  toolStats?: Record<string, { calls: number; successCount: number }>;
+  toolStats?: Record<string, { calls: number; successCount: number; errors: string[] }>;
 }
 
 export const athenaDb = new AthenaDatabase();

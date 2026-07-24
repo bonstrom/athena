@@ -565,7 +565,28 @@ const Analytics: React.FC = () => {
                   <TableRow key={t.tool}>
                     <TableCell>{t.tool}</TableCell>
                     <TableCell align="right">{t.calls}</TableCell>
-                    <TableCell align="right">{t.successRate}%</TableCell>
+                    <TableCell align="right">
+                      {t.errors.length > 0 ? (
+                        <Tooltip
+                          title={
+                            <Box component="span" sx={{ whiteSpace: 'pre-wrap', maxWidth: 400 }}>
+                              {t.errors.map((e, i) => (
+                                <Box key={i} component="span" sx={{ display: 'block', mb: i < t.errors.length - 1 ? 0.5 : 0 }}>
+                                  {e}
+                                </Box>
+                              ))}
+                            </Box>
+                          }
+                          placement="left"
+                        >
+                          <Typography component="span" variant="body2" sx={{ cursor: 'help', borderBottom: '1px dotted' }}>
+                            {t.successRate}%
+                          </Typography>
+                        </Tooltip>
+                      ) : (
+                        <Typography variant="body2">{t.successRate}%</Typography>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

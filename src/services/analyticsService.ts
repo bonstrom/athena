@@ -61,6 +61,7 @@ export interface ToolUsageRow {
   tool: string;
   calls: number;
   successRate: number;
+  errors: string[];
 }
 
 export interface LatencyPercentiles {
@@ -311,13 +312,18 @@ export async function computeToolUsageBreakdown(): Promise<ToolUsageRow[]> {
     return computeToolUsageFromMessages();
   }
 
-  const merged: Record<string, { calls: number; successCount: number }> = {};
+  const merged: Record<string, { calls: number; successCount: number; errors: string[] }> = {};
   for (const snap of snapshots) {
     for (const [tool, stats] of Object.entries(snap.toolStats ?? {})) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      merged[tool] = merged[tool] ?? { calls: 0, successCount: 0 };
+      merged[tool] = merged[tool] ?? { calls: 0, successCount: 0, errors: [] };
       merged[tool].calls += stats.calls;
       merged[tool].successCount += stats.successCount;
+      for (const err of stats.errors ?? []) {
+        if (!merged[tool].errors.includes(err) && merged[tool].errors.length < 10) {
+          merged[tool].errors.push(err);
+        }
+      }
     }
   }
 
@@ -326,6 +332,7 @@ export async function computeToolUsageBreakdown(): Promise<ToolUsageRow[]> {
       tool,
       calls: stats.calls,
       successRate: stats.calls > 0 ? Math.round((stats.successCount / stats.calls) * 100) : 0,
+      errors: stats.errors ?? [],
     }))
     .sort((a, b) => b.calls - a.calls);
 }
@@ -352,7 +359,7 @@ async function computeProviderBreakdownFromMessages(): Promise<ProviderBreakdown
 
 async function computeToolUsageFromMessages(): Promise<ToolUsageRow[]> {
   const messages = await athenaDb.messages.toArray();
-  const merged: Record<string, { calls: number; successCount: number }> = {};
+  const merged: Record<string, { calls: number; successCount: number; errors: string[] }> = {};
 
   for (const m of messages) {
     if (!m.rawResponse) continue;
@@ -375,10 +382,15 @@ async function computeToolUsageFromMessages(): Promise<ToolUsageRow[]> {
           if (typeof toolName !== 'string') continue;
 
           // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-          merged[toolName] = merged[toolName] ?? { calls: 0, successCount: 0 };
+          merged[toolName] = merged[toolName] ?? { calls: 0, successCount: 0, errors: [] };
           merged[toolName].calls++;
           if (typeof resultStr !== 'string' || !resultStr.startsWith('Error')) {
             merged[toolName].successCount++;
+          } else {
+            const errStr = typeof resultStr === 'string' ? resultStr : String(resultStr);
+            if (!merged[toolName].errors.includes(errStr) && merged[toolName].errors.length < 10) {
+              merged[toolName].errors.push(errStr);
+            }
           }
         }
       }
@@ -392,6 +404,7 @@ async function computeToolUsageFromMessages(): Promise<ToolUsageRow[]> {
       tool,
       calls: stats.calls,
       successRate: stats.calls > 0 ? Math.round((stats.successCount / stats.calls) * 100) : 0,
+      errors: stats.errors ?? [],
     }))
     .sort((a, b) => b.calls - a.calls);
 }

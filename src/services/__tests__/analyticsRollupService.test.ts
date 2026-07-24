@@ -186,7 +186,7 @@ describe('rollupAnalytics', () => {
       cost: 0.10,
       latencySamples: [100, 200],
       providerStats: { OpenAI: { cost: 0.10, tokens: 150, messageCount: 3 } },
-      toolStats: { scratchpad: { calls: 2, successCount: 2 } },
+      toolStats: { scratchpad: { calls: 2, successCount: 2, errors: [] } },
     };
     mockSnapshotGet.mockResolvedValue(existing);
 
@@ -306,8 +306,8 @@ describe('rollupAnalytics', () => {
 
     const snap = mockSnapshotPut.mock.calls[0][0];
     expect(snap.toolStats).toEqual({
-      update_scratchpad: { calls: 1, successCount: 1 },
-      read_messages: { calls: 1, successCount: 0 },
+      update_scratchpad: { calls: 1, successCount: 1, errors: [] },
+      read_messages: { calls: 1, successCount: 0, errors: ['Error: not found'] },
     });
   });
 

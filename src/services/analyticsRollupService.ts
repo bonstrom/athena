@@ -43,8 +43,8 @@ export function resolveProviderName(modelApiId: string | undefined): string | nu
   return provider?.name ?? null;
 }
 
-function parseToolUsage(rawResponse: string | undefined): Record<string, { calls: number; successCount: number }> {
-  const result: Record<string, { calls: number; successCount: number }> = {};
+function parseToolUsage(rawResponse: string | undefined): Record<string, { calls: number; successCount: number; errors: string[] }> {
+  const result: Record<string, { calls: number; successCount: number; errors: string[] }> = {};
   if (!rawResponse) return result;
 
   try {
@@ -66,10 +66,17 @@ function parseToolUsage(rawResponse: string | undefined): Record<string, { calls
         if (typeof toolName !== 'string') continue;
 
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        result[toolName] = result[toolName] ?? { calls: 0, successCount: 0 };
+        result[toolName] = result[toolName] ?? { calls: 0, successCount: 0, errors: [] };
         result[toolName].calls++;
         if (typeof resultStr !== 'string' || !resultStr.startsWith('Error')) {
           result[toolName].successCount++;
+        } else {
+          const errStr = typeof resultStr === 'string' ? resultStr : String(resultStr);
+          if (!result[toolName].errors.includes(errStr)) {
+            if (result[toolName].errors.length < 10) {
+              result[toolName].errors.push(errStr);
+            }
+          }
         }
       }
     }
@@ -78,7 +85,7 @@ function parseToolUsage(rawResponse: string | undefined): Record<string, { calls
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  return result as Record<string, { calls: number; successCount: number }>;
+  return result as Record<string, { calls: number; successCount: number; errors: string[] }>;
 }
 
 function mergeSnapshots(existing: AnalyticsSnapshot, incoming: AnalyticsSnapshot): AnalyticsSnapshot {
@@ -96,12 +103,17 @@ function mergeSnapshots(existing: AnalyticsSnapshot, incoming: AnalyticsSnapshot
     mergedProviderStats[key].messageCount += val.messageCount;
   }
 
-  const mergedToolStats: Record<string, { calls: number; successCount: number }> = { ...existing.toolStats ?? {} };
+  const mergedToolStats: Record<string, { calls: number; successCount: number; errors: string[] }> = { ...existing.toolStats ?? {} };
   for (const [key, val] of Object.entries(incoming.toolStats ?? {})) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    mergedToolStats[key] = mergedToolStats[key] ?? { calls: 0, successCount: 0 };
+    mergedToolStats[key] = mergedToolStats[key] ?? { calls: 0, successCount: 0, errors: [] };
     mergedToolStats[key].calls += val.calls;
     mergedToolStats[key].successCount += val.successCount;
+    for (const err of val.errors ?? []) {
+      if (!mergedToolStats[key].errors.includes(err) && mergedToolStats[key].errors.length < 10) {
+        mergedToolStats[key].errors.push(err);
+      }
+    }
   }
 
   return {
@@ -120,7 +132,7 @@ function mergeSnapshots(existing: AnalyticsSnapshot, incoming: AnalyticsSnapshot
 type PopulatedSnapshot = AnalyticsSnapshot & {
   latencySamples: number[];
   providerStats: Record<string, { cost: number; tokens: number; messageCount: number }>;
-  toolStats: Record<string, { calls: number; successCount: number }>;
+  toolStats: Record<string, { calls: number; successCount: number; errors: string[] }>;
 };
 
 function createEmptySnapshot(date: string): PopulatedSnapshot {
@@ -195,9 +207,14 @@ export async function rollupAnalytics(): Promise<void> {
     const toolUsage = parseToolUsage(m.rawResponse);
     for (const [toolName, stats] of Object.entries(toolUsage)) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      const existing = snap.toolStats[toolName] ?? { calls: 0, successCount: 0 };
+      const existing = snap.toolStats[toolName] ?? { calls: 0, successCount: 0, errors: [] as string[] };
       existing.calls += stats.calls;
       existing.successCount += stats.successCount;
+      for (const err of stats.errors) {
+        if (!existing.errors.includes(err) && existing.errors.length < 10) {
+          existing.errors.push(err);
+        }
+      }
       snap.toolStats[toolName] = existing;
     }
   }

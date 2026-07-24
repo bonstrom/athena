@@ -239,8 +239,8 @@ describe('computeToolUsageBreakdown', () => {
       makeSnapshot({
         date: '2026-01-01',
         toolStats: {
-          update_scratchpad: { calls: 10, successCount: 8 },
-          read_messages: { calls: 5, successCount: 3 },
+          update_scratchpad: { calls: 10, successCount: 8, errors: [] },
+          read_messages: { calls: 5, successCount: 3, errors: [] },
         },
       }),
     ];
