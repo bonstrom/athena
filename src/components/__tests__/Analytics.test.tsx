@@ -49,6 +49,10 @@ jest.mock('../../services/analyticsService', () => ({
     { date: '2026-01-01', messageCount: 10, cost: 0.50, tokens: 1500, failPercent: 10, p50Latency: 500, p95Latency: 900 },
     { date: '2026-01-02', messageCount: 15, cost: 0.75, tokens: 2000, failPercent: 6, p50Latency: 450, p95Latency: 850 },
   ]),
+  computeTrendsRange: (): Promise<unknown[]> => Promise.resolve([
+    { date: '2026-01-01', messageCount: 10, cost: 0.50, tokens: 1500, failPercent: 10, p50Latency: 500, p95Latency: 900 },
+    { date: '2026-01-02', messageCount: 15, cost: 0.75, tokens: 2000, failPercent: 6, p50Latency: 450, p95Latency: 850 },
+  ]),
   computeLatencyPercentiles: (): Promise<object> => Promise.resolve({ p50: 500, p95: 900 }),
   computeProviderBreakdown: (): Promise<unknown[]> => Promise.resolve([
     { provider: 'OpenAI', messages: 30, cost: 1.00, tokens: 5000 },

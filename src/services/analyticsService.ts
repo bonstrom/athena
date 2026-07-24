@@ -219,10 +219,39 @@ export function removeImportedSource(deviceId: string): void {
 }
 
 export async function computeTrends(days: number): Promise<TrendRow[]> {
-  const snapshots = await athenaDb.analyticsSnapshots.orderBy('date').reverse().limit(days).toArray();
-  const recent = snapshots.reverse();
+  return computeTrendsRange(days);
+}
 
-  return recent.map((snap) => {
+export async function computeTrendsRange(
+  maxDaysOrFrom?: number | string,
+  toDate?: string,
+): Promise<TrendRow[]> {
+  const snapshots = await athenaDb.analyticsSnapshots.orderBy('date').reverse().toArray();
+
+  let filtered: typeof snapshots;
+
+  if (typeof maxDaysOrFrom === 'number' && toDate === undefined) {
+    // days mode: take last N days
+    filtered = snapshots.slice(0, maxDaysOrFrom);
+  } else {
+    // custom range mode or "all time" — snapshots are descending, reverse to ascending
+    filtered = snapshots.reverse();
+    const fromDate = typeof maxDaysOrFrom === 'string' ? maxDaysOrFrom : undefined;
+
+    if (fromDate !== undefined) {
+      filtered = filtered.filter((s) => s.date >= fromDate);
+    }
+    if (toDate !== undefined) {
+      filtered = filtered.filter((s) => s.date <= toDate);
+    }
+  }
+
+  // Ensure ascending order for chart display
+  const sorted = filtered.length > 0 && filtered[0]?.date > (filtered[filtered.length - 1]?.date ?? '')
+    ? filtered.reverse()
+    : filtered;
+
+  return sorted.map((snap) => {
     const latencies = [...(snap.latencySamples ?? [])].sort((a, b) => a - b);
     const n = latencies.length;
     const p50 = n > 0 ? latencies[Math.floor((n - 1) * 0.5)] : null;

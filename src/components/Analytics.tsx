@@ -12,6 +12,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  TextField,
 } from '@mui/material';
 import {
   Table,
@@ -31,6 +32,7 @@ import {
   getImportedSources,
   removeImportedSource,
   computeTrends,
+  computeTrendsRange,
   computeLatencyPercentiles,
   computeProviderBreakdown,
   computeToolUsageBreakdown,
@@ -117,6 +119,9 @@ const Analytics: React.FC = () => {
 
   const [trends, setTrends] = useState<TrendRow[]>([]);
   const [trendDays, setTrendDays] = useState(7);
+  const [trendMode, setTrendMode] = useState<'preset' | 'all' | 'custom'>('preset');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [latencyPerc, setLatencyPerc] = useState<LatencyPercentiles>({ p50: null, p95: null });
   const [providers, setProviders] = useState<ProviderBreakdown[]>([]);
   const [toolUsage, setToolUsage] = useState<ToolUsageRow[]>([]);
@@ -129,8 +134,17 @@ const Analytics: React.FC = () => {
       setStats(s);
       setImportedSources(getImportedSources());
 
+      let trendPromise: Promise<TrendRow[]>;
+      if (trendMode === 'all') {
+        trendPromise = computeTrendsRange();
+      } else if (trendMode === 'custom') {
+        trendPromise = computeTrendsRange(customFrom || undefined, customTo || undefined);
+      } else {
+        trendPromise = computeTrends(trendDays);
+      }
+
       const [trendData, percData, provData, toolData] = await Promise.all([
-        computeTrends(trendDays),
+        trendPromise,
         computeLatencyPercentiles(),
         computeProviderBreakdown(),
         computeToolUsageBreakdown(),
@@ -145,7 +159,7 @@ const Analytics: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [trendDays]);
+  }, [trendDays, trendMode, customFrom, customTo]);
 
   useEffect(() => {
     void loadStats();
@@ -367,14 +381,63 @@ const Analytics: React.FC = () => {
       {trends.length > 0 && (
         <Box>
           <SectionHeader>Trends</SectionHeader>
-          <Box display="flex" justifyContent="flex-end" sx={{ mb: 1 }}>
-            <FormControl size="small" sx={{ minWidth: 100 }}>
-              <InputLabel>Days</InputLabel>
-              <Select value={trendDays} label="Days" onChange={(e): void => { setTrendDays(Number(e.target.value)); void loadStats(); }}>
-                <MenuItem value={7}>7 days</MenuItem>
-                <MenuItem value={30}>30 days</MenuItem>
+          <Box display="flex" gap={1} justifyContent="flex-end" alignItems="center" flexWrap="wrap" sx={{ mb: 2 }}>
+            <FormControl size="small" sx={{ minWidth: 130 }}>
+              <InputLabel>Range</InputLabel>
+              <Select
+                value={trendMode}
+                label="Range"
+                onChange={(e): void => {
+                  const mode = e.target.value as 'preset' | 'all' | 'custom';
+                  setTrendMode(mode);
+                  if (mode !== 'custom') {
+                    setCustomFrom('');
+                    setCustomTo('');
+                  }
+                }}
+              >
+                <MenuItem value="preset">Preset</MenuItem>
+                <MenuItem value="all">All time</MenuItem>
+                <MenuItem value="custom">Custom range</MenuItem>
               </Select>
             </FormControl>
+            {trendMode === 'preset' && (
+              <FormControl size="small" sx={{ minWidth: 100 }}>
+                <InputLabel>Days</InputLabel>
+                <Select value={trendDays} label="Days" onChange={(e): void => { setTrendDays(Number(e.target.value)); void loadStats(); }}>
+                  <MenuItem value={7}>7 days</MenuItem>
+                  <MenuItem value={30}>30 days</MenuItem>
+                  <MenuItem value={90}>90 days</MenuItem>
+                </Select>
+              </FormControl>
+            )}
+            {trendMode === 'custom' && (
+              <>
+                <TextField
+                  size="small"
+                  type="date"
+                  label="From"
+                  value={customFrom}
+                  onChange={(e): void => setCustomFrom(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ minWidth: 150 }}
+                />
+                <TextField
+                  size="small"
+                  type="date"
+                  label="To"
+                  value={customTo}
+                  onChange={(e): void => setCustomTo(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ minWidth: 150 }}
+                />
+              </>
+            )}
+            {(trendMode === 'all' || trendMode === 'custom') && (
+              <Button size="small" variant="outlined" onClick={(): void => { void loadStats(); }}>
+                Apply
+              </Button>
+            )}
           </Box>
           <Box sx={{ mb: 2 }}>
             <LineChart

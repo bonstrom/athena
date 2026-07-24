@@ -39,11 +39,12 @@ jest.mock('../../database/AthenaDb', () => ({
       reverse: () => ({
         sortBy: (): Promise<AnalyticsSnapshot[]> => mockSnapshotToArray(),
       }),
-      orderBy: (): { reverse: () => { limit: (n: number) => { toArray: () => Promise<AnalyticsSnapshot[]> } } } => ({
+      orderBy: (): { reverse: () => { limit: (n: number) => { toArray: () => Promise<AnalyticsSnapshot[]> }; toArray: () => Promise<AnalyticsSnapshot[]> } } => ({
         reverse: () => ({
           limit: (_n: number) => ({
             toArray: (): Promise<AnalyticsSnapshot[]> => mockReverseLimitToArray(),
           }),
+          toArray: (): Promise<AnalyticsSnapshot[]> => mockSnapshotToArray(),
         }),
       }),
     },
