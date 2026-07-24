@@ -50,7 +50,11 @@ beforeAll(() => {
     originalError.call(console, ...args);
   };
   console.warn = (...args: unknown[]): void => {
-    if (typeof args[0] === 'string' && args[0].includes('MUI: You are providing a disabled')) {
+    if (
+      typeof args[0] === 'string' &&
+      (args[0].includes('MUI: You are providing a disabled') ||
+        args[0].includes('MUI: You have provided an out-of-range value'))
+    ) {
       return;
     }
     originalWarn.call(console, ...args);
