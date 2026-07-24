@@ -633,43 +633,6 @@ const Analytics: React.FC = () => {
                 height={200}
               />
             </Box>
-            {SIZE_BUCKET_ORDER.map((bucket) => {
-              const userCount = combined.userMessageSizeDistribution?.[bucket] || 0;
-              const asstCount = combined.assistantMessageSizeDistribution?.[bucket] || 0;
-              const userTotal = combined.messagesByType.user || 0;
-              const asstTotal = combined.messagesByType.assistant || 0;
-              return (
-                <Box key={bucket} sx={{ mb: 1.5 }}>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                    {bucket} chars
-                  </Typography>
-                  <Box display="flex" alignItems="center" gap={1} sx={{ mb: 0.5 }}>
-                    <Box sx={{ width: 12, height: 12, borderRadius: 2, bgcolor: '#1976d2', flexShrink: 0 }} />
-                    <Typography variant="body2" sx={{ minWidth: 50, fontWeight: 'medium' }}>
-                      {userCount}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ minWidth: 40 }}>
-                      {userTotal > 0 ? Math.round((userCount / userTotal) * 100) : 0}%
-                    </Typography>
-                    <Box sx={{ flex: 1 }}>
-                      <LinearProgress variant="determinate" value={userTotal > 0 ? Math.round((userCount / userTotal) * 100) : 0} sx={{ height: 6, borderRadius: 3, bgcolor: 'action.hover' }} />
-                    </Box>
-                  </Box>
-                  <Box display="flex" alignItems="center" gap={1}>
-                    <Box sx={{ width: 12, height: 12, borderRadius: 2, bgcolor: '#4caf50', flexShrink: 0 }} />
-                    <Typography variant="body2" sx={{ minWidth: 50, fontWeight: 'medium' }}>
-                      {asstCount}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ minWidth: 40 }}>
-                      {asstTotal > 0 ? Math.round((asstCount / asstTotal) * 100) : 0}%
-                    </Typography>
-                    <Box sx={{ flex: 1 }}>
-                      <LinearProgress variant="determinate" value={asstTotal > 0 ? Math.round((asstCount / asstTotal) * 100) : 0} sx={{ height: 6, borderRadius: 3, bgcolor: 'action.hover' }} />
-                    </Box>
-                  </Box>
-                </Box>
-              );
-            })}
           </>
         ) : (
           <Typography variant="body2" color="text.secondary">
