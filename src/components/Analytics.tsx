@@ -126,6 +126,7 @@ const Analytics: React.FC = () => {
   const [providers, setProviders] = useState<ProviderBreakdown[]>([]);
   const [toolUsage, setToolUsage] = useState<ToolUsageRow[]>([]);
   const [snapshotReady, setSnapshotReady] = useState(false);
+  const [sizeDistType, setSizeDistType] = useState<'all' | 'user' | 'assistant'>('all');
 
   const loadStats = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -233,6 +234,8 @@ const Analytics: React.FC = () => {
         messagesByType: mergeRecordSum(total.messagesByType, s.messagesByType),
         messagesByModel: mergeRecordSum(total.messagesByModel, s.messagesByModel),
         messageSizeDistribution: mergeRecordSum(total.messageSizeDistribution, s.messageSizeDistribution),
+        userMessageSizeDistribution: mergeRecordSum(total.userMessageSizeDistribution ?? {}, s.userMessageSizeDistribution ?? {}),
+        assistantMessageSizeDistribution: mergeRecordSum(total.assistantMessageSizeDistribution ?? {}, s.assistantMessageSizeDistribution ?? {}),
         features: {},
         firstMessageAt: total.firstMessageAt
           ? s.firstMessageAt && s.firstMessageAt < total.firstMessageAt
@@ -621,18 +624,47 @@ const Analytics: React.FC = () => {
         <SectionHeader>Message Size Distribution</SectionHeader>
         {combined ? (
           <>
+            <Box display="flex" justifyContent="flex-end" sx={{ mb: 1 }}>
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <InputLabel>Type</InputLabel>
+                <Select
+                  value={sizeDistType}
+                  label="Type"
+                  onChange={(e): void => setSizeDistType(e.target.value as 'all' | 'user' | 'assistant')}
+                >
+                  <MenuItem value="all">All messages</MenuItem>
+                  <MenuItem value="user">User only</MenuItem>
+                  <MenuItem value="assistant">Assistant only</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
             <Box sx={{ mb: 2 }}>
               <BarChart
                 xAxis={[{ data: SIZE_BUCKET_ORDER, scaleType: 'band' }]}
-                series={[
-                  { data: SIZE_BUCKET_ORDER.map((b) => combined.messageSizeDistribution[b] || 0), label: 'Count', color: '#1976d2' },
-                ]}
+                series={[{
+                  data: SIZE_BUCKET_ORDER.map((b) => {
+                    if (sizeDistType === 'user') return combined.userMessageSizeDistribution?.[b] || 0;
+                    if (sizeDistType === 'assistant') return combined.assistantMessageSizeDistribution?.[b] || 0;
+                    return combined.messageSizeDistribution[b] || 0;
+                  }),
+                  label: 'Count',
+                  color: '#1976d2',
+                }]}
                 height={200}
               />
             </Box>
             {SIZE_BUCKET_ORDER.map((bucket) => {
-              const count = combined.messageSizeDistribution[bucket] || 0;
-              const pct = combined.totalMessages > 0 ? Math.round((count / combined.totalMessages) * 100) : 0;
+              const count = sizeDistType === 'user'
+                ? (combined.userMessageSizeDistribution?.[bucket] || 0)
+                : sizeDistType === 'assistant'
+                  ? (combined.assistantMessageSizeDistribution?.[bucket] || 0)
+                  : (combined.messageSizeDistribution[bucket] || 0);
+              const typeCount = sizeDistType === 'user'
+                ? (combined.messagesByType.user || 0)
+                : sizeDistType === 'assistant'
+                  ? (combined.messagesByType.assistant || 0)
+                  : combined.totalMessages;
+              const pct = typeCount > 0 ? Math.round((count / typeCount) * 100) : 0;
               return (
                 <Box key={bucket} sx={{ mb: 1 }}>
                   <Box display="flex" justifyContent="space-between" sx={{ mb: 0.5 }}>

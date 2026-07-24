@@ -17,6 +17,8 @@ jest.mock('../../services/analyticsService', () => ({
     totalCacheCreationTokens: 500,
     totalCost: 1.50,
     messageSizeDistribution: { '0-100': 10, '101-500': 20, '501-1000': 8, '1001-2000': 4 },
+    userMessageSizeDistribution: { '0-100': 5, '101-500': 10, '501-1000': 4, '1001-2000': 2 },
+    assistantMessageSizeDistribution: { '0-100': 5, '101-500': 10, '501-1000': 4, '1001-2000': 2 },
     totalAttachments: 3,
     totalWebSearches: 12,
     topicsWithScratchpad: 1,

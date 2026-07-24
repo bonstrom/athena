@@ -17,6 +17,8 @@ export interface AnalyticsStats {
   totalCacheCreationTokens: number;
   totalCost: number;
   messageSizeDistribution: Record<string, number>;
+  userMessageSizeDistribution: Record<string, number>;
+  assistantMessageSizeDistribution: Record<string, number>;
   totalAttachments: number;
   totalWebSearches: number;
   topicsWithScratchpad: number;
@@ -105,6 +107,8 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
     totalCacheCreationTokens: 0,
     totalCost: 0,
     messageSizeDistribution: {},
+    userMessageSizeDistribution: {},
+    assistantMessageSizeDistribution: {},
     totalAttachments: 0,
     totalWebSearches: 0,
     topicsWithScratchpad: 0,
@@ -137,6 +141,11 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
     const len = m.content.length;
     const bucket = bucketSize(len);
     stats.messageSizeDistribution[bucket] = (stats.messageSizeDistribution[bucket] || 0) + 1;
+    if (m.type === 'user') {
+      stats.userMessageSizeDistribution[bucket] = (stats.userMessageSizeDistribution[bucket] || 0) + 1;
+    } else if (m.type === 'assistant') {
+      stats.assistantMessageSizeDistribution[bucket] = (stats.assistantMessageSizeDistribution[bucket] || 0) + 1;
+    }
 
     stats.totalAttachments += m.attachments?.length ?? 0;
     stats.totalWebSearches += m.searchCount ?? 0;
@@ -478,7 +487,7 @@ export interface CombinedStats {
 
 export function getCombinedStats(local?: AnalyticsStats): CombinedStats {
   return {
-    local: local ?? { summaryGeneratedCount: 0, summaryTotalCost: 0, summaryTotalReadCount: 0, summaryUniqueReadCount: 0, totalMessages: 0, messagesByType: {}, messagesByModel: {}, failedMessageCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCacheCreationTokens: 0, totalCost: 0, messageSizeDistribution: {}, totalAttachments: 0, totalWebSearches: 0, topicsWithScratchpad: 0, totalForks: 0, debateTopicCount: 0, messagesWithReasoning: 0, totalEmbeddings: 0, totalLatencyMs: 0, latencyCount: 0, firstMessageAt: null, lastMessageAt: null, features: {} },
+    local: local ?? { summaryGeneratedCount: 0, summaryTotalCost: 0, summaryTotalReadCount: 0, summaryUniqueReadCount: 0, totalMessages: 0, messagesByType: {}, messagesByModel: {}, failedMessageCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCacheCreationTokens: 0, totalCost: 0, messageSizeDistribution: {}, userMessageSizeDistribution: {}, assistantMessageSizeDistribution: {}, totalAttachments: 0, totalWebSearches: 0, topicsWithScratchpad: 0, totalForks: 0, debateTopicCount: 0, messagesWithReasoning: 0, totalEmbeddings: 0, totalLatencyMs: 0, latencyCount: 0, firstMessageAt: null, lastMessageAt: null, features: {} },
     imported: getImportedSourcesRaw(),
   };
 }
