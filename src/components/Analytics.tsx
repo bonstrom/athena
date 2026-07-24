@@ -126,7 +126,6 @@ const Analytics: React.FC = () => {
   const [providers, setProviders] = useState<ProviderBreakdown[]>([]);
   const [toolUsage, setToolUsage] = useState<ToolUsageRow[]>([]);
   const [snapshotReady, setSnapshotReady] = useState(false);
-  const [sizeDistType, setSizeDistType] = useState<'all' | 'user' | 'assistant'>('all');
 
   const loadStats = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -624,58 +623,50 @@ const Analytics: React.FC = () => {
         <SectionHeader>Message Size Distribution</SectionHeader>
         {combined ? (
           <>
-            <Box display="flex" justifyContent="flex-end" sx={{ mb: 1 }}>
-              <FormControl size="small" sx={{ minWidth: 120 }}>
-                <InputLabel>Type</InputLabel>
-                <Select
-                  value={sizeDistType}
-                  label="Type"
-                  onChange={(e): void => setSizeDistType(e.target.value as 'all' | 'user' | 'assistant')}
-                >
-                  <MenuItem value="all">All messages</MenuItem>
-                  <MenuItem value="user">User only</MenuItem>
-                  <MenuItem value="assistant">Assistant only</MenuItem>
-                </Select>
-              </FormControl>
-            </Box>
             <Box sx={{ mb: 2 }}>
               <BarChart
                 xAxis={[{ data: SIZE_BUCKET_ORDER, scaleType: 'band' }]}
-                series={[{
-                  data: SIZE_BUCKET_ORDER.map((b) => {
-                    if (sizeDistType === 'user') return combined.userMessageSizeDistribution?.[b] || 0;
-                    if (sizeDistType === 'assistant') return combined.assistantMessageSizeDistribution?.[b] || 0;
-                    return combined.messageSizeDistribution[b] || 0;
-                  }),
-                  label: 'Count',
-                  color: '#1976d2',
-                }]}
+                series={[
+                  { data: SIZE_BUCKET_ORDER.map((b) => combined.userMessageSizeDistribution?.[b] || 0), label: 'User', color: '#1976d2' },
+                  { data: SIZE_BUCKET_ORDER.map((b) => combined.assistantMessageSizeDistribution?.[b] || 0), label: 'LLM', color: '#4caf50' },
+                ]}
                 height={200}
               />
             </Box>
             {SIZE_BUCKET_ORDER.map((bucket) => {
-              const count = sizeDistType === 'user'
-                ? (combined.userMessageSizeDistribution?.[bucket] || 0)
-                : sizeDistType === 'assistant'
-                  ? (combined.assistantMessageSizeDistribution?.[bucket] || 0)
-                  : (combined.messageSizeDistribution[bucket] || 0);
-              const typeCount = sizeDistType === 'user'
-                ? (combined.messagesByType.user || 0)
-                : sizeDistType === 'assistant'
-                  ? (combined.messagesByType.assistant || 0)
-                  : combined.totalMessages;
-              const pct = typeCount > 0 ? Math.round((count / typeCount) * 100) : 0;
+              const userCount = combined.userMessageSizeDistribution?.[bucket] || 0;
+              const asstCount = combined.assistantMessageSizeDistribution?.[bucket] || 0;
+              const userTotal = combined.messagesByType.user || 0;
+              const asstTotal = combined.messagesByType.assistant || 0;
               return (
-                <Box key={bucket} sx={{ mb: 1 }}>
-                  <Box display="flex" justifyContent="space-between" sx={{ mb: 0.5 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      {bucket} chars
+                <Box key={bucket} sx={{ mb: 1.5 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                    {bucket} chars
+                  </Typography>
+                  <Box display="flex" alignItems="center" gap={1} sx={{ mb: 0.5 }}>
+                    <Box sx={{ width: 12, height: 12, borderRadius: 2, bgcolor: '#1976d2', flexShrink: 0 }} />
+                    <Typography variant="body2" sx={{ minWidth: 50, fontWeight: 'medium' }}>
+                      {userCount}
                     </Typography>
-                    <Typography variant="body2" fontWeight="medium">
-                      {count} ({pct}%)
+                    <Typography variant="body2" color="text.secondary" sx={{ minWidth: 40 }}>
+                      {userTotal > 0 ? Math.round((userCount / userTotal) * 100) : 0}%
                     </Typography>
+                    <Box sx={{ flex: 1 }}>
+                      <LinearProgress variant="determinate" value={userTotal > 0 ? Math.round((userCount / userTotal) * 100) : 0} sx={{ height: 6, borderRadius: 3, bgcolor: 'action.hover' }} />
+                    </Box>
                   </Box>
-                  <LinearProgress variant="determinate" value={pct} sx={{ height: 6, borderRadius: 3 }} />
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <Box sx={{ width: 12, height: 12, borderRadius: 2, bgcolor: '#4caf50', flexShrink: 0 }} />
+                    <Typography variant="body2" sx={{ minWidth: 50, fontWeight: 'medium' }}>
+                      {asstCount}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ minWidth: 40 }}>
+                      {asstTotal > 0 ? Math.round((asstCount / asstTotal) * 100) : 0}%
+                    </Typography>
+                    <Box sx={{ flex: 1 }}>
+                      <LinearProgress variant="determinate" value={asstTotal > 0 ? Math.round((asstCount / asstTotal) * 100) : 0} sx={{ height: 6, borderRadius: 3, bgcolor: 'action.hover' }} />
+                    </Box>
+                  </Box>
                 </Box>
               );
             })}
