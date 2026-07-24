@@ -44,6 +44,10 @@ jest.mock('../../services/llmService', () => ({
   askLlmStream: (...args: unknown[]): unknown => mockAskLlmStream(...args),
 }));
 
+jest.mock('../../services/analyticsRollupService', () => ({
+  rollupAnalytics: jest.fn((): Promise<void> => Promise.resolve()),
+}));
+
 jest.mock('../../components/ModelSelector', () => ({
   getAvailableModels: (): unknown => mockGetAvailableModels(),
   getDefaultModel: (): unknown => mockGetDefaultModel(),

@@ -8,6 +8,10 @@ import {
   Stack,
   Alert,
   Snackbar,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import {
   Table,
@@ -19,7 +23,25 @@ import {
   Tooltip,
 } from '@mui/material';
 import { Download as DownloadIcon, Upload as UploadIcon, Delete as DeleteIcon, Refresh as RefreshIcon } from '@mui/icons-material';
-import { computeLocalStats, exportAnalytics, importAnalytics, getImportedSources, removeImportedSource, AnalyticsStats, AnalyticsExport } from '../services/analyticsService';
+import { BarChart, LineChart } from '@mui/x-charts';
+import {
+  computeLocalStats,
+  exportAnalytics,
+  importAnalytics,
+  getImportedSources,
+  removeImportedSource,
+  computeTrends,
+  computeLatencyPercentiles,
+  computeProviderBreakdown,
+  computeToolUsageBreakdown,
+  AnalyticsStats,
+  AnalyticsExport,
+  TrendRow,
+  ProviderBreakdown,
+  ToolUsageRow,
+  LatencyPercentiles,
+} from '../services/analyticsService';
+import { rollupAnalytics } from '../services/analyticsRollupService';
 import { useAuthStore } from '../store/AuthStore';
 
 const SIZE_BUCKET_ORDER = ['0-100', '101-500', '501-1000', '1001-2000', '2001-4000', '4000-8000', '8000+'];
@@ -77,6 +99,10 @@ function ProgressRow({ label, value, total }: { label: string; value: number; to
   );
 }
 
+function dateLabel(ds: string): string {
+  return ds.slice(5);
+}
+
 const Analytics: React.FC = () => {
   const { userName, dateFormat } = useAuthStore();
   const [stats, setStats] = useState<AnalyticsStats | null>(null);
@@ -89,18 +115,37 @@ const Analytics: React.FC = () => {
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [trends, setTrends] = useState<TrendRow[]>([]);
+  const [trendDays, setTrendDays] = useState(7);
+  const [latencyPerc, setLatencyPerc] = useState<LatencyPercentiles>({ p50: null, p95: null });
+  const [providers, setProviders] = useState<ProviderBreakdown[]>([]);
+  const [toolUsage, setToolUsage] = useState<ToolUsageRow[]>([]);
+  const [snapshotReady, setSnapshotReady] = useState(false);
+
   const loadStats = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
       const s = await computeLocalStats();
       setStats(s);
       setImportedSources(getImportedSources());
+
+      const [trendData, percData, provData, toolData] = await Promise.all([
+        computeTrends(trendDays),
+        computeLatencyPercentiles(),
+        computeProviderBreakdown(),
+        computeToolUsageBreakdown(),
+      ]);
+      setTrends(trendData);
+      setLatencyPerc(percData);
+      setProviders(provData);
+      setToolUsage(toolData);
+      setSnapshotReady(trendData.length > 0);
     } catch {
       setSnack({ open: true, message: 'Failed to load analytics.', severity: 'error' });
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [trendDays]);
 
   useEffect(() => {
     void loadStats();
@@ -135,6 +180,13 @@ const Analytics: React.FC = () => {
     removeImportedSource(deviceId);
     setImportedSources(getImportedSources());
     setSnack({ open: true, message: 'Source removed.', severity: 'info' });
+  };
+
+  const handleRollupAndRefresh = (): void => {
+    void rollupAnalytics().then(() => {
+      void loadStats();
+      setSnack({ open: true, message: 'Rollup complete.', severity: 'success' });
+    });
   };
 
   const computeCombinedTotals = (): AnalyticsStats | null => {
@@ -183,7 +235,7 @@ const Analytics: React.FC = () => {
 
   if (loading) {
     return (
-      <Box sx={{ width: '100%', maxWidth: 600 }}>
+      <Box sx={{ width: '100%', maxWidth: 800 }}>
         <LinearProgress />
       </Box>
     );
@@ -191,7 +243,7 @@ const Analytics: React.FC = () => {
 
   if (!stats) {
     return (
-      <Box sx={{ width: '100%', maxWidth: 600 }}>
+      <Box sx={{ width: '100%', maxWidth: 800 }}>
         <Typography variant="body2" color="text.secondary">
           Failed to load analytics.
         </Typography>
@@ -200,9 +252,9 @@ const Analytics: React.FC = () => {
   }
 
   return (
-    <Stack spacing={4} sx={{ width: '100%', maxWidth: 600 }}>
+    <Stack spacing={4} sx={{ width: '100%', maxWidth: 800 }}>
       {/* ── Controls ── */}
-      <Box display="flex" gap={2} alignItems="center">
+      <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
         <Button variant="contained" startIcon={<DownloadIcon />} onClick={handleExport}>
           Export Analytics
         </Button>
@@ -228,6 +280,17 @@ const Analytics: React.FC = () => {
           <StatRow label="Last message" value={new Date(stats.lastMessageAt).toLocaleDateString(dateFormat)} />
         )}
       </Box>
+
+      {/* ── Empty snapshot notice ── */}
+      {!snapshotReady && (
+        <Alert severity="info" action={
+          <Button color="inherit" size="small" onClick={handleRollupAndRefresh}>
+            Rollup Now
+          </Button>
+        }>
+          No snapshot data yet. Run a rollup to populate time-based analytics.
+        </Alert>
+      )}
 
       {/* ── Aggregated Sources ── */}
       {Object.keys(importedSources).length > 0 && (
@@ -300,6 +363,154 @@ const Analytics: React.FC = () => {
         </Box>
       )}
 
+      {/* ── Trends ── */}
+      {trends.length > 0 && (
+        <Box>
+          <SectionHeader>Trends</SectionHeader>
+          <Box display="flex" justifyContent="flex-end" sx={{ mb: 1 }}>
+            <FormControl size="small" sx={{ minWidth: 100 }}>
+              <InputLabel>Days</InputLabel>
+              <Select value={trendDays} label="Days" onChange={(e): void => { setTrendDays(Number(e.target.value)); void loadStats(); }}>
+                <MenuItem value={7}>7 days</MenuItem>
+                <MenuItem value={30}>30 days</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+          <Box sx={{ mb: 2 }}>
+            <LineChart
+              xAxis={[{ data: trends.map((t) => dateLabel(t.date)), scaleType: 'band' }]}
+              series={[
+                { data: trends.map((t) => t.messageCount), label: 'Messages', color: '#1976d2' },
+              ]}
+              height={200}
+            />
+          </Box>
+          <Box sx={{ mb: 2 }}>
+            <LineChart
+              xAxis={[{ data: trends.map((t) => dateLabel(t.date)), scaleType: 'band' }]}
+              series={[
+                { data: trends.map((t) => t.cost), label: 'Cost (kr)', color: '#dc004e' },
+              ]}
+              height={200}
+            />
+          </Box>
+          <Box sx={{ mb: 2 }}>
+            <LineChart
+              xAxis={[{ data: trends.map((t) => dateLabel(t.date)), scaleType: 'band' }]}
+              series={[
+                { data: trends.map((t) => t.failPercent), label: 'Fail %', color: '#ff9800' },
+                { data: trends.map((t) => t.p50Latency ?? 0), label: 'p50 (ms)', color: '#4caf50' },
+                { data: trends.map((t) => t.p95Latency ?? 0), label: 'p95 (ms)', color: '#9c27b0' },
+              ]}
+              height={200}
+            />
+          </Box>
+          <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 400 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Date</TableCell>
+                  <TableCell align="right">Messages</TableCell>
+                  <TableCell align="right">Cost</TableCell>
+                  <TableCell align="right">Tokens</TableCell>
+                  <TableCell align="right">Fail %</TableCell>
+                  <TableCell align="right">p50</TableCell>
+                  <TableCell align="right">p95</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {trends.map((t) => (
+                  <TableRow key={t.date}>
+                    <TableCell>{t.date}</TableCell>
+                    <TableCell align="right">{t.messageCount}</TableCell>
+                    <TableCell align="right">{formatCost(t.cost)}</TableCell>
+                    <TableCell align="right">{formatTokens(t.tokens)}</TableCell>
+                    <TableCell align="right">{t.failPercent}%</TableCell>
+                    <TableCell align="right">{t.p50Latency != null ? formatLatency(t.p50Latency) : 'N/A'}</TableCell>
+                    <TableCell align="right">{t.p95Latency != null ? formatLatency(t.p95Latency) : 'N/A'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
+
+      {/* ── By Provider ── */}
+      {providers.length > 0 && (
+        <Box>
+          <SectionHeader>By Provider</SectionHeader>
+          <Box sx={{ mb: 2 }}>
+            <BarChart
+              xAxis={[{ data: providers.map((p) => p.provider), scaleType: 'band' }]}
+              series={[
+                { data: providers.map((p) => p.messages), label: 'Messages', color: '#1976d2' },
+              ]}
+              height={250}
+            />
+          </Box>
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Provider</TableCell>
+                  <TableCell align="right">Messages</TableCell>
+                  <TableCell align="right">Cost</TableCell>
+                  <TableCell align="right">Tokens</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {providers.map((p) => (
+                  <TableRow key={p.provider}>
+                    <TableCell>{p.provider}</TableCell>
+                    <TableCell align="right">{p.messages}</TableCell>
+                    <TableCell align="right">{formatCost(p.cost)}</TableCell>
+                    <TableCell align="right">{formatTokens(p.tokens)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
+
+      {/* ── Tool Usage ── */}
+      {toolUsage.length > 0 && (
+        <Box>
+          <SectionHeader>Tool Usage</SectionHeader>
+          <Box sx={{ mb: 2 }}>
+            <BarChart
+              xAxis={[{ data: toolUsage.map((t) => t.tool), scaleType: 'band' }]}
+              series={[
+                { data: toolUsage.map((t) => t.calls - Math.round(t.calls * t.successRate / 100)), label: 'Failed', color: '#dc004e' },
+                { data: toolUsage.map((t) => Math.round(t.calls * t.successRate / 100)), label: 'Successful', color: '#4caf50' },
+              ]}
+              height={250}
+            />
+          </Box>
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Tool</TableCell>
+                  <TableCell align="right">Calls</TableCell>
+                  <TableCell align="right">Success Rate</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {toolUsage.map((t) => (
+                  <TableRow key={t.tool}>
+                    <TableCell>{t.tool}</TableCell>
+                    <TableCell align="right">{t.calls}</TableCell>
+                    <TableCell align="right">{t.successRate}%</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      )}
+
       {/* ── Summary Effectiveness ── */}
       <Box>
         <SectionHeader>Summary Effectiveness</SectionHeader>
@@ -326,6 +537,15 @@ const Analytics: React.FC = () => {
         <SectionHeader>Message Size Distribution</SectionHeader>
         {combined ? (
           <>
+            <Box sx={{ mb: 2 }}>
+              <BarChart
+                xAxis={[{ data: SIZE_BUCKET_ORDER, scaleType: 'band' }]}
+                series={[
+                  { data: SIZE_BUCKET_ORDER.map((b) => combined.messageSizeDistribution[b] || 0), label: 'Count', color: '#1976d2' },
+                ]}
+                height={200}
+              />
+            </Box>
             {SIZE_BUCKET_ORDER.map((bucket) => {
               const count = combined.messageSizeDistribution[bucket] || 0;
               const pct = combined.totalMessages > 0 ? Math.round((count / combined.totalMessages) * 100) : 0;
@@ -408,6 +628,14 @@ const Analytics: React.FC = () => {
             <StatRow
               label="Average Latency"
               value={combined.latencyCount > 0 ? formatLatency(combined.totalLatencyMs / combined.latencyCount) : 'N/A'}
+            />
+            <StatRow
+              label="p50 Latency"
+              value={latencyPerc.p50 != null ? formatLatency(latencyPerc.p50) : 'N/A'}
+            />
+            <StatRow
+              label="p95 Latency"
+              value={latencyPerc.p95 != null ? formatLatency(latencyPerc.p95) : 'N/A'}
             />
             <StatRow
               label="Average TPS"

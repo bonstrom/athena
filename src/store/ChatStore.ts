@@ -21,6 +21,7 @@ import { llmSuggestionService } from '../services/llmSuggestionService';
 import { Message, Attachment } from '../database/AthenaDb';
 import { athenaDb } from '../database/AthenaDb';
 import { BackupService } from '../services/backupService';
+import { rollupAnalytics } from '../services/analyticsRollupService';
 import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 
@@ -789,6 +790,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           { role: 'assistant', content: finalizedAssistant.content ?? '' },
         ]);
         void topicStoreState.generateTopicName(topicId, content);
+        void rollupAnalytics();
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
           return;
@@ -848,6 +850,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           { role: 'assistant', content: finalizedAssistant.content ?? '' },
         ]);
         void topicStoreState.generateTopicName(topicId, content);
+        void rollupAnalytics();
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
           return;
@@ -1214,6 +1217,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       ]);
 
       void topicStoreState.generateTopicName(topicId, content);
+
+      // Fire-and-forget analytics rollup after successful message
+      void rollupAnalytics();
 
       // Generate reply predictions if enabled
       const { replyPredictionEnabled, replyPredictionModel } = useAuthStore.getState();

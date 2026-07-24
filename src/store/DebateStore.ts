@@ -6,6 +6,7 @@ import { useTopicStore } from './TopicStore';
 import { useNotificationStore } from './NotificationStore';
 import { useAuthStore } from './AuthStore';
 import { useChatStore } from './ChatStore';
+import { rollupAnalytics } from '../services/analyticsRollupService';
 
 import { LATEX_INSTRUCTIONS, SVG_INSTRUCTIONS } from '../constants';
 
@@ -389,6 +390,8 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       if (topic?.name === 'New Debate') {
         void topicStoreState.generateTopicName(topicId, question.trim());
       }
+
+      void rollupAnalytics();
     } catch (err) {
       if (controller.signal.aborted) return;
       console.error('Debate round failed', err);
@@ -606,6 +609,8 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       useTopicStore.setState((s) => ({
         topics: s.topics.map((t) => (t.id === topicId ? { ...t, updatedOn: doneNow } : t)),
       }));
+
+      void rollupAnalytics();
     } catch (err) {
       if (controller.signal.aborted) return;
       console.error('Debate continuation failed', err);

@@ -1,4 +1,4 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import ChatLayout from './components/ChatLayout';
 import { GlobalErrorSnackbar } from './components/GlobalErrorSnackbar';
@@ -7,6 +7,7 @@ import { useEmbeddingBackfill } from './hooks/useEmbeddingBackfill';
 import { useAuthStore } from './store/AuthStore';
 import { useChatStore } from './store/ChatStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { idleDeferredRollup } from './services/analyticsRollupService';
 
 useChatStore.getState().initDefaults();
 
@@ -18,6 +19,10 @@ const App: React.FC = () => {
   const { backupInterval } = useAuthStore();
   useAutoBackup(backupInterval); // Run auto-backup based on user preference
   useEmbeddingBackfill(); // Backfill message embeddings for RAG
+
+  useEffect(() => {
+    idleDeferredRollup();
+  }, []);
 
   return (
     <ErrorBoundary>

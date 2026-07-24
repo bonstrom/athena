@@ -155,6 +155,10 @@ jest.mock('../../services/backupService', () => ({
   },
 }));
 
+jest.mock('../../services/analyticsRollupService', () => ({
+  rollupAnalytics: jest.fn((): Promise<void> => Promise.resolve()),
+}));
+
 jest.mock('../../database/AthenaDb', () => ({
   athenaDb: {
     messages: {

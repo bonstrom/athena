@@ -203,7 +203,18 @@ class AthenaDatabase extends Dexie {
           throw err;
         }
       });
+
+    // Version 12: add analyticsSnapshots table for time-based analytics
+    this.version(12).stores({
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
+      analyticsSnapshots: 'date',
+    });
   }
+
+  analyticsSnapshots!: Table<AnalyticsSnapshot, string>;
 }
 
 export type MessageType = 'user' | 'assistant' | 'system' | 'aiNote';
@@ -289,6 +300,18 @@ export interface Topic {
   mode?: TopicMode;
   debateModelAId?: string;
   debateModelBId?: string;
+}
+
+export interface AnalyticsSnapshot {
+  date: string; // 'YYYY-MM-DD'
+  messageCount: number;
+  failedCount: number;
+  promptTokens: number;
+  completionTokens: number;
+  cost: number;
+  latencySamples?: number[];
+  providerStats?: Record<string, { cost: number; tokens: number; messageCount: number }>;
+  toolStats?: Record<string, { calls: number; successCount: number }>;
 }
 
 export const athenaDb = new AthenaDatabase();
