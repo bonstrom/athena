@@ -300,6 +300,7 @@ export async function computeProviderBreakdown(): Promise<ProviderBreakdown[]> {
 
   return Object.entries(merged)
     .map(([provider, stats]) => ({ provider, ...stats }))
+    .filter((p) => p.provider !== 'unknown')
     .sort((a, b) => b.cost - a.cost);
 }
 
@@ -345,6 +346,7 @@ async function computeProviderBreakdownFromMessages(): Promise<ProviderBreakdown
 
   return Object.entries(merged)
     .map(([provider, stats]) => ({ provider, ...stats }))
+    .filter((p) => p.provider !== 'unknown')
     .sort((a, b) => b.cost - a.cost);
 }
 
