@@ -113,6 +113,26 @@ function mergeSnapshots(existing: AnalyticsSnapshot, incoming: AnalyticsSnapshot
   };
 }
 
+type PopulatedSnapshot = AnalyticsSnapshot & {
+  latencySamples: number[];
+  providerStats: Record<string, { cost: number; tokens: number; messageCount: number }>;
+  toolStats: Record<string, { calls: number; successCount: number }>;
+};
+
+function createEmptySnapshot(date: string): PopulatedSnapshot {
+  return {
+    date,
+    messageCount: 0,
+    failedCount: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    cost: 0,
+    latencySamples: [],
+    providerStats: {},
+    toolStats: {},
+  };
+}
+
 export async function rollupAnalytics(): Promise<void> {
   const marker = getRollupMarker();
   const lastId = getRollupLastId();
@@ -130,7 +150,7 @@ export async function rollupAnalytics(): Promise<void> {
   let latestCreated = marker;
   let latestId = lastId;
 
-  const groupedByDate = new Map<string, AnalyticsSnapshot>();
+  const groupedByDate = new Map<string, PopulatedSnapshot>();
 
   for (const m of filtered) {
     const date = getDateString(m.created);
@@ -141,17 +161,7 @@ export async function rollupAnalytics(): Promise<void> {
 
     let snap = groupedByDate.get(date);
     if (!snap) {
-      snap = {
-        date,
-        messageCount: 0,
-        failedCount: 0,
-        promptTokens: 0,
-        completionTokens: 0,
-        cost: 0,
-        latencySamples: [],
-        providerStats: {},
-        toolStats: {},
-      };
+      snap = createEmptySnapshot(date);
       groupedByDate.set(date, snap);
     }
 

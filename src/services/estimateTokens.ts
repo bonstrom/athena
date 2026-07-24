@@ -19,9 +19,10 @@ export function estimateTokens(
   const contentToString = (content: LlmMessage['content']): string => {
     if (content === null) return '';
     if (typeof content === 'string') return content;
-    return content
+    const parts = content as { type: string; text?: string }[];
+    return parts
       .filter((p) => p.type === 'text')
-      .map((p) => (p as { type: 'text'; text: string }).text)
+      .map((p) => p.text ?? '')
       .join(' ');
   };
 
