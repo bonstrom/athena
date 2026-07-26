@@ -119,7 +119,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     try {
       const newTopic: Topic = {
         id: crypto.randomUUID(),
-        name: mode === 'debate' ? 'New Debate' : 'New Topic',
+        name: mode === 'debate' ? 'New Debate' : mode === 'curator' ? 'New Course' : 'New Topic',
         createdOn: new Date().toISOString(),
         isDeleted: false,
         updatedOn: new Date().toISOString(),

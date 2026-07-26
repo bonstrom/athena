@@ -4,6 +4,7 @@ import { TopicList } from './TopicList';
 import { useTopicStore } from '../store/TopicStore';
 import { useChatStore } from '../store/ChatStore';
 import { useAuthStore } from '../store/AuthStore';
+import { useCuratorStore } from '../store/CuratorStore';
 import { useUiStore } from '../store/UiStore';
 import { useNavigate, useParams } from 'react-router-dom';
 import { groupTopicsByDate } from '../utils/groupTopicsByDate';
@@ -30,6 +31,10 @@ interface ChatSelectorState {
 interface AuthSelectorState {
   topicPreloadCount: number;
 }
+
+type CuratorStoreGetStateMock = jest.Mock<{
+  getUnfinishedTopicIds: () => Promise<Set<string>>;
+}>;
 
 const mockLoadTopics = jest.fn<Promise<void>, []>(() => Promise.resolve());
 const mockIncreaseVisibleTopicCount: jest.MockedFunction<() => void> = jest.fn(() => undefined);
@@ -62,6 +67,10 @@ jest.mock('../store/AuthStore', () => ({
   useAuthStore: jest.fn(),
 }));
 
+jest.mock('../store/CuratorStore', () => ({
+  useCuratorStore: Object.assign(jest.fn(), { getState: jest.fn() }),
+}));
+
 jest.mock('../utils/groupTopicsByDate', () => ({
   groupTopicsByDate: jest.fn(),
 }));
@@ -74,6 +83,7 @@ const mockUseTopicStore = useTopicStore as unknown as UseTopicStoreMock;
 const mockUseChatStore = useChatStore as unknown as jest.Mock;
 const mockUseAuthStore = useAuthStore as unknown as jest.Mock;
 const mockUseUiStore = useUiStore as unknown as jest.Mock;
+const mockUseCuratorStore = useCuratorStore as unknown as { getState: CuratorStoreGetStateMock };
 const mockUseNavigate = useNavigate as unknown as jest.Mock;
 const mockUseParams = useParams as unknown as jest.Mock;
 const mockGroupTopicsByDate = groupTopicsByDate as jest.MockedFunction<typeof groupTopicsByDate>;
@@ -95,6 +105,9 @@ describe('TopicList', () => {
     mockUseNavigate.mockReturnValue(mockNavigate);
     mockUseParams.mockReturnValue({ topicId: undefined });
     mockUseUiStore.mockReturnValue({ selectedTopicIds: new Set<string>(), selectAllTopics: jest.fn(), clearTopicSelection: jest.fn() });
+    mockUseCuratorStore.getState.mockReturnValue({
+      getUnfinishedTopicIds: (): Promise<Set<string>> => Promise.resolve(new Set()),
+    });
 
     const topics = createTopics();
 

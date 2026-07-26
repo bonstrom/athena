@@ -152,6 +152,11 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                         <CompareArrowsIcon sx={{ fontSize: '0.85rem' }} />
                       </Box>
                     )}
+                    {topic.mode === 'curator' && (
+                      <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
+                        <MenuBookOutlined sx={{ fontSize: '0.85rem' }} />
+                      </Box>
+                    )}
                     {(topic.forks?.length ?? 0) > 1 && (
                       <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 'auto', flexShrink: 0 }}>
                         <AltRouteIcon

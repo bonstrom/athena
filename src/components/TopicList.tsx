@@ -15,6 +15,7 @@ import { useTopicStore } from '../store/TopicStore';
 import { useChatStore } from '../store/ChatStore';
 import { useAuthStore } from '../store/AuthStore';
 import { useUiStore } from '../store/UiStore';
+import { useCuratorStore } from '../store/CuratorStore';
 import { TopicListItem } from './TopicListItem';
 import React, { JSX, useEffect, useState } from 'react';
 import { groupTopicsByDate } from '../utils/groupTopicsByDate';
@@ -29,6 +30,7 @@ export const TopicList = (): JSX.Element => {
   const { topicId } = useParams();
   const navigate = useNavigate();
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [inProgressIds, setInProgressIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     void loadTopics().then(() => {
@@ -39,6 +41,21 @@ export const TopicList = (): JSX.Element => {
       void preloadTopics(recentIds);
     });
   }, [loadTopics, preloadTopics, topicPreloadCount]);
+
+  useEffect(() => {
+    useCuratorStore
+      .getState()
+      .getUnfinishedTopicIds()
+      .then((ids) => {
+        setInProgressIds((prev) => {
+          if (prev.size === ids.size && [...prev].every((id) => ids.has(id))) return prev;
+          return ids;
+        });
+      })
+      .catch(() => {
+        setInProgressIds((prev) => (prev.size === 0 ? prev : new Set()));
+      });
+  }, [topics]);
 
   const topTopicUpdatedOn = topics[0]?.updatedOn;
   const topTopicId = topics[0]?.id;
@@ -52,7 +69,9 @@ export const TopicList = (): JSX.Element => {
   }, [topTopicUpdatedOn, topTopicId]);
 
   const visibleTopics = topics.slice(0, visibleTopicCount);
-  const grouped = groupTopicsByDate(visibleTopics);
+  const inProgressTopics = visibleTopics.filter((t) => inProgressIds.has(t.id));
+  const normalTopics = visibleTopics.filter((t) => !inProgressIds.has(t.id));
+  const grouped = groupTopicsByDate(normalTopics);
 
   const hasMoreToShow = visibleTopicCount < topics.length;
   const selectionCount = selectedTopicIds.size;
@@ -103,6 +122,27 @@ export const TopicList = (): JSX.Element => {
       )}
 
       <List>
+        {inProgressTopics.length > 0 && (
+          <React.Fragment key="in-progress">
+            <ListSubheader
+              disableSticky
+              sx={{
+                fontSize: '0.65rem',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: 'primary.main',
+                lineHeight: '2.5rem',
+                bgcolor: 'transparent',
+                fontWeight: 700,
+              }}
+            >
+              In Progress
+            </ListSubheader>
+            {inProgressTopics.map((topic) => (
+              <TopicListItem key={topic.id} topic={topic} />
+            ))}
+          </React.Fragment>
+        )}
         {grouped.map((group) => (
           <React.Fragment key={group.label}>
             <ListSubheader

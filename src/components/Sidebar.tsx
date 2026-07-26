@@ -50,6 +50,15 @@ export const Sidebar = (): JSX.Element => {
     }
   };
 
+  const handleCreateCurator = async (): Promise<void> => {
+    setNewTopicMenuAnchor(null);
+    const topic = await createTopic('curator');
+    if (topic) {
+      void navigate(`/chat/${topic.id}`);
+      if (isMobile) closeDrawer();
+    }
+  };
+
   return (
     <Box display="flex" flexDirection="column" height="100%">
       <SidebarHeader />
@@ -105,6 +114,15 @@ export const Sidebar = (): JSX.Element => {
             sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}
           >
             New Debate
+          </MenuItem>
+          <MenuItem
+            dense
+            onClick={(): void => {
+              void handleCreateCurator();
+            }}
+            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}
+          >
+            New Course
           </MenuItem>
         </Menu>
       </Box>

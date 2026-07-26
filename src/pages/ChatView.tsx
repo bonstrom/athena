@@ -9,6 +9,7 @@ import MessageList from '../components/MessageList';
 import Composer from '../components/Composer';
 import ForkTabs from '../components/ForkTabs';
 import DebateView from '../components/DebateView';
+import CuratorView from '../components/CuratorView';
 
 const ChatView: React.FC = () => {
   const { topicId } = useParams<{ topicId: string }>();
@@ -94,6 +95,8 @@ const ChatView: React.FC = () => {
               <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}>
                 {topic?.mode === 'debate' ? (
                   <DebateView topic={topic} messages={messages} />
+                ) : topic?.mode === 'curator' ? (
+                  <CuratorView topic={topic} messages={messages} />
                 ) : (
                   <>
                     {displayTopicId && <ForkTabs topicId={displayTopicId} />}
@@ -116,7 +119,7 @@ const ChatView: React.FC = () => {
         </Box>
       </Box>
 
-      {topic?.mode !== 'debate' && (
+      {(!topic || topic.mode === 'topic') && (
         <Composer
           sending={sending}
           onSend={(content: string, attachments?: Attachment[]): void => {

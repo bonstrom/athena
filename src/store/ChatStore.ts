@@ -24,8 +24,9 @@ import { BackupService } from '../services/backupService';
 import { rollupAnalytics } from '../services/analyticsRollupService';
 import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
+import { useCuratorStore } from './CuratorStore';
 
-import { LATEX_INSTRUCTIONS, SVG_INSTRUCTIONS, SCRATCHPAD_LIMIT, SHORTENED_ID_LENGTH, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS } from '../constants';
+import { LATEX_INSTRUCTIONS, SVG_INSTRUCTIONS, SCRATCHPAD_LIMIT, SHORTENED_ID_LENGTH, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS, CURATOR_SYSTEM_PROMPT } from '../constants';
 
 /**
  * Heuristic: detect when the LLM response is primarily a clarification question
@@ -229,32 +230,42 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const existingContext = await topicStoreState.getTopicContext(topicId, undefined, userMessagePreview?.trim());
     const entries: ContextEntry[] = [];
 
-    // System: Custom instructions (prepended first, same as buildPayload in llmService)
-    if (customInstructions) {
-      entries.push({ message: { role: 'system', content: customInstructions }, sourceLabel: 'Custom Instructions' });
-    }
+  // System: Custom instructions (prepended first, same as buildPayload in llmService)
+  if (customInstructions) {
+    entries.push({ message: { role: 'system', content: customInstructions }, sourceLabel: 'Custom Instructions' });
+  }
 
-    // System: LaTeX formatting instructions
-    entries.push({ message: { role: 'system', content: LATEX_INSTRUCTIONS }, sourceLabel: 'Formatting' });
+  // System: Curator mode prompt (replaces custom instructions for curator topics)
+  if (topic?.mode === 'curator') {
+    const curatorState = useCuratorStore.getState();
+    const { ratingsContext, completedCourseNames } = await curatorState.getPastRatingsForContext();
+    entries.push({
+      message: { role: 'system', content: `${CURATOR_SYSTEM_PROMPT}\n\n${ratingsContext}${completedCourseNames ? `\n\n${completedCourseNames}` : ''}` },
+      sourceLabel: 'Curator Instructions',
+    });
+  }
 
-    // System: SVG visualization instructions
-    entries.push({ message: { role: 'system', content: SVG_INSTRUCTIONS }, sourceLabel: 'SVG' });
+  // System: LaTeX formatting instructions
+  entries.push({ message: { role: 'system', content: LATEX_INSTRUCTIONS }, sourceLabel: 'Formatting' });
 
-    // System: Scratchpad rules + content (shown as two entries for clarity in the inspector)
-    const rawScratchpadRules = (topic?.scratchpad ? scratchpadRulesTemplate : SHORT_SCRATCHPAD_RULES).replace(
-      '{{SCRATCHPAD_LIMIT}}',
-      String(SCRATCHPAD_LIMIT),
-    );
-    const scratchpadRulesOnly = selectedModel.supportsTools
-      ? rawScratchpadRules
-      : `${rawScratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`;
-    entries.push({ message: { role: 'system', content: scratchpadRulesOnly }, sourceLabel: 'Scratchpad Rules' });
-    if (topic?.scratchpad) {
-      entries.push({ message: { role: 'system', content: topic.scratchpad }, sourceLabel: 'Scratchpad Content' });
-    }
+  // System: SVG visualization instructions
+  entries.push({ message: { role: 'system', content: SVG_INSTRUCTIONS }, sourceLabel: 'SVG' });
 
-    // System: Web search instructions
-    if (webSearchEnabled && selectedProvider?.supportsWebSearch) {
+  // System: Scratchpad rules + content (shown as two entries for clarity in the inspector)
+  const rawScratchpadRules = (topic?.scratchpad ? scratchpadRulesTemplate : SHORT_SCRATCHPAD_RULES).replace(
+    '{{SCRATCHPAD_LIMIT}}',
+    String(SCRATCHPAD_LIMIT),
+  );
+  const scratchpadRulesOnly = selectedModel.supportsTools
+    ? rawScratchpadRules
+    : `${rawScratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`;
+  entries.push({ message: { role: 'system', content: scratchpadRulesOnly }, sourceLabel: 'Scratchpad Rules' });
+  if (topic?.scratchpad) {
+    entries.push({ message: { role: 'system', content: topic.scratchpad }, sourceLabel: 'Scratchpad Content' });
+  }
+
+  // System: Web search instructions
+  if (webSearchEnabled && selectedProvider?.supportsWebSearch) {
       entries.push({
         message: {
           role: 'system',

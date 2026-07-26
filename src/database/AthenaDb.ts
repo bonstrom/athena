@@ -211,9 +211,22 @@ class AthenaDatabase extends Dexie {
       userSettings: 'id',
       analyticsSnapshots: 'date',
     });
+
+    // Version 13: add learningCycles and learningDays tables for Curator mode
+    this.version(13).stores({
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
+      analyticsSnapshots: 'date',
+      learningCycles: 'id, topicId, phase, weekStart',
+      learningDays: 'id, cycleId, dayNumber',
+    });
   }
 
   analyticsSnapshots!: Table<AnalyticsSnapshot, string>;
+  learningCycles!: Table<LearningCycle, string>;
+  learningDays!: Table<LearningDay, string>;
 }
 
 export type MessageType = 'user' | 'assistant' | 'system' | 'aiNote';
@@ -281,7 +294,44 @@ export interface Message {
   debatePhase?: DebatePhase;
 }
 
-export type TopicMode = 'topic' | 'debate';
+export type TopicMode = 'topic' | 'debate' | 'curator';
+
+export type CuratorPhase = 'suggesting' | 'active' | 'completed' | 'rated';
+
+export interface ReflectionQuestion {
+  question: string;
+  answer: string;
+}
+
+export interface LearningCycle {
+  id: string;
+  topicId: string;
+  topicName: string;
+  hook: string;
+  weekStart: string;
+  phase: CuratorPhase;
+  topicRating?: number;
+  contentRating?: number;
+  reflections?: string;
+  priorKnowledgeLevel?: 'beginner' | 'intermediate' | 'advanced';
+}
+
+export interface LearningDay {
+  id: string;
+  cycleId: string;
+  dayNumber: number;
+  subTopic: string;
+  hook: string;
+  opener: string;
+  summary: string;
+  links: string[];
+  bridge: string;
+  keyTakeaway: string;
+  hookArchetype: string;
+  estimatedReadingMinutes: number;
+  reflectionQuestions: ReflectionQuestion[];
+  isCompleted: boolean;
+}
 
 export interface Topic {
   id: string;
