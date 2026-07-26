@@ -395,6 +395,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
   const [expandedParts, setExpandedParts] = useState<Record<string, boolean>>({});
 
   const [suggestionSlots, setSuggestionSlots] = useState<SuggestionSlot[] | null>(null);
+  const [customQuestion, setCustomQuestion] = useState('');
   const [selectedCategoryLabel, setSelectedCategoryLabel] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   const [pendingQuestion, setPendingQuestion] = useState<SuggestionCard | null>(null);
@@ -728,9 +729,10 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
 
   const handleCategoryClick = async (category: LearningCategory, sectionTitle: string): Promise<void> => {
     await incrementCategoryCount(category.id);
-    setCategoryCounts((prev) => ({ ...prev, [category.id]: (prev[category.id] || 0) + 1 }));
+    setCategoryCounts((prev) => ({ ...prev, [category.id]: (prev[category.id] ?? 0) + 1 }));
     setSelectedCategoryLabel(category.label);
     setSelectedCategoryId(category.id);
+    setCustomQuestion('');
 
     const picked = await getPickedQuestions();
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -920,6 +922,14 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
     suggestionAbortRefs.current = [];
     setSuggestionSlots(null);
     setPendingQuestion(suggestion);
+  };
+
+  const handleCustomQuestionSubmit = (): void => {
+    const q = customQuestion.trim();
+    if (!q) return;
+    setCustomQuestion('');
+    const card: SuggestionCard = { question: q, teaser: '', difficulty: 2 };
+    handleTopicSelect(card);
   };
 
   const handlePriorKnowledgeConfirm = async (): Promise<void> => {
@@ -1221,7 +1231,8 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                       </CardContent>
                     )}
                     {slot.status === 'done' && slot.card && (
-                      <CardActionArea onClick={(): void => { handleTopicSelect(slot.card); }}>
+                      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+                      <CardActionArea onClick={(): void => { handleTopicSelect(slot.card!); }}>
                         <CardContent sx={{ py: 1.5, px: 2 }}>
                           <Typography variant="body1" fontWeight="bold" gutterBottom>{slot.card.question}</Typography>
                           {slot.card.teaser && (
@@ -1244,6 +1255,21 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                     )}
                   </Card>
                 ))}
+              </Box>
+              <Box display="flex" alignItems="center" gap={0.5} mt={1.5} pt={1} sx={{ borderTop: `1px solid ${theme.palette.divider}` }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Or write your own question..."
+                  value={customQuestion}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>): void => { setCustomQuestion(e.target.value); }}
+                  onKeyDown={(e: React.KeyboardEvent): void => { if (e.key === 'Enter') handleCustomQuestionSubmit(); }}
+                  sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.875rem' } }}
+                />
+                <IconButton color="primary" onClick={(): void => { handleCustomQuestionSubmit(); }}
+                  disabled={!customQuestion.trim()} size="small">
+                  <SendIcon />
+                </IconButton>
               </Box>
             </Box>
           )}
