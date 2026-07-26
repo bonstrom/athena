@@ -233,8 +233,8 @@ const Analytics: React.FC = () => {
         messagesByType: mergeRecordSum(total.messagesByType, s.messagesByType),
         messagesByModel: mergeRecordSum(total.messagesByModel, s.messagesByModel),
         messageSizeDistribution: mergeRecordSum(total.messageSizeDistribution, s.messageSizeDistribution),
-        userMessageSizeDistribution: mergeRecordSum(total.userMessageSizeDistribution ?? {}, s.userMessageSizeDistribution ?? {}),
-        assistantMessageSizeDistribution: mergeRecordSum(total.assistantMessageSizeDistribution ?? {}, s.assistantMessageSizeDistribution ?? {}),
+        userMessageSizeDistribution: mergeRecordSum(total.userMessageSizeDistribution, s.userMessageSizeDistribution),
+        assistantMessageSizeDistribution: mergeRecordSum(total.assistantMessageSizeDistribution, s.assistantMessageSizeDistribution),
         features: {},
         firstMessageAt: total.firstMessageAt
           ? s.firstMessageAt && s.firstMessageAt < total.firstMessageAt
@@ -627,8 +627,8 @@ const Analytics: React.FC = () => {
               <BarChart
                 xAxis={[{ data: SIZE_BUCKET_ORDER, scaleType: 'band' }]}
                 series={[
-                  { data: SIZE_BUCKET_ORDER.map((b) => combined.userMessageSizeDistribution?.[b] || 0), label: 'User', color: '#1976d2' },
-                  { data: SIZE_BUCKET_ORDER.map((b) => combined.assistantMessageSizeDistribution?.[b] || 0), label: 'LLM', color: '#4caf50' },
+                  { data: SIZE_BUCKET_ORDER.map((b) => combined.userMessageSizeDistribution[b] || 0), label: 'User', color: '#1976d2' },
+                  { data: SIZE_BUCKET_ORDER.map((b) => combined.assistantMessageSizeDistribution[b] || 0), label: 'LLM', color: '#4caf50' },
                 ]}
                 height={200}
               />

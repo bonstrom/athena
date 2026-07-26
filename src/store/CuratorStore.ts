@@ -57,7 +57,8 @@ export const useCuratorStore = create<CuratorState>((set, get) => ({
       for (const d of allParts) {
         const key = d.cycleId;
         if (!seen.has(key)) seen.set(key, new Set());
-        const nums = seen.get(key)!;
+        const nums = seen.get(key);
+        if (!nums) throw new Error(`Unexpected: set not found for key ${key}`);
         if (nums.has(d.dayNumber)) {
           toDelete.push(d.id);
         } else {
@@ -182,7 +183,7 @@ export const useCuratorStore = create<CuratorState>((set, get) => ({
       const counts: Record<string, number> = (setting && typeof setting.value === 'object' && setting.value !== null)
         ? (setting.value as Record<string, number>)
         : {};
-      counts[categoryId] = (counts[categoryId] ?? 0) + 1;
+      counts[categoryId] = (counts[categoryId] || 0) + 1;
       await athenaDb.userSettings.put({ id: 'learningCategoryCounts', value: counts });
     });
   },
@@ -197,6 +198,7 @@ export const useCuratorStore = create<CuratorState>((set, get) => ({
 
   addPickedQuestion: async (categoryId: string, question: string): Promise<void> => {
     const questions = await get().getPickedQuestions();
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     const list = questions[categoryId] ?? [];
     if (!list.includes(question)) {
       list.push(question);

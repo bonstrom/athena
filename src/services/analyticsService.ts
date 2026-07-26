@@ -328,7 +328,7 @@ export async function computeToolUsageBreakdown(): Promise<ToolUsageRow[]> {
       merged[tool] = merged[tool] ?? { calls: 0, successCount: 0, errors: [] };
       merged[tool].calls += stats.calls;
       merged[tool].successCount += stats.successCount;
-      for (const err of stats.errors ?? []) {
+      for (const err of stats.errors) {
         if (!merged[tool].errors.includes(err) && merged[tool].errors.length < 10) {
           merged[tool].errors.push(err);
         }
@@ -341,7 +341,7 @@ export async function computeToolUsageBreakdown(): Promise<ToolUsageRow[]> {
       tool,
       calls: stats.calls,
       successRate: stats.calls > 0 ? Math.round((stats.successCount / stats.calls) * 100) : 0,
-      errors: stats.errors ?? [],
+      errors: stats.errors,
     }))
     .sort((a, b) => b.calls - a.calls);
 }
@@ -413,7 +413,7 @@ async function computeToolUsageFromMessages(): Promise<ToolUsageRow[]> {
       tool,
       calls: stats.calls,
       successRate: stats.calls > 0 ? Math.round((stats.successCount / stats.calls) * 100) : 0,
-      errors: stats.errors ?? [],
+      errors: stats.errors,
     }))
     .sort((a, b) => b.calls - a.calls);
 }

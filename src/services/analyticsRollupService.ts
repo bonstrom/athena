@@ -109,7 +109,7 @@ function mergeSnapshots(existing: AnalyticsSnapshot, incoming: AnalyticsSnapshot
     mergedToolStats[key] = mergedToolStats[key] ?? { calls: 0, successCount: 0, errors: [] };
     mergedToolStats[key].calls += val.calls;
     mergedToolStats[key].successCount += val.successCount;
-    for (const err of val.errors ?? []) {
+    for (const err of val.errors) {
       if (!mergedToolStats[key].errors.includes(err) && mergedToolStats[key].errors.length < 10) {
         mergedToolStats[key].errors.push(err);
       }

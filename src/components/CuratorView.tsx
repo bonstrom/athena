@@ -273,7 +273,7 @@ function normalizePlan(parsed: unknown): ParsedPlan | null {
   if (typeof parsed !== 'object' || parsed === null) return null;
   let obj = parsed as Record<string, unknown>;
 
-  if (obj.course && typeof obj.course === 'object' && obj.course !== null) {
+  if (obj.course && typeof obj.course === 'object') {
     obj = obj.course as Record<string, unknown>;
   }
 
@@ -343,8 +343,8 @@ interface ModelTiming {
 
 async function loadModelTimings(modelId: string): Promise<{ averageMs: number; maxMs: number }> {
   const setting = await athenaDb.userSettings.get('partGenTimings');
-  const allTimings: Record<string, ModelTiming> =
-    setting && typeof setting.value === 'object' ? (setting.value as Record<string, ModelTiming>) : {};
+  const allTimings: Record<string, ModelTiming | undefined> =
+    setting && typeof setting.value === 'object' ? (setting.value as Record<string, ModelTiming | undefined>) : {};
   const timing = allTimings[modelId];
   if (timing && timing.count > 0) {
     return { averageMs: timing.averageMs, maxMs: timing.maxMs };
@@ -354,8 +354,8 @@ async function loadModelTimings(modelId: string): Promise<{ averageMs: number; m
 
 async function recordPartTiming(modelId: string, elapsedMs: number): Promise<void> {
   const setting = await athenaDb.userSettings.get('partGenTimings');
-  const allTimings: Record<string, ModelTiming> =
-    setting && typeof setting.value === 'object' ? (setting.value as Record<string, ModelTiming>) : {};
+  const allTimings: Record<string, ModelTiming | undefined> =
+    setting && typeof setting.value === 'object' ? (setting.value as Record<string, ModelTiming | undefined>) : {};
   const current = allTimings[modelId] ?? { count: 0, averageMs: 0, maxMs: 0 };
   const newCount = current.count + 1;
   const newAverage = Math.round((current.averageMs * current.count + elapsedMs) / newCount);
@@ -483,8 +483,8 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
     return LEARNING_SECTIONS.map((section) => ({
       ...section,
       categories: [...section.categories].sort((a, b) => {
-        const countA = categoryCounts[a.id] ?? 0;
-        const countB = categoryCounts[b.id] ?? 0;
+        const countA = categoryCounts[a.id] || 0;
+        const countB = categoryCounts[b.id] || 0;
         return countA - countB;
       }),
     }));
@@ -556,12 +556,14 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
         return;
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeCycle, courseParts, generatingPhase, saveCourseParts, updateCyclePhase, topic.id],
   );
 
   const generatePartContent = useCallback(
     async (partNum: number, outline: CourseOutline, cycleId: string): Promise<void> => {
       const outlinePart = outline.parts[partNum - 1];
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!outlinePart) {
         setGenerationError('Part not found in outline. Please try again.');
         setGeneratingPhase('idle');
@@ -679,6 +681,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
         setGenProgress(pct);
         if (pct >= 100) {
           clearInterval(genTimerRef.current);
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           if (controller.signal.aborted) return;
           setGenStage(2);
           setGenProgress(0);
@@ -690,6 +693,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             setGenProgress(pct2);
             if (pct2 >= 100) {
               clearInterval(genTimerRef.current);
+              // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
               if (!controller.signal.aborted) {
                 setGenStage(3);
               }
@@ -724,11 +728,12 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
 
   const handleCategoryClick = async (category: LearningCategory, sectionTitle: string): Promise<void> => {
     await incrementCategoryCount(category.id);
-    setCategoryCounts((prev) => ({ ...prev, [category.id]: (prev[category.id] ?? 0) + 1 }));
+    setCategoryCounts((prev) => ({ ...prev, [category.id]: (prev[category.id] || 0) + 1 }));
     setSelectedCategoryLabel(category.label);
     setSelectedCategoryId(category.id);
 
     const picked = await getPickedQuestions();
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     const alreadyPicked = picked[category.id] ?? [];
     const exclusionLines = alreadyPicked.length > 0
       ? `\n\nDo NOT suggest any of these questions that were already picked in this category:\n${alreadyPicked.map(q => `- ${q}`).join('\n')}\n\nSuggest NEW questions that have NOT been suggested before.`
@@ -839,6 +844,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
     const existingQuestion = slot.card?.question;
 
     void getPickedQuestions().then((picked) => {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const alreadyPicked = picked[selectedCategoryId] ?? [];
       const allExcluded = existingQuestion ? [...alreadyPicked, existingQuestion] : alreadyPicked;
       const exclusionLines = allExcluded.length > 0
@@ -955,7 +961,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
     let outline = outlineRef.current;
     if (!outline && courseParts.length > 0) {
       outline = {
-        courseTitle: activeCycle?.topicName ?? topic.name ?? '',
+        courseTitle: activeCycle.topicName || topic.name,
         parts: courseParts.map((p) => ({ title: p.subTopic, coreIdea: '', hookArchetype: p.hookArchetype })),
       };
       outlineRef.current = outline;
@@ -1020,7 +1026,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             ? `Current part: Part ${currentPart.dayNumber} of ${totalParts} — "${currentPart.subTopic}"`
             : `Progress: ${completedCount}/${totalParts} parts completed`,
         ];
-        if (currentPart && currentPart.summary) {
+        if (currentPart?.summary) {
           contextLines.push(`Current part summary:\n${currentPart.summary}`);
         }
         if (courseParts.length > 0) {
@@ -1143,7 +1149,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                     sx={{ flex: 1, borderLeft: priorKnowledgeLevel === level.value ? `3px solid ${theme.palette.primary.main}` : `3px solid transparent`,
                       transition: 'box-shadow 0.2s, border-color 0.2s', cursor: 'pointer',
                       '&:hover': { borderColor: theme.palette.primary.main } }}
-                    onClick={() => setPriorKnowledgeLevel(level.value)}>
+                    onClick={(): void => { setPriorKnowledgeLevel(level.value); }}>
                     <CardContent sx={{ py: 1, px: 1.5, '&:last-child': { pb: 1 } }}>
                       <Typography variant="body2" fontWeight={priorKnowledgeLevel === level.value ? 700 : 500}>
                         {level.label}
@@ -1153,7 +1159,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                   </Card>
                 ))}
               </Stack>
-              <Chip label="Generate course" color="primary" onClick={() => void handlePriorKnowledgeConfirm()}
+              <Chip label="Generate course" color="primary" onClick={(): void => { void handlePriorKnowledgeConfirm(); }}
                 sx={{ fontWeight: 600, cursor: 'pointer' }} />
             </Box>
           )}
@@ -1174,7 +1180,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(auto-fill, minmax(130px, 1fr))' }, gap: 0.75 }}>
                     {section.categories.map((cat) => (
                       <Chip key={cat.id} label={cat.label} variant="outlined"
-                        onClick={() => void handleCategoryClick(cat, section.title)}
+                        onClick={(): void => { void handleCategoryClick(cat, section.title); }}
                         sx={{ width: '100%', borderColor: theme.palette.divider, bgcolor: 'background.paper',
                           fontWeight: 500, cursor: 'pointer', '&:hover': { borderColor: 'primary.main', bgcolor: theme.palette.action.hover } }} />
                     ))}
@@ -1211,11 +1217,11 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                       <CardContent sx={{ py: 1.5, px: 2 }}>
                         <Typography variant="body2" color="error.main" gutterBottom>Failed to generate question.</Typography>
                         <Chip icon={<RefreshIcon />} label="Regenerate" size="small" variant="outlined" color="primary"
-                          onClick={() => handleRegenerateCard(idx)} sx={{ cursor: 'pointer' }} />
+                          onClick={(): void => { handleRegenerateCard(idx); }} sx={{ cursor: 'pointer' }} />
                       </CardContent>
                     )}
                     {slot.status === 'done' && slot.card && (
-                      <CardActionArea onClick={() => handleTopicSelect(slot.card!)}>
+                      <CardActionArea onClick={(): void => { handleTopicSelect(slot.card); }}>
                         <CardContent sx={{ py: 1.5, px: 2 }}>
                           <Typography variant="body1" fontWeight="bold" gutterBottom>{slot.card.question}</Typography>
                           {slot.card.teaser && (
@@ -1228,7 +1234,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                                 {['Beginner', 'Intermediate', 'Advanced'][slot.card.difficulty - 1] ?? 'Intermediate'}
                               </Typography>
                             </Box>
-                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleRegenerateCard(idx); }}
+                            <IconButton size="small" onClick={(e): void => { e.stopPropagation(); handleRegenerateCard(idx); }}
                               title="Regenerate this question">
                               <RefreshIcon sx={{ fontSize: '0.9rem' }} />
                             </IconButton>
@@ -1261,7 +1267,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                 const isCompleted = part.isCompleted;
                 const isCurrent = !isCompleted && idx === courseParts.findIndex((d) => !d.isCompleted);
                 const isLocked = !isCompleted && !isCurrent;
-                const isExpanded = isCurrent || (expandedParts[part.id] ?? false);
+                const isExpanded = isCurrent || (expandedParts[part.id] || false);
                 const isSkeleton = !part.summary;
 
                 return (
@@ -1271,7 +1277,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                         borderRadius: isExpanded && !isLocked ? '8px 8px 0 0' : 2,
                         cursor: isLocked ? 'default' : 'pointer', opacity: isLocked ? 0.45 : 1,
                         '&:hover': isLocked ? {} : { bgcolor: theme.palette.action.selected } }}
-                      onClick={isLocked ? undefined : () => togglePart(part.id)}>
+                      onClick={isLocked ? undefined : (): void => { togglePart(part.id); }}>
                       <Box display="flex" alignItems="center" gap={0.75}>
                         {isLocked ? (
                           <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.8rem', mr: 0.25 }}>—</Typography>

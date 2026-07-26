@@ -440,7 +440,8 @@ const OpenAiAdapter: IMessageAdapter = {
       throw new Error('OpenAI adapter: API response is missing choices array');
     }
     const message = d.choices[0].message;
-    if (!message || (typeof message.content !== 'string' && message.content != null)) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (!message || message.content === null) {
       throw new Error('OpenAI adapter: API response has unexpected message format');
     }
     const finishReason = d.choices[0].finish_reason;
