@@ -26,7 +26,7 @@ export const TopicList = (): JSX.Element => {
   const { topics, loading, loadTopics, visibleTopicCount, increaseVisibleTopicCount, deleteTopics } = useTopicStore();
   const preloadTopics = useChatStore((state) => state.preloadTopics);
   const topicPreloadCount = useAuthStore((state) => state.topicPreloadCount);
-  const { selectedTopicIds, selectAllTopics, clearTopicSelection } = useUiStore();
+  const { selectedTopicIds, selectAllTopics, clearTopicSelection, sidebarFilter } = useUiStore();
   const { topicId } = useParams();
   const navigate = useNavigate();
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
@@ -68,12 +68,23 @@ export const TopicList = (): JSX.Element => {
     }
   }, [topTopicUpdatedOn, topTopicId]);
 
-  const visibleTopics = topics.slice(0, visibleTopicCount);
+  const filteredTopics = React.useMemo(() => {
+    if (sidebarFilter === 'courses') return topics.filter((t) => t.mode === 'curator');
+    if (sidebarFilter === 'debates') return topics.filter((t) => t.mode === 'debate');
+    if (sidebarFilter === 'topics') return topics.filter((t) => !t.mode || t.mode === 'topic');
+    return topics;
+  }, [topics, sidebarFilter]);
+
+  const visibleTopics = React.useMemo(
+    () => filteredTopics.slice(0, visibleTopicCount),
+    [filteredTopics, visibleTopicCount],
+  );
+
   const inProgressTopics = visibleTopics.filter((t) => inProgressIds.has(t.id));
   const normalTopics = visibleTopics.filter((t) => !inProgressIds.has(t.id));
   const grouped = groupTopicsByDate(normalTopics);
 
-  const hasMoreToShow = visibleTopicCount < topics.length;
+  const hasMoreToShow = visibleTopicCount < filteredTopics.length;
   const selectionCount = selectedTopicIds.size;
   const isSelecting = selectionCount > 0;
 
