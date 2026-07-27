@@ -259,9 +259,9 @@ The question must:
 ${difficultyGuide}
 
 Return ONLY a single JSON object. No array, no other text:
-{"question": "...", "teaser": "...", "difficulty": <1|2|3>}
+{"question": "...", "context": "...", "difficulty": <1|2|3>}
 
-The teaser is one sentence hinting why the answer is surprising or fascinating.`;
+The context is one sentence that expands on the question — what makes it interesting, what broader theme or subfield it connects to, why it matters. Do NOT reveal or hint at the answer. The context should make the user more curious, not satisfy their curiosity. Never include any factual claims that would constitute part of an answer.`;
 }
 
 export interface LearningCategory {

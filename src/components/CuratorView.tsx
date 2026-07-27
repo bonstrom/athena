@@ -47,7 +47,7 @@ interface TeacherMessage {
 
 interface SuggestionCard {
   question: string;
-  teaser: string;
+  context: string;
   difficulty: number;
 }
 
@@ -190,7 +190,7 @@ function parseSuggestions(parsed: unknown): SuggestionCard[] | null {
   const items: SuggestionCard[] = [];
   for (const item of parsed) {
     if (typeof item === 'string') {
-      items.push({ question: item, teaser: '', difficulty: 2 });
+      items.push({ question: item, context: '', difficulty: 2 });
     } else if (
       typeof item === 'object' &&
       item !== null &&
@@ -199,7 +199,7 @@ function parseSuggestions(parsed: unknown): SuggestionCard[] | null {
       const obj = item as Record<string, unknown>;
       items.push({
         question: (typeof obj.question === 'string' ? obj.question : obj.title) as string,
-        teaser: typeof obj.teaser === 'string' ? obj.teaser : typeof obj.hint === 'string' ? obj.hint : '',
+        context: typeof obj.context === 'string' ? obj.context : typeof obj.teaser === 'string' ? obj.teaser : typeof obj.hint === 'string' ? obj.hint : '',
         difficulty: typeof obj.difficulty === 'number' ? Math.max(1, Math.min(3, Math.round(obj.difficulty))) : 2,
       });
     } else {
@@ -889,7 +889,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                             question: typeof obj.question === 'string' || typeof obj.title === 'string'
                               ? ((obj.question || obj.title) as string)
                               : '',
-                            teaser: typeof obj.teaser === 'string' ? obj.teaser : '',
+                            context: typeof obj.context === 'string' ? obj.context : typeof obj.teaser === 'string' ? obj.teaser : '',
                             difficulty: typeof obj.difficulty === 'number' ? Math.max(1, Math.min(3, Math.round(obj.difficulty))) : 2,
                           },
                         }
@@ -965,7 +965,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                             question: typeof obj.question === 'string' || typeof obj.title === 'string'
                               ? ((obj.question || obj.title) as string)
                               : '',
-                            teaser: typeof obj.teaser === 'string' ? obj.teaser : '',
+                            context: typeof obj.context === 'string' ? obj.context : typeof obj.teaser === 'string' ? obj.teaser : '',
                             difficulty: typeof obj.difficulty === 'number' ? Math.max(1, Math.min(3, Math.round(obj.difficulty))) : 2,
                           },
                         }
@@ -1046,7 +1046,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                                 question: typeof obj.question === 'string' || typeof obj.title === 'string'
                                   ? ((obj.question || obj.title) as string)
                                   : '',
-                                teaser: typeof obj.teaser === 'string' ? obj.teaser : '',
+                                context: typeof obj.context === 'string' ? obj.context : typeof obj.teaser === 'string' ? obj.teaser : '',
                                 difficulty: typeof obj.difficulty === 'number' ? Math.max(1, Math.min(3, Math.round(obj.difficulty))) : 2,
                               },
                             }
@@ -1104,7 +1104,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
     const q = customQuestion.trim();
     if (!q) return;
     setCustomQuestion('');
-    const card: SuggestionCard = { question: q, teaser: '', difficulty: 2 };
+    const card: SuggestionCard = { question: q, context: '', difficulty: 2 };
     void handleTopicSelect(card);
   };
 
@@ -1466,8 +1466,8 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                       <CardActionArea onClick={(): void => { void handleTopicSelect(slot.card!); }}>
                         <CardContent sx={{ py: 1.5, px: 2 }}>
                           <Typography variant="body1" fontWeight="bold" gutterBottom>{slot.card.question}</Typography>
-                          {slot.card.teaser && (
-                            <Typography variant="body2" color="text.secondary" gutterBottom>{slot.card.teaser}</Typography>
+                          {slot.card.context && (
+                            <Typography variant="body2" color="text.secondary" gutterBottom>{slot.card.context}</Typography>
                           )}
                           <Box display="flex" alignItems="center" justifyContent="space-between">
                             <Box display="flex" alignItems="center" gap={1}>
