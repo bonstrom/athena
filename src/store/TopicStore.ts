@@ -298,7 +298,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     if (ragEnabled && userQuery && embeddingService.isReady) {
       const baseIds = new Set(base.map((m) => m.id));
       const candidates = activeSequence.filter(
-        (m) => !baseIds.has(m.id) && (m.type === 'user' || m.type === 'assistant') && m.embedding && m.embedding.length > 0,
+        (m) => (m.type === 'user' || m.type === 'assistant') && m.embedding && m.embedding.length > 0,
       );
 
       try {
@@ -392,7 +392,11 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         const visibleDirectory = directoryMessages.slice(-30);
         const directoryLines = visibleDirectory.map((m) => {
           const preview = m.summary ? `[S] ${m.summary}` : m.content.substring(0, 100).replace(/\n/g, ' ').trim();
-          return `${m.id.slice(0, SHORTENED_ID_LENGTH)}|${m.type === 'user' ? 'U' : 'A'}|${preview}`;
+          const sizeTag = `(${m.content.length}c)`;
+          const hasCode = m.content.includes('```');
+          const isLarge = m.content.length > 2000 || hasCode;
+          const flags = isLarge ? ' [LARGE]' : '';
+          return `${m.id.slice(0, SHORTENED_ID_LENGTH)}|${m.type === 'user' ? 'U' : 'A'}|${sizeTag}${flags}|${preview}`;
         });
 
         const moreNote =
@@ -403,7 +407,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
           id: '__history_directory__',
           topicId,
           type: 'system',
-          content: `Historical messages outside context${moreNote}. Format: ID|role|preview (U=user, A=assistant; [S] = AI summary). Use 'read_messages' to fetch full content.\n\n${directoryLines.join('\n')}`,
+          content: `Historical messages outside context${moreNote}. Format: ID|role|(size)|[LARGE]|preview (U=user, A=assistant; [S] = AI summary; [LARGE] = >2000 chars or contains code). Use 'read_messages' to fetch full content.\n\n${directoryLines.join('\n')}`,
           isDeleted: false,
           includeInContext: false,
           created: new Date(1).toISOString(), // older than chunks but newer than 0

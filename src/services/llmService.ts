@@ -710,13 +710,19 @@ function buildPayload(
   const effectiveBudget = Math.min(userTokenBudget, Math.floor(resolvedModel.contextWindow * 0.9)) - reservedCompletionTokens;
   // Floor at a sane minimum so a single message always fits
   const tokenBudget = Math.max(1, effectiveBudget);
+  // Always keep at least 2 non-system messages (current user query + one prior turn)
+  // so the model has conversation context even when the budget is tight
+  const totalNonSystem = finalMessages.filter((m) => m.role !== 'system').length;
+  const maxRemovable = Math.max(0, totalNonSystem - 2);
+  let removedNonSystem = 0;
   while (finalMessages.length > 1) {
     const { promptTokens } = estimateTokens(finalMessages);
     if (promptTokens <= tokenBudget) break;
-    // Find and remove the oldest non-system message
     const oldestNonSystemIndex = finalMessages.findIndex((m) => m.role !== 'system');
     if (oldestNonSystemIndex === -1) break; // all system messages — nothing safe to drop
+    if (removedNonSystem >= maxRemovable) break; // preserve last 2 non-system messages
     finalMessages.splice(oldestNonSystemIndex, 1);
+    removedNonSystem++;
   }
 
   const finalTools = [...(tools ?? [])];

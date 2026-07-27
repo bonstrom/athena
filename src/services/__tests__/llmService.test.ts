@@ -650,7 +650,7 @@ describe('orchestrateLlmLoop — tool calls', () => {
     expect(result.lastResult.aiNoteAction).toBe('replace');
   });
 
-  it('drops oldest non-system messages when token budget is exceeded while keeping system messages', async () => {
+  it('drops oldest non-system messages when token budget is exceeded but preserves last 2', async () => {
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
 
@@ -666,13 +666,24 @@ describe('orchestrateLlmLoop — tool calls', () => {
       }),
     );
 
-    await orchestrateLlmLoop(model, 0.7, [system('sys instructions'), user('old question'), asst('old answer')]);
+    await orchestrateLlmLoop(model, 0.7, [
+      system('sys instructions'),
+      user('old question'),
+      asst('old answer'),
+      user('newer question'),
+      asst('newer answer'),
+      user('current question'),
+    ]);
 
     const requestInit = mockFetch.mock.calls[0][1];
     expect(requestInit).toBeDefined();
     const body = JSON.parse(String(requestInit?.body)) as { messages: { role: string; content: string | null }[] };
 
-    expect(body.messages).toEqual([{ role: 'system', content: 'sys instructions' }]);
+    expect(body.messages).toEqual([
+      { role: 'system', content: 'sys instructions' },
+      { role: 'assistant', content: 'newer answer' },
+      { role: 'user', content: 'current question' },
+    ]);
   });
 });
 
