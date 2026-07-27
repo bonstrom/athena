@@ -153,6 +153,17 @@ export function getDefaultTopicNameModel(): ChatModel {
   return bestModel ?? (available.length > 0 ? available[0] : models[0]);
 }
 
+export function getQuestionGenModel(): ChatModel {
+  const available = getAvailableModels();
+  if (available.length === 0) {
+    return getDefaultModel();
+  }
+  const fastModel = available.find(
+    (m) => m.apiModelId.includes('flash') || m.apiModelId.includes('nano'),
+  );
+  return fastModel ?? getDefaultModel();
+}
+
 /** Returns all models whose provider has a configured API key, sorted by provider and name. */
 export function getAvailableModels(): ChatModel[] {
   return useProviderStore.getState().getAvailableModels();
