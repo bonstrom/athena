@@ -1,10 +1,13 @@
 import { create } from "zustand";
 
+export type SidebarFilterMode = 'all' | 'topics' | 'messages' | 'courses' | 'debates';
+
 interface UiState {
   drawerOpen: boolean;
   isMobile: boolean;
   showAllMessages: boolean;
   selectedTopicIds: Set<string>;
+  sidebarFilter: SidebarFilterMode;
 
   toggleDrawer: () => void;
   openDrawer: () => void;
@@ -17,6 +20,7 @@ interface UiState {
   isMultiSelectMode: () => boolean;
   currentlySpeakingMessageId: string | null;
   setCurrentlySpeakingMessageId: (id: string | null) => void;
+  setSidebarFilter: (mode: SidebarFilterMode) => void;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -24,6 +28,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   isMobile: false,
   showAllMessages: false,
   selectedTopicIds: new Set<string>(),
+  sidebarFilter: 'all',
 
   toggleDrawer: (): void => set((state) => ({ drawerOpen: !state.drawerOpen })),
   openDrawer: (): void => set({ drawerOpen: true }),
@@ -52,4 +57,5 @@ export const useUiStore = create<UiState>((set, get) => ({
   isMultiSelectMode: (): boolean => get().selectedTopicIds.size > 0,
   currentlySpeakingMessageId: null,
   setCurrentlySpeakingMessageId: (id: string | null): void => set({ currentlySpeakingMessageId: id }),
+  setSidebarFilter: (mode: SidebarFilterMode): void => set({ sidebarFilter: mode }),
 }));
