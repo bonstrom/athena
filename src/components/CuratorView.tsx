@@ -7,6 +7,7 @@ import {
   Chip,
   Collapse,
   useTheme,
+  useMediaQuery,
   CircularProgress,
   LinearProgress,
   Card,
@@ -14,7 +15,11 @@ import {
   CardActionArea,
   Tooltip,
 } from '@mui/material';
+import BottomNavigation from '@mui/material/BottomNavigation';
+import BottomNavigationAction from '@mui/material/BottomNavigationAction';
 import SendIcon from '@mui/icons-material/Send';
+import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
+import SchoolOutlinedIcon from '@mui/icons-material/SchoolOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -407,6 +412,8 @@ async function recordPartTiming(modelId: string, elapsedMs: number): Promise<voi
 
 const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [mobileTab, setMobileTab] = useState<'course' | 'teacher'>('course');
   const {
     loading,
     loadCyclesForTopic,
@@ -1272,9 +1279,10 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
   return (
     <Box display="flex" flexDirection="column" height="100%" overflow="hidden">
       <Box display="flex" flexGrow={1} minHeight={0} sx={{ flexDirection: { xs: 'column', md: 'row' } }}>
+        {(!isMobile || mobileTab === 'course') && (
         <Box
-          display="flex" flexDirection="column" flexBasis="55%" minWidth={0} height="100%" overflow="auto"
-          sx={{ borderRight: `1px solid ${theme.palette.divider}` }}
+          display="flex" flexDirection="column" flexBasis={isMobile ? '100%' : '55%'} minWidth={0} height="100%" overflow="auto"
+          sx={isMobile ? {} : { borderRight: `1px solid ${theme.palette.divider}` }}
         >
           {/* Generation loader */}
           {isGenerating && (
@@ -1678,9 +1686,11 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             </>
           )}
         </Box>
+        )}
 
         {/* Right panel: Teacher Chat */}
-        <Box display="flex" flexDirection="column" flexBasis="45%" minWidth={0} height="100%" overflow="hidden">
+        {(!isMobile || mobileTab === 'teacher') && (
+        <Box display="flex" flexDirection="column" flexBasis={isMobile ? '100%' : '45%'} minWidth={0} height="100%" overflow="hidden">
           <Box px={1.5} py={1} sx={{ borderBottom: `1px solid ${theme.palette.divider}`, flexShrink: 0 }}>
             <Box display="flex" alignItems="center" justifyContent="space-between">
               <Typography variant="subtitle2" fontWeight="bold">Teacher</Typography>
@@ -1722,7 +1732,36 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             </Box>
           </Box>
         </Box>
+        )}
       </Box>
+      {isMobile && (
+        <Box
+          sx={{
+            borderTop: `1px solid ${theme.palette.divider}`,
+            flexShrink: 0,
+          }}
+        >
+          <BottomNavigation
+            value={mobileTab}
+            onChange={(_event: React.SyntheticEvent, newValue: 'course' | 'teacher'): void => { setMobileTab(newValue); }}
+            showLabels
+            sx={{ height: 56, bgcolor: 'background.paper' }}
+          >
+            <BottomNavigationAction
+              label="Course"
+              value="course"
+              icon={<MenuBookOutlinedIcon fontSize="small" />}
+              sx={{ minWidth: 0 }}
+            />
+            <BottomNavigationAction
+              label="Teacher"
+              value="teacher"
+              icon={<SchoolOutlinedIcon fontSize="small" />}
+              sx={{ minWidth: 0 }}
+            />
+          </BottomNavigation>
+        </Box>
+      )}
     </Box>
   );
 };
