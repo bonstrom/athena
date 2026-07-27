@@ -26,6 +26,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { Message, Topic, ReflectionQuestion } from '../database/AthenaDb';
 import { athenaDb } from '../database/AthenaDb';
 import { useCuratorStore } from '../store/CuratorStore';
@@ -988,6 +989,11 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
     });
   };
 
+  const handleBanQuestion = (categoryId: string, question: string, index: number): void => {
+    void addPickedQuestion(categoryId, question);
+    handleRegenerateCard(index);
+  };
+
   const handleRegenerateAll = (): void => {
     suggestionAbortRefs.current.forEach((c) => c.abort());
     suggestionAbortRefs.current = [];
@@ -1479,6 +1485,10 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                             <IconButton size="small" onClick={(e): void => { e.stopPropagation(); handleRegenerateCard(idx); }}
                               title="Regenerate this question">
                               <RefreshIcon sx={{ fontSize: '0.9rem' }} />
+                            </IconButton>
+                            <IconButton size="small" onClick={(e): void => { e.stopPropagation(); handleBanQuestion(selectedCategoryId, slot.card!.question, idx); }}
+                              title="Ban this question from appearing again">
+                              <VisibilityOffIcon sx={{ fontSize: '0.9rem' }} />
                             </IconButton>
                           </Box>
                         </CardContent>
