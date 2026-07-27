@@ -89,8 +89,8 @@ Every part opens with a hook using one of these angles:
 Each part delivers:
 - **title** — intriguing and honest, with a curiosity gap
 - **hook** — 1-2 sentences using the assigned archetype; never "In this part..." or "Let's explore..."
-- **body** — 150-300 words, one core idea, one analogy or concrete example, plain language at smart 15-year-old level, define all jargon inline
-- **keyTakeaway** — one bolded sentence, skimmable and screenshot-able
+- **body** — 150-300 words (budget, not quota; stop when the idea lands), one core idea, delivered through the assigned device (story/analogy/thought_experiment/real_case/simple_experiment), plain language at smart 15-year-old level, define all jargon inline
+- **keyTakeaway** — one bolded sentence capturing this part's new piece of the answer, not the course's final answer (unless this is the last part)
 - **bridge** — one sentence creating anticipation for the next part (omit on final part)
 - **reflection** — 1-2 questions, at least one application or prediction, not pure recall
 - **furtherReading** — 2-3 items as search phrases or named resources, NEVER invent URLs
@@ -100,9 +100,20 @@ Each part delivers:
 
 NEVER invent URLs. For further reading, provide search phrases or named resources (e.g. "Wikipedia: Double-slit experiment", "Feynman Lectures on Physics Vol 3", "search: how does quantum decoherence work"). The app will render these as clickable search links. If you are absolutely certain a URL is correct (e.g. a well-known wikipedia.org/wiki/... page), you may include it, but search phrases are strongly preferred.
 
-## STYLE
+## VOICE — HARD RULES
 
-Conversational, enthusiastic, clear. Use simple language for complex ideas. Target a smart 15-year-old. Write like a knowledgeable friend, not a textbook.
+Drama comes from facts, not adjectives.
+- Ban hype words (violent, deadly, brutal, insane, catastrophic, betrayal) unless literally accurate.
+- Specific beats dramatic: "a 0.5 mm gap" beats "a tiny, treacherous gap". Prefer numbers, names, dates, places over adjectives.
+
+Rhythm:
+- At most ONE punchy one-line aphorism per part. If every paragraph ends with a zinger, none land.
+- At most ONE rhetorical question per part.
+- Never use: "Here's the thing", "The catch?", "But here's what X hides", "Think of...", "Imagine...". Introduce examples directly: "A camera tripod on gravel..." — not "Think of a camera tripod."
+- The "X is not Y — it's Z" reversal: at most once per part.
+- If two parts' keyTakeaways could be swapped between them, one part is redundant.
+
+Target a smart 15-year-old. Write like a knowledgeable friend, not a textbook. Use simple language for complex ideas.
 
 ## MARKDOWN FORMATTING
 
@@ -124,23 +135,32 @@ export function buildCourseOutlinePrompt(
 ): string {
   return `The user chose: "${question}". Prior knowledge: ${priorKnowledgeLevel}.
 
-${completedCourses}
+${completedCourses}${completedCourses ? '\nThe courses above are ones the user already finished. If one connects naturally, plan a callback in the relevant part; otherwise ignore them.' : ''}
 
-Design a course answering this question. Rules:
-- 3-6 parts; each teaches exactly ONE core idea
-- Part 1 frames why the question is fascinating — not a dry intro. Set the stage and create a mystery.
-- Middle parts build pieces of the answer — key concepts, experiments, discoveries. If there were fascinating dead ends or wrong turns, include one part about what didn't work.
-- Final part delivers the satisfying answer + a memorable takeaway. The user should feel a genuine "aha" moment.
-- Reference a prior course if a natural connection exists — make callbacks like "Remember when you learned about X? This builds on it."
-- For titles: aim for a curiosity gap. "The Trick Your Ears Play on You" beats both "Psychoacoustics Explained" and "You Won't Believe What Your Ears Do."
+STEP 1 — answerSpine: In 2-3 sentences, state the actual, correct answer to the
+question. If the question rests on a popular-but-wrong premise, the spine says so —
+the course will correct it, never rationalize it.
 
-For each part provide:
-- title: intriguing and honest
-- coreIdea: the single core idea in one sentence
-- hookArchetype: one of paradox / everyday / myth_bust / question / anecdote — assign a different archetype to each part
+STEP 2 — parts: use as FEW parts as the spine needs (3-6). Three tight parts beat
+five padded ones. Padding is the worst failure mode.
+- Part 1 frames the puzzle. It must NOT reveal the answer — including in its takeaway.
+- Each middle part delivers one piece of the answer: a mechanism, a key concept, a
+  discovery, a decisive experiment. Only include a "wrong turn" part if a real
+  historical dead end genuinely illuminates the answer.
+- Final part delivers the satisfying answer + memorable takeaway.
 
-Return ONLY a JSON object. No other text:
-{"courseTitle": "The intriguing, honest course title", "parts": [{"title": "...", "coreIdea": "...", "hookArchetype": "paradox"}, ...]}`;
+For each part:
+- title: curiosity gap, honest. "The Trick Your Ears Play on You" beats "Psychoacoustics Explained".
+- coreIdea: the single idea in one sentence
+- newInformation: what the reader knows AFTER this part that they did NOT know after
+  the previous one. If you can't fill this in without repeating another part's
+  coreIdea, MERGE the parts and reduce the count.
+- hookArchetype: paradox / everyday / myth_bust / question / anecdote (all different)
+- device: story / analogy / thought_experiment / real_case / simple_experiment —
+  vary across parts; "analogy" at most twice per course
+
+Return ONLY a JSON object:
+{"answerSpine": "...", "courseTitle": "...", "parts": [{"title": "...", "coreIdea": "...", "newInformation": "...", "hookArchetype": "...", "device": "..."}, ...]}`;
 }
 
 export function buildPartGenerationPrompt(
@@ -150,17 +170,33 @@ export function buildPartGenerationPrompt(
   question: string,
   outline: string,
   hookArchetype: string,
-  prevSummary: string,
+  partDevice: string,
+  coveredSoFar: string,
 ): string {
   const isFirst = partNumber === 1;
   const isLast = partNumber === totalParts;
+
+  const coveredBlock = coveredSoFar
+    ? `
+Ideas covered by other parts (the reader JUST read these):
+${coveredSoFar}
+
+HARD RULES:
+- NEVER re-teach or recap a covered idea. Reference it in at most one short clause
+  ("remember the tipping boundary") and build on it immediately. No recap paragraphs.
+- Deliver this part's ONE new idea through the assigned device: "${partDevice}".
+  One example, fully used — not three analogies that make the same point.
+- Do not open the body with a heading that repeats the title.
+- 150-300 words is a budget, not a quota. When the idea has landed, stop.`
+    : '';
 
   return `Writing part ${partNumber} of ${totalParts} of the course "${courseTitle}" (answering "${question}").
 
 Course outline (all parts):
 ${outline}
-${prevSummary ? `Previous part summary (summarize what the user just learned):\n${prevSummary}` : ''}
+Your device for this part: "${partDevice}"
 Your hook archetype for this part: "${hookArchetype}".
+${coveredBlock}
 
 Rules for this part:
 ${isFirst ? '- This is the OPENING part. Frame why the question is fascinating and what makes it worth a whole course. Create mystery — do NOT give away the answer.' : ''}
@@ -168,14 +204,14 @@ ${isLast ? '- This is the FINAL part. Synthesize everything from prior parts and
 ${!isFirst && !isLast ? '- This is a MIDDLE part. Deliver exactly one core idea that builds toward the answer. Layer on prior parts.' : ''}
 - One core idea only. No sprawling tangents.
 - Use plain language (smart 15-year-old level). Define all jargon inline — never assume the reader knows a term.
-- Include one concrete analogy or real-world example that grounds the abstract concept.
+- Deliver the idea through the assigned device: "${partDevice}".
 - NEVER begin with "In this part..." or "Let's explore..."
 
 Generate the following fields:
 - title: the part title from the outline
 - hook: 1-2 sentences using the "${hookArchetype}" hook angle. Make it irresistible — the user should NEED to keep reading.
-- body: 150-300 words of core content. Well-structured markdown with paragraph breaks, **bold** for key terms, and at least one concrete analogy or example.
-- keyTakeaway: one bolded sentence that captures the single most important idea. This should be skimmable and screenshot-able — if the user remembers only one thing from this part, this is it.
+- body: 150-300 words of core content (budget, not quota; stop when the idea lands). Well-structured markdown with paragraph breaks, **bold** for key terms. Deliver through the "${partDevice}" device.
+${isLast ? '- keyTakeaway: the keyTakeaway here IS the course\'s answer — this is the screenshot-worthy line.' : "- keyTakeaway: your keyTakeaway states this part's NEW piece — do NOT spoil the course's final answer."}
 - bridge: one sentence creating anticipation for the next part. ${isLast ? 'Omit this field — this is the final part.' : 'Make the user genuinely curious about what comes next.'}
 - reflection: 1-2 questions. At least one must be an application question ("How would you use this to explain...") or a prediction question ("What would happen if..."). No pure recall questions.
 - furtherReading: 2-3 items. Use descriptive search phrases or named resources like "Wikipedia: [topic]" or "search: [specific search query]". NEVER invent URLs. If you are completely certain of a wikipedia URL, you may include it, but search phrases are strongly preferred.
@@ -192,8 +228,16 @@ export function buildSingleQuestionPrompt(
   flavorInstructions: string,
   excludedQuestions: string,
   pastRatings: string,
+  priorKnowledgeLevel: string,
 ): string {
+  const difficultyGuide = priorKnowledgeLevel === 'beginner'
+    ? 'Target difficulty 1: the question should assume zero prerequisites.'
+    : priorKnowledgeLevel === 'intermediate'
+    ? 'Target difficulty 2: the question can assume some familiarity but still be broadly accessible.'
+    : 'Target difficulty 3: the question can be complex and push deeper into the topic.';
+
   return `The user selected subtopic "${subtopic}" (category: "${category}").
+The user's knowledge level is "${priorKnowledgeLevel}".
 
 ${pastRatings}
 
@@ -205,16 +249,19 @@ ${flavorInstructions}
 
 The question must:
 - Be exactly ONE question (not multiple)
+- Be about a specific, nameable phenomenon — ban survey questions ('How do ecosystems work?')
+- The answer must contain a story or mechanism worth telling, not a one-line fact
 - Be answerable in a 3-6 part course
 - Assume no prerequisites
 - Have an intriguing title that creates a curiosity gap
 - Be max 15 words
 
-Return ONLY a single JSON object. No array, no other text:
-{"question": "...", "teaser": "...", "difficulty": 2}
+${difficultyGuide}
 
-The teaser is one sentence hinting why the answer is surprising or fascinating.
-Difficulty: 1 (beginner-friendly), 2 (some background helps), or 3 (complex but accessible).`;
+Return ONLY a single JSON object. No array, no other text:
+{"question": "...", "teaser": "...", "difficulty": <1|2|3>}
+
+The teaser is one sentence hinting why the answer is surprising or fascinating.`;
 }
 
 export interface LearningCategory {

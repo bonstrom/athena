@@ -12,7 +12,7 @@ import {
   Card,
   CardContent,
   CardActionArea,
-  Stack,
+  Tooltip,
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -20,7 +20,6 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { Message, Topic, ReflectionQuestion } from '../database/AthenaDb';
 import { athenaDb } from '../database/AthenaDb';
@@ -28,7 +27,7 @@ import { useCuratorStore } from '../store/CuratorStore';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
 import { askLlmStream, LlmMessage } from '../services/llmService';
-import { ChatModel, getDefaultModel } from '../components/ModelSelector';
+import { ChatModel, getDefaultModel, getQuestionGenModel } from '../components/ModelSelector';
 import ModelSelector from '../components/ModelSelector';
 import MessageBubble from '../components/MessageBubble';
 import MarkdownWithCode from '../components/MarkdownWithCode';
@@ -55,10 +54,13 @@ interface SuggestionSlot {
 interface OutlinePart {
   title: string;
   coreIdea: string;
+  newInformation: string;
   hookArchetype: string;
+  device: string;
 }
 
 interface CourseOutline {
+  answerSpine: string;
   courseTitle: string;
   parts: OutlinePart[];
 }
@@ -114,9 +116,9 @@ interface CuratorViewProps {
 }
 
 const PRIOR_KNOWLEDGE_LEVELS = [
-  { value: 'beginner' as const, label: 'New to this', description: 'Explain everything from the ground up' },
-  { value: 'intermediate' as const, label: 'Know a bit', description: 'I have some familiarity, build from there' },
-  { value: 'advanced' as const, label: 'Know a lot', description: 'Push deeper, skip the basics' },
+  { value: 'beginner' as const, label: 'Beginner', description: 'Explain everything from the ground up' },
+  { value: 'intermediate' as const, label: 'Intermediate', description: 'I have some familiarity, build from there' },
+  { value: 'advanced' as const, label: 'Advanced', description: 'Push deeper, skip the basics' },
 ];
 
 const HOOK_ARCHETYPE_LABELS: Record<string, string> = {
@@ -126,6 +128,41 @@ const HOOK_ARCHETYPE_LABELS: Record<string, string> = {
   question: 'Question',
   anecdote: 'Anecdote',
 };
+
+interface QuestionFlavor {
+  key: string;
+  label: string;
+  instructions: string;
+}
+
+const QUESTION_FLAVORS: QuestionFlavor[] = [
+  {
+    key: 'classics',
+    label: 'Classics',
+    instructions:
+      'This should be a famous, well-known question — the kind people actually want answered. A classic question that addresses genuine, enduring curiosity in this topic.',
+  },
+  {
+    key: 'hidden-gems',
+    label: 'Hidden gems',
+    instructions:
+      'Use a two-step approach: start with something familiar, then reveal unexpected depth. The question should feel niche but rewarding — something the user didn\'t know existed but will be glad they discovered.',
+  },
+  {
+    key: 'weird-wonderful',
+    label: 'Weird & wonderful',
+    instructions:
+      'The answer must be genuinely counterintuitive. The user should think they know the answer, but the truth is surprising or strange in a way they wouldn\'t expect.',
+  },
+  {
+    key: 'cutting-edge',
+    label: 'Cutting edge',
+    instructions:
+      'Touch on open problems, recent research breakthroughs, or active debates. A frontier question where the answer is still evolving.',
+  },
+];
+
+const QUESTION_COUNT = 5;
 
 const TEACHER_SYSTEM_PROMPT =
   'You are a helpful, patient teacher. The user is following a structured multi-part learning course. Answer their questions about the material they are studying. Be concise and conversational. If you need more context about what they are learning, ask — but try to be helpful with what you know.';
@@ -178,6 +215,8 @@ function parseOutline(parsed: unknown): CourseOutline | null {
     : null;
   if (!courseTitle) return null;
 
+  const answerSpine = typeof obj.answerSpine === 'string' ? obj.answerSpine : '';
+
   const rawParts = Array.isArray(obj.parts) ? (obj.parts as Record<string, unknown>[])
     : Array.isArray(obj.days) ? (obj.days as Record<string, unknown>[])
     : null;
@@ -187,12 +226,14 @@ function parseOutline(parsed: unknown): CourseOutline | null {
   for (const p of rawParts) {
     const title = typeof p.title === 'string' ? p.title : typeof p.subTopic === 'string' ? p.subTopic : '';
     const coreIdea = typeof p.coreIdea === 'string' ? p.coreIdea : typeof p.description === 'string' ? p.description : '';
+    const newInformation = typeof p.newInformation === 'string' ? p.newInformation : '';
     const hookArchetype = typeof p.hookArchetype === 'string' ? p.hookArchetype : 'question';
+    const device = typeof p.device === 'string' ? p.device : 'story';
     if (!title) return null;
-    parts.push({ title, coreIdea, hookArchetype });
+    parts.push({ title, coreIdea, newInformation, hookArchetype, device });
   }
 
-  return { courseTitle, parts };
+  return { answerSpine, courseTitle, parts };
 }
 
 function normalizePart(d: RawPart, idx: number, outlineHookArchetype?: string): PartContent {
@@ -395,12 +436,15 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
   const [expandedParts, setExpandedParts] = useState<Record<string, boolean>>({});
 
   const [suggestionSlots, setSuggestionSlots] = useState<SuggestionSlot[] | null>(null);
+  const [activeFlavors, setActiveFlavors] = useState<Set<string>>(
+    () => new Set(QUESTION_FLAVORS.map((f) => f.key)),
+  );
   const [customQuestion, setCustomQuestion] = useState('');
   const [selectedCategoryLabel, setSelectedCategoryLabel] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
-  const [pendingQuestion, setPendingQuestion] = useState<SuggestionCard | null>(null);
   const [priorKnowledgeLevel, setPriorKnowledgeLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('intermediate');
   const lastAssistantContent = useRef<string>('');
+  const selectedQuestionRef = useRef<SuggestionCard | null>(null);
   const planSavedCycleId = useRef<string>('');
   const outlineRef = useRef<CourseOutline | null>(null);
   const creatingCycleRef = useRef<boolean>(false);
@@ -436,9 +480,23 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
   const activeCycle = getActiveCycle(topic.id);
   const courseParts = activeCycle ? getPartsForCycle(activeCycle.id) : [];
 
+  const completedCycle = !activeCycle && !loading
+    ? useCuratorStore.getState().cycles.find(
+        (c) => c.topicId === topic.id && (c.phase === 'completed' || c.phase === 'rated'),
+      ) ?? null
+    : null;
+  const completedCourseParts = completedCycle ? getPartsForCycle(completedCycle.id) : [];
+
   const currentPart = courseParts.find((d) => !d.isCompleted);
   const completedCount = courseParts.filter((d) => d.isCompleted).length;
   const totalParts = courseParts.length;
+
+  const displayParts = activeCycle ? courseParts : completedCourseParts;
+  const isCompletedView = !activeCycle && completedCourseParts.length > 0;
+  const displayCompletedCount = isCompletedView
+    ? displayParts.filter((d) => d.isCompleted).length
+    : completedCount;
+  const displayTotalParts = isCompletedView ? displayParts.length : totalParts;
 
   // Expand current part on initial load only (track by ID to avoid re-expand on content changes)
   useEffect(() => {
@@ -494,7 +552,8 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
   const isGenerating = generatingPhase !== 'idle';
 
   const showCategoryGrid =
-    !activeCycle && !suggestionSlots && !pendingQuestion && !isGenerating && nonDeletedMessages.filter((m) => !isAutoMessage(m.content) && !isJsonOnlyMessage(m.content)).length === 0;
+    !isGenerating && nonDeletedMessages.filter((m) => !isAutoMessage(m.content) && !isJsonOnlyMessage(m.content)).length === 0 &&
+    ((!activeCycle && completedCourseParts.length === 0) || (activeCycle && courseParts.length === 0 && !suggestionSlots));
 
   const parseAssistantResponse = useCallback(
     (msg: Message): void => {
@@ -562,29 +621,36 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
   );
 
   const generatePartContent = useCallback(
-    async (partNum: number, outline: CourseOutline, cycleId: string): Promise<void> => {
+    async (partNum: number, outline: CourseOutline, cycleId: string, silent = false): Promise<void> => {
       const outlinePart = outline.parts[partNum - 1];
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!outlinePart) {
-        setGenerationError('Part not found in outline. Please try again.');
-        setGeneratingPhase('idle');
+        if (!silent) {
+          setGenerationError('Part not found in outline. Please try again.');
+          setGeneratingPhase('idle');
+        }
         return;
       }
 
       try {
-        const currentParts = useCuratorStore.getState().getPartsForCycle(cycleId);
-        const prevPart = partNum > 1 ? currentParts.find((d) => d.dayNumber === partNum - 1) : null;
-        const prevSummary = prevPart?.summary ?? '';
-        const outlineSummary = outline.parts.map((p, i) => `${i + 1}. ${p.title} (${p.hookArchetype})`).join('\n');
+        const outlineSummary = outline.parts.map((p, i) => `${i + 1}. ${p.title} (${p.hookArchetype}) [${p.device}]`).join('\n');
+
+        const coveredParts = outline.parts.slice(0, partNum - 1);
+        const coveredSoFar = coveredParts.length > 0
+          ? coveredParts
+              .map((p, i) => `Part ${i + 1}: ${p.title}\n  Core idea: ${p.coreIdea}\n  New knowledge: ${p.newInformation}`)
+              .join('\n')
+          : '';
 
         const prompt = buildPartGenerationPrompt(
           partNum,
           outline.parts.length,
           outline.courseTitle,
-          pendingQuestion?.question ?? outline.courseTitle,
+          selectedQuestionRef.current?.question ?? outline.courseTitle,
           outlineSummary,
           outlinePart.hookArchetype,
-          prevSummary,
+          outlinePart.device,
+          coveredSoFar,
         );
 
         const controller = new AbortController();
@@ -622,17 +688,32 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           }));
 
           await useCuratorStore.getState().saveCourseParts(cycleId, updatedParts);
-          setGeneratingPhase('idle');
+          if (!silent) {
+            setGeneratingPhase('idle');
+          }
+
+          if (!silent) {
+            const nextNum = partNum + 1;
+            if (nextNum <= outline.parts.length) {
+              const nextFreshParts = useCuratorStore.getState().getPartsForCycle(cycleId);
+              const nextP = nextFreshParts.find((d) => d.dayNumber === nextNum);
+              if (nextP && !nextP.summary) {
+                void generatePartContent(nextNum, outline, cycleId, true);
+              }
+            }
+          }
         } else {
           throw new Error('Failed to parse generated part');
         }
       } catch (err: unknown) {
         console.error('[CuratorView] Failed to generate part', err);
-        setGenerationError('Failed to generate part content. Click Continue to retry.');
-        setGeneratingPhase('idle');
+        if (!silent) {
+          setGenerationError('Failed to generate part content. Click Continue to retry.');
+          setGeneratingPhase('idle');
+        }
       }
     },
-    [pendingQuestion],
+    [],
   );
 
   useEffect(() => {
@@ -754,44 +835,31 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
     suggestionAbortRefs.current.forEach((c) => c.abort());
     suggestionAbortRefs.current = [];
 
-    const initialSlots: SuggestionSlot[] = [
-      { status: 'loading', card: null },
-      { status: 'loading', card: null },
-      { status: 'loading', card: null },
-    ];
+    const initialSlots: SuggestionSlot[] = Array.from({ length: QUESTION_COUNT }, () => ({
+      status: 'loading' as const,
+      card: null,
+    }));
     setSuggestionSlots(initialSlots);
     setGeneratingPhase('idle');
 
-    const flavors = [
-      {
-        name: 'everyday-life',
-        instructions: 'This should be something relevant to daily experience — a question anyone might wonder about in everyday life.',
-      },
-      {
-        name: 'deeper-mechanism',
-        instructions: 'This should explore how or why something works under the surface — a mechanism, process, or explanation.',
-      },
-      {
-        name: 'surprising/unexpected',
-        instructions: 'This should be counterintuitive, rarely considered, or contain a surprising twist. Something that makes people say "I never thought of that."',
-      },
-    ];
-
+    const flavorKeys = Array.from(activeFlavors);
     const controllers: AbortController[] = [];
 
-    flavors.forEach((flavor, index) => {
+    initialSlots.forEach((_slot, index) => {
       const controller = new AbortController();
       controllers.push(controller);
 
+      const flavor = QUESTION_FLAVORS.find((f) => f.key === flavorKeys[index % flavorKeys.length]) ?? QUESTION_FLAVORS[0];
+
       const prompt = buildSingleQuestionPrompt(
-        category.label, sectionTitle, flavor.name, flavor.instructions, exclusionLines, ratingsContext,
+        category.label, sectionTitle, flavor.key, flavor.instructions, exclusionLines, ratingsContext, priorKnowledgeLevel,
       );
 
       void (async (): Promise<void> => {
         try {
           let accumulated = '';
           const result = await askLlmStream(
-            getDefaultModel(),
+            getQuestionGenModel(),
             1.0,
             [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
             (token: string): void => { accumulated += token; },
@@ -854,15 +922,11 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
         : '';
 
       void getPastRatingsForContext().then(async ({ ratingsContext }) => {
-        const flavors = [
-          { name: 'everyday-life', instructions: 'Relevant to daily experience.' },
-          { name: 'deeper-mechanism', instructions: 'Explores how or why something works.' },
-          { name: 'surprising/unexpected', instructions: 'Counterintuitive or surprising.' },
-        ];
-        const flavor = flavors[index] ?? flavors[0];
+        const flavorKeys = Array.from(activeFlavors);
+        const flavor = QUESTION_FLAVORS.find((f) => f.key === flavorKeys[index % flavorKeys.length]) ?? QUESTION_FLAVORS[0];
 
         const prompt = buildSingleQuestionPrompt(
-          selectedCategoryLabel || 'the topic', '', flavor.name, flavor.instructions, exclusionLines, ratingsContext,
+          selectedCategoryLabel || 'the topic', '', flavor.key, flavor.instructions, exclusionLines, ratingsContext, priorKnowledgeLevel,
         );
 
         // Set slot to loading
@@ -874,7 +938,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
         try {
           let accumulated = '';
           const result = await askLlmStream(
-            getDefaultModel(),
+            getQuestionGenModel(),
             1.0,
             [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
             (token: string): void => { accumulated += token; },
@@ -917,24 +981,97 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
     });
   };
 
-  const handleTopicSelect = (suggestion: SuggestionCard): void => {
+  const handleRegenerateAll = (): void => {
+    suggestionAbortRefs.current.forEach((c) => c.abort());
+    suggestionAbortRefs.current = [];
+
+    void getPickedQuestions().then((picked) => {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      const alreadyPicked = picked[selectedCategoryId] ?? [];
+      const currentQuestions = (suggestionSlots ?? [])
+        .map((s) => s.card?.question)
+        .filter((q): q is string => !!q);
+      const allExcluded = [...alreadyPicked, ...currentQuestions];
+      const exclusionLines = allExcluded.length > 0
+        ? `\n\nDo NOT suggest any of these questions (they were already shown or picked):\n${allExcluded.map(q => `- ${q}`).join('\n')}`
+        : '';
+
+      void getPastRatingsForContext().then(({ ratingsContext }) => {
+        const loadingSlots: SuggestionSlot[] = Array.from({ length: QUESTION_COUNT }, () => ({
+          status: 'loading' as const,
+          card: null,
+        }));
+        setSuggestionSlots(loadingSlots);
+
+        const flavorKeys = Array.from(activeFlavors);
+        const controllers: AbortController[] = [];
+
+        loadingSlots.forEach((_slot, index) => {
+          const controller = new AbortController();
+          controllers.push(controller);
+          const flavor = QUESTION_FLAVORS.find((f) => f.key === flavorKeys[index % flavorKeys.length]) ?? QUESTION_FLAVORS[0];
+
+          const prompt = buildSingleQuestionPrompt(
+            selectedCategoryLabel || 'the topic', '', flavor.key, flavor.instructions, exclusionLines, ratingsContext, priorKnowledgeLevel,
+          );
+
+          void (async (): Promise<void> => {
+            try {
+              let accumulated = '';
+              const result = await askLlmStream(
+                getQuestionGenModel(),
+                1.0,
+                [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
+                (token: string): void => { accumulated += token; },
+                undefined, undefined, false, controller.signal,
+              );
+              const finalContent = accumulated || result.content;
+              const parsed = tryParseJson<unknown>(finalContent);
+              if (parsed !== null && typeof parsed === 'object') {
+                const obj = parsed as Record<string, unknown>;
+                setSuggestionSlots((prev) =>
+                  prev
+                    ? prev.map((s, i) =>
+                        i === index
+                          ? {
+                              status: 'done' as const,
+                              card: {
+                                question: typeof obj.question === 'string' || typeof obj.title === 'string'
+                                  ? ((obj.question || obj.title) as string)
+                                  : '',
+                                teaser: typeof obj.teaser === 'string' ? obj.teaser : '',
+                                difficulty: typeof obj.difficulty === 'number' ? Math.max(1, Math.min(3, Math.round(obj.difficulty))) : 2,
+                              },
+                            }
+                          : s,
+                      )
+                    : null,
+                );
+              } else {
+                setSuggestionSlots((prev) =>
+                  prev ? prev.map((s, i) => (i === index ? { status: 'error', card: null } : s)) : null,
+                );
+              }
+            } catch (err: unknown) {
+              if (err instanceof DOMException && err.name === 'AbortError') return;
+              console.error('[CuratorView] Failed to regenerate question', err);
+              setSuggestionSlots((prev) =>
+                prev ? prev.map((s, i) => (i === index ? { status: 'error', card: null } : s)) : null,
+              );
+            }
+          })();
+        });
+
+        suggestionAbortRefs.current = controllers;
+      });
+    });
+  };
+
+  const handleTopicSelect = async (suggestion: SuggestionCard): Promise<void> => {
     suggestionAbortRefs.current.forEach((c) => c.abort());
     suggestionAbortRefs.current = [];
     setSuggestionSlots(null);
-    setPendingQuestion(suggestion);
-  };
-
-  const handleCustomQuestionSubmit = (): void => {
-    const q = customQuestion.trim();
-    if (!q) return;
-    setCustomQuestion('');
-    const card: SuggestionCard = { question: q, teaser: '', difficulty: 2 };
-    handleTopicSelect(card);
-  };
-
-  const handlePriorKnowledgeConfirm = async (): Promise<void> => {
-    if (!pendingQuestion) return;
-    const question = pendingQuestion;
+    selectedQuestionRef.current = suggestion;
 
     if (activeCycle) {
       await useCuratorStore.getState().updateCyclePriorKnowledge(activeCycle.id, priorKnowledgeLevel);
@@ -942,19 +1079,26 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
       await createCycle(topic.id, topic.name || 'New Course', '', priorKnowledgeLevel);
     }
 
-    setPendingQuestion(null);
     setGeneratingPhase('outline');
-    
+
     const { completedCourseNames } = await getPastRatingsForContext();
 
     const prompt = buildCourseOutlinePrompt(
-      question.question,
+      suggestion.question,
       priorKnowledgeLevel,
       completedCourseNames,
     );
 
-    void addPickedQuestion(selectedCategoryId, question.question);
+    void addPickedQuestion(selectedCategoryId, suggestion.question);
     void sendMessageStream(`[CURATOR]\n\n${prompt}`, topic.id);
+  };
+
+  const handleCustomQuestionSubmit = (): void => {
+    const q = customQuestion.trim();
+    if (!q) return;
+    setCustomQuestion('');
+    const card: SuggestionCard = { question: q, teaser: '', difficulty: 2 };
+    void handleTopicSelect(card);
   };
 
   const handleCompletePart = (partId: string): void => {
@@ -971,8 +1115,15 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
     let outline = outlineRef.current;
     if (!outline && courseParts.length > 0) {
       outline = {
+        answerSpine: '',
         courseTitle: activeCycle.topicName || topic.name,
-        parts: courseParts.map((p) => ({ title: p.subTopic, coreIdea: '', hookArchetype: p.hookArchetype })),
+        parts: courseParts.map((p) => ({
+          title: p.subTopic,
+          coreIdea: '',
+          newInformation: '',
+          hookArchetype: p.hookArchetype,
+          device: 'story',
+        })),
       };
       outlineRef.current = outline;
     }
@@ -988,6 +1139,10 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
       generatingPartRef.current = part.dayNumber;
       void generatePartContent(part.dayNumber, safeOutline, cycleId).then(() => {
         void completePart(partId);
+        if (part.dayNumber >= totalParts) {
+          void updateCyclePhase(cycleId, 'completed');
+          void useTopicStore.getState().updateTopicTimestamp(topic.id);
+        }
         const freshParts = useCuratorStore.getState().getPartsForCycle(cycleId);
         const nextP = freshParts.find((d) => d.dayNumber === part.dayNumber + 1);
         if (nextP && !nextP.summary) {
@@ -1002,12 +1157,24 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
     // Mark current part complete
     void completePart(partId);
 
+    const isLastPart = part.dayNumber >= totalParts;
+    if (isLastPart) {
+      void updateCyclePhase(cycleId, 'completed');
+      void useTopicStore.getState().updateTopicTimestamp(topic.id);
+    }
+
     // Generate next part if it's a skeleton
     const nextPart = courseParts.find((d) => d.dayNumber === part.dayNumber + 1);
     if (nextPart && !nextPart.summary) {
       setGeneratingPhase('part');
       generatingPartRef.current = nextPart.dayNumber;
       void generatePartContent(nextPart.dayNumber, outline, cycleId);
+    } else {
+      // Next part is already ready — prefetch the one after if needed
+      const nextNextPart = courseParts.find((d) => d.dayNumber === part.dayNumber + 2);
+      if (nextNextPart && !nextNextPart.summary) {
+        void generatePartContent(nextNextPart.dayNumber, outline, cycleId, true);
+      }
     }
   };
 
@@ -1140,40 +1307,6 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
 
           {!isGenerating && (
             <>
-          {/* Prior knowledge selector */}
-          {pendingQuestion && (
-            <Box px={2} pt={2} pb={1} flexShrink={0}>
-              <Box display="flex" alignItems="center" gap={0.5} mb={1.5}>
-                <AutoAwesomeIcon sx={{ fontSize: '1.1rem', color: 'primary.main' }} />
-                <Typography variant="subtitle2" fontWeight="bold">
-                  {pendingQuestion.question}
-                </Typography>
-              </Box>
-              <Typography variant="body2" color="text.secondary" mb={1.5}>
-                How much do you already know about this?
-              </Typography>
-              <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} mb={2}>
-                {PRIOR_KNOWLEDGE_LEVELS.map((level) => (
-                  <Card key={level.value} variant={priorKnowledgeLevel === level.value ? 'elevation' : 'outlined'}
-                    elevation={priorKnowledgeLevel === level.value ? 3 : 0}
-                    sx={{ flex: 1, borderLeft: priorKnowledgeLevel === level.value ? `3px solid ${theme.palette.primary.main}` : `3px solid transparent`,
-                      transition: 'box-shadow 0.2s, border-color 0.2s', cursor: 'pointer',
-                      '&:hover': { borderColor: theme.palette.primary.main } }}
-                    onClick={(): void => { setPriorKnowledgeLevel(level.value); }}>
-                    <CardContent sx={{ py: 1, px: 1.5, '&:last-child': { pb: 1 } }}>
-                      <Typography variant="body2" fontWeight={priorKnowledgeLevel === level.value ? 700 : 500}>
-                        {level.label}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">{level.description}</Typography>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Stack>
-              <Chip label="Generate course" color="primary" onClick={(): void => { void handlePriorKnowledgeConfirm(); }}
-                sx={{ fontWeight: 600, cursor: 'pointer' }} />
-            </Box>
-          )}
-
           {/* Category selection grid */}
           {showCategoryGrid && countsLoaded && (
             <Box px={2} pt={2} pb={1} flexShrink={0}>
@@ -1181,6 +1314,51 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                 <LightbulbOutlinedIcon sx={{ fontSize: '1.1rem', color: 'warning.main' }} />
                 <Typography variant="subtitle2" fontWeight="bold">What would you like to learn?</Typography>
               </Box>
+
+              <Box display="flex" flexWrap="wrap" alignItems="center" gap={0.5} mb={2}>
+                <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ mr: 0.5 }}>
+                  {activeFlavors.size === QUESTION_FLAVORS.length ? 'Mix' : 'Flavor'}
+                </Typography>
+                {QUESTION_FLAVORS.map((flavor) => (
+                  <Chip
+                    key={flavor.key}
+                    label={flavor.label}
+                    size="small"
+                    variant={activeFlavors.has(flavor.key) ? 'filled' : 'outlined'}
+                    color={activeFlavors.has(flavor.key) ? 'primary' : 'default'}
+                    onClick={(): void => {
+                      setActiveFlavors((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(flavor.key)) {
+                          if (next.size > 1) next.delete(flavor.key);
+                        } else {
+                          next.add(flavor.key);
+                        }
+                        return next;
+                      });
+                    }}
+                    sx={{ fontWeight: 500, cursor: 'pointer' }}
+                  />
+                ))}
+              </Box>
+
+              <Box display="flex" flexWrap="wrap" alignItems="center" gap={0.5} mb={2}>
+                <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ mr: 0.5 }}>
+                  Level
+                </Typography>
+                {PRIOR_KNOWLEDGE_LEVELS.map((level) => (
+                  <Chip
+                    key={level.value}
+                    label={level.label}
+                    size="small"
+                    variant={priorKnowledgeLevel === level.value ? 'filled' : 'outlined'}
+                    color={priorKnowledgeLevel === level.value ? 'primary' : 'default'}
+                    onClick={(): void => { setPriorKnowledgeLevel(level.value); }}
+                    sx={{ fontWeight: 500, cursor: 'pointer' }}
+                  />
+                ))}
+              </Box>
+
               {sortedSections.map((section) => (
                 <Box key={section.title} mb={2}>
                   <Typography variant="caption" fontWeight="bold" color="text.secondary"
@@ -1203,11 +1381,56 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           {/* Interactive suggestion cards */}
           {suggestionSlots && suggestionSlots.length > 0 && (
             <Box px={2} pt={2} pb={1} sx={{ borderBottom: `1px solid ${theme.palette.divider}`, flexShrink: 0 }}>
-              <Box display="flex" alignItems="center" gap={0.5} mb={1.5}>
+              <Box display="flex" alignItems="center" flexWrap="wrap" gap={0.5} mb={1.5}>
                 <LightbulbOutlinedIcon sx={{ fontSize: '1.1rem', color: 'warning.main' }} />
                 <Typography variant="subtitle2" fontWeight="bold">
                   {selectedCategoryLabel ? `${selectedCategoryLabel}: pick a topic` : 'Pick a topic'}
                 </Typography>
+                {QUESTION_FLAVORS.map((flavor) => {
+                  const isActive = activeFlavors.has(flavor.key);
+                  return (
+                    <Chip
+                      key={flavor.key}
+                      label={flavor.label}
+                      size="small"
+                      variant={isActive ? 'filled' : 'outlined'}
+                      color={isActive ? 'primary' : 'default'}
+                      onClick={(e: React.MouseEvent): void => {
+                        e.stopPropagation();
+                        setActiveFlavors((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(flavor.key)) {
+                            if (next.size > 1) next.delete(flavor.key);
+                          } else {
+                            next.add(flavor.key);
+                          }
+                          return next;
+                        });
+                      }}
+                      sx={{ fontWeight: 500, cursor: 'pointer', ml: 0.5 }}
+                    />
+                  );
+                })}
+                <Box component="span" sx={{ width: 8, flexShrink: 0 }} />
+                {PRIOR_KNOWLEDGE_LEVELS.map((level) => (
+                  <Chip
+                    key={level.value}
+                    label={level.label}
+                    size="small"
+                    variant={priorKnowledgeLevel === level.value ? 'filled' : 'outlined'}
+                    color={priorKnowledgeLevel === level.value ? 'primary' : 'default'}
+                    onClick={(e: React.MouseEvent): void => {
+                      e.stopPropagation();
+                      setPriorKnowledgeLevel(level.value);
+                    }}
+                    sx={{ fontWeight: 500, cursor: 'pointer' }}
+                  />
+                ))}
+                <Tooltip title="Regenerate all questions">
+                  <IconButton size="small" onClick={(): void => { handleRegenerateAll(); }} sx={{ ml: 'auto' }}>
+                    <RefreshIcon sx={{ fontSize: '0.9rem' }} />
+                  </IconButton>
+                </Tooltip>
               </Box>
               <Box display="flex" flexDirection="column" gap={1}>
                 {suggestionSlots.map((slot, idx) => (
@@ -1232,7 +1455,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                     )}
                     {slot.status === 'done' && slot.card && (
                       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                      <CardActionArea onClick={(): void => { handleTopicSelect(slot.card!); }}>
+                      <CardActionArea onClick={(): void => { void handleTopicSelect(slot.card!); }}>
                         <CardContent sx={{ py: 1.5, px: 2 }}>
                           <Typography variant="body1" fontWeight="bold" gutterBottom>{slot.card.question}</Typography>
                           {slot.card.teaser && (
@@ -1275,26 +1498,31 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           )}
 
           {/* Curriculum dashboard */}
-          {activeCycle && courseParts.length > 0 && (
+          {displayParts.length > 0 && (
             <Box px={2} pt={1.5} pb={1} sx={{ borderBottom: `1px solid ${theme.palette.divider}`, flexShrink: 0 }}>
-              <Typography variant="subtitle2" fontWeight="bold" gutterBottom>{topic.name || activeCycle.topicName}</Typography>
+              <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                {/* eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing */}
+                {topic.name || activeCycle?.topicName || completedCycle?.topicName}
+              </Typography>
               <Box display="flex" alignItems="center" justifyContent="space-between" mb={0.5}>
-                <Typography variant="caption" color="text.secondary">{completedCount}/{totalParts} completed</Typography>
+                <Typography variant="caption" color="text.secondary">{displayCompletedCount}/{displayTotalParts} completed</Typography>
               </Box>
               <Box display="flex" gap={0.5} mb={1.5}>
-                {courseParts.map((part) => (
+                {displayParts.map((part) => (
                   <Box key={part.id} sx={{ flex: 1, height: 6, borderRadius: 3,
                     bgcolor: part.isCompleted ? 'primary.main' : theme.palette.action.disabledBackground }}
                     title={`Part ${part.dayNumber}: ${part.subTopic}${part.isCompleted ? ' (completed)' : ''}`} />
                 ))}
               </Box>
 
-              {courseParts.map((part, idx) => {
+              {displayParts.map((part, idx) => {
                 const isCompleted = part.isCompleted;
-                const isCurrent = !isCompleted && idx === courseParts.findIndex((d) => !d.isCompleted);
+                const isCurrent = !isCompleted && idx === displayParts.findIndex((d) => !d.isCompleted);
                 const isLocked = !isCompleted && !isCurrent;
-                const isExpanded = isCurrent || (expandedParts[part.id] || false);
+                const isExpanded = isCompletedView || isCurrent || (expandedParts[part.id] || false);
                 const isSkeleton = !part.summary;
+                const isLastPart = part.dayNumber >= displayTotalParts;
+                const nextPartReady = !isLastPart && (displayParts.find((d) => d.dayNumber === part.dayNumber + 1)?.summary ?? '') !== '';
 
                 return (
                   <Box key={part.id} mb={1}>
@@ -1413,11 +1641,12 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                           </>
                         )}
 
-                        {isCurrent && (
+                        {activeCycle && isCurrent && (
                           <Box display="flex" justifyContent="flex-end" pt={2}>
                             <Chip
-                              label={part.dayNumber >= totalParts ? 'Finish course' : `Continue to Part ${part.dayNumber + 1}`}
+                              label={isLastPart ? 'Finish course' : `Continue to Part ${part.dayNumber + 1}`}
                               color="primary"
+                              variant={isLastPart || nextPartReady ? 'filled' : 'outlined'}
                               onClick={(): void => { handleCompletePart(part.id); }}
                               sx={{ fontWeight: 600, cursor: 'pointer' }}
                             />
@@ -1433,7 +1662,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
 
           {/* Conversation messages */}
           <Box flexGrow={1} minHeight={0} overflow="auto" px={1} pb={1}>
-            {!activeCycle && !suggestionSlots && !pendingQuestion && !showCategoryGrid && visibleChatMessages.length === 0 && (
+            {!activeCycle && !isCompletedView && !suggestionSlots && !showCategoryGrid && visibleChatMessages.length === 0 && (
               <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center"
                 height="100%" px={3} color="text.secondary" textAlign="center">
                 <Typography variant="body2">No content loaded. Try refreshing or starting a new course.</Typography>
