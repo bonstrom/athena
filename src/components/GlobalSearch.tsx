@@ -16,10 +16,13 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import TopicIcon from '@mui/icons-material/Topic';
+import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
-import { athenaDb, Topic, Message } from '../database/AthenaDb';
-import { useUiStore } from '../store/UiStore';
+import { athenaDb, Topic, Message, LearningCycle, LearningDay } from '../database/AthenaDb';
+import { useUiStore, SidebarFilterMode } from '../store/UiStore';
 import { useChatStore } from '../store/ChatStore';
 
 const MIN_SEARCH_LENGTH = 2;
@@ -27,14 +30,54 @@ const SEARCH_DEBOUNCE_MS = 300;
 const MAX_SEARCH_RESULTS = 20;
 const SEARCH_SNIPPET_LENGTH = 60;
 
+type SearchResultType = 'topic' | 'message' | 'course' | 'debate';
+
 interface SearchResult {
   id: string;
   topicId: string;
   messageId?: string;
-  type: 'topic' | 'message';
+  cycleId?: string;
+  type: SearchResultType;
   title: string;
   snippet?: string;
   date: string;
+}
+
+interface CourseSearchEntry {
+  id: string;
+  topicId: string;
+  cycleId: string;
+  title: string;
+  content: string;
+  date: string;
+  type: 'cycle' | 'day';
+}
+
+const MODE_ORDER: SidebarFilterMode[] = ['all', 'topics', 'messages', 'courses', 'debates'];
+
+const MODE_ICONS: Record<SidebarFilterMode, JSX.Element> = {
+  all: <FilterListIcon />,
+  topics: <TopicIcon />,
+  messages: <ChatBubbleOutlineIcon />,
+  courses: <MenuBookOutlinedIcon />,
+  debates: <CompareArrowsIcon />,
+};
+
+const MODE_LABELS: Record<SidebarFilterMode, string> = {
+  all: 'All',
+  topics: 'Topics',
+  messages: 'Messages',
+  courses: 'Courses',
+  debates: 'Debates',
+};
+
+function buildSnippet(content: string, matchIndices: [number, number] | undefined, snippetLen: number): string {
+  if (matchIndices) {
+    const start = Math.max(0, matchIndices[0] - 30);
+    const end = Math.min(content.length, matchIndices[1] + 1 + 30);
+    return (start > 0 ? '...' : '') + content.substring(start, end).replace(/\n/g, ' ') + (end < content.length ? '...' : '');
+  }
+  return content.substring(0, snippetLen).replace(/\n/g, ' ') + (content.length > snippetLen ? '...' : '');
 }
 
 export const GlobalSearch = (): JSX.Element => {
@@ -43,12 +86,14 @@ export const GlobalSearch = (): JSX.Element => {
   const [isSearching, setIsSearching] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [searchMode, setSearchMode] = useState<'topics' | 'messages'>('topics');
   const navigate = useNavigate();
-  const { isMobile, closeDrawer } = useUiStore();
+  const { isMobile, closeDrawer, sidebarFilter, setSidebarFilter } = useUiStore();
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
   const topicFuseRef = useRef<Fuse<Topic> | null>(null);
   const messageFuseRef = useRef<Fuse<Message> | null>(null);
+  const courseFuseRef = useRef<Fuse<CourseSearchEntry> | null>(null);
+  const debateTopicFuseRef = useRef<Fuse<Topic> | null>(null);
+  const debateMessageFuseRef = useRef<Fuse<Message> | null>(null);
   const topicLookupRef = useRef<Map<string, Topic>>(new Map());
 
   useEffect(() => {
@@ -72,115 +117,304 @@ export const GlobalSearch = (): JSX.Element => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
     debounceTimer.current = setTimeout(() => {
-      void performSearch(query.trim(), searchMode);
+      void performSearch(query.trim());
     }, SEARCH_DEBOUNCE_MS);
 
     return (): void => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, searchMode]);
+  }, [query, sidebarFilter]);
 
-  // Invalidate cached Fuse indices when search mode changes
   useEffect(() => {
     topicFuseRef.current = null;
     messageFuseRef.current = null;
+    courseFuseRef.current = null;
+    debateTopicFuseRef.current = null;
+    debateMessageFuseRef.current = null;
     topicLookupRef.current = new Map();
-  }, [searchMode]);
+  }, [sidebarFilter]);
 
-  const performSearch = async (searchQuery: string, mode: 'topics' | 'messages'): Promise<void> => {
-    try {
-      if (mode === 'topics') {
-        if (!topicFuseRef.current) {
-          const allTopics = await athenaDb.topics
-            .toCollection()
-            .filter((t) => !t.isDeleted)
-            .toArray();
+  const searchTopics = async (searchQuery: string, filterMode?: SidebarFilterMode): Promise<SearchResult[]> => {
+    if (!topicFuseRef.current) {
+      const allTopics = await athenaDb.topics
+        .toCollection()
+        .filter((t) => !t.isDeleted)
+        .toArray();
 
-          topicFuseRef.current = new Fuse(allTopics, {
-            keys: ['name'],
-            threshold: 0.4,
-            includeScore: true,
-            minMatchCharLength: 2,
-          });
-        }
-
-        const fuseResults = topicFuseRef.current.search(searchQuery);
-
-        const topicResults: SearchResult[] = fuseResults.map((r) => ({
-          id: `topic-${r.item.id}`,
-          topicId: r.item.id,
-          type: 'topic',
-          title: r.item.name,
-          date: r.item.updatedOn,
-        }));
-
-        setResults(topicResults.slice(0, MAX_SEARCH_RESULTS));
-      } else {
-        if (!messageFuseRef.current) {
-          const allMessages: Message[] = await athenaDb.messages
-            .toCollection()
-            .filter((m) => !m.isDeleted)
-            .toArray();
-
-          const topicIdsFromMessages = Array.from(new Set<string>(allMessages.map((m) => m.topicId)));
-          const topicsForMessages = await athenaDb.topics.bulkGet(topicIdsFromMessages);
-
-          const lookup = new Map<string, Topic>();
-          topicsForMessages.forEach((t) => {
-            if (t && !t.isDeleted) lookup.set(t.id, t);
-          });
-          topicLookupRef.current = lookup;
-
-          messageFuseRef.current = new Fuse(allMessages, {
-            keys: ['content'],
-            threshold: 0.4,
-            includeScore: true,
-            includeMatches: true,
-            minMatchCharLength: 2,
-            ignoreLocation: true,
-          });
-        }
-
-        const fuseResults = messageFuseRef.current.search(searchQuery);
-
-        const messageResults: SearchResult[] = [];
-
-        fuseResults.slice(0, MAX_SEARCH_RESULTS).forEach((r) => {
-          const parentTopic = topicLookupRef.current.get(r.item.topicId);
-          if (!parentTopic) return;
-
-          const matchIndices = r.matches?.[0]?.indices[0];
-          let snippet: string;
-          if (matchIndices) {
-            const start = Math.max(0, matchIndices[0] - 30);
-            const end = Math.min(r.item.content.length, matchIndices[1] + 1 + 30);
-            snippet =
-              (start > 0 ? '...' : '') + r.item.content.substring(start, end).replace(/\n/g, ' ') + (end < r.item.content.length ? '...' : '');
-          } else {
-            snippet = r.item.content.substring(0, SEARCH_SNIPPET_LENGTH).replace(/\n/g, ' ') + (r.item.content.length > SEARCH_SNIPPET_LENGTH ? '...' : '');
-          }
-
-          messageResults.push({
-            id: `msg-${r.item.id}`,
-            topicId: r.item.topicId,
-            messageId: r.item.id,
-            type: 'message',
-            title: parentTopic.name,
-            snippet,
-            date: r.item.created,
-          });
-        });
-
-        setResults(messageResults);
+      let filtered = allTopics;
+      if (filterMode === 'courses') {
+        filtered = allTopics.filter((t) => t.mode === 'curator');
+      } else if (filterMode === 'debates') {
+        filtered = allTopics.filter((t) => t.mode === 'debate');
+      } else if (filterMode === 'topics') {
+        filtered = allTopics.filter((t) => !t.mode || t.mode === 'topic');
       }
 
+      topicFuseRef.current = new Fuse(filtered, {
+        keys: ['name'],
+        threshold: 0.4,
+        includeScore: true,
+        minMatchCharLength: 2,
+      });
+    }
+
+    const fuseResults = topicFuseRef.current.search(searchQuery);
+    return fuseResults.slice(0, MAX_SEARCH_RESULTS).map((r) => ({
+      id: `topic-${r.item.id}`,
+      topicId: r.item.id,
+      type: 'topic' as SearchResultType,
+      title: r.item.name,
+      date: r.item.updatedOn,
+    }));
+  };
+
+  const searchMessages = async (searchQuery: string, filterByMode?: SidebarFilterMode): Promise<SearchResult[]> => {
+    if (!messageFuseRef.current) {
+      const allMessages: Message[] = await athenaDb.messages
+        .toCollection()
+        .filter((m) => !m.isDeleted)
+        .toArray();
+
+      const topicIdsFromMessages = Array.from(new Set<string>(allMessages.map((m) => m.topicId)));
+      const topicsForMessages = await athenaDb.topics.bulkGet(topicIdsFromMessages);
+
+      const lookup = new Map<string, Topic>();
+      let filteredMessages = allMessages;
+      if (filterByMode) {
+        const modeTopicIds = new Set<string>();
+        topicsForMessages.forEach((t) => {
+          if (!t || t.isDeleted) return;
+          lookup.set(t.id, t);
+          if (filterByMode === 'courses' && t.mode === 'curator') modeTopicIds.add(t.id);
+          else if (filterByMode === 'debates' && t.mode === 'debate') modeTopicIds.add(t.id);
+        });
+        if (filterByMode === 'courses' || filterByMode === 'debates') {
+          filteredMessages = allMessages.filter((m) => modeTopicIds.has(m.topicId));
+        }
+      } else {
+        topicsForMessages.forEach((t) => {
+          if (t && !t.isDeleted) lookup.set(t.id, t);
+        });
+      }
+      topicLookupRef.current = lookup;
+
+      messageFuseRef.current = new Fuse(filteredMessages, {
+        keys: ['content'],
+        threshold: 0.4,
+        includeScore: true,
+        includeMatches: true,
+        minMatchCharLength: 2,
+        ignoreLocation: true,
+      });
+    }
+
+    const fuseResults = messageFuseRef.current.search(searchQuery);
+    const messageResults: SearchResult[] = [];
+
+    fuseResults.slice(0, MAX_SEARCH_RESULTS).forEach((r) => {
+      const parentTopic = topicLookupRef.current.get(r.item.topicId);
+      if (!parentTopic) return;
+
+      const matchIndices = r.matches?.[0]?.indices[0];
+      const snippet = buildSnippet(r.item.content, matchIndices, SEARCH_SNIPPET_LENGTH);
+
+      messageResults.push({
+        id: `msg-${r.item.id}`,
+        topicId: r.item.topicId,
+        messageId: r.item.id,
+        type: 'message',
+        title: parentTopic.name,
+        snippet,
+        date: r.item.created,
+      });
+    });
+
+    return messageResults;
+  };
+
+  const searchCourses = async (searchQuery: string): Promise<SearchResult[]> => {
+    if (!courseFuseRef.current) {
+      const allCycles: LearningCycle[] = await athenaDb.learningCycles.toArray();
+      const allDays: LearningDay[] = await athenaDb.learningDays.toArray();
+
+      const entries: CourseSearchEntry[] = [];
+
+      for (const cycle of allCycles) {
+        entries.push({
+          id: `cycle-${cycle.id}`,
+          topicId: cycle.topicId,
+          cycleId: cycle.id,
+          title: cycle.topicName,
+          content: cycle.topicName,
+          date: cycle.weekStart,
+          type: 'cycle',
+        });
+      }
+
+      for (const day of allDays) {
+        entries.push({
+          id: `day-${day.id}`,
+          topicId: '',
+          cycleId: day.cycleId,
+          title: day.subTopic,
+          content: [day.subTopic, day.summary, day.keyTakeaway, day.hook].filter(Boolean).join(' '),
+          date: '',
+          type: 'day',
+        });
+      }
+
+      courseFuseRef.current = new Fuse(entries, {
+        keys: ['title', 'content'],
+        threshold: 0.4,
+        includeScore: true,
+        includeMatches: true,
+        minMatchCharLength: 2,
+        ignoreLocation: true,
+      });
+    }
+
+    const fuseResults = courseFuseRef.current.search(searchQuery);
+    const seenCycleIds = new Set<string>();
+    const courseResults: SearchResult[] = [];
+
+    for (const r of fuseResults) {
+      if (courseResults.length >= MAX_SEARCH_RESULTS) break;
+
+      const entry = r.item;
+      const cycleId = entry.cycleId;
+      const matchIndices = r.matches?.[0]?.indices[0];
+
+      if (entry.type === 'cycle') {
+        if (seenCycleIds.has(cycleId)) continue;
+        seenCycleIds.add(cycleId);
+        courseResults.push({
+          id: entry.id,
+          topicId: entry.topicId,
+          cycleId,
+          type: 'course',
+          title: entry.title,
+          snippet: undefined,
+          date: entry.date,
+        });
+      } else {
+        const cycle = await athenaDb.learningCycles.get(cycleId);
+        if (!cycle) continue;
+        if (seenCycleIds.has(cycleId)) continue;
+        seenCycleIds.add(cycleId);
+
+        const snippet = buildSnippet(entry.content, matchIndices, SEARCH_SNIPPET_LENGTH);
+        courseResults.push({
+          id: entry.id,
+          topicId: cycle.topicId,
+          cycleId,
+          type: 'course',
+          title: cycle.topicName,
+          snippet,
+          date: cycle.weekStart,
+        });
+      }
+    }
+
+    return courseResults;
+  };
+
+  const searchDebates = async (searchQuery: string): Promise<SearchResult[]> => {
+    const debateResults: SearchResult[] = [];
+
+    if (!debateTopicFuseRef.current) {
+      const allTopics = await athenaDb.topics
+        .toCollection()
+        .filter((t) => !t.isDeleted && t.mode === 'debate')
+        .toArray();
+
+      debateTopicFuseRef.current = new Fuse(allTopics, {
+        keys: ['name'],
+        threshold: 0.4,
+        includeScore: true,
+        minMatchCharLength: 2,
+      });
+    }
+
+    const topicFuseResults = debateTopicFuseRef.current.search(searchQuery);
+    debateResults.push(
+      ...topicFuseResults.slice(0, MAX_SEARCH_RESULTS).map((r) => ({
+        id: `debate-topic-${r.item.id}`,
+        topicId: r.item.id,
+        type: 'debate' as SearchResultType,
+        title: r.item.name,
+        date: r.item.updatedOn,
+      })),
+    );
+
+    const remaining = MAX_SEARCH_RESULTS - debateResults.length;
+    if (remaining > 0) {
+      const debateMsgResults = await searchMessages(searchQuery, 'debates');
+      const marked = debateMsgResults.slice(0, remaining).map((r) => ({
+        ...r,
+        type: 'debate' as SearchResultType,
+      }));
+      debateResults.push(...marked);
+    }
+
+    return debateResults;
+  };
+
+  const performSearch = async (searchQuery: string): Promise<void> => {
+    try {
+      let allResults: SearchResult[] = [];
+
+      switch (sidebarFilter) {
+        case 'all': {
+          const [topicRes, messageRes, courseRes, debateRes] = await Promise.all([
+            searchTopics(searchQuery),
+            searchMessages(searchQuery),
+            searchCourses(searchQuery),
+            searchDebates(searchQuery),
+          ]);
+
+          const merged = [...topicRes, ...messageRes, ...courseRes, ...debateRes];
+          merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+          const seen = new Set<string>();
+          const deduped: SearchResult[] = [];
+          for (const r of merged) {
+            const key = `${r.type}-${r.topicId}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            deduped.push(r);
+            if (deduped.length >= MAX_SEARCH_RESULTS) break;
+          }
+          allResults = deduped;
+          break;
+        }
+        case 'topics':
+          allResults = await searchTopics(searchQuery);
+          break;
+        case 'messages':
+          allResults = await searchMessages(searchQuery);
+          break;
+        case 'courses':
+          allResults = await searchCourses(searchQuery);
+          break;
+        case 'debates':
+          allResults = await searchDebates(searchQuery);
+          break;
+      }
+
+      setResults(allResults);
       setIsSearching(false);
     } catch (error) {
       console.error('Search failed:', error);
       setSearchError('Search failed. Please try again.');
       setIsSearching(false);
     }
+  };
+
+  const cycleMode = (): void => {
+    const currentIdx = MODE_ORDER.indexOf(sidebarFilter);
+    const nextIdx = (currentIdx + 1) % MODE_ORDER.length;
+    setSidebarFilter(MODE_ORDER[nextIdx]);
   };
 
   const handleResultClick = (result: SearchResult): void => {
@@ -198,14 +432,27 @@ export const GlobalSearch = (): JSX.Element => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Tab') {
       e.preventDefault();
-      setSearchMode((prev) => (prev === 'topics' ? 'messages' : 'topics'));
+      cycleMode();
     }
   };
 
   const handleBlur = (e: React.FocusEvent<HTMLDivElement>): void => {
-    // Don't reset mode if focus moved to a child element (e.g. clicking a result or chip)
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    setSearchMode('topics');
+    setSidebarFilter('all');
+  };
+
+  const getResultIcon = (type: SearchResultType): JSX.Element => {
+    switch (type) {
+      case 'course':
+        return <MenuBookOutlinedIcon sx={{ mr: 2, color: 'primary.main', fontSize: 20 }} />;
+      case 'debate':
+        return <CompareArrowsIcon sx={{ mr: 2, color: 'secondary.main', fontSize: 20 }} />;
+      case 'message':
+        return <ChatBubbleOutlineIcon sx={{ mr: 2, color: 'text.secondary', fontSize: 20 }} />;
+      case 'topic':
+      default:
+        return <TopicIcon sx={{ mr: 2, color: 'text.secondary', fontSize: 20 }} />;
+    }
   };
 
   return (
@@ -237,14 +484,14 @@ export const GlobalSearch = (): JSX.Element => {
                 )}
                 <InputAdornment position="end">
                   <Chip
-                    icon={searchMode === 'topics' ? <TopicIcon /> : <ChatBubbleOutlineIcon />}
-                    label={searchMode === 'topics' ? 'Topics' : 'Messages'}
+                    icon={MODE_ICONS[sidebarFilter]}
+                    label={MODE_LABELS[sidebarFilter]}
                     size="small"
                     variant="outlined"
                     clickable
                     onClick={(e): void => {
                       e.stopPropagation();
-                      setSearchMode((prev) => (prev === 'topics' ? 'messages' : 'topics'));
+                      cycleMode();
                     }}
                     sx={{
                       height: 24,
@@ -278,7 +525,7 @@ export const GlobalSearch = (): JSX.Element => {
               overflowY: 'auto',
               borderRadius: 2,
               border: (theme) => `1px solid ${theme.palette.divider}`,
-              bgcolor: 'background.paper', // Ensure solid background over content
+              bgcolor: 'background.paper',
             }}
           >
             {searchError ? (
@@ -303,20 +550,16 @@ export const GlobalSearch = (): JSX.Element => {
                       }}
                       onClick={(): void => handleResultClick(result)}
                     >
-                      {result.type === 'topic' ? (
-                        <TopicIcon sx={{ mr: 2, color: 'text.secondary', fontSize: 20 }} />
-                      ) : (
-                        <ChatBubbleOutlineIcon sx={{ mr: 2, color: 'text.secondary', fontSize: 20 }} />
-                      )}
+                      {getResultIcon(result.type)}
 
                       <ListItemText
                         primary={
-                          <Typography variant="body2" fontWeight={result.type === 'topic' ? 'bold' : 'inherit'}>
+                          <Typography variant="body2" fontWeight={result.type === 'topic' || result.type === 'course' ? 'bold' : 'inherit'}>
                             {result.title}
                           </Typography>
                         }
                         secondary={
-                          result.snippet && (
+                          result.snippet ? (
                             <Typography
                               variant="caption"
                               color="text.secondary"
@@ -330,7 +573,7 @@ export const GlobalSearch = (): JSX.Element => {
                             >
                               {result.snippet}
                             </Typography>
-                          )
+                          ) : undefined
                         }
                       />
                     </ListItemButton>

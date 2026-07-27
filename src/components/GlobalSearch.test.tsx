@@ -30,6 +30,13 @@ jest.mock('../database/AthenaDb', () => ({
     messages: {
       toCollection: jest.fn(),
     },
+    learningCycles: {
+      toArray: jest.fn().mockResolvedValue([]),
+      get: jest.fn().mockResolvedValue(null),
+    },
+    learningDays: {
+      toArray: jest.fn().mockResolvedValue([]),
+    },
     predefinedPrompts: {
       toArray: jest.fn().mockResolvedValue([]),
     },
@@ -40,7 +47,12 @@ const mockSearch = jest.fn().mockReturnValue([]);
 Fuse.prototype.search = mockSearch;
 
 const useNavigateMock = useNavigate as unknown as jest.Mock<(path: string) => void>;
-const useUiStoreMock = useUiStore as unknown as jest.Mock<{ isMobile: boolean; closeDrawer: () => void }>;
+const useUiStoreMock = useUiStore as unknown as jest.Mock<{
+  isMobile: boolean;
+  closeDrawer: () => void;
+  sidebarFilter: string;
+  setSidebarFilter: jest.Mock;
+}>;
 const useChatStoreMock = useChatStore as unknown as MockStoreHookWithGetState<
   jest.Mock<Record<string, unknown>>,
   { highlightedMessageId?: string | null; setHighlightedMessageId: jest.Mock }
@@ -52,6 +64,13 @@ const athenaDbMock = athenaDb as unknown as {
   };
   messages: {
     toCollection: jest.Mock;
+  };
+  learningCycles: {
+    toArray: jest.Mock;
+    get: jest.Mock;
+  };
+  learningDays: {
+    toArray: jest.Mock;
   };
 };
 
@@ -75,7 +94,7 @@ describe('GlobalSearch', () => {
     const navigate = jest.fn();
     const closeDrawer = jest.fn();
     useNavigateMock.mockReturnValue(navigate);
-    useUiStoreMock.mockReturnValue({ isMobile: true, closeDrawer });
+    useUiStoreMock.mockReturnValue({ isMobile: true, closeDrawer, sidebarFilter: 'topics', setSidebarFilter: jest.fn() });
 
     const topicItem = {
       id: 't1',
@@ -113,7 +132,7 @@ describe('GlobalSearch', () => {
 
   it('shows empty-state text when no fuzzy matches are found', async () => {
     useNavigateMock.mockReturnValue(jest.fn());
-    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn() });
+    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn(), sidebarFilter: 'topics', setSidebarFilter: jest.fn() });
 
     const topicCollectionChain = {
       filter: jest.fn().mockReturnValue({
@@ -137,7 +156,7 @@ describe('GlobalSearch', () => {
 
   it('searches messages with fuzzy matching and displays parent topic name', async () => {
     useNavigateMock.mockReturnValue(jest.fn());
-    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn() });
+    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn(), sidebarFilter: 'messages', setSidebarFilter: jest.fn() });
 
     const messageItem = {
       id: 'm1',
@@ -157,12 +176,6 @@ describe('GlobalSearch', () => {
         toArray: jest.fn().mockResolvedValue([messageItem]),
       }),
     };
-    const topicChain = {
-      filter: jest.fn().mockReturnValue({
-        toArray: jest.fn().mockResolvedValue([]),
-      }),
-    };
-    athenaDbMock.topics.toCollection.mockReturnValue(topicChain);
     athenaDbMock.messages.toCollection.mockReturnValue(messageCollectionChain);
     athenaDbMock.topics.bulkGet.mockResolvedValue([parentTopic]);
 
@@ -182,9 +195,6 @@ describe('GlobalSearch', () => {
     act(() => {
       jest.advanceTimersByTime(350);
     });
-
-    // Switch to messages mode by clicking the chip
-    fireEvent.click(screen.getByText('Topics'));
 
     await waitFor(() => {
       expect(screen.getByText('Aider install')).toBeInTheDocument();
@@ -195,7 +205,7 @@ describe('GlobalSearch', () => {
     const navigate = jest.fn();
     const closeDrawer = jest.fn();
     useNavigateMock.mockReturnValue(navigate);
-    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer });
+    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer, sidebarFilter: 'messages', setSidebarFilter: jest.fn() });
 
     const messageItem = {
       id: 'm1',
@@ -215,12 +225,6 @@ describe('GlobalSearch', () => {
         toArray: jest.fn().mockResolvedValue([messageItem]),
       }),
     };
-    const topicChain = {
-      filter: jest.fn().mockReturnValue({
-        toArray: jest.fn().mockResolvedValue([]),
-      }),
-    };
-    athenaDbMock.topics.toCollection.mockReturnValue(topicChain);
     athenaDbMock.messages.toCollection.mockReturnValue(messageCollectionChain);
     athenaDbMock.topics.bulkGet.mockResolvedValue([parentTopic]);
 
@@ -240,9 +244,6 @@ describe('GlobalSearch', () => {
     act(() => {
       jest.advanceTimersByTime(350);
     });
-
-    // Switch to messages mode
-    fireEvent.click(screen.getByText('Topics'));
 
     await waitFor(() => {
       expect(screen.getByText('Aider install')).toBeInTheDocument();
@@ -260,7 +261,7 @@ describe('GlobalSearch', () => {
 
   it('does not search with fewer than 2 characters', () => {
     useNavigateMock.mockReturnValue(jest.fn());
-    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn() });
+    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn(), sidebarFilter: 'topics', setSidebarFilter: jest.fn() });
 
     render(<GlobalSearch />);
 
@@ -279,7 +280,7 @@ describe('GlobalSearch', () => {
       /* ignore */
     });
     useNavigateMock.mockReturnValue(jest.fn());
-    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn() });
+    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn(), sidebarFilter: 'topics', setSidebarFilter: jest.fn() });
 
     const topicCollectionChain = {
       filter: jest.fn().mockReturnValue({
@@ -303,7 +304,7 @@ describe('GlobalSearch', () => {
 
   it('re-opens dropdown on focus when query has 2+ characters', async () => {
     useNavigateMock.mockReturnValue(jest.fn());
-    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn() });
+    useUiStoreMock.mockReturnValue({ isMobile: false, closeDrawer: jest.fn(), sidebarFilter: 'topics', setSidebarFilter: jest.fn() });
 
     const topicCollectionChain = {
       filter: jest.fn().mockReturnValue({
