@@ -165,7 +165,7 @@ interface LlmPayload {
   stream_options?: { include_usage: boolean };
   tools?: LlmTool[];
   thinking?: { type: 'enabled' | 'disabled' };
-  reasoning_effort?: 'high' | 'max';
+  reasoning_effort?: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   max_tokens?: number;
 }
 
@@ -744,7 +744,7 @@ function buildPayload(
 
   const payloadOverrides = getPayloadOverrides(providerConfig);
 
-  return {
+  const payload: LlmPayload = {
     model: resolvedModel.apiModelId,
     messages: finalMessages.map((m) => ({
       role: m.role,
@@ -760,11 +760,20 @@ function buildPayload(
     ...(stream && { stream_options: { include_usage: true } }),
     ...(resolvedThinkingMode && !webSearch && { thinking: { type: resolvedThinkingMode } }),
     ...(webSearch && { thinking: { type: 'disabled' } }),
-    ...(resolvedReasoningEffort && { reasoning_effort: resolvedReasoningEffort }),
     ...payloadOverrides,
     ...(resolvedModel.supportsTools && finalTools.length > 0 && { tools: finalTools }),
     ...(resolvedModel.maxTokensOverride != null && { max_tokens: resolvedModel.maxTokensOverride }),
   };
+
+  if (resolvedReasoningEffort) {
+    payload.reasoning_effort = resolvedReasoningEffort;
+  }
+
+  if (finalTools.length > 0) {
+    payload.reasoning_effort = 'none';
+  }
+
+  return payload;
 }
 
 export function filterMessagesForModel(model: ChatModel, messages: LlmMessage[]): LlmMessage[] {

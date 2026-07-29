@@ -358,10 +358,14 @@ const ModelsSettings: React.FC = () => {
                 <Select
                   value={form.reasoningEffort ?? ''}
                   label="Reasoning Effort"
-                  onChange={(e): void => setForm((f) => ({ ...f, reasoningEffort: (e.target.value as 'high' | 'max' | '') || null }))}
+                   onChange={(e): void => setForm((f) => ({ ...f, reasoningEffort: (e.target.value as 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | '') || null }))}
                 >
                   <MenuItem value="">Default / N/A</MenuItem>
+                  <MenuItem value="none">None</MenuItem>
+                  <MenuItem value="low">Low</MenuItem>
+                  <MenuItem value="medium">Medium</MenuItem>
                   <MenuItem value="high">High</MenuItem>
+                  <MenuItem value="xhigh">X-High</MenuItem>
                   <MenuItem value="max">Max</MenuItem>
                 </Select>
               </FormControl>

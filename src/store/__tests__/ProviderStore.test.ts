@@ -827,8 +827,8 @@ describe('ProviderStore migrations', () => {
       .map((m) => m.id);
 
     const deepseekIdx = builtinIds.indexOf('builtin-deepseek-v4-flash');
-    const gpt4Idx = builtinIds.indexOf('builtin-gpt-5-4');
-    expect(deepseekIdx).toBeLessThan(gpt4Idx);
+    const gptIdx = builtinIds.indexOf('builtin-gpt-5-6-sol');
+    expect(deepseekIdx).toBeLessThan(gptIdx);
   });
 
   it('handles corrupt model storage and re-seeds', () => {

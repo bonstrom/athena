@@ -102,8 +102,8 @@ interface ChatStore {
   refreshTopicMessages: (topicId: string) => Promise<void>;
   temperature: number;
   setTemperature: (temp: number) => void;
-  reasoningEffort: 'high' | 'max' | null;
-  setReasoningEffort: (effort: 'high' | 'max' | null) => void;
+  reasoningEffort: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+  setReasoningEffort: (effort: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null) => void;
   thinkingMode: 'enabled' | 'disabled' | null;
   setThinkingMode: (mode: 'enabled' | 'disabled' | null) => void;
   abortController: AbortController | null;

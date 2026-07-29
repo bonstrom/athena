@@ -32,7 +32,7 @@ No env vars required — API keys are configured through the Settings UI and sto
 >
 > **Running a single test file:** `npm test -- --testPathPattern="ComponentName" --watchAll=false` (matches file path by regex).
 
-Run `lint` before committing; run `test:coverage` after changing tests.
+Run `lint` and `test:coverage` before committing. **After any TypeScript type or interface change, verify the project compiles with `npm run build`.** Type errors that don't affect tests (e.g., internal interfaces used only at build time) will break `npm start`/`build` but pass lint and tests silently.
 
 ## Code Quality (enforced by ESLint)
 

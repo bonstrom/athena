@@ -800,7 +800,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                 <MuiToggleButtonGroup
                   value={useChatStore.getState().reasoningEffort ?? 'high'}
                   exclusive
-                  onChange={(_, value: 'high' | 'max' | null): void => {
+                  onChange={(_, value: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): void => {
                     if (value !== null) useChatStore.getState().setReasoningEffort(value);
                   }}
                   size="small"
@@ -827,13 +827,33 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
                     },
                   }}
                 >
+                  <MuiToggleButton value="none">
+                    <Tooltip title="No reasoning" disableTouchListener={isMobile}>
+                      <span>None</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value="low">
+                    <Tooltip title="Low Effort" disableTouchListener={isMobile}>
+                      <span>Low</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value="medium">
+                    <Tooltip title="Medium Effort" disableTouchListener={isMobile}>
+                      <span>Med</span>
+                    </Tooltip>
+                  </MuiToggleButton>
                   <MuiToggleButton value="high">
                     <Tooltip title="High Effort (Default)" disableTouchListener={isMobile}>
                       <span>High</span>
                     </Tooltip>
                   </MuiToggleButton>
+                  <MuiToggleButton value="xhigh">
+                    <Tooltip title="Extra High Effort" disableTouchListener={isMobile}>
+                      <span>X-Hi</span>
+                    </Tooltip>
+                  </MuiToggleButton>
                   <MuiToggleButton value="max">
-                    <Tooltip title="Max Effort (Better reasoning)" disableTouchListener={isMobile}>
+                    <Tooltip title="Max Effort (Best reasoning)" disableTouchListener={isMobile}>
                       <span>Max</span>
                     </Tooltip>
                   </MuiToggleButton>
