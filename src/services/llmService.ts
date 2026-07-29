@@ -765,17 +765,11 @@ function buildPayload(
     ...(resolvedModel.maxTokensOverride != null && { max_tokens: resolvedModel.maxTokensOverride }),
   };
 
-  if (resolvedReasoningEffort) {
-    payload.reasoning_effort = resolvedReasoningEffort;
-  }
-
-  if (finalTools.length > 0 && payload.reasoning_effort) {
+  if (finalTools.length > 0) {
     const isGpt56 = resolvedModel.apiModelId.startsWith('gpt-5.6');
-    if (isGpt56) {
-      payload.reasoning_effort = 'none';
-    } else {
-      delete payload.reasoning_effort;
-    }
+    payload.reasoning_effort = isGpt56 ? 'none' : undefined;
+  } else if (resolvedReasoningEffort) {
+    payload.reasoning_effort = resolvedReasoningEffort;
   }
 
   return payload;
