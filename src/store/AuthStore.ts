@@ -43,10 +43,12 @@ interface AuthState {
   showCameraButton: 'auto' | 'always' | 'never';
   ttsEnabled: boolean;
   ttsVoiceId: string;
+  svgGenerationEnabled: boolean;
   setDefaultMaxContextMessages: (count: number) => void;
   setShowCameraButton: (value: 'auto' | 'always' | 'never') => void;
   setTtsEnabled: (enabled: boolean) => void;
   setTtsVoiceId: (voiceId: string) => void;
+  setSvgGenerationEnabled: (enabled: boolean) => void;
   setAskUserEnabled: (enabled: boolean) => void;
   setAiSummaryEnabled: (enabled: boolean) => void;
   setSummaryModel: (model: string) => void;
@@ -109,6 +111,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedShowCameraButton = (localStorage.getItem('showCameraButton') as 'auto' | 'always' | 'never' | null) ?? 'auto';
   const storedTtsEnabled = localStorage.getItem('ttsEnabled') === 'true';
   const storedTtsVoiceId = localStorage.getItem('ttsVoiceId') ?? DEFAULT_VOICE_ID;
+  const storedSvgGenerationEnabled = localStorage.getItem('svgGenerationEnabled') !== 'false'; // default true
   return {
     userName: userName,
     deviceId: getDeviceId(),
@@ -140,6 +143,7 @@ export const useAuthStore = create<AuthState>((set) => {
     showCameraButton: storedShowCameraButton,
     ttsEnabled: storedTtsEnabled,
     ttsVoiceId: storedTtsVoiceId,
+    svgGenerationEnabled: storedSvgGenerationEnabled,
     clearAuth: (): void => {
       localStorage.removeItem('userName');
       localStorage.removeItem('customInstructions');
@@ -165,6 +169,7 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem('showCameraButton');
       localStorage.removeItem('ttsEnabled');
       localStorage.removeItem('ttsVoiceId');
+      localStorage.removeItem('svgGenerationEnabled');
       void athenaDb.predefinedPrompts.clear().catch((err: unknown) => {
         console.error('Failed to clear predefined prompts:', err);
       });
@@ -192,6 +197,7 @@ export const useAuthStore = create<AuthState>((set) => {
         showCameraButton: 'auto',
         ttsEnabled: false,
         ttsVoiceId: DEFAULT_VOICE_ID,
+        svgGenerationEnabled: true,
       });
     },
     setShowCameraButton: (value: 'auto' | 'always' | 'never'): void => {
@@ -205,6 +211,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setTtsVoiceId: (voiceId: string): void => {
       localStorage.setItem('ttsVoiceId', voiceId);
       set({ ttsVoiceId: voiceId });
+    },
+    setSvgGenerationEnabled: (enabled: boolean): void => {
+      localStorage.setItem('svgGenerationEnabled', String(enabled));
+      set({ svgGenerationEnabled: enabled });
     },
     setDefaultMaxContextMessages: (count: number): void => {
       localStorage.setItem('defaultMaxContextMessages', String(count));

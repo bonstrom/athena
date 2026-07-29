@@ -123,6 +123,8 @@ const Settings: React.FC = () => {
     ttsVoiceId,
     setTtsEnabled,
     setTtsVoiceId,
+    svgGenerationEnabled,
+    setSvgGenerationEnabled,
     dateFormat,
     setDateFormat,
   } = useAuthStore();
@@ -847,6 +849,18 @@ const Settings: React.FC = () => {
                         <Typography variant="body2">Semantic Search (RAG)</Typography>
                         <Typography variant="caption" color="text.secondary">
                           Retrieves relevant older messages using local embeddings.
+                        </Typography>
+                      </Box>
+                    }
+                    sx={{ alignItems: 'flex-start' }}
+                  />
+                  <FormControlLabel
+                    control={<Switch checked={svgGenerationEnabled} onChange={(e): void => setSvgGenerationEnabled(e.target.checked)} size="small" />}
+                    label={
+                      <Box>
+                        <Typography variant="body2">SVG Generation</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Allows the LLM to generate SVG diagrams in responses.
                         </Typography>
                       </Box>
                     }

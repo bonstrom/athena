@@ -249,7 +249,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   entries.push({ message: { role: 'system', content: LATEX_INSTRUCTIONS }, sourceLabel: 'Formatting' });
 
   // System: SVG visualization instructions
-  entries.push({ message: { role: 'system', content: SVG_INSTRUCTIONS }, sourceLabel: 'SVG' });
+  if (authStoreState.svgGenerationEnabled) {
+    entries.push({ message: { role: 'system', content: SVG_INSTRUCTIONS }, sourceLabel: 'SVG' });
+  }
 
   // System: Scratchpad rules + content (shown as two entries for clarity in the inspector)
   const rawScratchpadRules = (topic?.scratchpad ? scratchpadRulesTemplate : SHORT_SCRATCHPAD_RULES).replace(
@@ -687,7 +689,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     systems.push({ role: 'system', content: LATEX_INSTRUCTIONS });
 
     // System: SVG visualization instructions
-    systems.push({ role: 'system', content: SVG_INSTRUCTIONS });
+    if (useAuthStore.getState().svgGenerationEnabled) {
+      systems.push({ role: 'system', content: SVG_INSTRUCTIONS });
+    }
 
     const rawScratchpadRules = (refreshedTopic.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
       '{{SCRATCHPAD_LIMIT}}',

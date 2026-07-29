@@ -37,7 +37,9 @@ function buildSystemMessage(customInstructions: string): LlmMessage | null {
     parts.push(trimmed);
   }
   parts.push(LATEX_INSTRUCTIONS);
-  parts.push(SVG_INSTRUCTIONS);
+  if (useAuthStore.getState().svgGenerationEnabled) {
+    parts.push(SVG_INSTRUCTIONS);
+  }
   return { role: 'system', content: parts.join('\n\n') };
 }
 
