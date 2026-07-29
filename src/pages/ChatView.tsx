@@ -21,6 +21,7 @@ const ChatView: React.FC = () => {
   const [displayTopicId, setDisplayTopicId] = useState<string | undefined>(topicId);
   const [isVisible, setIsVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [forksCollapsed, setForksCollapsed] = useState(false);
 
   const topic = useTopicStore((state) => state.topics.find((t) => t.id === displayTopicId));
   const maxContextMessages = topic?.maxContextMessages ?? defaultMaxContextMessages;
@@ -83,7 +84,7 @@ const ChatView: React.FC = () => {
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
-            px: { xs: 1, md: 2 },
+            px: { xs: 1, md: 0 },
           }}
         >
           {error ? (
@@ -98,20 +99,17 @@ const ChatView: React.FC = () => {
                 ) : topic?.mode === 'curator' ? (
                   <CuratorView topic={topic} messages={messages} />
                 ) : (
-                  <>
-                    {displayTopicId && <ForkTabs topicId={displayTopicId} />}
-                    <MessageList
-                      messages={messages}
-                      maxContextMessages={maxContextMessages}
-                      suggestions={!sending ? (pendingSuggestions ?? []) : []}
-                      isSuggestionsLoading={isSuggestionsLoading && !sending && !pendingSuggestions}
-                      onSuggestionSelect={(suggestion): void => {
-                        clearSuggestions();
-                        if (!topicId) return;
-                        void sendMessageStream(suggestion, topicId);
-                      }}
-                    />
-                  </>
+                  <MessageList
+                    messages={messages}
+                    maxContextMessages={maxContextMessages}
+                    suggestions={!sending ? (pendingSuggestions ?? []) : []}
+                    isSuggestionsLoading={isSuggestionsLoading && !sending && !pendingSuggestions}
+                    onSuggestionSelect={(suggestion): void => {
+                      clearSuggestions();
+                      if (!topicId) return;
+                      void sendMessageStream(suggestion, topicId);
+                    }}
+                  />
                 )}
               </Box>
             </Fade>
@@ -119,15 +117,20 @@ const ChatView: React.FC = () => {
         </Box>
       </Box>
 
-      {(!topic || topic.mode === 'topic') && (
-        <Composer
-          sending={sending}
-          onSend={(content: string, attachments?: Attachment[]): void => {
-            if (!topicId) return;
-            void sendMessageStream(content, topicId, undefined, attachments);
-          }}
-          isMobile={isMobile}
-        />
+      {(!topic || (topic.mode !== 'debate' && topic.mode !== 'curator')) && (
+        <>
+          {displayTopicId && <ForkTabs topicId={displayTopicId} collapsed={forksCollapsed} />}
+          <Composer
+            sending={sending}
+            onSend={(content: string, attachments?: Attachment[]): void => {
+              if (!topicId) return;
+              void sendMessageStream(content, topicId, undefined, attachments);
+            }}
+            isMobile={isMobile}
+            forksCollapsed={forksCollapsed}
+            onToggleForks={(): void => setForksCollapsed((prev) => !prev)}
+          />
+        </>
       )}
     </Box>
   );

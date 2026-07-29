@@ -27,7 +27,7 @@ const ChatLayout: React.FC = () => {
   }, [isMobile, setMobile]);
 
   return (
-    <Box sx={{ display: 'flex', height: '100dvh' }}>
+    <Box sx={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
       <CssBaseline />
 
       {/* Drawer */}
@@ -62,9 +62,8 @@ const ChatLayout: React.FC = () => {
           }),
           display: 'flex',
           flexDirection: 'column',
-          height: '100dvh',
           maxWidth: { xs: '100%', sm: '100%', md: '100%' },
-          overflowX: 'hidden',
+          overflow: 'hidden',
         }}
       >
         <Box

@@ -28,6 +28,7 @@ import { Theme } from '@mui/material/styles';
 import SendIcon from '@mui/icons-material/Send';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
 import AddIcon from '@mui/icons-material/Add';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import CloseIcon from '@mui/icons-material/Close';
 import TuneIcon from '@mui/icons-material/Tune';
 import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
@@ -93,6 +94,8 @@ interface ComposerProps {
   sending: boolean;
   onSend: (content: string, attachments?: Attachment[]) => void;
   isMobile: boolean;
+  forksCollapsed?: boolean;
+  onToggleForks?: () => void;
 }
 interface Page {
   id: string;
@@ -121,7 +124,7 @@ const WaveformIndicator: React.FC = () => (
   </Box>
 );
 
-const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
+const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCollapsed = false, onToggleForks }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -549,8 +552,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       alignItems="center"
       gap={1}
       px={2}
-      pb={isMobile ? 0.5 : 1.5}
-      pt={isMobile ? 1 : 1.5}
+      pb={isMobile ? 0.5 : 1}
+      pt={isMobile ? 0.5 : 1}
       justifyContent="center"
       sx={{
         backgroundColor: (theme) => alpha(theme.palette.background.default, 0.85),
@@ -568,7 +571,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
       <Box
         width="100%"
         sx={{
-          maxWidth: chatWidth === 'full' ? '100%' : (theme: Theme): string => `calc(${theme.breakpoints.values[chatWidth]}px + 408px)`,
+          maxWidth: chatWidth === 'full' ? '100%' : chatWidth,
         }}
         display="flex"
         flexDirection="column"
@@ -1314,7 +1317,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
             display: 'flex',
             flexDirection: 'row',
             flexWrap: 'wrap',
-            alignItems: 'flex-end',
+            alignItems: 'center',
             columnGap: { xs: 0.5, md: 1 },
             rowGap: 0,
           }}
@@ -1328,11 +1331,47 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile }) => {
               flexShrink: 0,
               gap: 0,
               mb: { xs: 0, md: 0.25 },
+              pl: 0,
               width: { xs: 'auto', md: 220 },
               justifyContent: { xs: 'flex-start', md: 'flex-end' },
               flexGrow: { xs: 1, md: 0 },
             }}
           >
+            {(topic?.forks?.length ?? 0) > 1 && onToggleForks && (
+              <Tooltip title={`${forksCollapsed ? 'Show' : 'Hide'} forks (${topic?.forks?.length ?? 0})`} disableTouchListener={isMobile}>
+                <IconButton
+                  onClick={onToggleForks}
+                  disabled={sending}
+                  color={!forksCollapsed ? 'primary' : 'default'}
+                  aria-label="Toggle fork tabs"
+                  sx={{ position: 'relative' }}
+                >
+                  <AccountTreeIcon />
+                  <Box
+                    component="span"
+                    sx={{
+                      position: 'absolute',
+                      top: '1px',
+                      right: '1px',
+                      minWidth: 14,
+                      height: 14,
+                      borderRadius: '50%',
+                      bgcolor: !forksCollapsed ? 'primary.main' : 'text.secondary',
+                      color: 'background.paper',
+                      fontSize: '0.55rem',
+                      fontWeight: 'bold',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      px: '2px',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {topic?.forks?.length}
+                  </Box>
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title="Parameters" disableTouchListener={isMobile}>
               <span>
                 <IconButton

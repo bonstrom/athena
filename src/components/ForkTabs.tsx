@@ -3,7 +3,6 @@ import {
   Tabs,
   Tab,
   Box,
-  Paper,
   alpha,
   IconButton,
   Dialog,
@@ -41,6 +40,7 @@ import type { Fork } from '../database/AthenaDb';
 
 interface ForkTabsProps {
   topicId: string;
+  collapsed?: boolean;
 }
 
 interface SortableForkTabProps {
@@ -135,7 +135,7 @@ const SortableForkTab: React.FC<SortableForkTabProps> = ({
   );
 };
 
-const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
+const ForkTabs: React.FC<ForkTabsProps> = ({ topicId, collapsed = false }) => {
   const { topics, switchFork, deleteFork, renameFork, reorderFork } = useTopicStore();
   const { fetchMessages } = useChatStore();
   const { chatFontSize } = useAuthStore();
@@ -212,25 +212,30 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
     return null;
   }
 
+  if (collapsed) {
+    return null;
+  }
+
   const activeForkId = topic.activeForkId ?? 'main';
   const forkCount = topic.forks?.length ?? 0;
 
   return (
-    <Paper
-      elevation={0}
+    <Box
       sx={{
-        borderBottom: 1,
-        borderColor: 'divider',
-        bgcolor: (theme) => alpha(theme.palette.background.paper, 0.8),
-        backdropFilter: 'blur(8px)',
-        position: 'sticky',
-        top: 0,
         zIndex: 10,
-        mb: 2,
-        borderRadius: 0,
+        borderTop: 1,
+        borderColor: 'divider',
       }}
     >
-      <Box sx={{ maxWidth: 'md', mx: 'auto', px: 2 }}>
+      <Box
+        sx={{
+          maxWidth: 'md',
+          mx: 'auto',
+          px: { xs: 1, md: 2 },
+          bgcolor: (theme) => alpha(theme.palette.background.paper, 0.75),
+          backdropFilter: 'blur(8px)',
+        }}
+      >
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -243,7 +248,7 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
               onChange={handleChange}
               variant="scrollable"
               scrollButtons="auto"
-              sx={{ minHeight: 48 }}
+              sx={{ minHeight: { xs: 36, md: 48 } }}
             >
               {topic.forks?.map((fork) => (
                 <SortableForkTab
@@ -298,7 +303,7 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId }) => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Paper>
+    </Box>
   );
 };
 
