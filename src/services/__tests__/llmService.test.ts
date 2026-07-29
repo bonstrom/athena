@@ -906,6 +906,460 @@ describe('askLlmStream — streaming API calls', () => {
   });
 });
 
+describe('buildPayload — reasoning_effort and tools', () => {
+  const provider: LlmProvider = {
+    id: 'test-provider',
+    name: 'Test Provider',
+    baseUrl: 'https://example.com/v1/chat/completions',
+    messageFormat: 'openai',
+    apiKeyEncrypted: 'key-encrypted',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: false,
+  };
+
+  const streamResponse = (): ReadableStream<Uint8Array> =>
+    new ReadableStream({
+      start(controller): void {
+        controller.enqueue(
+          new TextEncoder().encode(
+            'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n',
+          ),
+        );
+        controller.close();
+      },
+    });
+
+  beforeEach(() => {
+    mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 16000 });
+    mockEstimateTokens.mockReturnValue({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+  });
+
+  it('forces reasoning_effort to "none" for GPT-5.6 models when tools are present', async () => {
+    const model = createUserChatModel({
+      apiModelId: 'gpt-5.6-luna',
+      reasoningEffort: 'high',
+      streaming: true,
+    });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({ ok: true, body: streamResponse() } as unknown as Response);
+
+    const { orchestrateLlmLoop } = await import('../llmService');
+    await orchestrateLlmLoop(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.reasoning_effort).toBe('none');
+    expect(body.tools).toBeDefined();
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+
+  it('strips reasoning_effort for non-GPT-5.6 models when tools are present', async () => {
+    const model = createUserChatModel({
+      apiModelId: 'deepseek-v4-flash',
+      reasoningEffort: 'high',
+      streaming: true,
+    });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({ ok: true, body: streamResponse() } as unknown as Response);
+
+    const { orchestrateLlmLoop } = await import('../llmService');
+    await orchestrateLlmLoop(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.tools).toBeDefined();
+    expect(body.reasoning_effort).toBeUndefined();
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+});
+
+describe('buildPayload — thinking and webSearch', () => {
+  const provider: LlmProvider = {
+    id: 'test-provider',
+    name: 'Test Provider',
+    baseUrl: 'https://example.com/v1/chat/completions',
+    messageFormat: 'openai',
+    apiKeyEncrypted: 'key-encrypted',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: false,
+  };
+
+  beforeEach(() => {
+    mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 16000 });
+    mockEstimateTokens.mockReturnValue({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+  });
+
+  it('disables thinking when webSearch is enabled', async () => {
+    const model = createUserChatModel({ thinkingToggle: 'enabled', streaming: true });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({
+        start(controller): void {
+          controller.enqueue(
+            new TextEncoder().encode('data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n'),
+          );
+          controller.close();
+        },
+      }),
+    } as unknown as Response);
+
+    const { orchestrateLlmLoop } = await import('../llmService');
+    await orchestrateLlmLoop(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    }, undefined, undefined, undefined, undefined, [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }], true);
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.thinking).toEqual({ type: 'disabled' });
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+
+  it('sends thinking enabled when webSearch is off', async () => {
+    const model = createUserChatModel({ thinkingToggle: 'enabled', streaming: true });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({
+        start(controller): void {
+          controller.enqueue(
+            new TextEncoder().encode('data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n'),
+          );
+          controller.close();
+        },
+      }),
+    } as unknown as Response);
+
+    const { orchestrateLlmLoop } = await import('../llmService');
+    await orchestrateLlmLoop(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.thinking).toEqual({ type: 'enabled' });
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+});
+
+describe('buildPayload — Anthropic adapter output_config', () => {
+  const provider: LlmProvider = {
+    id: 'test-anthropic',
+    name: 'Test Anthropic',
+    baseUrl: 'https://example.com/v1/messages',
+    messageFormat: 'anthropic',
+    apiKeyEncrypted: 'key-encrypted',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: false,
+  };
+
+  beforeEach(() => {
+    mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 16000 });
+    mockEstimateTokens.mockReturnValue({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+  });
+
+  it('maps reasoning_effort to output_config.effort in Anthropic requests', async () => {
+    const model = createUserChatModel({ reasoningEffort: 'high', streaming: true });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({
+        start(controller): void {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'event: message_start\ndata: {"type":"message_start","message":{"id":"x","model":"t","usage":{"input_tokens":1,"output_tokens":1}}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      }),
+    } as unknown as Response);
+
+    const { askLlmStream } = await import('../llmService');
+    await askLlmStream(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.output_config).toEqual({ effort: 'high' });
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+
+  it('strips output_config.effort for non-GPT-5.6 models with tools in Anthropic requests', async () => {
+    const model = createUserChatModel({ reasoningEffort: 'high', streaming: true });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({
+        start(controller): void {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'event: message_start\ndata: {"type":"message_start","message":{"id":"x","model":"t","usage":{"input_tokens":1,"output_tokens":1}}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      }),
+    } as unknown as Response);
+
+    const { askLlmStream } = await import('../llmService');
+    await askLlmStream(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    }, undefined, [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }]);
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.output_config).toBeUndefined();
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+
+  it('forces output_config.effort to none for GPT-5.6 models with tools in Anthropic requests', async () => {
+    const model = createUserChatModel({
+      apiModelId: 'gpt-5.6-luna',
+      reasoningEffort: 'high',
+      streaming: true,
+    });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({
+        start(controller): void {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'event: message_start\ndata: {"type":"message_start","message":{"id":"x","model":"t","usage":{"input_tokens":1,"output_tokens":1}}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n',
+            ),
+          );
+          controller.close();
+        },
+      }),
+    } as unknown as Response);
+
+    const { askLlmStream } = await import('../llmService');
+    await askLlmStream(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    }, undefined, [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }]);
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.output_config).toEqual({ effort: 'none' });
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+});
+
+describe('resolveModelAndProvider — fallback and error paths', () => {
+  const provider: LlmProvider = {
+    id: 'test-provider',
+    name: 'Test Provider',
+    baseUrl: 'https://example.com/v1/chat/completions',
+    messageFormat: 'openai',
+    apiKeyEncrypted: 'key-encrypted',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: false,
+  };
+
+  beforeEach(() => {
+    mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 16000 });
+    mockEstimateTokens.mockReturnValue({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+  });
+
+  it('falls back to first available model when requested model is not in store', async () => {
+    const fallbackModel = createUserChatModel({ id: 'fallback-model', apiModelId: 'fallback-api', streaming: true });
+    const requestedModel = createUserChatModel({ id: 'unknown-model', apiModelId: 'unknown-api', streaming: true });
+
+    mockProviderGetState.mockReturnValue({
+      models: [fallbackModel],
+      getAvailableModels: (): UserChatModel[] => [fallbackModel],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation((): void => undefined);
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({
+        start(controller): void {
+          controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n'));
+          controller.close();
+        },
+      }),
+    } as unknown as Response);
+
+    const { askLlmStream } = await import('../llmService');
+    await askLlmStream(requestedModel, 0.7, [user('Hi')], () => {
+      /* noop */
+    });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.model).toBe('fallback-api');
+    expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
+    consoleWarnSpy.mockRestore();
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+
+  it('throws when no models are configured at all', async () => {
+    mockProviderGetState.mockReturnValue({
+      models: [],
+      getAvailableModels: (): UserChatModel[] => [],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const { askLlmStream } = await import('../llmService');
+    await expect(askLlmStream(createUserChatModel(), 0.7, [user('Hi')])).rejects.toThrow('No models are configured');
+  });
+
+  it('throws when provider is not found for the resolved model', async () => {
+    const model = createUserChatModel({ streaming: true });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): undefined => undefined,
+    });
+
+    const { askLlmStream } = await import('../llmService');
+    await expect(askLlmStream(model, 0.7, [user('Hi')])).rejects.toThrow('No provider found');
+  });
+});
+
+describe('buildPayload — Anthropic max_tokens default', () => {
+  const provider: LlmProvider = {
+    id: 'test-anthropic',
+    name: 'Test Anthropic',
+    baseUrl: 'https://example.com/v1/messages',
+    messageFormat: 'anthropic',
+    apiKeyEncrypted: 'key-encrypted',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: false,
+  };
+
+  beforeEach(() => {
+    mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 16000 });
+    mockEstimateTokens.mockReturnValue({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+  });
+
+  it('defaults to 4096 max_tokens when model has no override', async () => {
+    const model = createUserChatModel({ maxTokensOverride: null, streaming: true });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({
+        start(controller): void {
+          controller.enqueue(
+            new TextEncoder().encode('event: message_start\ndata: {"type":"message_start","message":{"id":"x","model":"t","usage":{"input_tokens":1,"output_tokens":1}}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n'),
+          );
+          controller.close();
+        },
+      }),
+    } as unknown as Response);
+
+    const { askLlmStream } = await import('../llmService');
+    await askLlmStream(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.max_tokens).toBe(4096);
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+
+  it('uses model maxTokensOverride in Anthropic requests', async () => {
+    const model = createUserChatModel({ maxTokensOverride: 32768, streaming: true });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({
+        start(controller): void {
+          controller.enqueue(
+            new TextEncoder().encode('event: message_start\ndata: {"type":"message_start","message":{"id":"x","model":"t","usage":{"input_tokens":1,"output_tokens":1}}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n'),
+          );
+          controller.close();
+        },
+      }),
+    } as unknown as Response);
+
+    const { askLlmStream } = await import('../llmService');
+    await askLlmStream(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.max_tokens).toBe(32768);
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+});
+
 describe('estimateStreamedTokens', () => {
   it('uses estimated tokens and calculateCostSEK to build the result', async () => {
     const model = createUserChatModel({ enforceAlternatingRoles: false });
