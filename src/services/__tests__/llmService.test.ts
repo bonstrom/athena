@@ -963,7 +963,7 @@ describe('buildPayload — reasoning_effort and tools', () => {
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 
-  it('strips reasoning_effort for non-GPT-5.6 models when tools are present', async () => {
+  it('sends reasoning_effort for non-GPT-5.6 models with tools when configured', async () => {
     const model = createUserChatModel({
       apiModelId: 'deepseek-v4-flash',
       reasoningEffort: 'high',
@@ -986,7 +986,7 @@ describe('buildPayload — reasoning_effort and tools', () => {
 
     const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
     expect(body.tools).toBeDefined();
-    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.reasoning_effort).toBe('high');
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 });
@@ -1126,7 +1126,7 @@ describe('buildPayload — Anthropic adapter output_config', () => {
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 
-  it('strips output_config.effort for non-GPT-5.6 models with tools in Anthropic requests', async () => {
+  it('sends output_config.effort for non-GPT-5.6 models with tools in Anthropic requests when configured', async () => {
     const model = createUserChatModel({ reasoningEffort: 'high', streaming: true });
     mockProviderGetState.mockReturnValue({
       models: [model],
@@ -1156,7 +1156,7 @@ describe('buildPayload — Anthropic adapter output_config', () => {
     }, undefined, [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }]);
 
     const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
-    expect(body.output_config).toBeUndefined();
+    expect(body.output_config).toEqual({ effort: 'high' });
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 

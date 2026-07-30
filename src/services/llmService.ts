@@ -767,7 +767,11 @@ function buildPayload(
 
   if (finalTools.length > 0) {
     const isGpt56 = resolvedModel.apiModelId.startsWith('gpt-5.6');
-    payload.reasoning_effort = isGpt56 ? 'none' : undefined;
+    if (isGpt56) {
+      payload.reasoning_effort = 'none';
+    } else if (resolvedReasoningEffort) {
+      payload.reasoning_effort = resolvedReasoningEffort;
+    }
   } else if (resolvedReasoningEffort) {
     payload.reasoning_effort = resolvedReasoningEffort;
   }
