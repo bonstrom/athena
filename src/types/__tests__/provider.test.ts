@@ -122,4 +122,18 @@ describe('DEFAULT_MODELS', () => {
     if (!kimiV1) { throw new Error('Expected kimiV1 to be defined'); }
     expect(kimiV1.supportsTemperature).toBe(false);
   });
+
+  it('has reasoningEffort "low" for Kimi K3', () => {
+    const kimiK3 = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k3');
+    expect(kimiK3).toBeDefined();
+    if (!kimiK3) { throw new Error('Expected kimiK3 to be defined'); }
+    expect(kimiK3.reasoningEffort).toBe('low');
+  });
+
+  it('has supportsThinking true for Kimi K3', () => {
+    const kimiK3 = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k3');
+    expect(kimiK3).toBeDefined();
+    if (!kimiK3) { throw new Error('Expected kimiK3 to be defined'); }
+    expect(kimiK3.supportsThinking).toBe(true);
+  });
 });

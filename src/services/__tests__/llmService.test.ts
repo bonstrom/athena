@@ -989,6 +989,33 @@ describe('buildPayload — reasoning_effort and tools', () => {
     expect(body.reasoning_effort).toBe('high');
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
+
+  it('sends reasoning_effort "low" for Kimi K3 model with tools', async () => {
+    const model = createUserChatModel({
+      apiModelId: 'kimi-k3',
+      reasoningEffort: 'low',
+      streaming: true,
+    });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({ ok: true, body: streamResponse() } as unknown as Response);
+
+    const { orchestrateLlmLoop } = await import('../llmService');
+    await orchestrateLlmLoop(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.tools).toBeDefined();
+    expect(body.reasoning_effort).toBe('low');
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
 });
 
 describe('buildPayload — thinking and webSearch', () => {
