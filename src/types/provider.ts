@@ -421,7 +421,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsFiles: true,
     supportsThinking: true,
     thinkingToggle: null,
-    reasoningEffort: 'low',
+    reasoningEffort: 'high',
     contextWindow: 1_048_576,
     forceTemperature: 1.0,
     enforceAlternatingRoles: false,

@@ -990,10 +990,10 @@ describe('buildPayload — reasoning_effort and tools', () => {
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 
-  it('sends reasoning_effort "low" for Kimi K3 model with tools', async () => {
+  it('sends reasoning_effort "high" for Kimi K3 model with tools', async () => {
     const model = createUserChatModel({
       apiModelId: 'kimi-k3',
-      reasoningEffort: 'low',
+      reasoningEffort: 'high',
       streaming: true,
     });
     mockProviderGetState.mockReturnValue({
@@ -1013,7 +1013,7 @@ describe('buildPayload — reasoning_effort and tools', () => {
 
     const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
     expect(body.tools).toBeDefined();
-    expect(body.reasoning_effort).toBe('low');
+    expect(body.reasoning_effort).toBe('high');
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 });
