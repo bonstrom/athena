@@ -1,5 +1,5 @@
-import { Box, Typography, IconButton } from '@mui/material';
-import { ContentCopy, Check } from '@mui/icons-material';
+import { Box, Typography, IconButton, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material';
+import { ContentCopy, Check, LightMode, DarkMode, CheckBoxOutlineBlank } from '@mui/icons-material';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -179,7 +179,17 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
   );
 };
 
+type SvgBackground = 'light' | 'dark' | 'transparent';
+
+const SVG_BACKGROUND_COLORS: Record<SvgBackground, string> = {
+  light: '#ffffff',
+  dark: '#1e1e1e',
+  transparent: 'transparent',
+};
+
 const SvgDiagram: React.FC<MermaidProps> = ({ children }) => {
+  const [background, setBackground] = useState<SvgBackground>('transparent');
+
   const sanitized = useMemo(() => {
     return DOMPurify.sanitize(children.trim(), {
       ADD_TAGS: ['svg', 'circle', 'rect', 'path', 'line', 'polygon', 'polyline', 'ellipse', 'text', 'tspan', 'g', 'defs',
@@ -199,19 +209,47 @@ const SvgDiagram: React.FC<MermaidProps> = ({ children }) => {
     });
   }, [children]);
 
+  const handleBackgroundChange = (_event: React.MouseEvent<HTMLElement>, value: SvgBackground | null): void => {
+    if (value !== null) {
+      setBackground(value);
+    }
+  };
+
   return (
-    <Box
-      dangerouslySetInnerHTML={{ __html: sanitized }}
-      sx={{
-        my: 2,
-        display: 'flex',
-        justifyContent: 'center',
-        '& svg': {
-          maxWidth: '100%',
-          height: 'auto',
-        },
-      }}
-    />
+    <Box sx={{ my: 2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
+        <ToggleButtonGroup value={background} exclusive size="small" onChange={handleBackgroundChange}>
+          <Tooltip title="Light background">
+            <ToggleButton value="light" aria-label="Light background">
+              <LightMode fontSize="small" />
+            </ToggleButton>
+          </Tooltip>
+          <Tooltip title="Dark background">
+            <ToggleButton value="dark" aria-label="Dark background">
+              <DarkMode fontSize="small" />
+            </ToggleButton>
+          </Tooltip>
+          <Tooltip title="Transparent background">
+            <ToggleButton value="transparent" aria-label="Transparent background">
+              <CheckBoxOutlineBlank fontSize="small" />
+            </ToggleButton>
+          </Tooltip>
+        </ToggleButtonGroup>
+      </Box>
+      <Box
+        dangerouslySetInnerHTML={{ __html: sanitized }}
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          '& svg': {
+            maxWidth: '100%',
+            height: 'auto',
+            backgroundColor: SVG_BACKGROUND_COLORS[background],
+            borderRadius: 1,
+          },
+        }}
+      />
+    </Box>
   );
 };
 
