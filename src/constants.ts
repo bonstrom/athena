@@ -10,6 +10,10 @@ Example:
 \`\`\`
 Note: it is critical to end the code block with \`\`\` after the closing </svg> tag, otherwise the rest of your response will not render correctly.`;
 
+export const SVG_EDIT_INSTRUCTIONS = `You are editing an existing SVG diagram. Apply ONLY the change the user requests and preserve everything else exactly as-is.
+
+Return the COMPLETE updated SVG in a single \`\`\`svg fenced code block: exactly one <svg> root element, one closing </svg>, and nothing after it. Do not add commentary or explanation.`;
+
 export const SHORTENED_ID_LENGTH = 8; // prefix length for shortened UUID display
 
 export const SCRATCHPAD_LIMIT = 8000;

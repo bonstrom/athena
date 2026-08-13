@@ -58,6 +58,7 @@ const mockUpdateTopicScratchpad = jest.fn<Promise<void>, [string, string]>();
 const mockUpdateTopicModelId = jest.fn<Promise<void>, [string, string]>();
 const mockOrchestrateLlmLoop = jest.fn<Promise<LlmLoopResult>, unknown[]>();
 const mockAskLlm = jest.fn<Promise<AskLlmResult>, unknown[]>();
+const mockAskLlmStream = jest.fn<Promise<AskLlmResult>, unknown[]>();
 const mockAuthGetState = jest.fn<AuthStoreState, []>();
 const mockProviderGetState = jest.fn<ProviderStoreState, []>();
 const mockAddNotification = jest.fn();
@@ -125,6 +126,7 @@ jest.mock('../../store/NotificationStore', () => ({
 jest.mock('../../services/llmService', () => ({
   orchestrateLlmLoop: (...args: unknown[]): Promise<LlmLoopResult> => mockOrchestrateLlmLoop(...args),
   askLlm: (...args: unknown[]): Promise<AskLlmResult> => mockAskLlm(...args),
+  askLlmStream: (...args: unknown[]): Promise<AskLlmResult> => mockAskLlmStream(...args),
   SCRATCHPAD_TOOL: { type: 'function', function: { name: 'update_scratchpad' } },
   READ_MESSAGES_TOOL: { type: 'function', function: { name: 'read_messages' } },
   LIST_MESSAGES_TOOL: { type: 'function', function: { name: 'list_messages' } },
@@ -244,6 +246,7 @@ describe('ChatStore', () => {
     mockDbSortBy.mockResolvedValue([]);
     mockOrchestrateLlmLoop.mockReset();
     mockAskLlm.mockReset();
+    mockAskLlmStream.mockReset();
 
     useChatStore.setState({
       messagesByTopic: {},
@@ -692,6 +695,51 @@ describe('ChatStore', () => {
     await useChatStore.getState().updateMessages(updates);
 
     expect(mockDbUpdate).not.toHaveBeenCalled();
+  });
+
+  // ========== editSvgInMessage ==========
+
+  it('editSvgInMessage regenerates the SVG and updates the message in place', async () => {
+    const originalSvg = '<svg><circle r="40" /></svg>';
+    const messageContent = 'Here is a diagram:\n\n```svg\n<svg><circle r="40" /></svg>\n```\n\nThanks.';
+    mockAskLlmStream.mockResolvedValue({ content: '```svg\n<svg><circle r="60" /></svg>\n```' });
+    mockDbGet.mockResolvedValue(createMessage({ id: 'msg-svg', content: messageContent }));
+
+    await useChatStore.getState().editSvgInMessage('msg-svg', originalSvg, 'make the circle bigger');
+
+    expect(mockAskLlmStream).toHaveBeenCalledTimes(1);
+    const expectedContent = 'Here is a diagram:\n\n```svg\n<svg><circle r="60" /></svg>\n```\n\nThanks.';
+    expect(mockDbUpdate).toHaveBeenCalledWith('msg-svg', { content: expectedContent });
+  });
+
+  it('editSvgInMessage strips leaked trailing content from the response', async () => {
+    const originalSvg = '<svg><circle r="40" /></svg>';
+    const messageContent = '```svg\n<svg><circle r="40" /></svg>\n```';
+    mockAskLlmStream.mockResolvedValue({
+      content: '```svg\n<svg><circle r="60" /></svg>\n<!-- leaked --> <g>...</g>\n```',
+    });
+    mockDbGet.mockResolvedValue(createMessage({ id: 'msg-svg', content: messageContent }));
+
+    await useChatStore.getState().editSvgInMessage('msg-svg', originalSvg, 'make it bigger');
+
+    expect(mockDbUpdate).toHaveBeenCalledWith('msg-svg', { content: '```svg\n<svg><circle r="60" /></svg>\n```' });
+  });
+
+  it('editSvgInMessage throws when the model returns no valid SVG', async () => {
+    mockAskLlmStream.mockResolvedValue({ content: 'I cannot do that.' });
+
+    await expect(useChatStore.getState().editSvgInMessage('msg-svg', '<svg></svg>', 'change')).rejects.toThrow(
+      'did not return a valid SVG',
+    );
+  });
+
+  it('editSvgInMessage throws when the message is not found', async () => {
+    mockAskLlmStream.mockResolvedValue({ content: '```svg\n<svg></svg>\n```' });
+    mockDbGet.mockResolvedValue(undefined);
+
+    await expect(useChatStore.getState().editSvgInMessage('missing', '<svg></svg>', 'change')).rejects.toThrow(
+      'Message not found',
+    );
   });
 
   it('updateMessageStateOnly updates state without persisting to database', () => {

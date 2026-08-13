@@ -1,5 +1,5 @@
 import { Box, Typography, IconButton, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material';
-import { ContentCopy, Check, LightMode, DarkMode, CheckBoxOutlineBlank } from '@mui/icons-material';
+import { ContentCopy, Check, LightMode, DarkMode, CheckBoxOutlineBlank, Edit } from '@mui/icons-material';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -51,6 +51,8 @@ interface MarkdownProps {
   children: string;
   fontSize?: number;
   disableMermaid?: boolean;
+  disableSvg?: boolean;
+  onEditSvg?: (svgSource: string) => void;
 }
 
 const CopyButton: React.FC<{ text: string }> = ({ text }) => {
@@ -187,7 +189,12 @@ const SVG_BACKGROUND_COLORS: Record<SvgBackground, string> = {
   transparent: 'transparent',
 };
 
-const SvgDiagram: React.FC<MermaidProps> = ({ children }) => {
+interface SvgDiagramProps {
+  children: string;
+  onEditSvg?: (svgSource: string) => void;
+}
+
+const SvgDiagram: React.FC<SvgDiagramProps> = ({ children, onEditSvg }) => {
   const [background, setBackground] = useState<SvgBackground>('transparent');
 
   const sanitized = useMemo(() => {
@@ -217,7 +224,7 @@ const SvgDiagram: React.FC<MermaidProps> = ({ children }) => {
 
   return (
     <Box sx={{ my: 2 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 0.5 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
         <ToggleButtonGroup value={background} exclusive size="small" onChange={handleBackgroundChange}>
           <Tooltip title="Light background">
             <ToggleButton value="light" aria-label="Light background">
@@ -235,6 +242,23 @@ const SvgDiagram: React.FC<MermaidProps> = ({ children }) => {
             </ToggleButton>
           </Tooltip>
         </ToggleButtonGroup>
+        {onEditSvg && (
+          <Tooltip title="Edit with AI">
+            <IconButton
+              size="small"
+              aria-label="Edit SVG"
+              onClick={(): void => onEditSvg(children.trim())}
+              sx={{
+                color: 'text.secondary',
+                '&:hover': {
+                  bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
+                },
+              }}
+            >
+              <Edit fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
       </Box>
       <Box
         dangerouslySetInnerHTML={{ __html: sanitized }}
@@ -318,7 +342,7 @@ function escapeCurrencyDollars(content: string): string {
   return content.replace(/\$(?=\d)/g, '\\$');
 }
 
-const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, disableMermaid = false }) => {
+const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, disableMermaid = false, disableSvg = false, onEditSvg }) => {
   const theme = useTheme();
   const themeMode = useAuthStore((s) => s.themeMode);
 
@@ -378,8 +402,8 @@ const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, di
       return !inline && match ? (
         match[1] === 'mermaid' && !disableMermaid ? (
           <MermaidDiagram key={codeString}>{codeString}</MermaidDiagram>
-        ) : match[1] === 'svg' ? (
-          <SvgDiagram key={codeString}>{codeString}</SvgDiagram>
+        ) : match[1] === 'svg' && !disableSvg ? (
+          <SvgDiagram key={codeString} onEditSvg={onEditSvg}>{codeString}</SvgDiagram>
         ) : (
         <Box
           sx={{

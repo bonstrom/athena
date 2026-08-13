@@ -6,6 +6,7 @@ import { useNotificationStore } from './NotificationStore';
 import {
   orchestrateLlmLoop,
   askLlm,
+  askLlmStream,
   LlmMessage,
   LlmContentPart,
   SCRATCHPAD_TOOL,
@@ -26,7 +27,8 @@ import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 import { useCuratorStore } from './CuratorStore';
 
-import { LATEX_INSTRUCTIONS, SVG_INSTRUCTIONS, SCRATCHPAD_LIMIT, SHORTENED_ID_LENGTH, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS, CURATOR_SYSTEM_PROMPT } from '../constants';
+import { LATEX_INSTRUCTIONS, SVG_INSTRUCTIONS, SVG_EDIT_INSTRUCTIONS, SCRATCHPAD_LIMIT, SHORTENED_ID_LENGTH, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS, CURATOR_SYSTEM_PROMPT } from '../constants';
+import { normalizeSvgDocument, replaceSvgBlockInMessage } from '../utils/svgEdit';
 
 /**
  * Heuristic: detect when the LLM response is primarily a clarification question
@@ -92,6 +94,7 @@ interface ChatStore {
   updateMessage: (id: string, patch: Partial<Message>) => Promise<void>;
   updateMessages: (updates: { id: string; patch: Partial<Message> }[]) => Promise<void>;
   updateMessageStateOnly: (id: string, patch: Partial<Message>) => void;
+  editSvgInMessage: (messageId: string, svgSource: string, instruction: string, onReasoning?: (partial: string) => void) => Promise<void>;
   sendMessageStream: (content: string, topicId: string, messageId?: string, attachments?: Attachment[]) => Promise<void>;
   buildFullContext: (topicId: string, userMessagePreview?: string) => Promise<ContextEntry[]>;
   setSelectedModel: (model: ChatModel) => void;
@@ -585,6 +588,35 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         [currentTopicId]: (messagesByTopic[currentTopicId] ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m)),
       },
     });
+  },
+
+  editSvgInMessage: async (messageId, svgSource, instruction, onReasoning): Promise<void> => {
+    const { selectedModel, temperature } = get();
+    const editPrompt = `Current SVG:\n\`\`\`svg\n${svgSource}\n\`\`\`\n\nRequested edit: ${instruction}`;
+
+    const result = await askLlmStream(
+      selectedModel,
+      temperature,
+      [
+        { role: 'system', content: SVG_EDIT_INSTRUCTIONS },
+        { role: 'user', content: editPrompt },
+      ],
+      undefined,
+      onReasoning,
+    );
+
+    const newSvg = normalizeSvgDocument(result.content);
+    if (!newSvg) {
+      throw new Error('The model did not return a valid SVG.');
+    }
+
+    const message = await athenaDb.messages.get(messageId);
+    if (!message) throw new Error('Message not found.');
+
+    const newContent = replaceSvgBlockInMessage(message.content, svgSource, newSvg);
+    if (newContent === null) throw new Error('Could not locate the SVG block to replace.');
+
+    await get().updateMessage(messageId, { content: newContent });
   },
 
   sendMessageStream: async (content: string, topicId: string, messageId?: string, attachments?: Attachment[]): Promise<void> => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 const mockMermaidRender = jest.fn<Promise<{ svg: string }>, [string, string]>().mockResolvedValue({ svg: '<svg></svg>' });
 const mockMermaidInitialize = jest.fn();
@@ -296,5 +296,23 @@ Some text after.`;
 
     const innerHTML = container.innerHTML;
     expect(innerHTML).not.toContain('onload');
+  });
+
+  it('renders an Edit button and calls onEditSvg with the SVG source', () => {
+    const onEditSvg = jest.fn();
+
+    render(<MarkdownWithCode onEditSvg={onEditSvg}>{'```svg\n<svg><circle r="40" /></svg>\n```'}</MarkdownWithCode>);
+
+    const button = screen.getByRole('button', { name: 'Edit SVG' });
+    expect(button).toBeInTheDocument();
+    fireEvent.click(button);
+
+    expect(onEditSvg).toHaveBeenCalledWith('<svg><circle r="40" /></svg>');
+  });
+
+  it('does not render an Edit button when onEditSvg is not provided', () => {
+    render(<MarkdownWithCode>{'```svg\n<svg><circle r="40" /></svg>\n```'}</MarkdownWithCode>);
+
+    expect(screen.queryByRole('button', { name: 'Edit SVG' })).not.toBeInTheDocument();
   });
 });
