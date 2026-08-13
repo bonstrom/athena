@@ -18,11 +18,12 @@ import {
   ListItemIcon,
   ListItemText,
   CircularProgress,
+  TextField,
 } from '@mui/material';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { useState, memo, useEffect, useRef } from 'react';
+import { useState, memo, useEffect, useRef, useMemo } from 'react';
 import { useAuthStore } from '../store/AuthStore';
 import MarkdownWithCode from './MarkdownWithCode';
 import TypingIndicator from './TypingIndicator';
@@ -41,10 +42,16 @@ import { useTopicStore } from '../store/TopicStore';
 import { useUiStore } from '../store/UiStore';
 import { speakText, stopSpeech } from '../services/mediaService';
 import { stripMarkdown } from '../utils/stripMarkdown';
+import { detectContentTypes, CONTENT_TYPE_LABELS, ContentType } from '../utils/contentTypes';
+import { NotificationSeverity } from '../store/NotificationStore';
 import { isDeepSeekPeakHours } from './ModelSelector';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
+import CodeIcon from '@mui/icons-material/Code';
+import ImageIcon from '@mui/icons-material/Image';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import EditIcon from '@mui/icons-material/Edit';
 
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -57,21 +64,132 @@ import WhatshotIcon from '@mui/icons-material/Whatshot';
 
 const AI_SUMMARY_MIN_CHARS = 250;
 
+const CONTENT_TYPE_ICONS: Record<ContentType, React.ReactElement> = {
+  svg: <ImageIcon sx={{ fontSize: '1rem', color: 'text.disabled' }} />,
+  mermaid: <AccountTreeIcon sx={{ fontSize: '1rem', color: 'text.disabled' }} />,
+  code: <CodeIcon sx={{ fontSize: '1rem', color: 'text.disabled' }} />,
+};
+
 interface MessageBubbleProps {
   message: Message;
   versions?: Message[];
 }
 
+interface SvgEditDialogProps {
+  open: boolean;
+  messageId: string;
+  svgSource: string | null;
+  editSvgInMessage: (messageId: string, svgSource: string, instruction: string, onReasoning?: (partial: string) => void) => Promise<void>;
+  addNotification: (title: string, message?: string, severity?: NotificationSeverity) => void;
+  onClose: () => void;
+}
+
+const SvgEditDialog: React.FC<SvgEditDialogProps> = ({ open, messageId, svgSource, editSvgInMessage, addNotification, onClose }) => {
+  const [instruction, setInstruction] = useState('');
+  const [reasoning, setReasoning] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setInstruction('');
+      setReasoning('');
+    }
+  }, [open]);
+
+  const handleClose = (): void => {
+    if (isEditing) return;
+    onClose();
+  };
+
+  const handleSubmit = async (): Promise<void> => {
+    if (!svgSource || !instruction.trim() || isEditing) return;
+    setIsEditing(true);
+    setReasoning('');
+    try {
+      await editSvgInMessage(messageId, svgSource, instruction.trim(), (partial: string): void => setReasoning((prev) => prev + partial));
+      addNotification('SVG updated', 'The SVG was edited in place.', 'success');
+      onClose();
+    } catch (err) {
+      addNotification('Failed to edit SVG', err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
+      <DialogTitle>Edit SVG</DialogTitle>
+      <DialogContent>
+        <DialogContentText>Describe the change you want to make to this SVG.</DialogContentText>
+        <TextField
+          fullWidth
+          multiline
+          minRows={2}
+          maxRows={6}
+          variant="outlined"
+          placeholder='e.g. "Make the circle bigger and change it to red"'
+          value={instruction}
+          onChange={(e): void => setInstruction(e.target.value)}
+          disabled={isEditing}
+          sx={{ mt: 1 }}
+        />
+        {(reasoning || isEditing) && (
+          <Box
+            sx={{
+              mt: 1.5,
+              p: 1.5,
+              borderRadius: 2,
+              bgcolor: (theme): string => (theme.palette.mode === 'dark' ? alpha('#fff', 0.05) : alpha('#000', 0.03)),
+              borderLeft: (theme): string => `4px solid ${alpha(theme.palette.text.secondary, 0.2)}`,
+              maxHeight: '240px',
+              overflowY: 'auto',
+            }}
+          >
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: 'bold', mb: 0.5, display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+            >
+              Thoughts
+            </Typography>
+            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.4 }}>
+              {reasoning || 'Thinking…'}
+            </Typography>
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={handleClose} disabled={isEditing}>
+          Cancel
+        </Button>
+        <Button
+          onClick={(): void => {
+            void handleSubmit();
+          }}
+          color="primary"
+          variant="contained"
+          disabled={isEditing || !instruction.trim()}
+          startIcon={isEditing ? <CircularProgress size={16} color="inherit" /> : undefined}
+        >
+          Edit
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
 const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble({ message, versions }) {
   const {
     updateMessageContext,
     deleteMessage,
+    updateMessage,
     sendMessageStream,
     regenerateResponse,
     switchMessageVersion,
     maybeSummarize,
     summarizingMessageIds,
     failedSummaryMessageIds,
+    editSvgInMessage,
   } = useChatStore();
   const { forkTopic } = useTopicStore();
   const { addNotification } = useNotificationStore();
@@ -87,12 +205,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const [isExpanded, setIsExpanded] = useState(() => messageTruncateChars === 0 || message.content.length <= messageTruncateChars);
   const [expandedImage, setExpandedImage] = useState<{ url: string; name: string; data: string } | null>(null);
   const [speaking, setSpeaking] = useState(false);
+  const [editingSvgSource, setEditingSvgSource] = useState<string | null>(null);
+  const [openEditDialog, setOpenEditDialog] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const isSpeaking = currentlySpeakingMessageId === message.id;
 
   const isAssistant = message.type === 'assistant';
   const isLong = messageTruncateChars > 0 && message.content.length > messageTruncateChars;
   const displayContent = isLong && !isExpanded ? message.content.slice(0, messageTruncateChars) + '\u2026' : message.content;
+  const contentTypes = useMemo(() => (isLong ? detectContentTypes(message.content) : []), [isLong, message.content]);
 
   const wasReasoningAutoShownRef = useRef(false);
 
@@ -216,6 +339,41 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const handleRawMenu = (): void => {
     setShowRaw((v) => !v);
     handleMenuClose();
+  };
+
+  const handleEditMenu = (): void => {
+    setEditContent(message.content);
+    setOpenEditDialog(true);
+    handleMenuClose();
+  };
+
+  const handleCloseEditDialog = (): void => {
+    if (isSavingEdit) return;
+    setOpenEditDialog(false);
+    setEditContent('');
+  };
+
+  const handleSaveEdit = async (): Promise<void> => {
+    if (isSavingEdit) return;
+    setIsSavingEdit(true);
+    try {
+      await updateMessage(message.id, { content: editContent });
+      addNotification('Message updated', 'The message content was updated.', 'success');
+      setOpenEditDialog(false);
+      setEditContent('');
+    } catch (err) {
+      addNotification('Failed to edit message', err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleEditSvgClick = (svgSource: string): void => {
+    setEditingSvgSource(svgSource);
+  };
+
+  const handleCloseSvgEditDialog = (): void => {
+    setEditingSvgSource(null);
   };
 
   return (
@@ -584,6 +742,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     <ListItemText>{showRaw ? 'Show formatted' : 'Show raw response'}</ListItemText>
                   </MenuItem>
                 )}
+                {message.content !== '' && (
+                  <MenuItem onClick={handleEditMenu}>
+                    <ListItemIcon>
+                      <EditIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>Edit</ListItemText>
+                  </MenuItem>
+                )}
                 <MenuItem onClick={handleDeleteMenu}>
                   <ListItemIcon>
                     <DeleteIcon fontSize="small" />
@@ -634,7 +800,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   })()}
                 </Box>
               ) : (
-                <MarkdownWithCode fontSize={chatFontSize} disableMermaid={isLong && !isExpanded}>{displayContent}</MarkdownWithCode>
+                <MarkdownWithCode
+                  fontSize={chatFontSize}
+                  disableMermaid={isLong && !isExpanded}
+                  disableSvg={isLong && !isExpanded}
+                  onEditSvg={isAssistant && (!isLong || isExpanded) ? handleEditSvgClick : undefined}
+                >
+                  {displayContent}
+                </MarkdownWithCode>
               )}
               {(isLong || message.reasoning) && (
                 <Box mt={0.5} display="flex" alignItems="center" gap={1}>
@@ -649,6 +822,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       {isExpanded ? 'Show less' : 'Show more'}
                     </Button>
                   )}
+                  {isLong && !isExpanded && !showRaw &&
+                    contentTypes.map((type) => (
+                      <Tooltip key={type} title={CONTENT_TYPE_LABELS[type]} disableTouchListener={isMobile}>
+                        {CONTENT_TYPE_ICONS[type]}
+                      </Tooltip>
+                    ))}
                   {message.reasoning && (
                     <Tooltip title={showReasoning ? 'Hide thoughts' : 'Show thoughts'}>
                       <IconButton
@@ -857,6 +1036,48 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog open={openEditDialog} onClose={handleCloseEditDialog} fullWidth maxWidth="md">
+        <DialogTitle>Edit Message</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            multiline
+            minRows={6}
+            maxRows={24}
+            variant="outlined"
+            value={editContent}
+            onChange={(e): void => setEditContent(e.target.value)}
+            disabled={isSavingEdit}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseEditDialog} disabled={isSavingEdit}>
+            Cancel
+          </Button>
+          <Button
+            onClick={(): void => {
+              void handleSaveEdit();
+            }}
+            color="primary"
+            variant="contained"
+            disabled={isSavingEdit}
+            startIcon={isSavingEdit ? <CircularProgress size={16} color="inherit" /> : undefined}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <SvgEditDialog
+        open={editingSvgSource !== null}
+        messageId={message.id}
+        svgSource={editingSvgSource}
+        editSvgInMessage={editSvgInMessage}
+        addNotification={addNotification}
+        onClose={handleCloseSvgEditDialog}
+      />
 
       <Dialog open={Boolean(expandedImage)} onClose={(): void => setExpandedImage(null)} maxWidth="xl">
         <Box sx={{ position: 'relative' }}>

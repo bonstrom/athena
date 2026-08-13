@@ -13,10 +13,12 @@ import { speakText, stopSpeech } from '../services/mediaService';
 interface ChatStoreSlice {
   updateMessageContext: (id: string, includeInContext: boolean) => Promise<void>;
   deleteMessage: (id: string) => Promise<void>;
+  updateMessage: (id: string, patch: Partial<{ content: string }>) => Promise<void>;
   sendMessageStream: (content: string, topicId: string, messageId?: string) => Promise<void>;
   regenerateResponse: (id: string) => Promise<void>;
   switchMessageVersion: (parentMessageId: string, versionId: string) => Promise<void>;
   maybeSummarize: (id: string, content: string, force?: boolean) => Promise<void>;
+  editSvgInMessage: (messageId: string, svgSource: string, instruction: string, onReasoning?: (partial: string) => void) => Promise<void>;
   summarizingMessageIds: Set<string>;
   failedSummaryMessageIds: Set<string>;
 }
@@ -47,7 +49,16 @@ type ProviderStoreHookMock = jest.Mock<unknown> & {
 
 jest.mock('./MarkdownWithCode', () => ({
   __esModule: true,
-  default: ({ children }: { children: string }): React.ReactElement => <div data-testid="markdown-content">{children}</div>,
+  default: ({ children, onEditSvg }: { children: string; onEditSvg?: (svgSource: string) => void }): React.ReactElement => (
+    <div data-testid="markdown-content">
+      {children}
+      {onEditSvg && (
+        <button type="button" aria-label="Edit SVG" onClick={(): void => onEditSvg('<svg></svg>')}>
+          edit-svg
+        </button>
+      )}
+    </div>
+  ),
 }));
 
 jest.mock('./TypingIndicator', () => ({
@@ -103,10 +114,12 @@ function createChatStore(overrides?: Partial<ChatStoreSlice>): ChatStoreSlice {
   return {
     updateMessageContext: jest.fn((): Promise<void> => Promise.resolve()),
     deleteMessage: jest.fn((): Promise<void> => Promise.resolve()),
+    updateMessage: jest.fn((): Promise<void> => Promise.resolve()),
     sendMessageStream: jest.fn((): Promise<void> => Promise.resolve()),
     regenerateResponse: jest.fn((): Promise<void> => Promise.resolve()),
     switchMessageVersion: jest.fn((): Promise<void> => Promise.resolve()),
     maybeSummarize: jest.fn((): Promise<void> => Promise.resolve()),
+    editSvgInMessage: jest.fn((): Promise<void> => Promise.resolve()),
     summarizingMessageIds: new Set<string>(),
     failedSummaryMessageIds: new Set<string>(),
     ...overrides,
@@ -1239,5 +1252,92 @@ describe('MessageBubble', () => {
     );
 
     expect(screen.getByText('document.pdf')).toBeInTheDocument();
+  });
+
+  // ─── SVG Edit ─────────────────────────────────────────────────────────────
+
+  it('does not show Edit SVG button for user messages', () => {
+    renderWithTheme(<MessageBubble message={createMessage({ type: 'user', content: 'Question' })} />);
+
+    expect(screen.queryByRole('button', { name: 'Edit SVG' })).not.toBeInTheDocument();
+  });
+
+  it('shows Edit SVG button for assistant messages', () => {
+    renderWithTheme(<MessageBubble message={createMessage({ type: 'assistant', content: 'Diagram' })} />);
+
+    expect(screen.getByRole('button', { name: 'Edit SVG' })).toBeInTheDocument();
+  });
+
+  it('edits an SVG via the edit dialog', async () => {
+    const editSvgInMessage = jest.fn((): Promise<void> => Promise.resolve());
+    mockUseChatStore.mockReturnValue(createChatStore({ editSvgInMessage }));
+
+    renderWithTheme(<MessageBubble message={createMessage({ id: 'msg-svg', type: 'assistant', content: 'Diagram' })} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit SVG' }));
+
+    fireEvent.change(screen.getByPlaceholderText(/Make the circle bigger/i), { target: { value: 'make it bigger' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    await waitFor(() => {
+      expect(editSvgInMessage).toHaveBeenCalledWith('msg-svg', '<svg></svg>', 'make it bigger', expect.any(Function));
+    });
+  });
+
+  it('shows notification when SVG edit fails', async () => {
+    const addNotification = jest.fn();
+    const editSvgInMessage = jest.fn((): Promise<void> => Promise.reject(new Error('Edit failed')));
+    mockUseNotificationStore.mockReturnValue({ addNotification });
+    mockUseChatStore.mockReturnValue(createChatStore({ editSvgInMessage }));
+
+    renderWithTheme(<MessageBubble message={createMessage({ id: 'msg-svg', type: 'assistant', content: 'Diagram' })} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit SVG' }));
+    fireEvent.change(screen.getByPlaceholderText(/Make the circle bigger/i), { target: { value: 'change' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    await waitFor(() => {
+      expect(addNotification).toHaveBeenCalledWith('Failed to edit SVG', 'Edit failed');
+    });
+  });
+
+  // ─── Message Edit ─────────────────────────────────────────────────────────
+
+  it('edits a message via the edit dialog', async () => {
+    const updateMessage = jest.fn((): Promise<void> => Promise.resolve());
+    mockUseChatStore.mockReturnValue(createChatStore({ updateMessage }));
+
+    renderWithTheme(<MessageBubble message={createMessage({ id: 'msg-edit', type: 'assistant', content: 'Original text' })} />);
+
+    fireEvent.click(screen.getByLabelText('More actions'));
+    fireEvent.click(screen.getByText('Edit'));
+
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Edited text' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(updateMessage).toHaveBeenCalledWith('msg-edit', { content: 'Edited text' });
+    });
+  });
+
+  it('shows notification when message edit fails', async () => {
+    const addNotification = jest.fn();
+    const updateMessage = jest.fn((): Promise<void> => Promise.reject(new Error('Save failed')));
+    mockUseNotificationStore.mockReturnValue({ addNotification });
+    mockUseChatStore.mockReturnValue(createChatStore({ updateMessage }));
+
+    renderWithTheme(<MessageBubble message={createMessage({ id: 'msg-edit', type: 'assistant', content: 'Original' })} />);
+
+    fireEvent.click(screen.getByLabelText('More actions'));
+    fireEvent.click(screen.getByText('Edit'));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Changed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(addNotification).toHaveBeenCalledWith('Failed to edit message', 'Save failed');
+    });
   });
 });
