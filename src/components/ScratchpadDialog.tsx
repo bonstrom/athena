@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Typography } from "@mui/material";
 import { useTopicStore } from "../store/TopicStore";
 import { SCRATCHPAD_LIMIT } from "../constants";
+import ConfirmDialog from "./ConfirmDialog";
 
 interface ScratchpadDialogProps {
   open: boolean;
@@ -15,6 +16,7 @@ const ScratchpadDialog: React.FC<ScratchpadDialogProps> = ({ open, topicId, onCl
 
   const [content, setContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (open && topicId) {
@@ -35,9 +37,12 @@ const ScratchpadDialog: React.FC<ScratchpadDialogProps> = ({ open, topicId, onCl
   };
 
   const handleClear = (): void => {
-    if (window.confirm("Are you sure you want to clear the scratchpad?")) {
-      setContent("");
-    }
+    setConfirmOpen(true);
+  };
+
+  const confirmClear = (): void => {
+    setContent("");
+    setConfirmOpen(false);
   };
 
   return (
@@ -113,6 +118,16 @@ const ScratchpadDialog: React.FC<ScratchpadDialogProps> = ({ open, topicId, onCl
           </Button>
         </div>
       </DialogActions>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Clear scratchpad"
+        message="Are you sure you want to clear the scratchpad?"
+        confirmLabel="Clear"
+        destructive
+        onConfirm={confirmClear}
+        onCancel={(): void => setConfirmOpen(false)}
+      />
     </Dialog>
   );
 };

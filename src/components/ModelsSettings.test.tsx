@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import ModelsSettings from './ModelsSettings';
 import { useProviderStore } from '../store/ProviderStore';
 import { createUserChatModel } from '../testUtils';
@@ -77,9 +77,8 @@ describe('ModelsSettings', () => {
     expect(added.providerId).toBe('p1');
   });
 
-  it('deletes model when confirmed', () => {
+  it('deletes model when confirmed', async () => {
     const deleteModel: jest.MockedFunction<(id: string) => void> = jest.fn();
-    jest.spyOn(window, 'confirm').mockImplementation((): boolean => true);
 
     mockUseProviderStore.mockReturnValue({
       providers: [{ id: 'p1', name: 'Provider A' }],
@@ -99,6 +98,9 @@ describe('ModelsSettings', () => {
     render(<ModelsSettings />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     expect(deleteModel).toHaveBeenCalledWith('m1');
   });

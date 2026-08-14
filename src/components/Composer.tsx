@@ -187,6 +187,12 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   const hasWebSearchProvider = providers.some((p) => p.supportsWebSearch && !!p.apiKeyEncrypted);
   const openTempMenu = Boolean(anchorEl);
 
+  const activeModes: string[] = [];
+  if (webSearchEnabled) activeModes.push('Web Search');
+  if (autoReadEnabled) activeModes.push('Auto-Read');
+  if (imageGenerationEnabled) activeModes.push('Images');
+  if (musicGenerationEnabled) activeModes.push('Music');
+
   useEffect(() => {
     if (availableModels.length === 0) return;
     const selectedStillAvailable = availableModels.some((m) => m.id === selectedModel.id);
@@ -1115,6 +1121,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                     setImageGenerationEnabled(nextState);
                   }}
                   disabled={sending}
+                  aria-pressed={imageGenerationEnabled}
                   sx={{
                     borderRadius: 2,
                     flexDirection: 'column',
@@ -1146,6 +1153,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                     setMusicGenerationEnabled(nextState);
                   }}
                   disabled={sending}
+                  aria-pressed={musicGenerationEnabled}
                   sx={{
                     borderRadius: 2,
                     flexDirection: 'column',
@@ -1317,6 +1325,20 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
             rowGap: 0,
           }}
         >
+          {activeModes.length > 0 && (
+            <Box display="flex" gap={0.5} flexWrap="wrap" sx={{ width: '100%', flexBasis: '100%', order: 0, px: 1, pb: 0.5 }}>
+              {activeModes.map((mode) => (
+                <Chip
+                  key={mode}
+                  label={mode}
+                  size="small"
+                  variant="outlined"
+                  color="primary"
+                  sx={{ height: 20, fontSize: '0.65rem', '& .MuiChip-label': { px: 1 } }}
+                />
+              ))}
+            </Box>
+          )}
           {/* Left Actions (Icons) */}
           <Box
             sx={{
@@ -1409,6 +1431,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                     disabled={!ttsEnabled || sending}
                     color={autoReadEnabled ? 'primary' : 'default'}
                     aria-label="Toggle Auto-Read"
+                    aria-pressed={autoReadEnabled}
                   >
                     <VolumeUpIcon />
                   </IconButton>
@@ -1431,6 +1454,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                     disabled={sending}
                     color={webSearchEnabled ? 'primary' : 'default'}
                     aria-label="Toggle Web Search"
+                    aria-pressed={webSearchEnabled}
                   >
                     <LanguageIcon />
                   </IconButton>

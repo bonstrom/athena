@@ -100,8 +100,7 @@ describe('ChatLayout', () => {
     expect(screen.getByText('GPT-5.4 Nano')).toBeInTheDocument();
   });
 
-  it('mobile mode renders predefined prompt chips with onDelete', () => {
-    const updateTopicPromptSelection = jest.fn((): Promise<void> => Promise.resolve());
+  it('mobile mode collapses prompt chips into a Prompts (N) chip', () => {
     mockUseUiStore.mockReturnValue({
       drawerOpen: false,
       openDrawer: jest.fn(),
@@ -115,7 +114,7 @@ describe('ChatLayout', () => {
     });
     mockUseTopicStore.mockReturnValue({
       topics: [{ id: 'topic-1', name: 'Topic A', selectedPromptIds: ['prompt-1', 'prompt-2'] }],
-      updateTopicPromptSelection,
+      updateTopicPromptSelection: jest.fn((): Promise<void> => Promise.resolve()),
     });
     mockUseAuthStore.mockReturnValue({
       predefinedPrompts: [
@@ -126,8 +125,8 @@ describe('ChatLayout', () => {
 
     render(<ChatLayout />);
 
-    expect(screen.getByText('Code Review')).toBeInTheDocument();
-    expect(screen.getByText('Debug Mode')).toBeInTheDocument();
+    expect(screen.getByText('Prompts (2)')).toBeInTheDocument();
+    expect(screen.queryByText('Code Review')).not.toBeInTheDocument();
   });
 
   it('desktop mode renders predefined prompt chips with onDelete', () => {
@@ -154,8 +153,7 @@ describe('ChatLayout', () => {
     expect(screen.getByText('Debug Mode')).toBeInTheDocument();
   });
 
-  it('removes prompt chip from mobile header when delete is clicked', () => {
-    const updateTopicPromptSelection = jest.fn((): Promise<void> => Promise.resolve());
+  it('mobile header shows collapsed Prompts (N) chip', () => {
     mockUseUiStore.mockReturnValue({
       drawerOpen: false,
       openDrawer: jest.fn(),
@@ -169,7 +167,7 @@ describe('ChatLayout', () => {
     });
     mockUseTopicStore.mockReturnValue({
       topics: [{ id: 'topic-1', name: 'Topic A', selectedPromptIds: ['prompt-1'] }],
-      updateTopicPromptSelection,
+      updateTopicPromptSelection: jest.fn((): Promise<void> => Promise.resolve()),
     });
     mockUseAuthStore.mockReturnValue({
       predefinedPrompts: [{ id: 'prompt-1', name: 'Code Review' }],
@@ -177,8 +175,7 @@ describe('ChatLayout', () => {
 
     render(<ChatLayout />);
 
-    const chip = screen.getByText('Code Review').closest('.MuiChip-root');
-    expect(chip).toBeInTheDocument();
+    expect(screen.getByText('Prompts (1)')).toBeInTheDocument();
   });
 
   it('removes prompt chip from desktop header when delete is clicked', () => {

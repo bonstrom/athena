@@ -28,6 +28,7 @@ import {
 import { useProviderStore } from '../store/ProviderStore';
 import { LlmProvider, UserChatModel, getApiKey, encodeApiKey } from '../types/provider';
 import { USD_TO_SEK } from '../constants';
+import ConfirmDialog from './ConfirmDialog';
 
 // ── Provider form helpers ─────────────────────────────────────────────────────
 
@@ -460,6 +461,7 @@ const ProviderCardComponent: React.FC<ProviderCardProps> = ({ provider, balanceL
   const [editingProviderSettings, setEditingProviderSettings] = useState(false);
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [showAddModel, setShowAddModel] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const providerModels = models.filter((m) => m.providerId === provider.id);
   const key = getApiKey(provider);
@@ -470,9 +472,13 @@ const ProviderCardComponent: React.FC<ProviderCardProps> = ({ provider, balanceL
       providerModels.length > 0
         ? `Delete provider "${provider.name}"? This will also delete ${providerModels.length} model(s).`
         : `Delete provider "${provider.name}"?`;
-    if (window.confirm(msg)) {
-      deleteProvider(provider.id);
-    }
+    setConfirmAction({
+      title: 'Delete provider',
+      message: msg,
+      onConfirm: (): void => {
+        deleteProvider(provider.id);
+      },
+    });
   };
 
   return (
@@ -586,10 +592,14 @@ const ProviderCardComponent: React.FC<ProviderCardProps> = ({ provider, balanceL
                     size="small"
                     color="error"
                     onClick={(): void => {
-                      if (window.confirm(`Delete model "${model.label}"?`)) {
-                        useProviderStore.getState().deleteModel(model.id);
-                        if (editingModelId === model.id) setEditingModelId(null);
-                      }
+                      setConfirmAction({
+                        title: 'Delete model',
+                        message: `Delete model "${model.label}"?`,
+                        onConfirm: (): void => {
+                          useProviderStore.getState().deleteModel(model.id);
+                          if (editingModelId === model.id) setEditingModelId(null);
+                        },
+                      });
                     }}
                   >
                     <DeleteIcon fontSize="small" />
@@ -614,6 +624,21 @@ const ProviderCardComponent: React.FC<ProviderCardProps> = ({ provider, balanceL
         <Button variant="outlined" size="small" startIcon={<AddIcon />} onClick={(): void => setShowAddModel(true)} sx={{ mt: 0.5 }}>
           Add Model
         </Button>
+      )}
+
+      {confirmAction && (
+        <ConfirmDialog
+          open
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel="Delete"
+          destructive
+          onConfirm={(): void => {
+            confirmAction.onConfirm();
+            setConfirmAction(null);
+          }}
+          onCancel={(): void => setConfirmAction(null)}
+        />
       )}
     </Paper>
   );

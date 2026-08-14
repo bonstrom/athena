@@ -15,6 +15,7 @@ const drawerWidth = 300;
 const ChatLayout: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isNarrow = useMediaQuery(theme.breakpoints.down('lg'));
 
   const { drawerOpen, openDrawer, closeDrawer, setMobile } = useUiStore();
   const { currentTopicId, selectedModel } = useChatStore();
@@ -112,34 +113,47 @@ const ChatLayout: React.FC = () => {
                     <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.3 }}>
                       {isDeepSeekPeakHours() && selectedModel.providerId === 'builtin-deepseek' && (
                         <Tooltip title="DeepSeek peak hours — 2x pricing">
-                          <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
+                          <Box component="span" display="inline-flex" alignItems="center" gap={0.2}>
+                            <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
+                            <Typography variant="caption" color="warning.main" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+                              2×
+                            </Typography>
+                          </Box>
                         </Tooltip>
                       )}
                       {selectedModel.label}
                     </Typography>
                   </Box>
                   {topic.selectedPromptIds && topic.selectedPromptIds.length > 0 && (
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                      {predefinedPrompts
-                        .filter((p) => topic.selectedPromptIds?.includes(p.id))
-                        .map((prompt) => (
-                          <Chip
-                            key={prompt.id}
-                            label={prompt.name}
-                            size="small"
-                            onDelete={(): void => {
-                              const newIds = topic.selectedPromptIds?.filter((id) => id !== prompt.id) ?? [];
-                              void topicStore.updateTopicPromptSelection(topic.id, newIds);
-                            }}
-                            sx={{
-                              height: 18,
-                              fontSize: '0.6rem',
-                              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-                              '& .MuiChip-deleteIcon': { fontSize: 12 },
-                            }}
-                          />
-                        ))}
-                    </Box>
+                    isNarrow ? (
+                      <Chip
+                        label={`Prompts (${topic.selectedPromptIds.length})`}
+                        size="small"
+                        sx={{ height: 18, fontSize: '0.6rem', bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08) }}
+                      />
+                    ) : (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {predefinedPrompts
+                          .filter((p) => topic.selectedPromptIds?.includes(p.id))
+                          .map((prompt) => (
+                            <Chip
+                              key={prompt.id}
+                              label={prompt.name}
+                              size="small"
+                              onDelete={(): void => {
+                                const newIds = topic.selectedPromptIds?.filter((id) => id !== prompt.id) ?? [];
+                                void topicStore.updateTopicPromptSelection(topic.id, newIds);
+                              }}
+                              sx={{
+                                height: 18,
+                                fontSize: '0.6rem',
+                                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                                '& .MuiChip-deleteIcon': { fontSize: 12 },
+                              }}
+                            />
+                          ))}
+                      </Box>
+                    )
                   )}
                 </Box>
               )}
@@ -171,34 +185,47 @@ const ChatLayout: React.FC = () => {
                 <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.3 }}>
                   {isDeepSeekPeakHours() && selectedModel.providerId === 'builtin-deepseek' && (
                     <Tooltip title="DeepSeek peak hours — 2x pricing">
-                      <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
+                      <Box component="span" display="inline-flex" alignItems="center" gap={0.2}>
+                        <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
+                        <Typography variant="caption" color="warning.main" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+                          2×
+                        </Typography>
+                      </Box>
                     </Tooltip>
                   )}
                   {selectedModel.label}
                 </Typography>
               </Box>
               {topic.selectedPromptIds && topic.selectedPromptIds.length > 0 && (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {predefinedPrompts
-                    .filter((p) => topic.selectedPromptIds?.includes(p.id))
-                    .map((prompt) => (
-                      <Chip
-                        key={prompt.id}
-                        label={prompt.name}
-                        size="small"
-                        onDelete={(): void => {
-                          const newIds = topic.selectedPromptIds?.filter((id) => id !== prompt.id) ?? [];
-                          void topicStore.updateTopicPromptSelection(topic.id, newIds);
-                        }}
-                        sx={{
-                          height: 20,
-                          fontSize: '0.65rem',
-                          bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-                          '& .MuiChip-deleteIcon': { fontSize: 14 },
-                        }}
-                      />
-                    ))}
-                </Box>
+                isNarrow ? (
+                  <Chip
+                    label={`Prompts (${topic.selectedPromptIds.length})`}
+                    size="small"
+                    sx={{ height: 20, fontSize: '0.65rem', bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08) }}
+                  />
+                ) : (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {predefinedPrompts
+                      .filter((p) => topic.selectedPromptIds?.includes(p.id))
+                      .map((prompt) => (
+                        <Chip
+                          key={prompt.id}
+                          label={prompt.name}
+                          size="small"
+                          onDelete={(): void => {
+                            const newIds = topic.selectedPromptIds?.filter((id) => id !== prompt.id) ?? [];
+                            void topicStore.updateTopicPromptSelection(topic.id, newIds);
+                          }}
+                          sx={{
+                            height: 20,
+                            fontSize: '0.65rem',
+                            bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                            '& .MuiChip-deleteIcon': { fontSize: 14 },
+                          }}
+                        />
+                      ))}
+                  </Box>
+                )
               )}
             </Box>
           )}

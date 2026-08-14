@@ -42,6 +42,7 @@ import { USD_TO_SEK, DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from '../const
 import { ENGLISH_VOICES } from '../constants/voices';
 import ThemeSelector from '../components/ThemeSelector';
 import ImportDialog from '../components/ImportDialog';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { ProviderCard, AddProviderCard } from '../components/ProviderCard';
 import Analytics from '../components/Analytics';
 import { PredefinedPrompt } from '../database/AthenaDb';
@@ -73,6 +74,13 @@ const Settings: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [activeTab, setActiveTab] = useState(0);
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    destructive?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
   const {
     userName,
     backupInterval,
@@ -173,11 +181,7 @@ const Settings: React.FC = () => {
     llmSuggestionService.loadModel(modelId, true);
   };
 
-  const handleDeleteModel = async (): Promise<void> => {
-    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
-    if (!window.confirm(`Delete downloaded model "${modelId}" from local cache?`)) {
-      return;
-    }
+  const performDeleteModel = async (modelId: string): Promise<void> => {
     setIsDeletingModel(true);
     try {
       await llmSuggestionService.deleteModel(modelId);
@@ -187,6 +191,19 @@ const Settings: React.FC = () => {
     } finally {
       setIsDeletingModel(false);
     }
+  };
+
+  const handleDeleteModel = (): void => {
+    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
+    setConfirmAction({
+      title: 'Delete downloaded model',
+      message: `Delete downloaded model "${modelId}" from local cache?`,
+      confirmLabel: 'Delete',
+      destructive: true,
+      onConfirm: (): void => {
+        void performDeleteModel(modelId);
+      },
+    });
   };
 
   const handleResetDownload = (): void => {
@@ -303,13 +320,21 @@ const Settings: React.FC = () => {
         alert('Failed to setup auto backup file.');
       }
     } else {
-      if (window.confirm('Disable external automatic backups? Your stored file location will be cleared.')) {
-        await BackupService.clearAutoBackupHandle();
-        setBackupMode('none');
-        setAutoBackupEnabled(false);
-        setBackupStatus('no_handle');
-        setLastBackupTime(null);
-      }
+      setConfirmAction({
+        title: 'Disable automatic backups',
+        message: 'Disable external automatic backups? Your stored file location will be cleared.',
+        confirmLabel: 'Disable',
+        destructive: true,
+        onConfirm: (): void => {
+          void (async (): Promise<void> => {
+            await BackupService.clearAutoBackupHandle();
+            setBackupMode('none');
+            setAutoBackupEnabled(false);
+            setBackupStatus('no_handle');
+            setLastBackupTime(null);
+          })();
+        },
+      });
     }
   };
 
@@ -319,11 +344,17 @@ const Settings: React.FC = () => {
       setAutoBackupEnabled(true);
       await BackupService.performAutoBackup();
     } else {
-      if (window.confirm('Disable internal storage backups?')) {
-        setBackupMode('none');
-        setAutoBackupEnabled(false);
-        setBackupStatus('idle');
-      }
+      setConfirmAction({
+        title: 'Disable internal backups',
+        message: 'Disable internal storage backups?',
+        confirmLabel: 'Disable',
+        destructive: true,
+        onConfirm: (): void => {
+          setBackupMode('none');
+          setAutoBackupEnabled(false);
+          setBackupStatus('idle');
+        },
+      });
     }
   };
 
@@ -808,7 +839,7 @@ const Settings: React.FC = () => {
                           startIcon={<DeleteIcon />}
                           disabled={isDeletingModel}
                           onClick={(): void => {
-                            void handleDeleteModel();
+                            handleDeleteModel();
                           }}
                         >
                           Delete
@@ -966,9 +997,15 @@ const Settings: React.FC = () => {
                             size="small"
                             color="error"
                             onClick={(): void => {
-                              if (window.confirm(`Delete prompt "${prompt.name}"?`)) {
-                                deletePredefinedPrompt(prompt.id);
-                              }
+                              setConfirmAction({
+                                title: 'Delete prompt',
+                                message: `Delete prompt "${prompt.name}"?`,
+                                confirmLabel: 'Delete',
+                                destructive: true,
+                                onConfirm: (): void => {
+                                  deletePredefinedPrompt(prompt.id);
+                                },
+                              });
                             }}
                           >
                             Delete
@@ -1222,6 +1259,21 @@ const Settings: React.FC = () => {
       </Paper>
 
       <ImportDialog open={importDialogOpen} file={pendingImportFile} onClose={handleImportDialogClose} onComplete={handleImportComplete} />
+
+      {confirmAction && (
+        <ConfirmDialog
+          open
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel={confirmAction.confirmLabel}
+          destructive={confirmAction.destructive}
+          onConfirm={(): void => {
+            confirmAction.onConfirm();
+            setConfirmAction(null);
+          }}
+          onCancel={(): void => setConfirmAction(null)}
+        />
+      )}
     </Box>
   );
 };

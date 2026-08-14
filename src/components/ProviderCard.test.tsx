@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { AddProviderCard, ProviderCard } from './ProviderCard';
 import { useProviderStore } from '../store/ProviderStore';
 import { encodeApiKey, LlmProvider, UserChatModel } from '../types/provider';
@@ -197,10 +197,9 @@ describe('ProviderCard and AddProviderCard', () => {
     expect(screen.queryByText('Provider Settings')).not.toBeInTheDocument();
   });
 
-  it('toggles and deletes a model via store state handlers', () => {
+  it('toggles and deletes a model via store state handlers', async () => {
     const updateModel: jest.MockedFunction<ModelHandler> = jest.fn();
     const deleteModel: jest.MockedFunction<ModelIdHandler> = jest.fn();
-    jest.spyOn(window, 'confirm').mockImplementation((): boolean => true);
 
     mockUseProviderStore.mockReturnValue({
       models: [createUserChatModel({ providerId: 'provider-1', id: 'model-1', label: 'Model One' })],
@@ -222,6 +221,9 @@ describe('ProviderCard and AddProviderCard', () => {
 
     const buttons = container.querySelectorAll<HTMLButtonElement>('button');
     fireEvent.click(buttons[3]);
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     expect(deleteModel).toHaveBeenCalledWith('model-1');
   });
@@ -312,9 +314,8 @@ describe('ProviderCard and AddProviderCard', () => {
     );
   });
 
-  it('deletes provider after confirmation', () => {
+  it('deletes provider after confirmation', async () => {
     const deleteProvider: jest.MockedFunction<ProviderIdHandler> = jest.fn();
-    jest.spyOn(window, 'confirm').mockImplementation((): boolean => true);
 
     mockUseProviderStore.mockReturnValue({
       models: [],
@@ -329,6 +330,9 @@ describe('ProviderCard and AddProviderCard', () => {
 
     const buttons = container.querySelectorAll<HTMLButtonElement>('button');
     fireEvent.click(buttons[1]);
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     expect(deleteProvider).toHaveBeenCalledWith('provider-1');
   });

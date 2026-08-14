@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import Settings from './Settings';
 import { useAuthStore } from '../store/AuthStore';
 import { useProviderStore } from '../store/ProviderStore';
@@ -353,7 +353,6 @@ describe('Settings page', () => {
     authState.llmModelDownloadStatus = { 'onnx-community/Qwen3.5-0.8B-ONNX': 'downloaded' };
     mockUseAuthStore.mockReturnValue(authState);
     const deleteModelSpy = jest.spyOn(llmSuggestionService, 'deleteModel').mockResolvedValue();
-    window.confirm = jest.fn(() => true);
 
     render(<Settings />);
 
@@ -361,7 +360,9 @@ describe('Settings page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /delete/i }));
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Delete downloaded model'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
     await waitFor(() => {
       expect(deleteModelSpy).toHaveBeenCalledWith('onnx-community/Qwen3.5-0.8B-ONNX');
     });
@@ -832,11 +833,10 @@ describe('Settings page', () => {
     expect(screen.getByRole('button', { name: 'Add Prompt' })).toBeInTheDocument();
   });
 
-  it('deletes a predefined prompt with confirmation', () => {
+  it('deletes a predefined prompt with confirmation', async () => {
     const authState = buildAuthState();
     authState.predefinedPrompts = [{ id: 'p1', name: 'My Prompt', content: 'content' }];
     mockUseAuthStore.mockReturnValue(authState);
-    window.confirm = jest.fn(() => true);
 
     render(<Settings />);
 
@@ -844,15 +844,16 @@ describe('Settings page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
-    expect(window.confirm).toHaveBeenCalledWith('Delete prompt "My Prompt"?');
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
     expect(authState.deletePredefinedPrompt).toHaveBeenCalledWith('p1');
   });
 
-  it('delete button does nothing if confirm is cancelled', () => {
+  it('delete button does nothing if confirm is cancelled', async () => {
     const authState = buildAuthState();
     authState.predefinedPrompts = [{ id: 'p1', name: 'My Prompt', content: 'content' }];
     mockUseAuthStore.mockReturnValue(authState);
-    window.confirm = jest.fn(() => false);
 
     render(<Settings />);
 
@@ -860,7 +861,9 @@ describe('Settings page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
-    expect(window.confirm).toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
     expect(authState.deletePredefinedPrompt).not.toHaveBeenCalled();
   });
 
@@ -951,7 +954,6 @@ describe('Settings page', () => {
     backupStoreState.backupMode = 'external';
     mockUseBackupStore.mockReturnValue(backupStoreState);
     mockBackupService.clearAutoBackupHandle.mockResolvedValueOnce(undefined);
-    window.confirm = jest.fn(() => true);
 
     render(<Settings />);
 
@@ -959,7 +961,8 @@ describe('Settings page', () => {
 
     fireEvent.click(screen.getByTestId('backup-external-toggle'));
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Disable external'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Disable' }));
 
     await waitFor(() => {
       expect(mockBackupService.clearAutoBackupHandle).toHaveBeenCalled();
@@ -967,10 +970,9 @@ describe('Settings page', () => {
     });
   });
 
-  it('external auto-backup toggle OFF does nothing if confirm cancelled', () => {
+  it('external auto-backup toggle OFF does nothing if confirm cancelled', async () => {
     backupStoreState.backupMode = 'external';
     mockUseBackupStore.mockReturnValue(backupStoreState);
-    window.confirm = jest.fn(() => false);
 
     render(<Settings />);
 
@@ -978,7 +980,9 @@ describe('Settings page', () => {
 
     fireEvent.click(screen.getByTestId('backup-external-toggle'));
 
-    expect(window.confirm).toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
     expect(mockBackupService.clearAutoBackupHandle).not.toHaveBeenCalled();
   });
 
@@ -1000,10 +1004,9 @@ describe('Settings page', () => {
     });
   });
 
-  it('internal auto-backup toggle OFF with confirm sets mode to none', () => {
+  it('internal auto-backup toggle OFF with confirm sets mode to none', async () => {
     backupStoreState.backupMode = 'internal';
     mockUseBackupStore.mockReturnValue(backupStoreState);
-    window.confirm = jest.fn(() => true);
 
     render(<Settings />);
 
@@ -1011,14 +1014,15 @@ describe('Settings page', () => {
 
     fireEvent.click(screen.getByTestId('backup-internal-toggle'));
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('Disable internal'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Disable' }));
+
     expect(backupStoreState.setBackupMode).toHaveBeenCalledWith('none');
   });
 
-  it('internal auto-backup toggle OFF does nothing if confirm cancelled', () => {
+  it('internal auto-backup toggle OFF does nothing if confirm cancelled', async () => {
     backupStoreState.backupMode = 'internal';
     mockUseBackupStore.mockReturnValue(backupStoreState);
-    window.confirm = jest.fn(() => false);
 
     render(<Settings />);
 
@@ -1026,7 +1030,9 @@ describe('Settings page', () => {
 
     fireEvent.click(screen.getByTestId('backup-internal-toggle'));
 
-    expect(window.confirm).toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
     expect(backupStoreState.setBackupMode).not.toHaveBeenCalledWith('none');
   });
 

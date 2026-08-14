@@ -6,6 +6,7 @@ import {
   Popover,
   Typography,
   Button,
+  ButtonBase,
   Dialog,
   DialogActions,
   DialogContent,
@@ -48,6 +49,7 @@ import { isDeepSeekPeakHours } from './ModelSelector';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import CodeIcon from '@mui/icons-material/Code';
 import ImageIcon from '@mui/icons-material/Image';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
@@ -251,6 +253,21 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
     }
   };
 
+  const handleSpeakToggle = (): void => {
+    if (isSpeaking) {
+      stopSpeech();
+    } else {
+      setSpeaking(true);
+      void speakText(stripMarkdown(message.content.trim()), message.id)
+        .catch(() => {
+          /* playback errors are non-critical */
+        })
+        .finally(() => {
+          setSpeaking(false);
+        });
+    }
+  };
+
   const handleDeleteClick = (): void => {
     setOpenDeleteDialog(true);
   };
@@ -409,14 +426,18 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
         <Box display="flex" justifyContent="space-between" mb={0.5}>
           <Box display="flex" alignItems="center">
             <>
-              <Box
+              <ButtonBase
                 onClick={handleInfoClick}
+                aria-label="Message details"
+                focusRipple
                 sx={{
-                  cursor: 'pointer',
-                  display: 'flex',
+                  display: 'inline-flex',
                   alignItems: 'center',
                   gap: 0.5,
                   userSelect: 'none',
+                  borderRadius: 1,
+                  px: 0.5,
+                  py: 0.25,
                   '&:hover': { opacity: 0.7 },
                 }}
               >
@@ -430,7 +451,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
                     </Tooltip>
                   )}
-              </Box>
+                <InfoOutlinedIcon sx={{ fontSize: 12, color: 'text.disabled', opacity: 0.6 }} />
+              </ButtonBase>
               <Popover
                 open={Boolean(infoAnchorEl)}
                 anchorEl={infoAnchorEl}
@@ -623,52 +645,41 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 </IconButton>
               </Tooltip>
 
-              <Tooltip title={message.includeInContext ? 'Unpin from context' : 'Pin to context'} disableTouchListener={isMobile}>
-                <IconButton
-                  size="small"
-                  aria-label={message.includeInContext ? 'Unpin from context' : 'Pin to context'}
-                  onClick={(): void => {
-                    void togglePin();
-                  }}
-                  sx={{
-                    color: 'text.secondary',
-                    '&:hover': {
-                      bgcolor: (theme): string => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
-                    },
-                  }}
-                >
-                  <Box position="relative" display="flex" alignItems="center" justifyContent="center" sx={{ width: 20, height: 20 }}>
-                    <Zoom in={!message.includeInContext} timeout={200} unmountOnExit>
-                      <PushPinOutlinedIcon fontSize="small" sx={{ position: 'absolute' }} />
-                    </Zoom>
-                    <Zoom in={message.includeInContext} timeout={200} unmountOnExit>
-                      <PushPinIcon fontSize="small" sx={{ position: 'absolute' }} />
-                    </Zoom>
-                  </Box>
-                </IconButton>
-              </Tooltip>
+              {!isMobile && (
+                <Tooltip title={message.includeInContext ? 'Remove from future replies' : 'Keep for future replies'} disableTouchListener={isMobile}>
+                  <IconButton
+                    size="small"
+                    aria-label={message.includeInContext ? 'Remove from future replies' : 'Keep for future replies'}
+                    onClick={(): void => {
+                      void togglePin();
+                    }}
+                    sx={{
+                      color: 'text.secondary',
+                      '&:hover': {
+                        bgcolor: (theme): string => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
+                      },
+                    }}
+                  >
+                    <Box position="relative" display="flex" alignItems="center" justifyContent="center" sx={{ width: 20, height: 20 }}>
+                      <Zoom in={!message.includeInContext} timeout={200} unmountOnExit>
+                        <PushPinOutlinedIcon fontSize="small" sx={{ position: 'absolute' }} />
+                      </Zoom>
+                      <Zoom in={message.includeInContext} timeout={200} unmountOnExit>
+                        <PushPinIcon fontSize="small" sx={{ position: 'absolute' }} />
+                      </Zoom>
+                    </Box>
+                  </IconButton>
+                </Tooltip>
+              )}
             </Box>
 
-            {isAssistant && message.content.trim() && (
+            {!isMobile && isAssistant && message.content.trim() && (
               <Tooltip title={isSpeaking ? 'Stop speech' : 'Read aloud'} disableTouchListener={isMobile}>
                 <IconButton
                   size="small"
                   aria-label={isSpeaking ? 'Stop speech' : 'Read aloud'}
                   disabled={speaking && !isSpeaking} // Disable if something else is generating/loading, but not if we are speaking
-                  onClick={(): void => {
-                    if (isSpeaking) {
-                      stopSpeech();
-                    } else {
-                      setSpeaking(true);
-                      void speakText(stripMarkdown(message.content.trim()), message.id)
-                        .catch(() => {
-                          /* playback errors are non-critical */
-                        })
-                        .finally(() => {
-                          setSpeaking(false);
-                        });
-                    }
-                  }}
+                  onClick={handleSpeakToggle}
                   sx={{
                     color: isSpeaking ? 'primary.main' : 'text.secondary',
                     '&:hover': {
@@ -721,6 +732,32 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 transformOrigin={{ horizontal: 'right', vertical: 'top' }}
                 anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
               >
+                {isMobile && (
+                  <MenuItem
+                    onClick={(): void => {
+                      void togglePin();
+                      handleMenuClose();
+                    }}
+                  >
+                    <ListItemIcon>
+                      {message.includeInContext ? <PushPinIcon fontSize="small" /> : <PushPinOutlinedIcon fontSize="small" />}
+                    </ListItemIcon>
+                    <ListItemText>{message.includeInContext ? 'Remove from future replies' : 'Keep for future replies'}</ListItemText>
+                  </MenuItem>
+                )}
+                {isMobile && isAssistant && message.content.trim() && (
+                  <MenuItem
+                    onClick={(): void => {
+                      handleSpeakToggle();
+                      handleMenuClose();
+                    }}
+                  >
+                    <ListItemIcon>
+                      {isSpeaking ? <StopCircleIcon fontSize="small" /> : <VolumeUpIcon fontSize="small" />}
+                    </ListItemIcon>
+                    <ListItemText>{isSpeaking ? 'Stop speech' : 'Read aloud'}</ListItemText>
+                  </MenuItem>
+                )}
                 {isAssistant && message.content !== '' && !message.failed && (
                   <MenuItem onClick={handleRegenerateMenu}>
                     <ListItemIcon>
@@ -734,7 +771,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     <ListItemIcon>
                       <AltRouteIcon fontSize="small" sx={{ transform: 'rotate(90deg)' }} />
                     </ListItemIcon>
-                    <ListItemText>Fork</ListItemText>
+                    <ListItemText>Branch from this message</ListItemText>
                   </MenuItem>
                 )}
                 {message.rawResponse && (

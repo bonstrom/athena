@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import ProvidersSettings from './ProvidersSettings';
 import { useProviderStore } from '../store/ProviderStore';
 
@@ -88,9 +88,8 @@ describe('ProvidersSettings', () => {
     expect(added.baseUrl).toBe('https://example.com/v1/chat/completions');
   });
 
-  it('deletes provider when confirmed', () => {
+  it('deletes provider when confirmed', async () => {
     const deleteProvider: jest.MockedFunction<(id: string) => void> = jest.fn();
-    jest.spyOn(window, 'confirm').mockImplementation((): boolean => true);
 
     mockUseProviderStore.mockReturnValue({
       providers: [
@@ -115,6 +114,9 @@ describe('ProvidersSettings', () => {
     render(<ProvidersSettings />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     expect(deleteProvider).toHaveBeenCalledWith('p1');
   });

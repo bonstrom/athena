@@ -26,6 +26,7 @@ import {
 } from '@mui/icons-material';
 import { useProviderStore } from '../store/ProviderStore';
 import { LlmProvider, getApiKey, encodeApiKey } from '../types/provider';
+import ConfirmDialog from './ConfirmDialog';
 
 const emptyForm = (): Omit<LlmProvider, 'id'> => ({
   name: '',
@@ -47,6 +48,7 @@ const ProvidersSettings: React.FC = () => {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [expandedAdvanced, setExpandedAdvanced] = useState(false);
   const [jsonError, setJsonError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<LlmProvider | null>(null);
 
   const openEdit = (provider: LlmProvider): void => {
     setEditingId(provider.id);
@@ -105,16 +107,21 @@ const ProvidersSettings: React.FC = () => {
   };
 
   const handleDelete = (provider: LlmProvider): void => {
+    setConfirmDelete(provider);
+  };
+
+  const performDelete = (provider: LlmProvider): void => {
+    deleteProvider(provider.id);
+    if (editingId === provider.id) closeForm();
+    setConfirmDelete(null);
+  };
+
+  const getDeleteMessage = (provider: LlmProvider): string => {
     const { models } = useProviderStore.getState();
     const modelCount = models.filter((m) => m.providerId === provider.id).length;
-    const msg =
-      modelCount > 0
-        ? `Delete provider "${provider.name}"? This will also delete ${modelCount} model(s) using it.`
-        : `Delete provider "${provider.name}"?`;
-    if (window.confirm(msg)) {
-      deleteProvider(provider.id);
-      if (editingId === provider.id) closeForm();
-    }
+    return modelCount > 0
+      ? `Delete provider "${provider.name}"? This will also delete ${modelCount} model(s) using it.`
+      : `Delete provider "${provider.name}"?`;
   };
 
   const isFormOpen = showAddForm || editingId !== null;
@@ -187,6 +194,18 @@ const ProvidersSettings: React.FC = () => {
         <Button variant="outlined" startIcon={<AddIcon />} onClick={openAdd} size="small">
           Add Provider
         </Button>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          open
+          title="Delete provider"
+          message={getDeleteMessage(confirmDelete)}
+          confirmLabel="Delete"
+          destructive
+          onConfirm={(): void => performDelete(confirmDelete)}
+          onCancel={(): void => setConfirmDelete(null)}
+        />
       )}
     </Box>
   );

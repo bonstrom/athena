@@ -193,7 +193,7 @@ describe('MessageBubble', () => {
 
     renderWithTheme(<MessageBubble message={createMessage({ id: 'message-1', includeInContext: false })} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Pin to context' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep for future replies' }));
 
     await waitFor(() => {
       expect(updateMessageContext).toHaveBeenCalledWith('message-1', true);
@@ -283,7 +283,7 @@ describe('MessageBubble', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Unpin from context' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from future replies' }));
 
     await waitFor(() => {
       expect(updateMessageContext).toHaveBeenCalledWith('message-1', false);
@@ -319,7 +319,7 @@ describe('MessageBubble', () => {
 
     renderWithTheme(<MessageBubble message={createMessage({ id: 'message-1', topicId: 'topic-1' })} />);
 
-    const forkBtn = screen.queryByRole('button', { name: /fork/i });
+    const forkBtn = screen.queryByRole('button', { name: /branch/i });
     if (forkBtn) {
       fireEvent.click(forkBtn);
 
@@ -876,7 +876,7 @@ describe('MessageBubble', () => {
 
     fireEvent.click(screen.getByLabelText('More actions'));
 
-    expect(screen.queryByText('Fork')).not.toBeInTheDocument();
+    expect(screen.queryByText('Branch from this message')).not.toBeInTheDocument();
   });
 
   it('calls regenerateResponse from menu', () => {
@@ -919,7 +919,7 @@ describe('MessageBubble', () => {
     );
 
     fireEvent.click(screen.getByLabelText('More actions'));
-    fireEvent.click(screen.getByText('Fork'));
+    fireEvent.click(screen.getByText('Branch from this message'));
 
     expect(forkTopic).toHaveBeenCalledWith('topic-1', 'msg-fork-menu');
   });
@@ -1048,7 +1048,7 @@ describe('MessageBubble', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Pin to context' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep for future replies' }));
 
     await waitFor(() => {
       expect(addNotification).toHaveBeenCalledWith(
@@ -1105,7 +1105,7 @@ describe('MessageBubble', () => {
     );
 
     fireEvent.click(screen.getByLabelText('More actions'));
-    fireEvent.click(screen.getByText('Fork'));
+    fireEvent.click(screen.getByText('Branch from this message'));
 
     await waitFor(() => {
       expect(addNotification).toHaveBeenCalledWith(

@@ -27,6 +27,7 @@ import {
 import { useProviderStore } from '../store/ProviderStore';
 import { UserChatModel } from '../types/provider';
 import { USD_TO_SEK } from '../constants';
+import ConfirmDialog from './ConfirmDialog';
 
 const emptyModel = (providerId = ''): Omit<UserChatModel, 'id'> => ({
   label: '',
@@ -63,6 +64,7 @@ const ModelsSettings: React.FC = () => {
   const [expandedAdvanced, setExpandedAdvanced] = useState(false);
   const [forceTempInput, setForceTempInput] = useState('');
   const [maxTokensInput, setMaxTokensInput] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<UserChatModel | null>(null);
 
   const openEdit = (model: UserChatModel): void => {
     setEditingId(model.id);
@@ -129,10 +131,13 @@ const ModelsSettings: React.FC = () => {
   };
 
   const handleDelete = (model: UserChatModel): void => {
-    if (window.confirm(`Delete model "${model.label}"?`)) {
-      deleteModel(model.id);
-      if (editingId === model.id) closeForm();
-    }
+    setConfirmDelete(model);
+  };
+
+  const performDelete = (model: UserChatModel): void => {
+    deleteModel(model.id);
+    if (editingId === model.id) closeForm();
+    setConfirmDelete(null);
   };
 
   const isFormValid = form.label.trim() && form.apiModelId.trim() && form.providerId;
@@ -460,6 +465,18 @@ const ModelsSettings: React.FC = () => {
         <Button variant="outlined" startIcon={<AddIcon />} onClick={openAdd} size="small">
           Add Model
         </Button>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          open
+          title="Delete model"
+          message={`Delete model "${confirmDelete.label}"?`}
+          confirmLabel="Delete"
+          destructive
+          onConfirm={(): void => performDelete(confirmDelete)}
+          onCancel={(): void => setConfirmDelete(null)}
+        />
       )}
     </Box>
   );
