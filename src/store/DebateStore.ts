@@ -43,6 +43,34 @@ function buildSystemMessage(customInstructions: string): LlmMessage | null {
   return { role: 'system', content: parts.join('\n\n') };
 }
 
+const REVIEW_RUBRIC = `Structure your review with these sections:
+1. **Main claim** — restate the answer's central claim in one sentence.
+2. **Strongest supported point** — the part best supported by evidence or reasoning.
+3. **Errors or unsupported assumptions** — concrete mistakes, missing caveats, or unsupported leaps.
+4. **Uncertainty** — what the answer is least confident about or where it overstates.
+5. **Highest-value correction** — the single change that would most improve the answer.`;
+
+function buildReviewPrompt(question: string, otherAnswer: string): LlmMessage {
+  return {
+    role: 'user',
+    content: `Here is the original question:\n\n${question}\n\nAnother AI model gave this answer:\n\n${otherAnswer}\n\nPlease review this answer.\n\n${REVIEW_RUBRIC}`,
+  };
+}
+
+function buildFinalPrompt(question: string, ownAnswer: string, review: string): LlmMessage {
+  return {
+    role: 'user',
+    content: `Here is the original question:\n\n${question}\n\nYour initial answer was:\n\n${ownAnswer}\n\nAnother AI reviewed your answer and said:\n\n${review}\n\nConsidering this review, please provide your final answer. If you find the review helpful, incorporate the feedback. If you disagree, explain why and maintain your position.`,
+  };
+}
+
+function buildConsensusPrompt(question: string, finalTextA: string, finalTextB: string): LlmMessage {
+  return {
+    role: 'user',
+    content: `Here is the original question:\n\n${question}\n\nTwo AI models debated this question. Here are their final answers:\n\n**Answer 1:**\n${finalTextA}\n\n**Answer 2:**\n${finalTextB}\n\nSynthesize a consensus. Use EXACTLY this format:\n\n**Common ground:** what both answers agree on.\n**Remaining disagreement:** the points they genuinely disagree on. Preserve real disagreements — do not pretend they agree.\n**Bottom line:** the most defensible overall position.`,
+  };
+}
+
 async function persistMessage(msg: Message): Promise<void> {
   await athenaDb.messages.add(msg);
 }
@@ -281,14 +309,8 @@ export const useDebateStore = create<DebateState>((set, get) => ({
 
       // --- Phase 2: Review (each model reviews the other's answer) ---
       set({ currentPhase: 'review' });
-      const reviewPromptA: LlmMessage = {
-        role: 'user',
-        content: `Here is the original question:\n\n${question.trim()}\n\nAnother AI model gave this answer:\n\n${answerB}\n\nPlease critically review this answer. Point out any errors, weaknesses, or areas for improvement.`,
-      };
-      const reviewPromptB: LlmMessage = {
-        role: 'user',
-        content: `Here is the original question:\n\n${question.trim()}\n\nAnother AI model gave this answer:\n\n${answerA}\n\nPlease critically review this answer. Point out any errors, weaknesses, or areas for improvement.`,
-      };
+      const reviewPromptA = buildReviewPrompt(question.trim(), answerB);
+      const reviewPromptB = buildReviewPrompt(question.trim(), answerA);
       const {
         msgIdA: reviewIdA,
         msgIdB: reviewIdB,
@@ -300,14 +322,8 @@ export const useDebateStore = create<DebateState>((set, get) => ({
 
       // --- Phase 3: Final answer (each model incorporates the review it received) ---
       set({ currentPhase: 'final' });
-      const finalPromptA: LlmMessage = {
-        role: 'user',
-        content: `Here is the original question:\n\n${question.trim()}\n\nYour initial answer was:\n\n${answerA}\n\nAnother AI reviewed your answer and said:\n\n${reviewForA}\n\nConsidering this review, please provide your final answer. If you find the review helpful, incorporate the feedback. If you disagree, explain why and maintain your position.`,
-      };
-      const finalPromptB: LlmMessage = {
-        role: 'user',
-        content: `Here is the original question:\n\n${question.trim()}\n\nYour initial answer was:\n\n${answerB}\n\nAnother AI reviewed your answer and said:\n\n${reviewForB}\n\nConsidering this review, please provide your final answer. If you find the review helpful, incorporate the feedback. If you disagree, explain why and maintain your position.`,
-      };
+      const finalPromptA = buildFinalPrompt(question.trim(), answerA, reviewForA);
+      const finalPromptB = buildFinalPrompt(question.trim(), answerB, reviewForB);
       await runPhase('final', baseMessages([finalPromptA]), baseMessages([finalPromptB]), reviewIdA, reviewIdB);
       set({ streamingContentA: '', streamingContentB: '' });
       await refreshDebateMessages(topicId);
@@ -345,10 +361,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       await persistMessage(consensusPlaceholder);
 
       let accConsensus = '';
-      const consensusPrompt: LlmMessage = {
-        role: 'user',
-        content: `Here is the original question:\n\n${question.trim()}\n\nTwo AI models debated this question. Here are their final answers:\n\n**Model A's final answer:**\n${finalTextA}\n\n**Model B's final answer:**\n${finalTextB}\n\nCan these two answers be reconciled into a short consensus? If the models largely agree, provide a brief (3-5 line) consensus answer. If they fundamentally disagree on important points, briefly state where they diverge and note that both full answers should be read for the complete picture. Keep your response concise.`,
-      };
+      const consensusPrompt = buildConsensusPrompt(question.trim(), finalTextA, finalTextB);
       const consensusResult = await askLlmStream(
         debateModelA,
         DEBATE_TEMPERATURE,
@@ -361,6 +374,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         undefined,
         false,
         controller.signal,
+        { includeCustomInstructions: false },
       );
       const consensusCost = calculateCostSEK(
         debateModelA,
@@ -505,14 +519,8 @@ export const useDebateStore = create<DebateState>((set, get) => ({
 
       if (!reviewDone) {
         set({ currentPhase: 'review' });
-        const reviewPromptA: LlmMessage = {
-          role: 'user',
-          content: `Here is the original question:\n\n${question.trim()}\n\nAnother AI model gave this answer:\n\n${answerB}\n\nPlease critically review this answer. Point out any errors, weaknesses, or areas for improvement.`,
-        };
-        const reviewPromptB: LlmMessage = {
-          role: 'user',
-          content: `Here is the original question:\n\n${question.trim()}\n\nAnother AI model gave this answer:\n\n${answerA}\n\nPlease critically review this answer. Point out any errors, weaknesses, or areas for improvement.`,
-        };
+        const reviewPromptA = buildReviewPrompt(question.trim(), answerB);
+        const reviewPromptB = buildReviewPrompt(question.trim(), answerA);
         const result = await runPhase('review', baseMessages([reviewPromptA]), baseMessages([reviewPromptB]), answerIdA, answerIdB);
         reviewForB = result.contentA;
         reviewForA = result.contentB;
@@ -524,14 +532,8 @@ export const useDebateStore = create<DebateState>((set, get) => ({
 
       if (!finalDone) {
         set({ currentPhase: 'final' });
-        const finalPromptA: LlmMessage = {
-          role: 'user',
-          content: `Here is the original question:\n\n${question.trim()}\n\nYour initial answer was:\n\n${answerA}\n\nAnother AI reviewed your answer and said:\n\n${reviewForA}\n\nConsidering this review, please provide your final answer. If you find the review helpful, incorporate the feedback. If you disagree, explain why and maintain your position.`,
-        };
-        const finalPromptB: LlmMessage = {
-          role: 'user',
-          content: `Here is the original question:\n\n${question.trim()}\n\nYour initial answer was:\n\n${answerB}\n\nAnother AI reviewed your answer and said:\n\n${reviewForB}\n\nConsidering this review, please provide your final answer. If you find the review helpful, incorporate the feedback. If you disagree, explain why and maintain your position.`,
-        };
+        const finalPromptA = buildFinalPrompt(question.trim(), answerA, reviewForA);
+        const finalPromptB = buildFinalPrompt(question.trim(), answerB, reviewForB);
         await runPhase('final', baseMessages([finalPromptA]), baseMessages([finalPromptB]), reviewIdA, reviewIdB);
         set({ streamingContentA: '', streamingContentB: '' });
         await refreshDebateMessages(topicId);
@@ -570,10 +572,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         await persistMessage(consensusPlaceholder);
 
         let accConsensus = '';
-        const consensusPrompt: LlmMessage = {
-          role: 'user',
-          content: `Here is the original question:\n\n${question.trim()}\n\nTwo AI models debated this question. Here are their final answers:\n\n**Model A's final answer:**\n${finalTextA}\n\n**Model B's final answer:**\n${finalTextB}\n\nCan these two answers be reconciled into a short consensus? If the models largely agree, provide a brief (3-5 line) consensus answer. If they fundamentally disagree on important points, briefly state where they diverge and note that both full answers should be read for the complete picture. Keep your response concise.`,
-        };
+        const consensusPrompt = buildConsensusPrompt(question.trim(), finalTextA, finalTextB);
         const consensusResult = await askLlmStream(
           debateModelA,
           DEBATE_TEMPERATURE,
@@ -586,6 +585,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
           undefined,
           false,
           controller.signal,
+          { includeCustomInstructions: false },
         );
         const consensusCost = calculateCostSEK(
           debateModelA,

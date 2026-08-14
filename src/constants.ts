@@ -132,6 +132,16 @@ Summaries are rendered as Markdown. Never a single wall of text.
 - You can output SVG code in a markdown code block with language tag svg for diagrams and visualizations.
 - Every summary must have at least 2 paragraph breaks and some bold text.`;
 
+export const CURATOR_VOICE_RULES = `Drama comes from facts, not adjectives.
+- Ban hype words (violent, deadly, brutal, insane, catastrophic, betrayal) unless literally accurate.
+- Specific beats dramatic: "a 0.5 mm gap" beats "a tiny, treacherous gap". Prefer numbers, names, dates, places over adjectives.
+- At most ONE punchy one-line aphorism per part. If every paragraph ends with a zinger, none land.
+- At most ONE rhetorical question per part.
+- Never use: "Here's the thing", "The catch?", "But here's what X hides", "Think of...", "Imagine...". Introduce examples directly: "A camera tripod on gravel..." — not "Think of a camera tripod."
+- The "X is not Y — it's Z" reversal: at most once per part.
+- If two parts' keyTakeaways could be swapped between them, one part is redundant.
+- Target a smart 15-year-old. Write like a knowledgeable friend, not a textbook. Use simple language for complex ideas.`;
+
 export function buildCourseOutlinePrompt(
   question: string,
   priorKnowledgeLevel: string,
@@ -172,35 +182,34 @@ export function buildPartGenerationPrompt(
   totalParts: number,
   courseTitle: string,
   question: string,
-  outline: string,
+  answerSpine: string,
+  currentPartTitle: string,
+  currentPartCoreIdea: string,
   hookArchetype: string,
   partDevice: string,
-  coveredSoFar: string,
+  coveredTitles: string,
+  nextPartTitle: string,
 ): string {
   const isFirst = partNumber === 1;
   const isLast = partNumber === totalParts;
 
-  const coveredBlock = coveredSoFar
+  const coveredBlock = coveredTitles
     ? `
-Ideas covered by other parts (the reader JUST read these):
-${coveredSoFar}
-
-HARD RULES:
-- NEVER re-teach or recap a covered idea. Reference it in at most one short clause
-  ("remember the tipping boundary") and build on it immediately. No recap paragraphs.
-- Deliver this part's ONE new idea through the assigned device: "${partDevice}".
-  One example, fully used — not three analogies that make the same point.
-- Do not open the body with a heading that repeats the title.
-- 150-300 words is a budget, not a quota. When the idea has landed, stop.`
+Parts the reader has already completed (do NOT re-teach or recap these):
+${coveredTitles}`
     : '';
 
   return `Writing part ${partNumber} of ${totalParts} of the course "${courseTitle}" (answering "${question}").
 
-Course outline (all parts):
-${outline}
+The answer this course builds toward — do NOT reveal it until the final part:
+${answerSpine}
+
+This part's title: "${currentPartTitle}"
+This part's single core idea: ${currentPartCoreIdea}
 Your device for this part: "${partDevice}"
 Your hook archetype for this part: "${hookArchetype}".
 ${coveredBlock}
+${nextPartTitle ? `\nNext part builds toward: "${nextPartTitle}". Create anticipation for it in your bridge.` : ''}
 
 Rules for this part:
 ${isFirst ? '- This is the OPENING part. Frame why the question is fascinating and what makes it worth a whole course. Create mystery — do NOT give away the answer.' : ''}
@@ -211,9 +220,11 @@ ${!isFirst && !isLast ? '- This is a MIDDLE part. Deliver exactly one core idea 
 - Deliver the idea through the assigned device: "${partDevice}".
 - NEVER begin with "In this part..." or "Let's explore..."
 
+${CURATOR_VOICE_RULES}
+
 Generate the following fields:
-- title: the part title from the outline
-- hook: 1-2 sentences using the "${hookArchetype}" hook angle. Make it irresistible — the user should NEED to keep reading.
+- title: use the part title above
+- hook: 1-2 sentences using the "${hookArchetype}" hook angle. Create a specific curiosity gap without exaggeration.
 - body: 150-300 words of core content (budget, not quota; stop when the idea lands). Well-structured markdown with paragraph breaks, **bold** for key terms. Deliver through the "${partDevice}" device.
 ${isLast ? '- keyTakeaway: the keyTakeaway here IS the course\'s answer — this is the screenshot-worthy line.' : "- keyTakeaway: your keyTakeaway states this part's NEW piece — do NOT spoil the course's final answer."}
 - bridge: one sentence creating anticipation for the next part. ${isLast ? 'Omit this field — this is the final part.' : 'Make the user genuinely curious about what comes next.'}
@@ -238,7 +249,7 @@ export function buildSingleQuestionPrompt(
     ? 'Target difficulty 1: the question should assume zero prerequisites.'
     : priorKnowledgeLevel === 'intermediate'
     ? 'Target difficulty 2: the question can assume some familiarity but still be broadly accessible.'
-    : 'Target difficulty 3: the question can be complex and push deeper into the topic.';
+    : 'Target difficulty 3: the question can be complex and push deeper into the topic, and may assume familiarity with the fundamentals.';
 
   return `The user selected subtopic "${subtopic}" (category: "${category}").
 The user's knowledge level is "${priorKnowledgeLevel}".
@@ -256,7 +267,6 @@ The question must:
 - Be about a specific, nameable phenomenon — ban survey questions ('How do ecosystems work?')
 - The answer must contain a story or mechanism worth telling, not a one-line fact
 - Be answerable in a 3-6 part course
-- Assume no prerequisites
 - Have an intriguing title that creates a curiosity gap
 - Be max 15 words
 

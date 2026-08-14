@@ -39,6 +39,7 @@ import MessageBubble from '../components/MessageBubble';
 import MarkdownWithCode from '../components/MarkdownWithCode';
 import TypingIndicator from '../components/TypingIndicator';
 import { LEARNING_SECTIONS, LearningCategory, buildCourseOutlinePrompt, buildPartGenerationPrompt, buildSingleQuestionPrompt } from '../constants';
+import { stripJsonFence } from '../utils/structuredJson';
 
 interface TeacherMessage {
   id: string;
@@ -174,16 +175,32 @@ const TEACHER_SYSTEM_PROMPT =
   'You are a helpful, patient teacher. The user is following a structured multi-part learning course. Answer their questions about the material they are studying. Be concise and conversational. If you need more context about what they are learning, ask — but try to be helpful with what you know.';
 
 function tryParseJson<T>(content: string): T | null {
-  let text = content.trim();
-  const fenceMatch = text.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
-  if (fenceMatch) {
-    text = fenceMatch[1].trim();
-  }
   try {
-    return JSON.parse(text) as T;
+    return JSON.parse(stripJsonFence(content)) as T;
   } catch {
     return null;
   }
+}
+
+// Strict single-question validation. New generations must return a JSON object
+// with a non-empty `question` string and a `difficulty` that matches the
+// requested knowledge level. Legacy field aliases (title/teaser/hint) are only
+// accepted by the permissive parsers for persisted data, not here.
+function parseQuestionStrict(parsed: unknown, expectedDifficulty: number): SuggestionCard | null {
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const obj = parsed as Record<string, unknown>;
+  const question = typeof obj.question === 'string' ? obj.question.trim() : '';
+  if (!question) return null;
+  const rawDifficulty = typeof obj.difficulty === 'number' ? Math.max(1, Math.min(3, Math.round(obj.difficulty))) : 0;
+  if (rawDifficulty !== expectedDifficulty) return null;
+  const context = typeof obj.context === 'string' ? obj.context : '';
+  return { question, context, difficulty: rawDifficulty };
+}
+
+function expectedDifficulty(priorKnowledgeLevel: string): number {
+  if (priorKnowledgeLevel === 'beginner') return 1;
+  if (priorKnowledgeLevel === 'advanced') return 3;
+  return 2;
 }
 
 function parseSuggestions(parsed: unknown): SuggestionCard[] | null {
@@ -641,24 +658,23 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
       }
 
       try {
-        const outlineSummary = outline.parts.map((p, i) => `${i + 1}. ${p.title} (${p.hookArchetype}) [${p.device}]`).join('\n');
-
         const coveredParts = outline.parts.slice(0, partNum - 1);
-        const coveredSoFar = coveredParts.length > 0
-          ? coveredParts
-              .map((p, i) => `Part ${i + 1}: ${p.title}\n  Core idea: ${p.coreIdea}\n  New knowledge: ${p.newInformation}`)
-              .join('\n')
-          : '';
+        const coveredTitles = coveredParts.map((p, i) => `${i + 1}. ${p.title}`).join('\n');
+        const nextPart = partNum < outline.parts.length ? outline.parts[partNum] : undefined;
+        const nextPartTitle = nextPart ? nextPart.title : '';
 
         const prompt = buildPartGenerationPrompt(
           partNum,
           outline.parts.length,
           outline.courseTitle,
           selectedQuestionRef.current?.question ?? outline.courseTitle,
-          outlineSummary,
+          outline.answerSpine,
+          outlinePart.title,
+          outlinePart.coreIdea,
           outlinePart.hookArchetype,
           outlinePart.device,
-          coveredSoFar,
+          coveredTitles,
+          nextPartTitle,
         );
 
         const controller = new AbortController();
@@ -672,10 +688,33 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           undefined,
           false,
           controller.signal,
+          { includeCustomInstructions: false },
         );
 
-        const finalContent = accumulated || result.content;
-        const parsed = tryParseJson<unknown>(finalContent);
+        let finalContent = accumulated || result.content;
+        let parsed = tryParseJson<unknown>(finalContent);
+
+        // One repair retry when the model returned malformed JSON.
+        if (parsed === null || typeof parsed !== 'object') {
+          let repairAccumulated = '';
+          const repairResult = await askLlmStream(
+            getDefaultModel(),
+            1.0,
+            [
+              { role: 'system', content: 'You are generating course content. Output ONLY the requested JSON.' },
+              { role: 'user', content: `${prompt}\n\nYour previous response was not valid JSON. Return ONLY the JSON object requested above, with no commentary or markdown.` },
+            ],
+            (token: string): void => { repairAccumulated += token; },
+            undefined,
+            undefined,
+            false,
+            controller.signal,
+            { includeCustomInstructions: false },
+          );
+          finalContent = repairAccumulated || repairResult.content;
+          parsed = tryParseJson<unknown>(finalContent);
+        }
+
         if (parsed !== null && typeof parsed === 'object') {
           const generatedPart = normalizePart(parsed as RawPart, partNum - 1, outlinePart.hookArchetype);
 
@@ -818,7 +857,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
 
   const handleCategoryClick = async (category: LearningCategory, sectionTitle: string): Promise<void> => {
     await incrementCategoryCount(category.id);
-    setCategoryCounts((prev) => ({ ...prev, [category.id]: (prev[category.id] ?? 0) + 1 }));
+    setCategoryCounts((prev) => ({ ...prev, [category.id]: (prev[category.id] || 0) + 1 }));
     setSelectedCategoryLabel(category.label);
     setSelectedCategoryId(category.id);
     setCustomQuestion('');
@@ -875,28 +914,14 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             undefined,
             false,
             controller.signal,
+            { includeCustomInstructions: false },
           );
           const finalContent = accumulated || result.content;
           const parsed = tryParseJson<unknown>(finalContent);
-          if (parsed !== null && typeof parsed === 'object') {
-            const obj = parsed as Record<string, unknown>;
+          const card = parseQuestionStrict(parsed, expectedDifficulty(priorKnowledgeLevel));
+          if (card) {
             setSuggestionSlots((prev) =>
-              prev
-                ? prev.map((s, i) =>
-                    i === index
-                      ? {
-                          status: 'done' as const,
-                          card: {
-                            question: typeof obj.question === 'string' || typeof obj.title === 'string'
-                              ? ((obj.question || obj.title) as string)
-                              : '',
-                            context: typeof obj.context === 'string' ? obj.context : typeof obj.teaser === 'string' ? obj.teaser : '',
-                            difficulty: typeof obj.difficulty === 'number' ? Math.max(1, Math.min(3, Math.round(obj.difficulty))) : 2,
-                          },
-                        }
-                      : s,
-                  )
-                : null,
+              prev ? prev.map((s, i) => (i === index ? { status: 'done' as const, card } : s)) : null,
             );
           } else {
             setSuggestionSlots((prev) =>
@@ -951,28 +976,14 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
             (token: string): void => { accumulated += token; },
             undefined, undefined, false, controller.signal,
+            { includeCustomInstructions: false },
           );
           const finalContent = accumulated || result.content;
           const parsed = tryParseJson<unknown>(finalContent);
-          if (parsed !== null && typeof parsed === 'object') {
-            const obj = parsed as Record<string, unknown>;
+          const card = parseQuestionStrict(parsed, expectedDifficulty(priorKnowledgeLevel));
+          if (card) {
             setSuggestionSlots((prev) =>
-              prev
-                ? prev.map((s, i) =>
-                    i === index
-                      ? {
-                          status: 'done' as const,
-                          card: {
-                            question: typeof obj.question === 'string' || typeof obj.title === 'string'
-                              ? ((obj.question || obj.title) as string)
-                              : '',
-                            context: typeof obj.context === 'string' ? obj.context : typeof obj.teaser === 'string' ? obj.teaser : '',
-                            difficulty: typeof obj.difficulty === 'number' ? Math.max(1, Math.min(3, Math.round(obj.difficulty))) : 2,
-                          },
-                        }
-                      : s,
-                  )
-                : null,
+              prev ? prev.map((s, i) => (i === index ? { status: 'done' as const, card } : s)) : null,
             );
           } else {
             setSuggestionSlots((prev) =>
@@ -1037,28 +1048,14 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                 [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
                 (token: string): void => { accumulated += token; },
                 undefined, undefined, false, controller.signal,
+                { includeCustomInstructions: false },
               );
               const finalContent = accumulated || result.content;
               const parsed = tryParseJson<unknown>(finalContent);
-              if (parsed !== null && typeof parsed === 'object') {
-                const obj = parsed as Record<string, unknown>;
+              const card = parseQuestionStrict(parsed, expectedDifficulty(priorKnowledgeLevel));
+              if (card) {
                 setSuggestionSlots((prev) =>
-                  prev
-                    ? prev.map((s, i) =>
-                        i === index
-                          ? {
-                              status: 'done' as const,
-                              card: {
-                                question: typeof obj.question === 'string' || typeof obj.title === 'string'
-                                  ? ((obj.question || obj.title) as string)
-                                  : '',
-                                context: typeof obj.context === 'string' ? obj.context : typeof obj.teaser === 'string' ? obj.teaser : '',
-                                difficulty: typeof obj.difficulty === 'number' ? Math.max(1, Math.min(3, Math.round(obj.difficulty))) : 2,
-                              },
-                            }
-                          : s,
-                      )
-                    : null,
+                  prev ? prev.map((s, i) => (i === index ? { status: 'done' as const, card } : s)) : null,
                 );
               } else {
                 setSuggestionSlots((prev) =>
@@ -1234,6 +1231,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
         teacherModel, 1.0, llmMessages,
         (token: string): void => { accumulated += token; setTeacherStreaming(accumulated); },
         undefined, undefined, false, controller.signal,
+        { includeCustomInstructions: false },
       );
 
       const finalContent = accumulated || result.content;
@@ -1486,7 +1484,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                               title="Regenerate this question">
                               <RefreshIcon sx={{ fontSize: '0.9rem' }} />
                             </IconButton>
-                            <IconButton size="small" onClick={(e): void => { e.stopPropagation(); handleBanQuestion(selectedCategoryId, slot.card!.question, idx); }}
+                            <IconButton size="small" onClick={(e): void => { e.stopPropagation(); handleBanQuestion(selectedCategoryId, slot.card?.question ?? '', idx); }}
                               title="Ban this question from appearing again">
                               <VisibilityOffIcon sx={{ fontSize: '0.9rem' }} />
                             </IconButton>

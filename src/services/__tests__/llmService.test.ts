@@ -819,6 +819,50 @@ describe('askLlm — non-streaming API calls', () => {
 
     expect(result.promptTokensDetails?.cached_tokens).toBe(60);
   });
+
+  it('prepends custom instructions by default', async () => {
+    mockAuthGetState.mockReturnValue({ customInstructions: 'Be concise.', maxContextTokens: 16000 });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> =>
+        Promise.resolve({
+          choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+    } as unknown as Response);
+
+    const { askLlm } = await import('../llmService');
+    await askLlm(model, 0.7, [user('Hi')]);
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as { messages: { role: string; content: string | null }[] };
+    expect(body.messages[0]).toEqual({ role: 'system', content: 'Be concise.' });
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+
+  it('omits custom instructions when includeCustomInstructions is false', async () => {
+    mockAuthGetState.mockReturnValue({ customInstructions: 'Be concise.', maxContextTokens: 16000 });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> =>
+        Promise.resolve({
+          choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+        }),
+    } as unknown as Response);
+
+    const { askLlm } = await import('../llmService');
+    await askLlm(model, 0.7, [user('Hi')], undefined, undefined, undefined, { includeCustomInstructions: false });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as { messages: { role: string; content: string | null }[] };
+    expect(body.messages[0]).toEqual({ role: 'user', content: 'Hi' });
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
 });
 
 describe('askLlmStream — streaming API calls', () => {

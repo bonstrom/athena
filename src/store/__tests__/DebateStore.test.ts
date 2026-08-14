@@ -252,6 +252,29 @@ describe('DebateStore – sendDebateRound happy path', () => {
     expect(mockAskLlmStream).toHaveBeenCalledTimes(7);
   });
 
+  it('review prompt uses the structured rubric', async () => {
+    await useDebateStore.getState().sendDebateRound('What is AI?', 'topic-1');
+
+    const reviewMessages = mockAskLlmStream.mock.calls[2][2] as { role: string; content: string }[];
+    const reviewPrompt = reviewMessages.find((m) => m.role === 'user')?.content ?? '';
+    expect(reviewPrompt).toContain('Strongest supported point');
+    expect(reviewPrompt).toContain('Errors or unsupported assumptions');
+    expect(reviewPrompt).toContain('Highest-value correction');
+  });
+
+  it('consensus prompt anonymizes answers and uses a stable format', async () => {
+    await useDebateStore.getState().sendDebateRound('What is AI?', 'topic-1');
+
+    const consensusMessages = mockAskLlmStream.mock.calls[6][2] as { role: string; content: string }[];
+    const consensusPrompt = consensusMessages.find((m) => m.role === 'user')?.content ?? '';
+    expect(consensusPrompt).toContain('**Answer 1:**');
+    expect(consensusPrompt).toContain('**Answer 2:**');
+    expect(consensusPrompt).not.toContain('Model A');
+    expect(consensusPrompt).toContain('**Common ground:**');
+    expect(consensusPrompt).toContain('**Remaining disagreement:**');
+    expect(consensusPrompt).toContain('**Bottom line:**');
+  });
+
   it('persists user message and 6 assistant placeholders (+ 1 consensus)', async () => {
     await useDebateStore.getState().sendDebateRound('What is AI?', 'topic-1');
 

@@ -19,7 +19,7 @@ import {
 import { generateImage, generateMusic, speakText } from '../services/mediaService';
 import { stripMarkdown } from '../utils/stripMarkdown';
 import { llmSuggestionService } from '../services/llmSuggestionService';
-import { Message, Attachment } from '../database/AthenaDb';
+import { Message, Attachment, Topic } from '../database/AthenaDb';
 import { athenaDb } from '../database/AthenaDb';
 import { BackupService } from '../services/backupService';
 import { rollupAnalytics } from '../services/analyticsRollupService';
@@ -29,6 +29,7 @@ import { useCuratorStore } from './CuratorStore';
 
 import { LATEX_INSTRUCTIONS, SVG_INSTRUCTIONS, SVG_EDIT_INSTRUCTIONS, SCRATCHPAD_LIMIT, SHORTENED_ID_LENGTH, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS, CURATOR_SYSTEM_PROMPT } from '../constants';
 import { normalizeSvgDocument, replaceSvgBlockInMessage } from '../utils/svgEdit';
+import { parseStringArray } from '../utils/structuredJson';
 
 /**
  * Heuristic: detect when the LLM response is primarily a clarification question
@@ -49,6 +50,88 @@ function looksLikeClarificationQuestion(text: string): boolean {
   const clarificationPatterns =
     /\b(clarif|specify|which|what (do|would|are|is|did)|could you (tell|let|provide|share|specify)|more (context|information|details)|what.*(mean|refer)|need.*(know|more|information|context|detail))\b/i;
   return clarificationPatterns.test(trimmed);
+}
+
+interface ChatSystemEntry {
+  content: string;
+  sourceLabel: string;
+}
+
+interface AssembleChatSystemOptions {
+  topic: Topic | undefined;
+  selectedModel: ChatModel;
+  webSearchEnabled: boolean;
+  supportsWebSearch: boolean;
+  askUserEnabled: boolean;
+  messageRetrievalEnabled: boolean;
+  svgGenerationEnabled: boolean;
+  scratchpadRulesTemplate: string;
+  predefinedPrompts: { id: string; name: string; content: string }[];
+  selectedPromptIds: string[];
+}
+
+/**
+ * Single source of truth for the ordered system prompts sent on every chat
+ * request. Both the runtime request path (sendMessageStream) and the context
+ * inspector (buildFullContext) consume this so the inspector can never drift
+ * from what is actually sent. Custom instructions are intentionally omitted —
+ * they are injected separately (by buildPayload at runtime, and shown as their
+ * own entry in the inspector).
+ */
+async function assembleChatSystemEntries(opts: AssembleChatSystemOptions): Promise<ChatSystemEntry[]> {
+  const entries: ChatSystemEntry[] = [];
+
+  if (opts.topic?.mode === 'curator') {
+    const curatorState = useCuratorStore.getState();
+    const { ratingsContext, completedCourseNames } = await curatorState.getPastRatingsForContext();
+    entries.push({
+      content: `${CURATOR_SYSTEM_PROMPT}\n\n${ratingsContext}${completedCourseNames ? `\n\n${completedCourseNames}` : ''}`,
+      sourceLabel: 'Curator Instructions',
+    });
+  }
+
+  entries.push({ content: LATEX_INSTRUCTIONS, sourceLabel: 'Formatting' });
+
+  if (opts.svgGenerationEnabled) {
+    entries.push({ content: SVG_INSTRUCTIONS, sourceLabel: 'SVG' });
+  }
+
+  const rawScratchpadRules = (opts.topic?.scratchpad ? opts.scratchpadRulesTemplate : SHORT_SCRATCHPAD_RULES).replace(
+    '{{SCRATCHPAD_LIMIT}}',
+    String(SCRATCHPAD_LIMIT),
+  );
+  const scratchpadRulesOnly = opts.selectedModel.supportsTools
+    ? rawScratchpadRules
+    : `${rawScratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`;
+  entries.push({ content: scratchpadRulesOnly, sourceLabel: 'Scratchpad Rules' });
+  if (opts.topic?.scratchpad) {
+    entries.push({ content: opts.topic.scratchpad, sourceLabel: 'Scratchpad Content' });
+  }
+
+  if (opts.webSearchEnabled && opts.supportsWebSearch) {
+    entries.push({
+      content:
+        'Web search is available in this conversation. Search the internet whenever you need current or factual information you are not fully confident about.',
+      sourceLabel: 'Web Search Instructions',
+    });
+  }
+
+  if (opts.askUserEnabled) {
+    entries.push({ content: ASK_USER_INSTRUCTIONS, sourceLabel: 'Ask User Instructions' });
+  }
+
+  if (opts.messageRetrievalEnabled) {
+    entries.push({ content: MESSAGE_RETRIEVAL_INSTRUCTIONS, sourceLabel: 'Message Retrieval Instructions' });
+  }
+
+  if (opts.selectedPromptIds.length > 0) {
+    const selectedPrompts = opts.predefinedPrompts.filter((p) => opts.selectedPromptIds.includes(p.id));
+    for (const p of selectedPrompts) {
+      entries.push({ content: p.content, sourceLabel: `Predefined Prompt: ${p.name}` });
+    }
+  }
+
+  return entries;
 }
 
 export interface PendingUserQuestion {
@@ -271,9 +354,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const providerStoreState = useProviderStore.getState();
     const topic = topicStoreState.topics.find((t) => t.id === topicId);
     const customInstructions = authStoreState.customInstructions.trim();
-    const askUserEnabled = authStoreState.askUserEnabled;
-    const messageRetrievalEnabled = authStoreState.messageRetrievalEnabled;
-    const allPrompts = authStoreState.predefinedPrompts;
     const scratchpadRulesTemplate = authStoreState.scratchpadRules;
     const selectedProvider = providerStoreState.getProviderForModel(selectedModel);
 
@@ -285,73 +365,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     entries.push({ message: { role: 'system', content: customInstructions }, sourceLabel: 'Custom Instructions' });
   }
 
-  // System: Curator mode prompt (replaces custom instructions for curator topics)
-  if (topic?.mode === 'curator') {
-    const curatorState = useCuratorStore.getState();
-    const { ratingsContext, completedCourseNames } = await curatorState.getPastRatingsForContext();
-    entries.push({
-      message: { role: 'system', content: `${CURATOR_SYSTEM_PROMPT}\n\n${ratingsContext}${completedCourseNames ? `\n\n${completedCourseNames}` : ''}` },
-      sourceLabel: 'Curator Instructions',
-    });
+  // Shared system prompts — identical to what sendMessageStream actually sends
+  const systemEntries = await assembleChatSystemEntries({
+    topic,
+    selectedModel,
+    webSearchEnabled,
+    supportsWebSearch: !!selectedProvider?.supportsWebSearch,
+    askUserEnabled: authStoreState.askUserEnabled,
+    messageRetrievalEnabled: authStoreState.messageRetrievalEnabled,
+    svgGenerationEnabled: authStoreState.svgGenerationEnabled,
+    scratchpadRulesTemplate,
+    predefinedPrompts: authStoreState.predefinedPrompts,
+    selectedPromptIds: topic?.selectedPromptIds ?? [],
+  });
+  for (const e of systemEntries) {
+    entries.push({ message: { role: 'system', content: e.content }, sourceLabel: e.sourceLabel });
   }
-
-  // System: LaTeX formatting instructions
-  entries.push({ message: { role: 'system', content: LATEX_INSTRUCTIONS }, sourceLabel: 'Formatting' });
-
-  // System: SVG visualization instructions
-  if (authStoreState.svgGenerationEnabled) {
-    entries.push({ message: { role: 'system', content: SVG_INSTRUCTIONS }, sourceLabel: 'SVG' });
-  }
-
-  // System: Scratchpad rules + content (shown as two entries for clarity in the inspector)
-  const rawScratchpadRules = (topic?.scratchpad ? scratchpadRulesTemplate : SHORT_SCRATCHPAD_RULES).replace(
-    '{{SCRATCHPAD_LIMIT}}',
-    String(SCRATCHPAD_LIMIT),
-  );
-  const scratchpadRulesOnly = selectedModel.supportsTools
-    ? rawScratchpadRules
-    : `${rawScratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`;
-  entries.push({ message: { role: 'system', content: scratchpadRulesOnly }, sourceLabel: 'Scratchpad Rules' });
-  if (topic?.scratchpad) {
-    entries.push({ message: { role: 'system', content: topic.scratchpad }, sourceLabel: 'Scratchpad Content' });
-  }
-
-  // System: Web search instructions
-  if (webSearchEnabled && selectedProvider?.supportsWebSearch) {
-      entries.push({
-        message: {
-          role: 'system',
-          content:
-            'Web search is available in this conversation. Search the internet whenever you need current or factual information you are not fully confident about.',
-        },
-        sourceLabel: 'Web Search Instructions',
-      });
-    }
-
-    // System: Ask-user clarification instructions
-    if (askUserEnabled) {
-      entries.push({
-        message: { role: 'system', content: ASK_USER_INSTRUCTIONS },
-        sourceLabel: 'Ask User Instructions',
-      });
-    }
-
-    // System: Message retrieval instructions
-    if (messageRetrievalEnabled) {
-      entries.push({
-        message: { role: 'system', content: MESSAGE_RETRIEVAL_INSTRUCTIONS },
-        sourceLabel: 'Message Retrieval Instructions',
-      });
-    }
-
-    // System: Predefined prompts
-    const selectedPromptIds = topic?.selectedPromptIds ?? [];
-    if (selectedPromptIds.length > 0) {
-      const selectedPrompts = allPrompts.filter((p) => selectedPromptIds.includes(p.id));
-      for (const p of selectedPrompts) {
-        entries.push({ message: { role: 'system', content: p.content }, sourceLabel: `Predefined Prompt: ${p.name}` });
-      }
-    }
 
     // Conversation messages
     for (const m of existingContext) {
@@ -661,6 +690,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       ],
       undefined,
       onReasoning,
+      undefined,
+      undefined,
+      undefined,
+      { includeCustomInstructions: false },
     );
 
     const newSvg = normalizeSvgDocument(result.content);
@@ -773,48 +806,28 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       };
     });
 
-    const systems: LlmMessage[] = [];
-
-    // System: LaTeX formatting instructions
-    systems.push({ role: 'system', content: LATEX_INSTRUCTIONS });
-
-    // System: SVG visualization instructions
-    if (useAuthStore.getState().svgGenerationEnabled) {
-      systems.push({ role: 'system', content: SVG_INSTRUCTIONS });
-    }
-
-    const rawScratchpadRules = (refreshedTopic.scratchpad ? useAuthStore.getState().scratchpadRules : SHORT_SCRATCHPAD_RULES).replace(
-      '{{SCRATCHPAD_LIMIT}}',
-      String(SCRATCHPAD_LIMIT),
-    );
-    const scratchpadRules = refreshedTopic.scratchpad ? `${rawScratchpadRules}\n\n[Current Scratchpad Content]:\n${refreshedTopic.scratchpad}` : rawScratchpadRules;
-
-    if (effectiveModel.supportsTools) {
-      systems.push({ role: 'system', content: scratchpadRules });
-    } else {
-      systems.push({
-        role: 'system',
-        content: `${scratchpadRules}\n\nTo update the scratchpad without tools, include \`<!-- persist: your note here -->\` to append or \`<!-- replace: your new content here -->\` to overwrite.`,
-      });
-    }
-
     const selectedProvider = useProviderStore.getState().getProviderForModel(effectiveModel);
-    if (get().webSearchEnabled && selectedProvider?.supportsWebSearch) {
-      systems.push({
-        role: 'system',
-        content:
-          'Web search is available in this conversation. Search the internet whenever you need current or factual information you are not fully confident about.',
-      });
-    }
 
-    const selectedPromptIds = refreshedTopic.selectedPromptIds ?? [];
-    if (selectedPromptIds.length > 0) {
-      const allPrompts = useAuthStore.getState().predefinedPrompts;
-      const selectedPrompts = allPrompts.filter((p) => selectedPromptIds.includes(p.id));
-      for (const p of selectedPrompts) {
-        systems.push({ role: 'system', content: p.content });
+    // Shared system prompts — identical to what the context inspector shows
+    const systemEntries = await assembleChatSystemEntries({
+      topic: refreshedTopic,
+      selectedModel: effectiveModel,
+      webSearchEnabled: get().webSearchEnabled,
+      supportsWebSearch: !!selectedProvider?.supportsWebSearch,
+      askUserEnabled: useAuthStore.getState().askUserEnabled,
+      messageRetrievalEnabled: useAuthStore.getState().messageRetrievalEnabled,
+      svgGenerationEnabled: useAuthStore.getState().svgGenerationEnabled,
+      scratchpadRulesTemplate: useAuthStore.getState().scratchpadRules,
+      predefinedPrompts: useAuthStore.getState().predefinedPrompts,
+      selectedPromptIds: refreshedTopic.selectedPromptIds ?? [],
+    });
+
+    const systems: LlmMessage[] = systemEntries.map((e) => {
+      if (e.sourceLabel === 'Scratchpad Content') {
+        return { role: 'system', content: `[Current Scratchpad Content]:\n${e.content}` };
       }
-    }
+      return { role: 'system', content: e.content };
+    });
 
     llmContext.unshift(...systems);
 
@@ -1369,17 +1382,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 `<|im_start|>assistant\n<think>\n</think>\n`;
               const raw = await (llmSuggestionService.getCompletion as (p: string, t: number) => Promise<string>)(prompt, 150);
               if (raw.trim()) {
-                const jsonMatch = raw.match(/\[[\s\S]*?\]/);
-                if (jsonMatch) {
-                  try {
-                    const parsed = JSON.parse(jsonMatch[0]) as unknown;
-                    if (Array.isArray(parsed) && parsed.every((s) => typeof s === 'string')) {
-                      suggestions = (parsed as string[]).slice(0, 3);
-                    }
-                  } catch {
-                    // fall through to line splitting
-                  }
-                }
+                suggestions = parseStringArray(raw)?.slice(0, 3) ?? null;
                 if (!suggestions) {
                   const lines = raw
                     .split(/\n|\d+[.)]/)
@@ -1395,21 +1398,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                   ? selectedModel
                   : (useProviderStore.getState().models.find((m) => m.id === replyPredictionModel || m.apiModelId === replyPredictionModel) ??
                     selectedModel);
-              const result = await askLlm(targetModel, 0.7, suggestionContext);
+              const result = await askLlm(targetModel, 0.7, suggestionContext, undefined, undefined, undefined, { includeCustomInstructions: false });
               const raw = result.content.trim();
-              const jsonMatch = raw.match(/\[[\s\S]*\]/);
-              if (jsonMatch) {
-                const parsed = JSON.parse(jsonMatch[0]) as unknown;
-                if (Array.isArray(parsed) && parsed.every((s) => typeof s === 'string')) {
-                  suggestions = (parsed as string[]).slice(0, 3);
-                }
-              }
+              suggestions = parseStringArray(raw)?.slice(0, 3) ?? null;
 
               // ── Verification: Reply prediction ──
-              if (!jsonMatch) console.warn('[verify:replies] Failed to parse JSON array from response:', raw.slice(0, 200));
-              else if (!suggestions || suggestions.length === 0)
+              if (!suggestions) console.warn('[verify:replies] Failed to parse JSON array from response:', raw.slice(0, 200));
+              else if (suggestions.length === 0)
                 console.warn('[verify:replies] Parsed JSON but got 0 suggestions:', raw.slice(0, 200));
-              else               if (suggestions.length < 3) console.warn('[verify:replies] Expected 3 suggestions, got %d', suggestions.length);
+              else if (suggestions.length < 3) console.warn('[verify:replies] Expected 3 suggestions, got %d', suggestions.length);
             }
 
             if (suggestions && suggestions.length > 0) {
@@ -1590,7 +1587,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               { role: 'system', content: `Reply with a short summary of about ${summaryWordLimit} words. No explanation, just the summary.` },
               { role: 'user', content: `Summarize this:\n\n${safeContent}` },
             ];
-        const result = await askLlm(cloudModel, 0.3, messages);
+        const result = await askLlm(cloudModel, 0.3, messages, undefined, undefined, undefined, { includeCustomInstructions: false });
         rawSummary = result.content;
         summaryTokens = result.promptTokens + result.completionTokens;
         summaryCost = calculateCostSEK(cloudModel, result.promptTokens, result.completionTokens, result.promptTokensDetails, getPeakMultiplier(cloudModel));

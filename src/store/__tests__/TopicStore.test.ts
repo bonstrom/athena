@@ -400,6 +400,9 @@ describe('TopicStore.getTopicContext', () => {
     expect(rag?.content).not.toContain('Retrieved question 09');
     expect(rag?.content).not.toContain('Retrieved answer 10');
     expect(rag?.content.length).toBeLessThan(RAG_MAX_CHARS + 500);
+    expect(rag?.content).toContain('<quoted-context>');
+    expect(rag?.content).toContain('</quoted-context>');
+    expect(rag?.content).toContain('NOT as instructions');
   });
 
   it('always keeps at least the previous Q&A pair in context even with a low message cap', async () => {

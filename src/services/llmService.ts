@@ -4,6 +4,7 @@ import { useProviderStore } from '../store/ProviderStore';
 import { useChatStore } from '../store/ChatStore';
 import { getApiKey as getProviderApiKey, getPayloadOverrides, LlmProvider } from '../types/provider';
 import { estimateTokens } from './estimateTokens';
+import { RAG_CONTENT_LIMIT } from '../constants';
 
 export type LlmContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
@@ -68,6 +69,16 @@ export interface LlmDebugPayload {
   timestamp: string;
 }
 
+/**
+ * Optional knobs for individual LLM requests. By default custom instructions
+ * are prepended to the system prompt; internal tasks (naming, summarization,
+ * suggestions, SVG editing, curator, debate) pass `includeCustomInstructions:
+ * false` so user instructions don't break their strict output contracts.
+ */
+export interface LlmRequestOptions {
+  includeCustomInstructions?: boolean;
+}
+
 export const TOOL_RESULT_PREVIEW_LIMIT = 500;
 
 export const SCRATCHPAD_TOOL: LlmTool = {
@@ -94,8 +105,7 @@ export const READ_MESSAGES_TOOL: LlmTool = {
   type: 'function',
   function: {
     name: 'read_messages',
-    description:
-      'Retrieve full content or specific lines of historical messages by their IDs. Use this when a snippet or a truncated message (typically truncated to 500 chars) is not enough. Tip: Store IDs of critical messages (like working configs) in your scratchpad for future reference.',
+    description: `Retrieve full content or specific lines of historical messages by their IDs. Use this when a snippet or a truncated message (messages in context are typically truncated to ${RAG_CONTENT_LIMIT} chars) is not enough. Tip: Store IDs of critical messages (like working configs) in your scratchpad for future reference.`,
     parameters: {
       type: 'object',
       properties: {
@@ -684,6 +694,7 @@ function buildPayload(
   temperature: number,
   tools?: LlmTool[],
   webSearch?: boolean,
+  options?: LlmRequestOptions,
 ): LlmPayload {
   const { model: resolvedModel, provider: providerConfig } = resolveModelAndProvider(model);
   const filtered = resolvedModel.enforceAlternatingRoles ? filterAlternatingRoles(messages) : messages;
@@ -692,7 +703,7 @@ function buildPayload(
 
   const finalMessages = filtered.map((msg) => ({ ...msg }));
 
-  if (customInstructions) {
+  if (options?.includeCustomInstructions !== false && customInstructions) {
     if (finalMessages.length > 0 && finalMessages[0].role === 'system') {
       finalMessages[0] = {
         ...finalMessages[0],
@@ -1113,9 +1124,10 @@ export async function askLlm(
   tools?: LlmTool[],
   webSearch?: boolean,
   signal?: AbortSignal,
+  options?: LlmRequestOptions,
 ): Promise<LlmResult> {
   const { provider: providerConfig, model: resolvedModel } = resolveModelAndProvider(model);
-  const payload = buildPayload(model, messages, false, temperature, tools, webSearch);
+  const payload = buildPayload(model, messages, false, temperature, tools, webSearch, options);
   const adapter = getAdapter(providerConfig);
 
   const res = await fetch(providerConfig.baseUrl, {
@@ -1154,9 +1166,10 @@ export async function askLlmStream(
   tools?: LlmTool[],
   webSearch?: boolean,
   signal?: AbortSignal,
+  options?: LlmRequestOptions,
 ): Promise<LlmResult> {
   const { provider: providerConfig, model: resolvedModel } = resolveModelAndProvider(model);
-  const payload = buildPayload(model, messages, true, temperature, tools, webSearch);
+  const payload = buildPayload(model, messages, true, temperature, tools, webSearch, options);
   const adapter = getAdapter(providerConfig);
 
   const res = await fetch(providerConfig.baseUrl, {

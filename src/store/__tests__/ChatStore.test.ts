@@ -396,6 +396,40 @@ describe('ChatStore', () => {
     expect(assistant?.content).toBe('Hello there');
   });
 
+  it('sendMessageStream includes ask-user and retrieval instructions at runtime', async () => {
+    jest.mocked(calculateCostSEK).mockReturnValue(1);
+    mockAuthGetState.mockReturnValue({
+      customInstructions: '',
+      scratchpadRules: 'Rules',
+      predefinedPrompts: [],
+      messageRetrievalEnabled: true,
+      askUserEnabled: true,
+      aiSummaryEnabled: false,
+      replyPredictionEnabled: false,
+      replyPredictionModel: 'same',
+      llmModelSelected: 'qwen3.5-0.8b',
+      llmModelDownloadStatus: {},
+    });
+
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: 'ok',
+      totalPromptTokens: 1,
+      totalCompletionTokens: 1,
+      totalCachedTokens: 0,
+      totalCacheCreationTokens: 0,
+      totalSearchCount: 0,
+      toolLoopTrace: [],
+      lastResult: { content: 'ok', rawContent: 'ok', promptTokens: 1, completionTokens: 1, searchCount: 0 },
+    });
+
+    await useChatStore.getState().sendMessageStream('Hello', 'topic-1');
+
+    const llmContext = mockOrchestrateLlmLoop.mock.calls[0][2] as { role: string; content: string | unknown[] }[];
+    const contents = llmContext.map((m) => (typeof m.content === 'string' ? m.content : ''));
+    expect(contents.some((c) => c.includes('decision hierarchy'))).toBe(true);
+    expect(contents.some((c) => c.includes('list_messages and read_messages tools'))).toBe(true);
+  });
+
   it('stopSending aborts, deletes pending user/assistant messages, and returns user content', async () => {
     const abortController = new AbortController();
 
