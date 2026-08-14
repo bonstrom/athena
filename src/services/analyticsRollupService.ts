@@ -3,35 +3,42 @@ import { useProviderStore } from '../store/ProviderStore';
 
 const ROLLUP_MARKER_KEY = 'analyticsRollupMarker';
 const ROLLUP_LAST_ID_KEY = 'analyticsRollupLastId';
+const OWNERSHIP_REBUILT_FLAG = 'analyticsOwnershipRebuilt';
 const MAX_LATENCY_SAMPLES = 300;
 
 function getDateString(iso: string): string {
   return iso.slice(0, 10);
 }
 
-function getRollupMarker(): string {
+function readStringSetting(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+async function getRollupState(): Promise<{ marker: string; lastId: string }> {
   try {
-    return localStorage.getItem(ROLLUP_MARKER_KEY) ?? '';
+    const markerSetting = await athenaDb.userSettings.get(ROLLUP_MARKER_KEY);
+    const lastIdSetting = await athenaDb.userSettings.get(ROLLUP_LAST_ID_KEY);
+    return {
+      marker: readStringSetting(markerSetting?.value),
+      lastId: readStringSetting(lastIdSetting?.value),
+    };
   } catch {
-    return '';
+    return { marker: '', lastId: '' };
   }
 }
 
-function getRollupLastId(): string {
-  try {
-    return localStorage.getItem(ROLLUP_LAST_ID_KEY) ?? '';
-  } catch {
-    return '';
-  }
-}
+// Serializes rollup/rebuild runs so overlapping invocations cannot process the
+// same message window twice. Tasks are chained onto a promise queue that never
+// rejects, so a failed run never wedges subsequent runs.
+let rollupQueue: Promise<unknown> = Promise.resolve();
 
-function setRollupState(marker: string, lastId: string): void {
-  try {
-    localStorage.setItem(ROLLUP_MARKER_KEY, marker);
-    localStorage.setItem(ROLLUP_LAST_ID_KEY, lastId);
-  } catch {
-    // non-critical
-  }
+function enqueueRollup(task: () => Promise<void>): Promise<void> {
+  const run = rollupQueue.then(task);
+  rollupQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 export function resolveProviderName(modelApiId: string | undefined): string | null {
@@ -149,9 +156,8 @@ function createEmptySnapshot(date: string): PopulatedSnapshot {
   };
 }
 
-export async function rollupAnalytics(): Promise<void> {
-  const marker = getRollupMarker();
-  const lastId = getRollupLastId();
+async function runRollup(): Promise<void> {
+  const { marker, lastId } = await getRollupState();
 
   const messages = marker
     ? await athenaDb.messages.where('created').aboveOrEqual(marker).toArray()
@@ -219,13 +225,79 @@ export async function rollupAnalytics(): Promise<void> {
     }
   }
 
-  for (const snap of groupedByDate.values()) {
-    const existing = await athenaDb.analyticsSnapshots.get(snap.date);
-    const merged = existing ? mergeSnapshots(existing, snap) : snap;
-    await athenaDb.analyticsSnapshots.put(merged);
-  }
+  // Commit snapshots and advance the marker in a single transaction so the
+  // marker can never move ahead of the snapshots it describes.
+  await athenaDb.transaction('rw', [athenaDb.analyticsSnapshots, athenaDb.userSettings], async () => {
+    for (const snap of groupedByDate.values()) {
+      const existing = await athenaDb.analyticsSnapshots.get(snap.date);
+      const merged = existing ? mergeSnapshots(existing, snap) : snap;
+      await athenaDb.analyticsSnapshots.put(merged);
+    }
+    await athenaDb.userSettings.put({ id: ROLLUP_MARKER_KEY, value: latestCreated });
+    await athenaDb.userSettings.put({ id: ROLLUP_LAST_ID_KEY, value: latestId });
+  });
+}
 
-  setRollupState(latestCreated, latestId);
+export function rollupAnalytics(): Promise<void> {
+  return enqueueRollup(runRollup);
+}
+
+/**
+ * One-time repair for the analytics ownership bug: user and assistant messages
+ * used to both carry the request's cost/cache usage, inflating totals. This
+ * zeroes cost/cache on user messages, rebuilds derived snapshots from scratch,
+ * and resets the rollup marker. Guarded by a userSettings flag so it runs once.
+ */
+export async function rebuildAnalyticsOwnership(): Promise<void> {
+  return enqueueRollup(async () => {
+    let alreadyRebuilt = false;
+    try {
+      const flag = await athenaDb.userSettings.get(OWNERSHIP_REBUILT_FLAG);
+      alreadyRebuilt = flag?.value === true;
+    } catch {
+      // If the flag can't be read, attempt the rebuild anyway.
+    }
+
+    if (alreadyRebuilt) return;
+
+    // 1. Correct ownership: zero cost/cache on user messages (assistant owns them).
+    await athenaDb.messages
+      .filter(
+        (m) =>
+          m.type === 'user' &&
+          (m.totalCost !== 0 || m.cachedTokens !== undefined || m.cacheCreationTokens !== undefined),
+      )
+      .modify((m) => {
+        m.totalCost = 0;
+        m.cachedTokens = 0;
+        m.cacheCreationTokens = 0;
+      });
+
+    // 2. Reset derived snapshots + marker so the rollup rebuilds from scratch.
+    await athenaDb.transaction('rw', [athenaDb.analyticsSnapshots, athenaDb.userSettings], async () => {
+      await athenaDb.analyticsSnapshots.clear();
+      await athenaDb.userSettings.put({ id: ROLLUP_MARKER_KEY, value: '' });
+      await athenaDb.userSettings.put({ id: ROLLUP_LAST_ID_KEY, value: '' });
+    });
+
+    // Clear the legacy localStorage marker used before the Dexie migration.
+    try {
+      localStorage.removeItem('analyticsRollupMarker');
+      localStorage.removeItem('analyticsRollupLastId');
+    } catch {
+      // non-critical
+    }
+
+    // 3. Rebuild derived snapshots from the corrected messages.
+    await runRollup();
+
+    // 4. Mark the rebuild complete (best-effort — retried on next startup if this fails).
+    try {
+      await athenaDb.userSettings.put({ id: OWNERSHIP_REBUILT_FLAG, value: true });
+    } catch {
+      // non-critical
+    }
+  });
 }
 
 export function idleDeferredRollup(): void {

@@ -209,6 +209,56 @@ describe('orchestrateLlmLoop — tool calls', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
+  it('accumulates cached tokens across tool-loop iterations', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-1',
+          model: model.apiModelId,
+          choices: [
+            {
+              finish_reason: 'tool_calls',
+              message: {
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call-1',
+                    type: 'function',
+                    function: { name: 'read_messages', arguments: '{"messages":[{"messageId":"abc"}]}' },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 3, prompt_tokens_details: { cached_tokens: 60 } },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-2',
+          model: model.apiModelId,
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: { content: 'Final answer after tool result' },
+            },
+          ],
+          usage: { prompt_tokens: 11, completion_tokens: 6, prompt_tokens_details: { cached_tokens: 40 } },
+        }),
+      );
+
+    const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('Tool output payload'));
+
+    const result = await orchestrateLlmLoop(model, 0.7, [user('Hi')], undefined, undefined, undefined, onExecuteTool);
+
+    expect(result.totalCachedTokens).toBe(100);
+    expect(result.totalPromptTokens).toBe(21);
+    expect(result.totalCompletionTokens).toBe(9);
+  });
+
   it('caches duplicate tool calls within a single iteration', async () => {
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });

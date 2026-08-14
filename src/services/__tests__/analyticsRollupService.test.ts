@@ -8,8 +8,14 @@ const mockWhereCreated = jest.fn<{ aboveOrEqual: (marker: string) => { toArray: 
 const mockSnapshotGet = jest.fn<Promise<AnalyticsSnapshot | undefined>, [string]>();
 const mockSnapshotPut = jest.fn<Promise<string>, [AnalyticsSnapshot]>();
 const mockSnapshotToArray = jest.fn<Promise<AnalyticsSnapshot[]>, []>();
+const mockSnapshotClear = jest.fn<Promise<void>, []>();
 
 const mockMessagesSortBy = jest.fn().mockResolvedValue([]);
+const mockMessagesModify = jest.fn<Promise<void>, [(m: Message) => void]>();
+const mockTransaction = jest.fn<Promise<unknown>, [string, unknown[], () => Promise<unknown>]>();
+const userSettingsStore = new Map<string, unknown>();
+const mockUserSettingsGet = jest.fn<Promise<{ id: string; value: unknown } | undefined>, [string]>();
+const mockUserSettingsPut = jest.fn<Promise<string>, [{ id: string; value: unknown }]>();
 
 jest.mock('../../database/AthenaDb', () => ({
   athenaDb: {
@@ -26,11 +32,13 @@ jest.mock('../../database/AthenaDb', () => ({
           }),
         };
       },
+      filter: () => ({ modify: (mutator: (m: Message) => void): Promise<void> => mockMessagesModify(mutator) }),
     },
     analyticsSnapshots: {
       get: (date: string): Promise<AnalyticsSnapshot | undefined> => mockSnapshotGet(date),
       put: (snap: AnalyticsSnapshot): Promise<string> => mockSnapshotPut(snap),
       toArray: (): Promise<AnalyticsSnapshot[]> => mockSnapshotToArray(),
+      clear: (): Promise<void> => mockSnapshotClear(),
       orderBy: (): { reverse: () => { limit: (n: number) => { toArray: () => Promise<AnalyticsSnapshot[]> } } } => ({
         reverse: () => ({
           limit: (n: number) => ({
@@ -39,6 +47,12 @@ jest.mock('../../database/AthenaDb', () => ({
         }),
       }),
     },
+    userSettings: {
+      get: (id: string): Promise<{ id: string; value: unknown } | undefined> => mockUserSettingsGet(id),
+      put: (setting: { id: string; value: unknown }): Promise<string> => mockUserSettingsPut(setting),
+    },
+    transaction: (mode: string, tables: unknown[], scope: () => Promise<unknown>): Promise<unknown> =>
+      mockTransaction(mode, tables, scope),
   },
   AnalyticsSnapshot: {} as unknown,
 }));
@@ -54,7 +68,7 @@ jest.mock('../../store/ProviderStore', () => ({
 }));
 
 import type { UserChatModel, LlmProvider } from '../../types/provider';
-import { rollupAnalytics, resolveProviderName } from '../analyticsRollupService';
+import { rollupAnalytics, resolveProviderName, rebuildAnalyticsOwnership } from '../analyticsRollupService';
 
 const localStorageBackup = { ...localStorage };
 
@@ -62,25 +76,39 @@ beforeEach(() => {
   jest.clearAllMocks();
   localStorage.clear();
   Object.keys(localStorageBackup).forEach((k) => { try { localStorage.removeItem(k); } catch { /* noop */ } });
+  userSettingsStore.clear();
   mockMessagesToArray.mockResolvedValue([]);
   mockWhereAboveOrEqual.mockReturnValue({ toArray: (): Promise<Message[]> => mockMessagesToArray() });
   mockWhereCreated.mockReturnValue({ aboveOrEqual: (marker: string) => ({ toArray: (): Promise<Message[]> => mockMessagesToArray() }) });
   mockSnapshotGet.mockResolvedValue(undefined);
   mockSnapshotPut.mockResolvedValue('ok');
   mockSnapshotToArray.mockResolvedValue([]);
+  mockSnapshotClear.mockResolvedValue(undefined);
+  mockMessagesModify.mockResolvedValue(undefined);
+  mockTransaction.mockImplementation((_mode: string, _tables: unknown[], scope: () => Promise<unknown>): Promise<unknown> => scope());
+  mockUserSettingsGet.mockImplementation((id: string): Promise<{ id: string; value: unknown } | undefined> => {
+    const value = userSettingsStore.get(id);
+    return Promise.resolve(value === undefined ? undefined : { id, value });
+  });
+  mockUserSettingsPut.mockImplementation((setting: { id: string; value: unknown }): Promise<string> => {
+    userSettingsStore.set(setting.id, setting.value);
+    return Promise.resolve(setting.id);
+  });
   mockGetState.mockReturnValue({ models: mockModels, providers: mockProviders });
 });
 
 function setRollupMarker(ts: string): void {
-  localStorage.setItem('analyticsRollupMarker', ts);
+  userSettingsStore.set('analyticsRollupMarker', ts);
 }
 
 function getRollupMarker(): string | null {
-  return localStorage.getItem('analyticsRollupMarker');
+  const v = userSettingsStore.get('analyticsRollupMarker');
+  return typeof v === 'string' ? v : null;
 }
 
 function getRollupLastId(): string | null {
-  return localStorage.getItem('analyticsRollupLastId');
+  const v = userSettingsStore.get('analyticsRollupLastId');
+  return typeof v === 'string' ? v : null;
 }
 
 function makeMsg(overrides: Partial<Message> = {}): Message {
@@ -137,7 +165,7 @@ describe('rollupAnalytics', () => {
 
   it('only processes messages after marker on subsequent runs', async () => {
     setRollupMarker('2026-01-01T10:00:00.000Z');
-    localStorage.setItem('analyticsRollupLastId', 'a');
+    userSettingsStore.set('analyticsRollupLastId', 'a');
 
     const msgs = [
       makeMsg({ id: 'a', created: '2026-01-01T10:00:00.000Z' }),
@@ -157,7 +185,7 @@ describe('rollupAnalytics', () => {
 
   it('correctly deduplicates messages at same timestamp as marker', async () => {
     setRollupMarker('2026-01-01T12:00:00.000Z');
-    localStorage.setItem('analyticsRollupLastId', 'msg-dup');
+    userSettingsStore.set('analyticsRollupLastId', 'msg-dup');
 
     const msgs = [
       makeMsg({ id: 'msg-dup', created: '2026-01-01T12:00:00.000Z' }),
@@ -277,7 +305,7 @@ describe('rollupAnalytics', () => {
 
   it('skips rollup when no new messages', async () => {
     setRollupMarker('2026-01-03T00:00:00.000Z');
-    localStorage.setItem('analyticsRollupLastId', 'last');
+    userSettingsStore.set('analyticsRollupLastId', 'last');
     mockMessagesToArray.mockResolvedValue([]);
 
     await rollupAnalytics();
@@ -372,5 +400,59 @@ describe('rollupAnalytics', () => {
 
     expect(getRollupMarker()).toBe('2026-01-03T20:00:00.000Z');
     expect(getRollupLastId()).toBe('b');
+  });
+
+  it('serializes overlapping rollups without double-counting', async () => {
+    const msgs = [makeMsg({ id: 'a', created: '2026-01-01T10:00:00.000Z', totalCost: 0.01 })];
+    mockMessagesToArray.mockResolvedValue(msgs);
+
+    await Promise.all([rollupAnalytics(), rollupAnalytics()]);
+
+    // The second run must observe the first run's advanced marker (via
+    // userSettings) and skip the already-processed message, so the snapshot is
+    // written exactly once.
+    expect(mockSnapshotPut).toHaveBeenCalledTimes(1);
+  });
+
+  it('stores the rollup marker transactionally in userSettings', async () => {
+    const msgs = [makeMsg({ id: 'a', created: '2026-01-01T10:00:00.000Z', totalCost: 0.01 })];
+    mockMessagesToArray.mockResolvedValue(msgs);
+
+    await rollupAnalytics();
+
+    expect(mockTransaction).toHaveBeenCalled();
+    expect(userSettingsStore.get('analyticsRollupMarker')).toBe('2026-01-01T10:00:00.000Z');
+    expect(userSettingsStore.get('analyticsRollupLastId')).toBe('a');
+  });
+});
+
+describe('rebuildAnalyticsOwnership', () => {
+  it('rebuilds once, marks the flag, and skips subsequent runs', async () => {
+    await rebuildAnalyticsOwnership();
+
+    expect(mockMessagesModify).toHaveBeenCalled();
+    expect(mockSnapshotClear).toHaveBeenCalled();
+    expect(userSettingsStore.get('analyticsOwnershipRebuilt')).toBe(true);
+
+    mockMessagesModify.mockClear();
+    mockSnapshotClear.mockClear();
+    mockSnapshotPut.mockClear();
+
+    await rebuildAnalyticsOwnership();
+
+    expect(mockMessagesModify).not.toHaveBeenCalled();
+    expect(mockSnapshotClear).not.toHaveBeenCalled();
+    expect(mockSnapshotPut).not.toHaveBeenCalled();
+  });
+
+  it('rebuilds derived snapshots from scratch after clearing', async () => {
+    const msgs = [makeMsg({ id: 'a', created: '2026-01-01T10:00:00.000Z', totalCost: 0.01 })];
+    mockMessagesToArray.mockResolvedValue(msgs);
+
+    await rebuildAnalyticsOwnership();
+
+    expect(mockSnapshotClear).toHaveBeenCalled();
+    expect(mockSnapshotPut).toHaveBeenCalledTimes(1);
+    expect(userSettingsStore.get('analyticsOwnershipRebuilt')).toBe(true);
   });
 });

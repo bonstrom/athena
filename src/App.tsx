@@ -1,5 +1,6 @@
 import React, { Suspense, useEffect } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
+import { Box, CircularProgress } from '@mui/material';
 import ChatLayout from './components/ChatLayout';
 import { GlobalErrorSnackbar } from './components/GlobalErrorSnackbar';
 import { useAutoBackup } from './hooks/useAutoBackup';
@@ -7,7 +8,7 @@ import { useEmbeddingBackfill } from './hooks/useEmbeddingBackfill';
 import { useAuthStore } from './store/AuthStore';
 import { useChatStore } from './store/ChatStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { idleDeferredRollup } from './services/analyticsRollupService';
+import { idleDeferredRollup, rebuildAnalyticsOwnership } from './services/analyticsRollupService';
 
 useChatStore.getState().initDefaults();
 
@@ -15,19 +16,27 @@ const Home = React.lazy(() => import('./pages/Home'));
 const Settings = React.lazy(() => import('./pages/Settings'));
 const ChatView = React.lazy(() => import('./pages/ChatView'));
 
+const RouteFallback: React.FC = () => (
+  <Box display="flex" alignItems="center" justifyContent="center" minHeight="100vh">
+    <CircularProgress />
+  </Box>
+);
+
 const App: React.FC = () => {
   const { backupInterval } = useAuthStore();
   useAutoBackup(backupInterval); // Run auto-backup based on user preference
   useEmbeddingBackfill(); // Backfill message embeddings for RAG
 
   useEffect(() => {
-    idleDeferredRollup();
+    // Repair analytics ownership once (if needed), then start the normal
+    // deferred rollup loop.
+    void rebuildAnalyticsOwnership().then(() => idleDeferredRollup());
   }, []);
 
   return (
     <ErrorBoundary>
       <HashRouter>
-        <Suspense>
+        <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<ChatLayout />}>
               <Route index element={<Home />} />

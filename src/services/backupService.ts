@@ -29,30 +29,51 @@ const BACKUP_HANDLE_KEY = 'autoBackupFileHandle';
 const LAST_BACKUP_TIME_KEY = 'lastAutoBackupTime';
 const OPFS_FILE_NAME = 'athena_auto_backup.json';
 
-// Prevents concurrent auto-backup calls from writing to the file simultaneously
+// Serializes full-database export/import operations so a manual restore/merge
+// can never overlap an in-flight auto-backup or another export. Tasks are
+// chained onto a promise queue that never rejects, so a failed operation does
+// not wedge subsequent ones.
+let operationQueue: Promise<unknown> = Promise.resolve();
+
+function enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const run = operationQueue.then(operation);
+  operationQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+// Prevents concurrent auto-backup calls from writing to the file simultaneously.
 let autoBackupInProgress = false;
+
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 export const BackupService = {
   /**
    * Exports the entire database to a JSON file and downloads it to the user's computer.
    */
   async downloadBackup(): Promise<void> {
-    try {
-      const blob = await exportDB(athenaDb, { prettyJson: true });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `athena_backup_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Failed to export database', error);
+    return enqueueOperation(async () => {
+      try {
+        const blob = await exportDB(athenaDb, { prettyJson: true });
+        triggerDownload(blob, `athena_backup_${new Date().toISOString().split('T')[0]}.json`);
+      } catch (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to export database', error);
+        }
+        throw error;
       }
-      throw error;
-    }
+    });
   },
 
   /**
@@ -71,27 +92,39 @@ export const BackupService = {
    * Creates an in-memory safety backup before clearing; attempts rollback on failure.
    */
   async restoreBackup(file: File): Promise<void> {
-    // Validate the backup file before destroying existing data
-    try {
-      await BackupService.validateBackupFile(file);
-    } catch (validationError) {
-      const msg = validationError instanceof Error ? validationError.message : 'File could not be read as JSON.';
-      throw new Error(`Backup validation failed: ${msg}`);
-    }
+    return enqueueOperation(async () => {
+      // Validate the backup file before destroying existing data
+      try {
+        await BackupService.validateBackupFile(file);
+      } catch (validationError) {
+        const msg = validationError instanceof Error ? validationError.message : 'File could not be read as JSON.';
+        throw new Error(`Backup validation failed: ${msg}`);
+      }
 
-    // Create an in-memory safety backup before clearing existing data
-    let safetyBackup: Blob | null = null;
-    try {
-      safetyBackup = await exportDB(athenaDb, { prettyJson: true });
-    } catch {
-      // If we can't export, proceed anyway — data is already at risk
-    }
+      // Create an in-memory safety backup before clearing existing data.
+      // Fail closed: if we cannot export the current database, abort instead of
+      // proceeding into a table-clearing import.
+      let safetyBackup: Blob;
+      try {
+        safetyBackup = await exportDB(athenaDb, { prettyJson: true });
+      } catch (exportError) {
+        useNotificationStore.getState().addNotification(
+          'Restore aborted: a safety backup of your current data could not be created.',
+        );
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to create safety backup before restore', exportError);
+        }
+        throw new Error(
+          `Restore aborted because a safety backup could not be created: ${
+            exportError instanceof Error ? exportError.message : String(exportError)
+          }`,
+        );
+      }
 
-    try {
-      await importInto(athenaDb, file, { overwriteValues: true, clearTablesBeforeImport: true });
-    } catch (error) {
-      // Attempt to restore from safety backup
-      if (safetyBackup) {
+      try {
+        await importInto(athenaDb, file, { overwriteValues: true, clearTablesBeforeImport: true });
+      } catch (error) {
+        // Attempt to restore from safety backup
         try {
           await importInto(athenaDb, safetyBackup, { overwriteValues: true, clearTablesBeforeImport: true });
           useNotificationStore.getState().addNotification(
@@ -105,31 +138,22 @@ export const BackupService = {
             console.error('Failed to restore safety backup after failed import', rollbackError);
           }
         }
-      } else {
-        useNotificationStore.getState().addNotification(
-          'Import failed. A safety backup could not be created. Please reload the page.',
-        );
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to restore database', error);
+        }
+        throw error;
       }
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Failed to restore database', error);
-      }
-      throw error;
-    }
+    });
   },
 
   /**
    * Exports the current database as a timestamped pre-import safety backup and downloads it.
    */
   async createPreImportBackup(): Promise<void> {
-    const blob = await exportDB(athenaDb, { prettyJson: true });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `athena_pre_import_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    return enqueueOperation(async () => {
+      const blob = await exportDB(athenaDb, { prettyJson: true });
+      triggerDownload(blob, `athena_pre_import_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    });
   },
 
   /**
@@ -137,23 +161,28 @@ export const BackupService = {
    * Downloads a pre-merge safety backup first, then imports with overwrite enabled.
    */
   async mergeBackup(file: File): Promise<void> {
-    try {
-      await BackupService.validateBackupFile(file);
-    } catch (validationError) {
-      const msg = validationError instanceof Error ? validationError.message : 'File could not be read as JSON.';
-      throw new Error(`Backup validation failed: ${msg}`);
-    }
-
-    await BackupService.createPreImportBackup();
-
-    try {
-      await importInto(athenaDb, file, { overwriteValues: true, clearTablesBeforeImport: false });
-    } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Failed to merge database', error);
+    return enqueueOperation(async () => {
+      try {
+        await BackupService.validateBackupFile(file);
+      } catch (validationError) {
+        const msg = validationError instanceof Error ? validationError.message : 'File could not be read as JSON.';
+        throw new Error(`Backup validation failed: ${msg}`);
       }
-      throw error;
-    }
+
+      // Download a pre-merge safety backup inline (already inside the shared
+      // operation queue, so it must not enqueue again).
+      const preMergeBlob = await exportDB(athenaDb, { prettyJson: true });
+      triggerDownload(preMergeBlob, `athena_pre_import_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+
+      try {
+        await importInto(athenaDb, file, { overwriteValues: true, clearTablesBeforeImport: false });
+      } catch (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to merge database', error);
+        }
+        throw error;
+      }
+    });
   },
 
   /**
@@ -231,6 +260,14 @@ export const BackupService = {
   async performAutoBackup(interactive = false): Promise<void> {
     if (autoBackupInProgress) return;
     autoBackupInProgress = true;
+    try {
+      await enqueueOperation(() => this.performAutoBackupInternal(interactive));
+    } finally {
+      autoBackupInProgress = false;
+    }
+  },
+
+  async performAutoBackupInternal(interactive: boolean): Promise<void> {
     const store = useBackupStore.getState();
     try {
       if (store.backupMode === 'external') {
@@ -261,7 +298,6 @@ export const BackupService = {
         const blob = await exportDB(athenaDb, { prettyJson: true });
         await this.saveToInternalBackup(blob);
       } else {
-        autoBackupInProgress = false;
         return;
       }
 
@@ -282,8 +318,6 @@ export const BackupService = {
         console.error('Failed auto-backup:', error);
       }
       throw error;
-    } finally {
-      autoBackupInProgress = false;
     }
   },
 

@@ -1283,6 +1283,8 @@ export interface OrchestrateResult {
   finalContent: string;
   totalPromptTokens: number;
   totalCompletionTokens: number;
+  totalCachedTokens: number;
+  totalCacheCreationTokens: number;
   totalSearchCount: number;
   lastResult: LlmResult;
   toolLoopTrace: ToolLoopIteration[];
@@ -1306,6 +1308,8 @@ export async function orchestrateLlmLoop(
   let loopCount = 0;
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
+  let totalCachedTokens = 0;
+  let totalCacheCreationTokens = 0;
   let totalSearchCount = 0;
   let finalContent = '';
   let lastResult: LlmResult | null = null;
@@ -1328,6 +1332,8 @@ export async function orchestrateLlmLoop(
     lastResult = result;
     totalPromptTokens += result.promptTokens;
     totalCompletionTokens += result.completionTokens;
+    totalCachedTokens += result.promptTokensDetails?.cached_tokens ?? result.cacheReadTokens ?? 0;
+    totalCacheCreationTokens += result.promptTokensDetails?.cache_creation_tokens ?? result.cacheCreationTokens ?? 0;
     totalSearchCount += result.searchCount;
 
     if (loopCount === 1) {
@@ -1445,6 +1451,8 @@ export async function orchestrateLlmLoop(
     finalContent,
     totalPromptTokens,
     totalCompletionTokens,
+    totalCachedTokens,
+    totalCacheCreationTokens,
     totalSearchCount,
     lastResult,
     toolLoopTrace,

@@ -531,16 +531,16 @@ describe('BackupService download/restore/merge', () => {
     );
   });
 
-  it('restoreBackup notifies when safety backup cannot be created', async () => {
-    mockExportDB.mockRejectedValueOnce(new Error('Export failed')); // safety backup creation fails
-    mockImportInto.mockRejectedValueOnce(new Error('Import crashed'));
+  it('restoreBackup fails closed when safety backup cannot be created', async () => {
+    mockExportDB.mockRejectedValue(new Error('Export failed'));
 
     const service = loadBackupService();
     const file = createMockFile(JSON.stringify({ data: { messages: [] } }));
 
-    await expect(service.restoreBackup(file)).rejects.toThrow('Import crashed');
+    await expect(service.restoreBackup(file)).rejects.toThrow('Restore aborted because a safety backup could not be created');
+    expect(mockImportInto).not.toHaveBeenCalled();
     expect(mockAddNotification).toHaveBeenCalledWith(
-      'Import failed. A safety backup could not be created. Please reload the page.',
+      'Restore aborted: a safety backup of your current data could not be created.',
     );
   });
 
@@ -569,6 +569,25 @@ describe('BackupService download/restore/merge', () => {
     const file = createMockFile('bad json');
 
     await expect(service.mergeBackup(file)).rejects.toThrow('Backup validation failed');
+  });
+
+  it('serializes manual backup operations so they never overlap', async () => {
+    const service = loadBackupService();
+    const file = createMockFile(JSON.stringify({ data: { messages: [] } }));
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    mockExportDB.mockImplementation(async (): Promise<Blob> => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      inFlight--;
+      return new Blob(['{"ok":true}'], { type: 'application/json' });
+    });
+
+    await Promise.all([service.downloadBackup(), service.mergeBackup(file)]);
+
+    expect(maxInFlight).toBe(1);
   });
 });
 

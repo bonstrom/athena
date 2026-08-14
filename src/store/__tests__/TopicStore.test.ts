@@ -1333,6 +1333,58 @@ describe('TopicStore actions', () => {
     expect(mockAddNotification).toHaveBeenCalledWith('Failed to delete branch', 'delete failed');
   });
 
+  it('deleteFork updates the topic and deletes messages in a single transaction', async () => {
+    useTopicStore.setState({
+      topics: [
+        createTopic({
+          id: 't1',
+          name: 'Topic',
+          activeForkId: 'main',
+          forks: [
+            { id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' },
+            { id: 'fork-2', name: 'Fork 2', createdOn: '2024-01-02T00:00:00.000Z' },
+          ],
+        }),
+      ],
+    });
+    mockDbMessages = [
+      createMessage({
+        id: 'm1',
+        topicId: 't1',
+        forkId: 'fork-2',
+        type: 'user',
+        content: 'x',
+        created: '2024-01-01T00:00:00.000Z',
+      }),
+    ];
+
+    let inTransaction = false;
+    let updateInside = false;
+    let deleteInside = false;
+
+    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+      inTransaction = true;
+      await callback();
+      inTransaction = false;
+    });
+    mockTopicsUpdate.mockImplementation((): Promise<number> => {
+      updateInside = inTransaction;
+      return Promise.resolve(1);
+    });
+    mockMessagesDelete.mockImplementation((): Promise<number> => {
+      deleteInside = inTransaction;
+      return Promise.resolve(1);
+    });
+
+    await useTopicStore.getState().deleteFork('t1', 'fork-2');
+
+    expect(mockDbTransaction).toHaveBeenCalledTimes(1);
+    expect(updateInside).toBe(true);
+    expect(deleteInside).toBe(true);
+    expect(mockTopicsUpdate).toHaveBeenCalledTimes(1);
+    expect(mockMessagesDelete).toHaveBeenCalledTimes(1);
+  });
+
   it('forkTopic uses next available number avoiding duplicates after deletion', async () => {
     const topic = createTopic({
       id: 't1',

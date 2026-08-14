@@ -48,6 +48,10 @@ jest.mock('./store/ChatStore', () => ({
     getState: jest.fn(() => ({ initDefaults: jest.fn() })),
   },
 }));
+jest.mock('./services/analyticsRollupService', () => ({
+  idleDeferredRollup: jest.fn(),
+  rebuildAnalyticsOwnership: jest.fn((): Promise<void> => Promise.resolve()),
+}));
 
 jest.mock('./pages/Home', () => {
   function MockHomePage(): JSX.Element {
@@ -78,14 +82,17 @@ import App from './App';
 import { useAutoBackup } from './hooks/useAutoBackup';
 import { useEmbeddingBackfill } from './hooks/useEmbeddingBackfill';
 import { useAuthStore } from './store/AuthStore';
+import { rebuildAnalyticsOwnership } from './services/analyticsRollupService';
 
 const mockUseAuthStore = jest.mocked(useAuthStore);
 const mockUseAutoBackup = jest.mocked(useAutoBackup);
 const mockUseEmbeddingBackfill = jest.mocked(useEmbeddingBackfill);
+const mockRebuildAnalyticsOwnership = jest.mocked(rebuildAnalyticsOwnership);
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockUseAuthStore.mockReturnValue({ backupInterval: 5 });
+  mockRebuildAnalyticsOwnership.mockResolvedValue(undefined);
 });
 
 test('renders app shell and triggers startup hooks', () => {
@@ -96,4 +103,5 @@ test('renders app shell and triggers startup hooks', () => {
   expect(screen.getByTestId('global-error-snackbar')).toBeInTheDocument();
   expect(mockUseAutoBackup).toHaveBeenCalledWith(5);
   expect(mockUseEmbeddingBackfill).toHaveBeenCalled();
+  expect(mockRebuildAnalyticsOwnership).toHaveBeenCalled();
 });

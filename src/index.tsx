@@ -7,6 +7,7 @@ import reportWebVitals from './reportWebVitals';
 import { CssBaseline, ThemeProvider } from '@mui/material';
 import { getAppTheme } from './theme';
 import { useAuthStore } from './store/AuthStore';
+import DatabaseGate from './components/DatabaseGate';
 
 const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { themeMode, colorTheme } = useAuthStore();
@@ -30,7 +31,9 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <AppThemeProvider>
-      <App />
+      <DatabaseGate>
+        <App />
+      </DatabaseGate>
     </AppThemeProvider>
   </React.StrictMode>,
 );

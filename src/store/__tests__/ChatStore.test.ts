@@ -38,6 +38,8 @@ interface LlmLoopResult {
   finalContent: string;
   totalPromptTokens: number;
   totalCompletionTokens: number;
+  totalCachedTokens?: number;
+  totalCacheCreationTokens?: number;
   totalSearchCount: number;
   toolLoopTrace: unknown[];
   lastResult: {
@@ -46,6 +48,10 @@ interface LlmLoopResult {
     promptTokens: number;
     completionTokens: number;
     searchCount: number;
+    promptTokensDetails?: { cached_tokens?: number; cache_creation_tokens?: number };
+    cacheCreationTokens?: number;
+    cacheReadTokens?: number;
+    completionTokensDetails?: { reasoning_tokens?: number };
   };
 }
 
@@ -186,6 +192,7 @@ jest.mock('../../database/AthenaDb', () => ({
 }));
 
 import { useChatStore } from '../../store/ChatStore';
+import { calculateCostSEK } from '../../components/ModelSelector';
 
 describe('ChatStore', () => {
   let consoleDebugSpy: jest.SpiedFunction<typeof console.debug>;
@@ -275,6 +282,8 @@ describe('ChatStore', () => {
       finalContent: 'Assistant final answer',
       totalPromptTokens: 10,
       totalCompletionTokens: 5,
+      totalCachedTokens: 0,
+      totalCacheCreationTokens: 0,
       totalSearchCount: 0,
       toolLoopTrace: [],
       lastResult: {
@@ -300,6 +309,43 @@ describe('ChatStore', () => {
     expect(useChatStore.getState().sending).toBe(false);
     expect(useChatStore.getState().abortController).toBeNull();
     expect(useChatStore.getState().currentRequestMessageIds).toBeNull();
+  });
+
+  it('assigns cost and cache usage to the assistant message, not the user message', async () => {
+    jest.mocked(calculateCostSEK).mockReturnValue(1);
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: 'Assistant final answer',
+      totalPromptTokens: 10,
+      totalCompletionTokens: 5,
+      totalCachedTokens: 60,
+      totalCacheCreationTokens: 10,
+      totalSearchCount: 0,
+      toolLoopTrace: [],
+      lastResult: {
+        content: 'Assistant final answer',
+        rawContent: 'Assistant final answer',
+        promptTokens: 10,
+        completionTokens: 5,
+        searchCount: 0,
+        promptTokensDetails: { cached_tokens: 60, cache_creation_tokens: 10 },
+      },
+    });
+
+    await useChatStore.getState().sendMessageStream('Hello there', 'topic-1');
+
+    const topicMessages = useChatStore.getState().messagesByTopic['topic-1'] ?? [];
+    const userMessage = topicMessages.find((m) => m.type === 'user');
+    const assistantMessage = topicMessages.find((m) => m.type === 'assistant');
+
+    expect(userMessage?.promptTokens).toBe(10);
+    expect(userMessage?.totalCost).toBe(0);
+    expect(userMessage?.cachedTokens).toBeUndefined();
+    expect(userMessage?.cacheCreationTokens).toBeUndefined();
+
+    expect(assistantMessage?.completionTokens).toBe(5);
+    expect(assistantMessage?.totalCost).toBe(1);
+    expect(assistantMessage?.cachedTokens).toBe(60);
+    expect(assistantMessage?.cacheCreationTokens).toBe(10);
   });
 
   it('stopSending aborts, deletes pending user/assistant messages, and returns user content', async () => {

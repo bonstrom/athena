@@ -648,22 +648,28 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       }
 
       const now = new Date().toISOString();
-      await athenaDb.topics.update(topicId, {
-        forks: updatedForks,
-        activeForkId: newActiveForkId,
-        updatedOn: now,
+
+      // Update the topic and delete the fork's messages atomically so a partial
+      // failure cannot leave the topic pointing at a fork whose messages are gone
+      // (or vice-versa).
+      await athenaDb.transaction('rw', [athenaDb.topics, athenaDb.messages], async () => {
+        await athenaDb.topics.update(topicId, {
+          forks: updatedForks,
+          activeForkId: newActiveForkId,
+          updatedOn: now,
+        });
+
+        // Delete messages unique to this fork
+        await athenaDb.messages
+          .where('topicId')
+          .equals(topicId)
+          .and((m) => m.forkId === forkId)
+          .delete();
       });
 
       set((state) => ({
         topics: updateTopicAndSort(state.topics, topicId, { forks: updatedForks, activeForkId: newActiveForkId }, now),
       }));
-
-      // Delete messages unique to this fork
-      await athenaDb.messages
-        .where('topicId')
-        .equals(topicId)
-        .and((m) => m.forkId === forkId)
-        .delete();
     } catch (err) {
       console.error('Failed to delete fork', err);
       const message = err instanceof Error ? err.message : String(err);

@@ -1145,8 +1145,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const finalContent = primaryResult.finalContent;
       const totalPromptTokens = primaryResult.totalPromptTokens;
       const totalCompletionTokens = primaryResult.totalCompletionTokens;
+      const totalCachedTokens = primaryResult.totalCachedTokens;
+      const totalCacheCreationTokens = primaryResult.totalCacheCreationTokens;
       const lastResult = primaryResult.lastResult;
-      const finalTotalCost = calculateCostSEK(effectiveModel, totalPromptTokens, totalCompletionTokens, lastResult.promptTokensDetails, getPeakMultiplier(effectiveModel));
+      const promptTokensDetails =
+        totalCachedTokens > 0 || totalCacheCreationTokens > 0
+          ? { cached_tokens: totalCachedTokens, cache_creation_tokens: totalCacheCreationTokens }
+          : undefined;
+      const finalTotalCost = calculateCostSEK(effectiveModel, totalPromptTokens, totalCompletionTokens, promptTokensDetails, getPeakMultiplier(effectiveModel));
 
       const debugPayload: LlmDebugPayload = {
         rawContent: lastResult.rawContent,
@@ -1157,9 +1163,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         usageDetails: {
           promptTokens: totalPromptTokens,
           completionTokens: totalCompletionTokens,
-          cachedTokens: lastResult.promptTokensDetails?.cached_tokens,
+          cachedTokens: totalCachedTokens,
           reasoningTokens: lastResult.completionTokensDetails?.reasoning_tokens,
-          cacheCreationTokens: lastResult.cacheCreationTokens,
+          cacheCreationTokens: totalCacheCreationTokens,
           cacheReadTokens: lastResult.cacheReadTokens,
         },
         toolLoopTrace: primaryResult.toolLoopTrace,
@@ -1194,13 +1200,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       // 5. Finalize DB Updates in atomic transaction
       const latencyMs = Date.now() - loopStartTime;
-      const dbCachedTokens = lastResult.promptTokensDetails?.cached_tokens ?? 0;
-      const dbCacheCreationTokens = lastResult.cacheCreationTokens ?? 0;
+      const dbCachedTokens = totalCachedTokens;
+      const dbCacheCreationTokens = totalCacheCreationTokens;
       const userPatch = {
         promptTokens: totalPromptTokens,
-        totalCost: finalTotalCost,
-        cachedTokens: dbCachedTokens,
-        cacheCreationTokens: dbCacheCreationTokens,
         failed: false,
       };
       const assistantPatch = {
@@ -1215,7 +1218,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         cacheCreationTokens: dbCacheCreationTokens,
         failed: false,
         latencyMs,
-      model: effectiveModel.apiModelId,
+        model: effectiveModel.apiModelId,
         rawResponse: JSON.stringify(debugPayload),
       };
 
