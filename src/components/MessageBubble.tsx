@@ -179,22 +179,25 @@ const SvgEditDialog: React.FC<SvgEditDialogProps> = ({ open, messageId, svgSourc
 };
 
 const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble({ message, versions }) {
-  const {
-    updateMessageContext,
-    deleteMessage,
-    updateMessage,
-    sendMessageStream,
-    regenerateResponse,
-    switchMessageVersion,
-    maybeSummarize,
-    summarizingMessageIds,
-    failedSummaryMessageIds,
-    editSvgInMessage,
-  } = useChatStore();
-  const { forkTopic } = useTopicStore();
-  const { addNotification } = useNotificationStore();
-  const { userName, chatFontSize, messageTruncateChars, aiSummaryEnabled, dateFormat } = useAuthStore();
-  const { isMobile, currentlySpeakingMessageId } = useUiStore();
+  const summarizingMessageIds = useChatStore((s) => s.summarizingMessageIds);
+  const failedSummaryMessageIds = useChatStore((s) => s.failedSummaryMessageIds);
+  const updateMessageContext = useChatStore((s) => s.updateMessageContext);
+  const deleteMessage = useChatStore((s) => s.deleteMessage);
+  const updateMessage = useChatStore((s) => s.updateMessage);
+  const sendMessageStream = useChatStore((s) => s.sendMessageStream);
+  const regenerateResponse = useChatStore((s) => s.regenerateResponse);
+  const switchMessageVersion = useChatStore((s) => s.switchMessageVersion);
+  const maybeSummarize = useChatStore((s) => s.maybeSummarize);
+  const editSvgInMessage = useChatStore((s) => s.editSvgInMessage);
+  const forkTopic = useTopicStore((s) => s.forkTopic);
+  const addNotification = useNotificationStore((s) => s.addNotification);
+  const userName = useAuthStore((s) => s.userName);
+  const chatFontSize = useAuthStore((s) => s.chatFontSize);
+  const messageTruncateChars = useAuthStore((s) => s.messageTruncateChars);
+  const aiSummaryEnabled = useAuthStore((s) => s.aiSummaryEnabled);
+  const dateFormat = useAuthStore((s) => s.dateFormat);
+  const isMobile = useUiStore((s) => s.isMobile);
+  const currentlySpeakingMessageId = useUiStore((s) => s.currentlySpeakingMessageId);
 
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [copied, setCopied] = useState(false);

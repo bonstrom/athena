@@ -74,36 +74,6 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     try {
       const topics = await athenaDb.topics.orderBy('updatedOn').reverse().toArray();
 
-      // One-time backfill: populate modelId from last assistant message for topics missing it
-      const topicsNeedingBackfill = topics.filter((t) => !t.modelId);
-      if (topicsNeedingBackfill.length > 0) {
-        const allMessages = await athenaDb.messages.toArray();
-        const lastModelByTopic = new Map<string, string>();
-        const lastCreatedByTopic = new Map<string, string>();
-
-        for (const m of allMessages) {
-          if (m.type === 'assistant' && m.model) {
-            const prevCreated = lastCreatedByTopic.get(m.topicId);
-            if (!prevCreated || m.created > prevCreated) {
-              lastCreatedByTopic.set(m.topicId, m.created);
-              lastModelByTopic.set(m.topicId, m.model);
-            }
-          }
-        }
-
-        for (const topic of topicsNeedingBackfill) {
-          try {
-            const modelId = lastModelByTopic.get(topic.id);
-            if (modelId) {
-              topic.modelId = modelId;
-              void athenaDb.topics.update(topic.id, { modelId });
-            }
-          } catch (backfillErr) {
-            console.warn(`[TopicStore] Backfill failed for topic ${topic.id}:`, backfillErr);
-          }
-        }
-      }
-
       set({ topics });
     } catch (err) {
       console.error('Failed to load topics from DB', err);

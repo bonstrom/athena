@@ -166,32 +166,26 @@ describe('MarkdownWithCode — mermaid', () => {
     });
   });
 
-  it('reinitializes mermaid when theme changes', () => {
-    mockMermaidInitialize.mockClear();
-
-    const { rerender } = render(<MarkdownWithCode>{'text'}</MarkdownWithCode>);
-    expect(mockMermaidInitialize).toHaveBeenCalledWith(
-      expect.objectContaining({ theme: 'dark' }),
-    );
-
-    mockMermaidInitialize.mockClear();
+  it('initializes mermaid with light theme', async () => {
     useAuthStoreMock.mockImplementation((selector?: (state: { themeMode: string }) => string) => {
       const state = { themeMode: 'light' as const };
       return selector ? selector(state) : state;
     });
 
-    rerender(<MarkdownWithCode>{'text'}</MarkdownWithCode>);
+    render(<MarkdownWithCode>{'```mermaid\ngraph TD\n    A --> B\n```'}</MarkdownWithCode>);
 
-    expect(mockMermaidInitialize).toHaveBeenCalledWith(
-      expect.objectContaining({ theme: 'default' }),
+    await waitFor(() =>
+      expect(mockMermaidInitialize).toHaveBeenCalledWith(expect.objectContaining({ theme: 'default' })),
     );
   });
 
-  it('initializes mermaid with dark theme on mount', () => {
-    render(<MarkdownWithCode>{'text'}</MarkdownWithCode>);
+  it('initializes mermaid with dark theme on mount', async () => {
+    render(<MarkdownWithCode>{'```mermaid\ngraph TD\n    A --> B\n```'}</MarkdownWithCode>);
 
-    expect(mockMermaidInitialize).toHaveBeenCalledWith(
-      expect.objectContaining({ theme: 'dark', startOnLoad: false, securityLevel: 'loose' }),
+    await waitFor(() =>
+      expect(mockMermaidInitialize).toHaveBeenCalledWith(
+        expect.objectContaining({ theme: 'dark', startOnLoad: false, securityLevel: 'loose' }),
+      ),
     );
   });
 

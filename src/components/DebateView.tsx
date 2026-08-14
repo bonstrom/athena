@@ -38,9 +38,14 @@ const DebateColumn = React.memo(function DebateColumn({
   const { setDebateModelA, setDebateModelB } = useDebateStore();
   const theme = useTheme();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevMessageCountRef = useRef(messages.length);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const isNewMessage = messages.length !== prevMessageCountRef.current;
+    prevMessageCountRef.current = messages.length;
+    // Use smooth scroll only when a new message arrives; streaming content
+    // updates use an instant scroll to avoid overlapping smooth animations.
+    bottomRef.current?.scrollIntoView({ behavior: isNewMessage ? 'smooth' : 'auto' });
   }, [messages.length, streamingContent]);
 
   const handleModelChange = (m: ChatModel): void => {

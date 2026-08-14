@@ -16,8 +16,16 @@ const ChatView: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  const { chatWidth, defaultMaxContextMessages } = useAuthStore();
-  const { messagesByTopic, sending, sendMessageStream, fetchMessages, pendingSuggestions, clearSuggestions, isSuggestionsLoading, stopSending } = useChatStore();
+  const chatWidth = useAuthStore((s) => s.chatWidth);
+  const defaultMaxContextMessages = useAuthStore((s) => s.defaultMaxContextMessages);
+  const messagesByTopic = useChatStore((s) => s.messagesByTopic);
+  const sending = useChatStore((s) => s.sending);
+  const sendMessageStream = useChatStore((s) => s.sendMessageStream);
+  const fetchMessages = useChatStore((s) => s.fetchMessages);
+  const pendingSuggestions = useChatStore((s) => s.pendingSuggestions);
+  const clearSuggestions = useChatStore((s) => s.clearSuggestions);
+  const isSuggestionsLoading = useChatStore((s) => s.isSuggestionsLoading);
+  const stopSending = useChatStore((s) => s.stopSending);
   const [displayTopicId, setDisplayTopicId] = useState<string | undefined>(topicId);
   const [isVisible, setIsVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);

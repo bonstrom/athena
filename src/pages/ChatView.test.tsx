@@ -5,6 +5,7 @@ import { useParams } from 'react-router-dom';
 import { useAuthStore } from '../store/AuthStore';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
+import { selectorize } from '../testUtils';
 
 jest.mock('../components/Composer', () => ({
   __esModule: true,
@@ -98,14 +99,14 @@ describe('ChatView page', () => {
     jest.clearAllMocks();
 
     mockUseParams.mockReturnValue({ topicId: 'topic-1' });
-    mockUseAuthStore.mockReturnValue({ chatWidth: 'lg', defaultMaxContextMessages: 10 });
+    selectorize(mockUseAuthStore, { chatWidth: 'lg', defaultMaxContextMessages: 10 });
 
     (useChatStore as unknown as { getState: jest.Mock }).getState.mockReturnValue({
       sending: false,
       stopSending: jest.fn(),
     });
 
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       messagesByTopic: { 'topic-1': [] },
       sending: false,
       sendMessageStream: jest.fn((): Promise<void> => Promise.resolve()),
@@ -127,7 +128,7 @@ describe('ChatView page', () => {
     const sendMessageStream = jest.fn((_: string, __: string): Promise<void> => Promise.resolve());
     const fetchMessages = jest.fn((_: string): Promise<void> => Promise.resolve());
 
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       messagesByTopic: { 'topic-1': [] },
       sending: false,
       sendMessageStream,
@@ -153,7 +154,7 @@ describe('ChatView page', () => {
 
   it('shows topic-not-found error when route topic does not exist', async () => {
     const fetchMessages = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       messagesByTopic: {},
       sending: false,
       sendMessageStream: jest.fn((): Promise<void> => Promise.resolve()),
@@ -172,7 +173,7 @@ describe('ChatView page', () => {
 
   it('shows error message when fetchMessages fails', async () => {
     const fetchMessages = jest.fn<Promise<void>, [string]>(() => Promise.reject(new Error('IndexedDB error')));
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       messagesByTopic: {},
       sending: false,
       sendMessageStream: jest.fn((): Promise<void> => Promise.resolve()),
@@ -195,7 +196,7 @@ describe('ChatView page', () => {
       stopSending,
     });
 
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       messagesByTopic: { 'topic-1': [] },
       sending: true,
       sendMessageStream: jest.fn((): Promise<void> => Promise.resolve()),
@@ -219,7 +220,7 @@ describe('ChatView page', () => {
       stopSending,
     });
 
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       messagesByTopic: { 'topic-1': [] },
       sending: false,
       sendMessageStream: jest.fn((): Promise<void> => Promise.resolve()),

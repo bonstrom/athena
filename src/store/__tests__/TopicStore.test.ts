@@ -984,6 +984,16 @@ describe('TopicStore actions', () => {
     expect(mockAddNotification).not.toHaveBeenCalled();
   });
 
+  it('loadTopics does not scan messages for the legacy modelId backfill', async () => {
+    const loadedTopics: Topic[] = [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main' })];
+    mockTopicsToArray.mockResolvedValueOnce(loadedTopics);
+
+    await useTopicStore.getState().loadTopics();
+
+    expect(mockMessagesToArray).not.toHaveBeenCalled();
+    expect(mockTopicsUpdate).not.toHaveBeenCalled();
+  });
+
   it('createTopic persists and prepends the new topic to state', async () => {
     Object.defineProperty(globalThis, 'crypto', {
       value: {

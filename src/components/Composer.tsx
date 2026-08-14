@@ -131,19 +131,22 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   const questionRef = useRef('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const topicStore = useTopicStore();
-  const {
-    selectedModel,
-    setSelectedModel,
-    temperature,
-    setTemperature,
-    currentTopicId,
-    stopSending,
-    messagesByTopic,
-    pendingUserQuestion,
-    resolvePendingQuestion,
-    autoReadEnabled,
-    setAutoReadEnabled,
-  } = useChatStore();
+  const selectedModel = useChatStore((s) => s.selectedModel);
+  const setSelectedModel = useChatStore((s) => s.setSelectedModel);
+  const temperature = useChatStore((s) => s.temperature);
+  const setTemperature = useChatStore((s) => s.setTemperature);
+  const currentTopicId = useChatStore((s) => s.currentTopicId);
+  const stopSending = useChatStore((s) => s.stopSending);
+  const pendingUserQuestion = useChatStore((s) => s.pendingUserQuestion);
+  const resolvePendingQuestion = useChatStore((s) => s.resolvePendingQuestion);
+  const autoReadEnabled = useChatStore((s) => s.autoReadEnabled);
+  const setAutoReadEnabled = useChatStore((s) => s.setAutoReadEnabled);
+  const webSearchEnabled = useChatStore((s) => s.webSearchEnabled);
+  const setWebSearchEnabled = useChatStore((s) => s.setWebSearchEnabled);
+  const imageGenerationEnabled = useChatStore((s) => s.imageGenerationEnabled);
+  const setImageGenerationEnabled = useChatStore((s) => s.setImageGenerationEnabled);
+  const musicGenerationEnabled = useChatStore((s) => s.musicGenerationEnabled);
+  const setMusicGenerationEnabled = useChatStore((s) => s.setMusicGenerationEnabled);
   const { addNotification } = useNotificationStore();
   const {
     chatWidth,
@@ -161,15 +164,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
     setTtsVoiceId,
   } = useAuthStore();
   const { getAvailableModels, providers } = useProviderStore();
-  const {
-    webSearchEnabled,
-    setWebSearchEnabled,
-    imageGenerationEnabled,
-    setImageGenerationEnabled,
-    musicGenerationEnabled,
-    setMusicGenerationEnabled,
-  } = useChatStore();
-  const { currentlySpeakingMessageId } = useUiStore();
+  const currentlySpeakingMessageId = useUiStore((s) => s.currentlySpeakingMessageId);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
@@ -479,7 +474,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
         return;
       }
 
-      const currentMessages = currentTopicId ? (messagesByTopic[currentTopicId] ?? []) : [];
+      const currentMessages = currentTopicId ? (useChatStore.getState().messagesByTopic[currentTopicId] ?? []) : [];
       const lastAssistantMessage = [...currentMessages].reverse().find((message) => message.type === 'assistant' && !message.isDeleted);
 
       setIsSuggesting(true);
@@ -499,7 +494,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
         setIsSuggesting(false);
       }
     },
-    [currentTopicId, llmSuggestionEnabled, llmModelDownloadStatus, llmModelSelected, messagesByTopic],
+    [currentTopicId, llmSuggestionEnabled, llmModelDownloadStatus, llmModelSelected],
   );
 
   useEffect(() => {

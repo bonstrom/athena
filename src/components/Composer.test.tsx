@@ -10,7 +10,7 @@ import { llmSuggestionService } from '../services/llmSuggestionService';
 import { UserChatModel, LlmProvider } from '../types/provider';
 import { Topic, Message, Attachment } from '../database/AthenaDb';
 import { useUiStore } from '../store/UiStore';
-import { createUserChatModel, createLlmProvider, createTopic as createTopicFixture } from '../testUtils';
+import { createUserChatModel, createLlmProvider, createTopic as createTopicFixture, selectorize } from '../testUtils';
 
 jest.mock('./TopicContextDialog', () => {
   function MockTopicContextDialog(): JSX.Element {
@@ -317,11 +317,11 @@ describe('Composer', () => {
 
     mockUseAuthStore.mockReturnValue(authStore);
     mockUseProviderStore.mockReturnValue(providerStore);
-    mockUseChatStore.mockReturnValue(chatStore);
+    selectorize(mockUseChatStore, chatStore);
     mockUseChatStore.getState.mockReturnValue({ currentTopicId: 'topic-1' });
     mockUseTopicStore.mockReturnValue(topicStore);
     mockUseNotificationStore.mockReturnValue(notificationStore);
-    mockUseUiStore.mockReturnValue({ currentlySpeakingMessageId: null, isMobile: false });
+    selectorize(mockUseUiStore, { currentlySpeakingMessageId: null, isMobile: false });
     mockUseUiStore.getState.mockReturnValue({ setCurrentlySpeakingMessageId: jest.fn() });
     mockSuggestionService.getSuggestion.mockResolvedValue('');
   });
@@ -347,7 +347,7 @@ describe('Composer', () => {
       resolve: jest.fn(),
       reject: jest.fn(),
     };
-    mockUseChatStore.mockReturnValue(chatStore);
+    selectorize(mockUseChatStore, chatStore);
 
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
@@ -360,7 +360,7 @@ describe('Composer', () => {
 
   it('restores the stopped content when generation is cancelled on the same topic', async () => {
     chatStore.stopSending = jest.fn((): Promise<string | null> => Promise.resolve('Recovered draft'));
-    mockUseChatStore.mockReturnValue(chatStore);
+    selectorize(mockUseChatStore, chatStore);
 
     render(<Composer sending onSend={onSend} isMobile={false} />);
 
@@ -436,7 +436,7 @@ describe('Composer', () => {
     const forcedModel = createUserChatModel({ forceTemperature: 1.0 });
     chatStore.selectedModel = forcedModel;
     providerStore.getAvailableModels = (): UserChatModel[] => [forcedModel];
-    mockUseChatStore.mockReturnValue(chatStore);
+    selectorize(mockUseChatStore, chatStore);
     mockUseProviderStore.mockReturnValue(providerStore);
 
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
@@ -452,7 +452,7 @@ describe('Composer', () => {
     const normalModel = createUserChatModel({ forceTemperature: null });
     chatStore.selectedModel = normalModel;
     providerStore.getAvailableModels = (): UserChatModel[] => [normalModel];
-    mockUseChatStore.mockReturnValue(chatStore);
+    selectorize(mockUseChatStore, chatStore);
     mockUseProviderStore.mockReturnValue(providerStore);
 
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
@@ -542,7 +542,7 @@ describe('Composer', () => {
   });
 
   it('shows StopCircleIcon and Stop Reading tooltip when TTS is active and input is empty', () => {
-    mockUseUiStore.mockReturnValue({ currentlySpeakingMessageId: 'some-msg-id' });
+    selectorize(mockUseUiStore, { currentlySpeakingMessageId: 'some-msg-id' });
 
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
@@ -693,7 +693,7 @@ describe('Composer', () => {
     });
     chatStore.selectedModel = thinkingModel;
     providerStore.getAvailableModels = (): UserChatModel[] => [thinkingModel];
-    mockUseChatStore.mockReturnValue(chatStore);
+    selectorize(mockUseChatStore, chatStore);
     mockUseProviderStore.mockReturnValue(providerStore);
 
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
@@ -715,7 +715,7 @@ describe('Composer', () => {
     });
     chatStore.selectedModel = reasoningModel;
     providerStore.getAvailableModels = (): UserChatModel[] => [reasoningModel];
-    mockUseChatStore.mockReturnValue(chatStore);
+    selectorize(mockUseChatStore, chatStore);
     mockUseProviderStore.mockReturnValue(providerStore);
 
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
@@ -741,7 +741,7 @@ describe('Composer', () => {
 
   it('disables Inspect button when currentTopicId is null', () => {
     chatStore.currentTopicId = null;
-    mockUseChatStore.mockReturnValue(chatStore);
+    selectorize(mockUseChatStore, chatStore);
 
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
@@ -771,7 +771,7 @@ describe('Composer', () => {
 
 it('stops sending when stop button is clicked', async () => {
     chatStore.stopSending.mockResolvedValue('draft content');
-    mockUseChatStore.mockReturnValue(chatStore);
+    selectorize(mockUseChatStore, chatStore);
 
     render(<Composer sending onSend={onSend} isMobile={false} />);
 

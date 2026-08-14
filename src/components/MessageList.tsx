@@ -52,6 +52,26 @@ const FollowFab = (): JSX.Element | null => {
   );
 };
 
+const StreamingMessage: React.FC<{ message: Message; versions?: Message[] }> = ({ message, versions }) => {
+  const streaming = useChatStore((s) => s.streaming);
+  const scrollToBottom = useScrollToBottom();
+  const [sticky] = useSticky();
+  const contentLength = streaming?.content.length ?? 0;
+
+  useEffect(() => {
+    if (sticky && contentLength > 0) {
+      scrollToBottom({ behavior: 'auto' });
+    }
+  }, [contentLength, sticky, scrollToBottom]);
+
+  const rendered = {
+    ...message,
+    content: streaming?.content ?? message.content,
+    reasoning: streaming?.reasoning ?? message.reasoning,
+  };
+  return <MessageBubble message={rendered} versions={versions} />;
+};
+
 const Pane: React.FC<{
   groups: { msg: Message; versions?: Message[] }[];
   maxContextMessages: number;
@@ -59,6 +79,7 @@ const Pane: React.FC<{
 }> = ({ groups, maxContextMessages, showAllMessages }) => {
   const scrollToBottom = useScrollToBottom();
   const [sticky] = useSticky();
+  const streamingAssistantId = useChatStore((s) => s.streaming?.assistantMessageId ?? null);
 
   const lastGroup = groups.length > 0 ? groups[groups.length - 1] : undefined;
   const last = lastGroup?.msg;
@@ -100,10 +121,14 @@ const Pane: React.FC<{
               </ListItem>
             )}
             <ListItem id={`msg-${m.id}`} component="div" disableGutters sx={{ px: 2 }}>
-              <MessageBubble
-                message={m.type === 'aiNote' && !showAllMessages ? { ...m, content: '⚠️ Assistant stored a hidden note here.' } : m}
-                versions={versions}
-              />
+              {m.id === streamingAssistantId ? (
+                <StreamingMessage message={m} versions={versions} />
+              ) : (
+                <MessageBubble
+                  message={m.type === 'aiNote' && !showAllMessages ? { ...m, content: '⚠️ Assistant stored a hidden note here.' } : m}
+                  versions={versions}
+                />
+              )}
             </ListItem>
           </React.Fragment>
         );
@@ -127,8 +152,11 @@ const FOLLOW_BUTTON_CLASS = css({ display: 'none' });
 
 const MessageList: React.FC<Props> = ({ messages, maxContextMessages, suggestions = [], isSuggestionsLoading = false, onSuggestionSelect }) => {
   const { topicId } = useParams();
-  const { visibleMessageCount, increaseVisibleMessageCount, highlightedMessageId, setHighlightedMessageId } = useChatStore();
-  const { showAllMessages } = useUiStore();
+  const visibleMessageCount = useChatStore((s) => s.visibleMessageCount);
+  const increaseVisibleMessageCount = useChatStore((s) => s.increaseVisibleMessageCount);
+  const highlightedMessageId = useChatStore((s) => s.highlightedMessageId);
+  const setHighlightedMessageId = useChatStore((s) => s.setHighlightedMessageId);
+  const showAllMessages = useUiStore((s) => s.showAllMessages);
 
   // 1. Filter, Sort, and Group
   const processedGroups = React.useMemo(() => {

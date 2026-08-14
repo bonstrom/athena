@@ -20,9 +20,8 @@ import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
 import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown';
 import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx';
 import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
-import { useState, useEffect, useRef, CSSProperties, useMemo } from 'react';
+import { useState, useEffect, useRef, CSSProperties, useMemo, memo } from 'react';
 import { useTheme, alpha } from '@mui/material/styles';
-import mermaid from 'mermaid';
 import DOMPurify from 'dompurify';
 import { useAuthStore } from '../store/AuthStore';
 
@@ -94,11 +93,11 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
         color: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.5)'),
         '&:hover': {
           color: (theme) => (theme.palette.mode === 'dark' ? 'white' : 'black'),
-          backgroundColor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
+          backgroundColor: (theme) =>
+            theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
         },
         zIndex: 1,
-      }}
-    >
+      }}>
       {copied ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
     </IconButton>
   );
@@ -114,18 +113,29 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const themeMode = useAuthStore((s) => s.themeMode);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    let cancelled = false;
+
     const renderDiagram = async (): Promise<void> => {
       try {
+        const { default: mermaid } = await import('mermaid');
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: themeMode === 'dark' ? 'dark' : 'default',
+          securityLevel: 'loose',
+        });
         const id = `mermaid-${crypto.randomUUID()}`;
         const { svg } = await mermaid.render(id, children.trim());
+        if (cancelled) return;
         container.innerHTML = svg;
         setError(null);
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Failed to render diagram');
       }
     };
@@ -138,12 +148,13 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
     }, MERMAID_DEBOUNCE_MS);
 
     return () => {
+      cancelled = true;
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
         debounceRef.current = null;
       }
     };
-  }, [children]);
+  }, [children, themeMode]);
 
   if (error) {
     return (
@@ -158,8 +169,7 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
           color: 'error.contrastText',
           fontSize: '0.875rem',
           fontFamily: 'monospace',
-        }}
-      >
+        }}>
         {error}
       </Box>
     );
@@ -199,20 +209,115 @@ const SvgDiagram: React.FC<SvgDiagramProps> = ({ children, onEditSvg }) => {
 
   const sanitized = useMemo(() => {
     return DOMPurify.sanitize(children.trim(), {
-      ADD_TAGS: ['svg', 'circle', 'rect', 'path', 'line', 'polygon', 'polyline', 'ellipse', 'text', 'tspan', 'g', 'defs',
-        'linearGradient', 'radialGradient', 'stop', 'use', 'clipPath', 'mask', 'pattern', 'symbol', 'marker',
-        'animate', 'animateTransform', 'animateMotion', 'filter', 'feGaussianBlur', 'feOffset', 'feMerge',
-        'feMergeNode', 'feColorMatrix', 'feBlend', 'image', 'foreignObject', 'switch', 'title', 'desc',
-        'metadata', 'style'],
-      ADD_ATTR: ['d', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'x2', 'y1', 'y2', 'width', 'height',
-        'viewBox', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray',
-        'opacity', 'transform', 'dx', 'dy', 'text-anchor', 'font-size', 'font-family', 'font-weight',
-        'font-style', 'text-decoration', 'dominant-baseline', 'alignment-baseline', 'clip-path',
-        'clip-rule', 'fill-rule', 'fill-opacity', 'stroke-opacity', 'marker-end', 'marker-start',
-        'marker-mid', 'filter', 'offset', 'stdDeviation', 'in', 'in2', 'mode', 'result', 'values',
-        'keyTimes', 'keySplines', 'repeatCount', 'begin', 'dur', 'attributeName', 'from', 'to',
-        'gradientUnits', 'gradientTransform', 'xlink:href', 'href', 'style', 'class', 'id',
-        'vector-effect', 'shape-rendering', 'text-rendering'],
+      ADD_TAGS: [
+        'svg',
+        'circle',
+        'rect',
+        'path',
+        'line',
+        'polygon',
+        'polyline',
+        'ellipse',
+        'text',
+        'tspan',
+        'g',
+        'defs',
+        'linearGradient',
+        'radialGradient',
+        'stop',
+        'use',
+        'clipPath',
+        'mask',
+        'pattern',
+        'symbol',
+        'marker',
+        'animate',
+        'animateTransform',
+        'animateMotion',
+        'filter',
+        'feGaussianBlur',
+        'feOffset',
+        'feMerge',
+        'feMergeNode',
+        'feColorMatrix',
+        'feBlend',
+        'image',
+        'foreignObject',
+        'switch',
+        'title',
+        'desc',
+        'metadata',
+        'style',
+      ],
+      ADD_ATTR: [
+        'd',
+        'cx',
+        'cy',
+        'r',
+        'rx',
+        'ry',
+        'x',
+        'y',
+        'x1',
+        'x2',
+        'y1',
+        'y2',
+        'width',
+        'height',
+        'viewBox',
+        'fill',
+        'stroke',
+        'stroke-width',
+        'stroke-linecap',
+        'stroke-linejoin',
+        'stroke-dasharray',
+        'opacity',
+        'transform',
+        'dx',
+        'dy',
+        'text-anchor',
+        'font-size',
+        'font-family',
+        'font-weight',
+        'font-style',
+        'text-decoration',
+        'dominant-baseline',
+        'alignment-baseline',
+        'clip-path',
+        'clip-rule',
+        'fill-rule',
+        'fill-opacity',
+        'stroke-opacity',
+        'marker-end',
+        'marker-start',
+        'marker-mid',
+        'filter',
+        'offset',
+        'stdDeviation',
+        'in',
+        'in2',
+        'mode',
+        'result',
+        'values',
+        'keyTimes',
+        'keySplines',
+        'repeatCount',
+        'begin',
+        'dur',
+        'attributeName',
+        'from',
+        'to',
+        'gradientUnits',
+        'gradientTransform',
+        'xlink:href',
+        'href',
+        'style',
+        'class',
+        'id',
+        'vector-effect',
+        'shape-rendering',
+        'text-rendering',
+      ],
     });
   }, [children]);
 
@@ -225,19 +330,29 @@ const SvgDiagram: React.FC<SvgDiagramProps> = ({ children, onEditSvg }) => {
   return (
     <Box sx={{ my: 2 }}>
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-        <ToggleButtonGroup value={background} exclusive size="small" onChange={handleBackgroundChange}>
+        <ToggleButtonGroup
+          value={background}
+          exclusive
+          size="small"
+          onChange={handleBackgroundChange}>
           <Tooltip title="Light background">
-            <ToggleButton value="light" aria-label="Light background">
+            <ToggleButton
+              value="light"
+              aria-label="Light background">
               <LightMode fontSize="small" />
             </ToggleButton>
           </Tooltip>
           <Tooltip title="Dark background">
-            <ToggleButton value="dark" aria-label="Dark background">
+            <ToggleButton
+              value="dark"
+              aria-label="Dark background">
               <DarkMode fontSize="small" />
             </ToggleButton>
           </Tooltip>
           <Tooltip title="Transparent background">
-            <ToggleButton value="transparent" aria-label="Transparent background">
+            <ToggleButton
+              value="transparent"
+              aria-label="Transparent background">
               <CheckBoxOutlineBlank fontSize="small" />
             </ToggleButton>
           </Tooltip>
@@ -251,10 +366,10 @@ const SvgDiagram: React.FC<SvgDiagramProps> = ({ children, onEditSvg }) => {
               sx={{
                 color: 'text.secondary',
                 '&:hover': {
-                  bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
+                  bgcolor: (theme) =>
+                    theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
                 },
-              }}
-            >
+              }}>
               <Edit fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -342,122 +457,139 @@ function escapeCurrencyDollars(content: string): string {
   return content.replace(/\$(?=\d)/g, '\\$');
 }
 
-const MarkdownWithCode: React.FC<MarkdownProps> = ({ children, fontSize = 16, disableMermaid = false, disableSvg = false, onEditSvg }) => {
+const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode({
+  children,
+  fontSize = 16,
+  disableMermaid = false,
+  disableSvg = false,
+  onEditSvg,
+}) {
   const theme = useTheme();
-  const themeMode = useAuthStore((s) => s.themeMode);
-
-  useEffect(() => {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: themeMode === 'dark' ? 'dark' : 'default',
-      securityLevel: 'loose',
-    });
-  }, [themeMode]);
-  const markdownComponents: Components = {
-    p: ({ children }) => (
-      <Typography variant="body2" sx={{ lineHeight: 1.4, mb: 1, fontSize: `${fontSize}px` }} component="p">
-        {children}
-      </Typography>
-    ),
-    h1: ({ children }) => (
-      <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 2, mb: 1, fontSize: `${fontSize * 1.5}px` }}>
-        {children}
-      </Typography>
-    ),
-    h2: ({ children }) => (
-      <Typography variant="h6" sx={{ fontWeight: 'bold', mt: 1.5, mb: 1, fontSize: `${fontSize * 1.3}px` }}>
-        {children}
-      </Typography>
-    ),
-    h3: ({ children }) => (
-      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mt: 1, mb: 0.5, fontSize: `${fontSize * 1.1}px` }}>
-        {children}
-      </Typography>
-    ),
-    li: ({ children }) => (
-      <li style={{ marginBottom: '0.25em', lineHeight: 1.4, fontSize: `${fontSize}px` }}>
-        <Typography variant="body2" component="span" sx={{ fontSize: 'inherit' }}>
+  const markdownComponents: Components = useMemo(
+    () => ({
+      p: ({ children }) => (
+        <Typography
+          variant="body2"
+          sx={{ lineHeight: 1.4, mb: 1, fontSize: `${fontSize}px` }}
+          component="p">
           {children}
         </Typography>
-      </li>
-    ),
-
-    code({
-      inline,
-      className,
-      children,
-      style: _inlineCodeStyle,
-      ...props
-    }: React.ComponentPropsWithoutRef<'code'> & { inline?: boolean }): React.ReactElement {
-      const match = /language-(\w+)/.exec(className ?? '');
-      const codeString = String(children).replace(/\n$/, '');
-      const darkSyntaxStyle: Record<string, CSSProperties> = {
-        ...oneDark,
-        comment: { ...oneDark.comment, color: '#7f8ea3' },
-        'block-comment': { ...oneDark['block-comment'], color: '#7f8ea3' },
-        prolog: { ...oneDark.prolog, color: '#7f8ea3' },
-      };
-      const lightSyntaxStyle = oneLight as Record<string, CSSProperties>;
-      const syntaxStyle: Record<string, CSSProperties> = theme.palette.mode === 'dark' ? darkSyntaxStyle : lightSyntaxStyle;
-      return !inline && match ? (
-        match[1] === 'mermaid' && !disableMermaid ? (
-          <MermaidDiagram key={codeString}>{codeString}</MermaidDiagram>
-        ) : match[1] === 'svg' && !disableSvg ? (
-          <SvgDiagram key={codeString} onEditSvg={onEditSvg}>{codeString}</SvgDiagram>
-        ) : (
-        <Box
-          sx={{
-            position: 'relative',
-            overflowX: 'auto',
-            my: 1,
-            fontSize: `${Math.max(12, fontSize - 2)}px`,
-            borderRadius: 1,
-            '&:hover .copy-button': { opacity: 1 },
-          }}
-        >
-          <CopyButton text={codeString} />
-          <SyntaxHighlighter
-            language={match[1]}
-            style={syntaxStyle}
-            PreTag="div"
-            customStyle={{
-              whiteSpace: 'pre',
-              padding: '1em',
-              margin: 0,
-              lineHeight: '1.4',
-            }}
-            wrapLongLines={false}
-            {...props}
-          >
-            {codeString}
-          </SyntaxHighlighter>
-        </Box>
-        )
-      ) : (
-        <code
-          className={className}
-          style={{
-            backgroundColor: theme.palette.mode === 'dark' ? '#333' : alpha(theme.palette.primary.main, 0.08),
-            color: theme.palette.mode === 'dark' ? '#e0e0e0' : theme.palette.primary.main,
-            padding: '0.2em 0.4em',
-            borderRadius: 4,
-            fontSize: `${Math.max(12, fontSize - 2)}px`,
-          }}
-          {...props}
-        >
+      ),
+      h1: ({ children }) => (
+        <Typography
+          variant="h5"
+          sx={{ fontWeight: 'bold', mt: 2, mb: 1, fontSize: `${fontSize * 1.5}px` }}>
           {children}
-        </code>
-      );
-    },
-  };
+        </Typography>
+      ),
+      h2: ({ children }) => (
+        <Typography
+          variant="h6"
+          sx={{ fontWeight: 'bold', mt: 1.5, mb: 1, fontSize: `${fontSize * 1.3}px` }}>
+          {children}
+        </Typography>
+      ),
+      h3: ({ children }) => (
+        <Typography
+          variant="subtitle1"
+          sx={{ fontWeight: 'bold', mt: 1, mb: 0.5, fontSize: `${fontSize * 1.1}px` }}>
+          {children}
+        </Typography>
+      ),
+      li: ({ children }) => (
+        <li style={{ marginBottom: '0.25em', lineHeight: 1.4, fontSize: `${fontSize}px` }}>
+          <Typography
+            variant="body2"
+            component="span"
+            sx={{ fontSize: 'inherit' }}>
+            {children}
+          </Typography>
+        </li>
+      ),
+
+      code({
+        inline,
+        className,
+        children,
+        style: _inlineCodeStyle,
+        ...props
+      }: React.ComponentPropsWithoutRef<'code'> & { inline?: boolean }): React.ReactElement {
+        const match = /language-(\w+)/.exec(className ?? '');
+        const codeString = String(children).replace(/\n$/, '');
+        const darkSyntaxStyle: Record<string, CSSProperties> = {
+          ...oneDark,
+          comment: { ...oneDark.comment, color: '#7f8ea3' },
+          'block-comment': { ...oneDark['block-comment'], color: '#7f8ea3' },
+          prolog: { ...oneDark.prolog, color: '#7f8ea3' },
+        };
+        const lightSyntaxStyle = oneLight as Record<string, CSSProperties>;
+        const syntaxStyle: Record<string, CSSProperties> =
+          theme.palette.mode === 'dark' ? darkSyntaxStyle : lightSyntaxStyle;
+        return !inline && match ? (
+          match[1] === 'mermaid' && !disableMermaid ? (
+            <MermaidDiagram key={codeString}>{codeString}</MermaidDiagram>
+          ) : match[1] === 'svg' && !disableSvg ? (
+            <SvgDiagram
+              key={codeString}
+              onEditSvg={onEditSvg}>
+              {codeString}
+            </SvgDiagram>
+          ) : (
+            <Box
+              sx={{
+                position: 'relative',
+                overflowX: 'auto',
+                my: 1,
+                fontSize: `${Math.max(12, fontSize - 2)}px`,
+                borderRadius: 1,
+                '&:hover .copy-button': { opacity: 1 },
+              }}>
+              <CopyButton text={codeString} />
+              <SyntaxHighlighter
+                language={match[1]}
+                style={syntaxStyle}
+                PreTag="div"
+                customStyle={{
+                  whiteSpace: 'pre',
+                  padding: '1em',
+                  margin: 0,
+                  lineHeight: '1.4',
+                }}
+                wrapLongLines={false}
+                {...props}>
+                {codeString}
+              </SyntaxHighlighter>
+            </Box>
+          )
+        ) : (
+          <code
+            className={className}
+            style={{
+              backgroundColor: theme.palette.mode === 'dark' ? '#333' : alpha(theme.palette.primary.main, 0.08),
+              color: theme.palette.mode === 'dark' ? '#e0e0e0' : theme.palette.primary.main,
+              padding: '0.2em 0.4em',
+              borderRadius: 4,
+              fontSize: `${Math.max(12, fontSize - 2)}px`,
+            }}
+            {...props}>
+            {children}
+          </code>
+        );
+      },
+    }),
+    [fontSize, theme.palette.mode, theme.palette.primary.main, onEditSvg, disableMermaid, disableSvg],
+  );
 
   return (
     <Box sx={{ overflowWrap: 'break-word', wordBreak: 'normal' }}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={markdownComponents}>
         {escapeCurrencyDollars(ensureClosedFences(children))}
       </ReactMarkdown>
     </Box>
   );
-};
+});
 
 export default MarkdownWithCode;

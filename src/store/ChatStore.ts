@@ -67,6 +67,13 @@ export interface ContextEntry {
   isRagRetrieved?: boolean;
 }
 
+export interface StreamingState {
+  topicId: string;
+  assistantMessageId: string;
+  content: string;
+  reasoning: string;
+}
+
 interface ChatStore {
   messagesByTopic: Record<string, Message[] | undefined>;
   currentTopicId: string | null;
@@ -111,6 +118,7 @@ interface ChatStore {
   setThinkingMode: (mode: 'enabled' | 'disabled' | null) => void;
   abortController: AbortController | null;
   currentRequestMessageIds: { userMessageId: string; assistantMessageId: string } | null;
+  streaming: StreamingState | null;
   stopSending: () => Promise<string | null>;
   pendingSuggestions: string[] | null;
   clearSuggestions: () => void;
@@ -128,6 +136,40 @@ interface ChatStore {
 }
 
 let preloadInFlight = new Set<string>();
+
+// Bounded LRU cache for per-topic message histories. Keeps the in-memory
+// messagesByTopic from growing without bound as topics are preloaded/visited.
+const MESSAGES_CACHE_LIMIT = 20;
+let topicLruOrder: string[] = [];
+
+function touchTopic(topicId: string): void {
+  topicLruOrder = topicLruOrder.filter((id) => id !== topicId);
+  topicLruOrder.push(topicId);
+}
+
+function pruneMessagesCache(
+  messagesByTopic: Record<string, Message[] | undefined>,
+  protectedIds: ReadonlySet<string>,
+): Record<string, Message[] | undefined> {
+  const keys = Object.keys(messagesByTopic);
+  if (keys.length <= MESSAGES_CACHE_LIMIT) return messagesByTopic;
+
+  const toEvict = new Set<string>();
+  for (const id of topicLruOrder) {
+    if (keys.length - toEvict.size <= MESSAGES_CACHE_LIMIT) break;
+    if (messagesByTopic[id] === undefined || protectedIds.has(id)) continue;
+    toEvict.add(id);
+  }
+
+  if (toEvict.size === 0) return messagesByTopic;
+
+  const result: Record<string, Message[] | undefined> = {};
+  for (const key of keys) {
+    if (!toEvict.has(key)) result[key] = messagesByTopic[key];
+  }
+  topicLruOrder = topicLruOrder.filter((id) => !toEvict.has(id));
+  return result;
+}
 
 // Mutex-like summarization gate — llmSuggestionService has a single completion slot
 // so concurrent calls would overwrite each other's resolve callback and hang.
@@ -153,6 +195,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   autoReadEnabled: false,
   abortController: null,
   currentRequestMessageIds: null,
+  streaming: null,
   pendingSuggestions: null,
   summarizingMessageIds: new Set<string>(),
   failedSummaryMessageIds: new Set<string>(),
@@ -203,7 +246,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             updates[topicId] = msgs;
           }
         }
-        return { messagesByTopic: { ...state.messagesByTopic, ...updates } };
+        for (const topicId of Object.keys(updates)) touchTopic(topicId);
+        const protectedIds = new Set<string>();
+        if (state.currentTopicId) protectedIds.add(state.currentTopicId);
+        if (state.streaming) protectedIds.add(state.streaming.topicId);
+        return { messagesByTopic: pruneMessagesCache({ ...state.messagesByTopic, ...updates }, protectedIds) };
       });
     } finally {
       const cleared = new Set(preloadInFlight);
@@ -433,6 +480,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // If already cached and on the main fork, just switch to it instantly
     const cached = get().messagesByTopic[topicId];
     if (cached !== undefined && !forkId) {
+      touchTopic(topicId);
       set({ currentTopicId: topicId, isInitialLoad: true, visibleMessageCount: 10, autoReadEnabled: false, webSearchEnabled: false });
       return;
     }
@@ -443,14 +491,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       .and((m) => m.forkId === activeForkId)
       .sortBy('created');
 
-    set((state) => ({
-      messagesByTopic: { ...state.messagesByTopic, [topicId]: all },
-      currentTopicId: topicId,
-      isInitialLoad: true,
-      visibleMessageCount: 10,
-      autoReadEnabled: false,
-      webSearchEnabled: false,
-    }));
+    set((state) => {
+      touchTopic(topicId);
+      const protectedIds = new Set<string>([topicId]);
+      if (state.streaming) protectedIds.add(state.streaming.topicId);
+      return {
+        messagesByTopic: pruneMessagesCache({ ...state.messagesByTopic, [topicId]: all }, protectedIds),
+        currentTopicId: topicId,
+        isInitialLoad: true,
+        visibleMessageCount: 10,
+        autoReadEnabled: false,
+        webSearchEnabled: false,
+      };
+    });
     },
 
     refreshTopicMessages: async (topicId: string): Promise<void> => {
@@ -461,9 +514,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         .equals(topicId)
         .and((m) => m.forkId === activeForkId)
         .sortBy('created');
-      set((state) => ({
-        messagesByTopic: { ...state.messagesByTopic, [topicId]: all },
-      }));
+      set((state) => {
+        touchTopic(topicId);
+        const protectedIds = new Set<string>([topicId]);
+        if (state.streaming) protectedIds.add(state.streaming.topicId);
+        return {
+          messagesByTopic: pruneMessagesCache({ ...state.messagesByTopic, [topicId]: all }, protectedIds),
+        };
+      });
     },
 
     updateMessageContext: async (id, include): Promise<void> => {
@@ -949,6 +1007,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             [topicId]: sortMessages(updated),
           },
           currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId },
+          streaming: { topicId, assistantMessageId: assistantId, content: '', reasoning: '' },
         };
       });
 
@@ -966,7 +1025,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           const displayContent = streamedContent
             .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
             .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '');
-          get().updateMessageStateOnly(assistantId, { content: displayContent });
+          set({ streaming: { topicId, assistantMessageId: assistantId, content: displayContent, reasoning: streamedThinking.trim() } });
           lastContentRenderTime = now;
         }
       };
@@ -978,14 +1037,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         streamedThinking += token;
         const now = Date.now();
         if (now - lastThinkingRenderTime > RENDER_THROTTLE_MS) {
-          get().updateMessageStateOnly(assistantId, { reasoning: streamedThinking.trim() });
+          set({ streaming: { topicId, assistantMessageId: assistantId, content: streamedContent, reasoning: streamedThinking.trim() } });
           lastThinkingRenderTime = now;
         }
       };
 
       const onToolLogCallback = (log: string): void => {
         streamedThinking += log;
-        get().updateMessageStateOnly(assistantId, { reasoning: streamedThinking.trim() });
+        set({ streaming: { topicId, assistantMessageId: assistantId, content: streamedContent, reasoning: streamedThinking.trim() } });
       };
 
       // 4. Call the Orchestrator for the Primary Model
@@ -1247,6 +1306,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             return m;
           }),
         },
+        streaming: null,
       }));
 
       // Fire-and-forget TTS if enabled and auto-read is on
@@ -1375,7 +1435,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       await get().updateMessage(userMessage.id, { failed: true });
       await get().updateMessage(assistantId, { isDeleted: true });
     } finally {
-      set({ sending: false, abortController: null, currentRequestMessageIds: null });
+      set({ sending: false, abortController: null, currentRequestMessageIds: null, streaming: null });
     }
   },
   regenerateResponse: async (assistantId): Promise<void> => {
@@ -1425,6 +1485,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         sending: false,
         abortController: null,
         currentRequestMessageIds: null,
+        streaming: null,
         messagesByTopic: {
           ...state.messagesByTopic,
           [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? []).filter((m) => m.id !== userMessageId && m.id !== assistantMessageId),
@@ -1434,7 +1495,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       return content;
     }
 
-    set({ sending: false, abortController: null, currentRequestMessageIds: null });
+    set({ sending: false, abortController: null, currentRequestMessageIds: null, streaming: null });
     return null;
   },
   maybeSummarize: async (messageId: string, content: string, force = false, contextMessages?: LlmMessage[]): Promise<void> => {

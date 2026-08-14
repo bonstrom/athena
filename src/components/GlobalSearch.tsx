@@ -89,12 +89,11 @@ export const GlobalSearch = (): JSX.Element => {
   const navigate = useNavigate();
   const { isMobile, closeDrawer, sidebarFilter, setSidebarFilter } = useUiStore();
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
-  const topicFuseRef = useRef<Fuse<Topic> | null>(null);
-  const messageFuseRef = useRef<Fuse<Message> | null>(null);
+  // Fuse indexes are keyed by filter mode so switching modes reuses the cached
+  // index instead of re-reading full tables and rebuilding from scratch.
+  const topicFuseByMode = useRef<Map<string, Fuse<Topic>>>(new Map());
+  const messageCacheByMode = useRef<Map<string, { fuse: Fuse<Message>; lookup: Map<string, Topic> }>>(new Map());
   const courseFuseRef = useRef<Fuse<CourseSearchEntry> | null>(null);
-  const debateTopicFuseRef = useRef<Fuse<Topic> | null>(null);
-  const debateMessageFuseRef = useRef<Fuse<Message> | null>(null);
-  const topicLookupRef = useRef<Map<string, Topic>>(new Map());
 
   useEffect(() => {
     if (!query.trim()) {
@@ -126,17 +125,10 @@ export const GlobalSearch = (): JSX.Element => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, sidebarFilter]);
 
-  useEffect(() => {
-    topicFuseRef.current = null;
-    messageFuseRef.current = null;
-    courseFuseRef.current = null;
-    debateTopicFuseRef.current = null;
-    debateMessageFuseRef.current = null;
-    topicLookupRef.current = new Map();
-  }, [sidebarFilter]);
-
   const searchTopics = async (searchQuery: string, filterMode?: SidebarFilterMode): Promise<SearchResult[]> => {
-    if (!topicFuseRef.current) {
+    const modeKey = filterMode ?? 'all';
+    let topicFuse = topicFuseByMode.current.get(modeKey);
+    if (!topicFuse) {
       const allTopics = await athenaDb.topics
         .toCollection()
         .filter((t) => !t.isDeleted)
@@ -151,15 +143,16 @@ export const GlobalSearch = (): JSX.Element => {
         filtered = allTopics.filter((t) => !t.mode || t.mode === 'topic');
       }
 
-      topicFuseRef.current = new Fuse(filtered, {
+      topicFuse = new Fuse(filtered, {
         keys: ['name'],
         threshold: 0.4,
         includeScore: true,
         minMatchCharLength: 2,
       });
+      topicFuseByMode.current.set(modeKey, topicFuse);
     }
 
-    const fuseResults = topicFuseRef.current.search(searchQuery);
+    const fuseResults = topicFuse.search(searchQuery);
     return fuseResults.slice(0, MAX_SEARCH_RESULTS).map((r) => ({
       id: `topic-${r.item.id}`,
       topicId: r.item.id,
@@ -170,7 +163,9 @@ export const GlobalSearch = (): JSX.Element => {
   };
 
   const searchMessages = async (searchQuery: string, filterByMode?: SidebarFilterMode): Promise<SearchResult[]> => {
-    if (!messageFuseRef.current) {
+    const modeKey = filterByMode ?? 'all';
+    let cache = messageCacheByMode.current.get(modeKey);
+    if (!cache) {
       const allMessages: Message[] = await athenaDb.messages
         .toCollection()
         .filter((m) => !m.isDeleted)
@@ -197,9 +192,8 @@ export const GlobalSearch = (): JSX.Element => {
           if (t && !t.isDeleted) lookup.set(t.id, t);
         });
       }
-      topicLookupRef.current = lookup;
 
-      messageFuseRef.current = new Fuse(filteredMessages, {
+      const fuse = new Fuse(filteredMessages, {
         keys: ['content'],
         threshold: 0.4,
         includeScore: true,
@@ -207,13 +201,16 @@ export const GlobalSearch = (): JSX.Element => {
         minMatchCharLength: 2,
         ignoreLocation: true,
       });
+      cache = { fuse, lookup };
+      messageCacheByMode.current.set(modeKey, cache);
     }
 
-    const fuseResults = messageFuseRef.current.search(searchQuery);
+    const resolvedCache = cache;
+    const fuseResults = resolvedCache.fuse.search(searchQuery);
     const messageResults: SearchResult[] = [];
 
     fuseResults.slice(0, MAX_SEARCH_RESULTS).forEach((r) => {
-      const parentTopic = topicLookupRef.current.get(r.item.topicId);
+      const parentTopic = resolvedCache.lookup.get(r.item.topicId);
       if (!parentTopic) return;
 
       const matchIndices = r.matches?.[0]?.indices[0];
@@ -322,28 +319,12 @@ export const GlobalSearch = (): JSX.Element => {
   const searchDebates = async (searchQuery: string): Promise<SearchResult[]> => {
     const debateResults: SearchResult[] = [];
 
-    if (!debateTopicFuseRef.current) {
-      const allTopics = await athenaDb.topics
-        .toCollection()
-        .filter((t) => !t.isDeleted && t.mode === 'debate')
-        .toArray();
-
-      debateTopicFuseRef.current = new Fuse(allTopics, {
-        keys: ['name'],
-        threshold: 0.4,
-        includeScore: true,
-        minMatchCharLength: 2,
-      });
-    }
-
-    const topicFuseResults = debateTopicFuseRef.current.search(searchQuery);
+    const topicResults = await searchTopics(searchQuery, 'debates');
     debateResults.push(
-      ...topicFuseResults.slice(0, MAX_SEARCH_RESULTS).map((r) => ({
-        id: `debate-topic-${r.item.id}`,
-        topicId: r.item.id,
+      ...topicResults.slice(0, MAX_SEARCH_RESULTS).map((r) => ({
+        ...r,
+        id: `debate-topic-${r.topicId}`,
         type: 'debate' as SearchResultType,
-        title: r.item.name,
-        date: r.item.updatedOn,
       })),
     );
 

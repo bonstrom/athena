@@ -5,7 +5,7 @@ import { useScrollToBottom, useSticky } from 'react-scroll-to-bottom';
 import { useChatStore } from '../store/ChatStore';
 import { useUiStore } from '../store/UiStore';
 import type { Message } from '../database/AthenaDb';
-import { createMessage } from '../testUtils';
+import { createMessage, selectorize } from '../testUtils';
 
 jest.mock('react-scroll-to-bottom', () => ({
   __esModule: true,
@@ -61,11 +61,11 @@ describe('MessageList', () => {
     mockUseParams.mockReturnValue({ topicId: 'topic-1' });
     mockUseScrollToBottom.mockReturnValue(jest.fn());
     mockUseSticky.mockReturnValue([true]);
-    mockUseUiStore.mockReturnValue({ showAllMessages: false });
+    selectorize(mockUseUiStore, { showAllMessages: false });
   });
 
   it('shows Athena empty state when there are no messages', () => {
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       visibleMessageCount: 20,
       increaseVisibleMessageCount: jest.fn(),
     });
@@ -78,7 +78,7 @@ describe('MessageList', () => {
 
   it('shows load older button and triggers increaseVisibleMessageCount', () => {
     const increaseVisibleMessageCount: jest.MockedFunction<() => void> = jest.fn();
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       visibleMessageCount: 1,
       increaseVisibleMessageCount,
     });
@@ -97,7 +97,7 @@ describe('MessageList', () => {
   });
 
   it('renders suggestions and forwards selected suggestion', () => {
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       visibleMessageCount: 20,
       increaseVisibleMessageCount: jest.fn(),
     });
@@ -114,7 +114,7 @@ describe('MessageList', () => {
 
   it('shows context window indicator when messages exceed maxContextMessages', () => {
     const increaseVisibleMessageCount: jest.MockedFunction<() => void> = jest.fn();
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       visibleMessageCount: 20,
       increaseVisibleMessageCount,
     });
@@ -132,7 +132,7 @@ describe('MessageList', () => {
   });
 
   it('renders standalone assistant and system messages', () => {
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       visibleMessageCount: 20,
       increaseVisibleMessageCount: jest.fn(),
     });
@@ -150,7 +150,7 @@ describe('MessageList', () => {
   });
 
   it('shows generating suggestions indicator when isSuggestionsLoading is true', () => {
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       visibleMessageCount: 20,
       increaseVisibleMessageCount: jest.fn(),
     });
@@ -164,7 +164,7 @@ describe('MessageList', () => {
 
   it('scrolls to highlighted message when highlightedMessageId is set', () => {
     const setHighlightedMessageId = jest.fn();
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       visibleMessageCount: 50,
       increaseVisibleMessageCount: jest.fn(),
       highlightedMessageId: 'highlighted-msg',
@@ -181,7 +181,7 @@ describe('MessageList', () => {
   });
 
   it('groups user messages with their assistant versions', () => {
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       visibleMessageCount: 20,
       increaseVisibleMessageCount: jest.fn(),
     });
@@ -199,8 +199,8 @@ describe('MessageList', () => {
   });
 
   it('hides aiNote content when showAllMessages is false', () => {
-    mockUseUiStore.mockReturnValue({ showAllMessages: false });
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseUiStore, { showAllMessages: false });
+    selectorize(mockUseChatStore, {
       visibleMessageCount: 20,
       increaseVisibleMessageCount: jest.fn(),
     });
@@ -216,8 +216,8 @@ describe('MessageList', () => {
   });
 
   it('shows aiNote content when showAllMessages is true', () => {
-    mockUseUiStore.mockReturnValue({ showAllMessages: true });
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseUiStore, { showAllMessages: true });
+    selectorize(mockUseChatStore, {
       visibleMessageCount: 20,
       increaseVisibleMessageCount: jest.fn(),
     });

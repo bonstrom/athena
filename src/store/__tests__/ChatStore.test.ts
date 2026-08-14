@@ -348,6 +348,54 @@ describe('ChatStore', () => {
     expect(assistantMessage?.cacheCreationTokens).toBe(10);
   });
 
+  it('streams into transient state without mutating messagesByTopic, then commits', async () => {
+    jest.mocked(calculateCostSEK).mockReturnValue(1);
+    let onToken: ((chunk: string) => void) | undefined;
+    let resolveLoop: ((r: LlmLoopResult) => void) | undefined;
+    const loopPromise = new Promise<LlmLoopResult>((resolve) => {
+      resolveLoop = resolve;
+    });
+    mockOrchestrateLlmLoop.mockImplementation(
+      (_model: unknown, _temp: unknown, _messages: unknown, tokenCb: (chunk: string) => void): Promise<LlmLoopResult> => {
+        onToken = tokenCb;
+        return loopPromise;
+      },
+    );
+
+    const sendPromise = useChatStore.getState().sendMessageStream('Hello there', 'topic-1');
+
+    // Allow the async setup to reach the LLM loop
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(onToken).toBeDefined();
+
+    const messagesBefore = useChatStore.getState().messagesByTopic['topic-1'];
+
+    onToken?.('Hel');
+
+    const streaming = useChatStore.getState().streaming;
+    expect(streaming).not.toBeNull();
+    expect(streaming?.content).toBe('Hel');
+    // The historical message array must stay stable during streaming
+    expect(useChatStore.getState().messagesByTopic['topic-1']).toBe(messagesBefore);
+
+    resolveLoop?.({
+      finalContent: 'Hello there',
+      totalPromptTokens: 10,
+      totalCompletionTokens: 5,
+      totalCachedTokens: 0,
+      totalCacheCreationTokens: 0,
+      totalSearchCount: 0,
+      toolLoopTrace: [],
+      lastResult: { content: 'Hello there', rawContent: 'Hello there', promptTokens: 10, completionTokens: 5, searchCount: 0 },
+    });
+
+    await sendPromise;
+
+    expect(useChatStore.getState().streaming).toBeNull();
+    const assistant = useChatStore.getState().messagesByTopic['topic-1']?.find((m) => m.type === 'assistant');
+    expect(assistant?.content).toBe('Hello there');
+  });
+
   it('stopSending aborts, deletes pending user/assistant messages, and returns user content', async () => {
     const abortController = new AbortController();
 
@@ -1295,6 +1343,18 @@ describe('ChatStore', () => {
   it('preloadTopics does nothing when given an empty array', async () => {
     await useChatStore.getState().preloadTopics([]);
     expect(mockDbSortBy).not.toHaveBeenCalled();
+  });
+
+  it('preloadTopics evicts least-recently-used topics when the cache exceeds its limit', async () => {
+    const ids = Array.from({ length: 21 }, (_, i) => `preload-${i}`);
+    mockDbSortBy.mockResolvedValue([]);
+
+    await useChatStore.getState().preloadTopics(ids);
+
+    const messagesByTopic = useChatStore.getState().messagesByTopic;
+    expect(Object.keys(messagesByTopic).length).toBeLessThanOrEqual(20);
+    expect(messagesByTopic['preload-0']).toBeUndefined();
+    expect(messagesByTopic['preload-20']).toBeDefined();
   });
 
   it('stopSending returns null when currentRequestMessageIds is null', async () => {

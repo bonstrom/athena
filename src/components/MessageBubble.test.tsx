@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import MessageBubble from './MessageBubble';
-import { createMessage, renderWithTheme } from '../testUtils';
+import { createMessage, renderWithTheme, selectorize } from '../testUtils';
 import { useAuthStore } from '../store/AuthStore';
 import { useChatStore } from '../store/ChatStore';
 import { useNotificationStore } from '../store/NotificationStore';
@@ -142,24 +142,24 @@ describe('MessageBubble', () => {
       },
     });
 
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 500,
       aiSummaryEnabled: false,
     });
 
-    mockUseChatStore.mockReturnValue(createChatStore());
+    selectorize(mockUseChatStore, createChatStore());
 
-    mockUseNotificationStore.mockReturnValue({
+    selectorize(mockUseNotificationStore, {
       addNotification: jest.fn(),
     });
 
-    mockUseTopicStore.mockReturnValue({
+    selectorize(mockUseTopicStore, {
       forkTopic: jest.fn((): Promise<void> => Promise.resolve()),
     });
 
-    mockUseUiStore.mockReturnValue({
+    selectorize(mockUseUiStore, {
       isMobile: false,
       currentlySpeakingMessageId: null,
     });
@@ -189,7 +189,7 @@ describe('MessageBubble', () => {
   it('pins message into context when pin button is clicked', async () => {
     const updateMessageContext = jest.fn((): Promise<void> => Promise.resolve());
 
-    mockUseChatStore.mockReturnValue(createChatStore({ updateMessageContext }));
+    selectorize(mockUseChatStore, createChatStore({ updateMessageContext }));
 
     renderWithTheme(<MessageBubble message={createMessage({ id: 'message-1', includeInContext: false })} />);
 
@@ -203,7 +203,7 @@ describe('MessageBubble', () => {
   it('retries failed message sending from retry button', async () => {
     const sendMessageStream = jest.fn((): Promise<void> => Promise.resolve());
 
-    mockUseChatStore.mockReturnValue(createChatStore({ sendMessageStream }));
+    selectorize(mockUseChatStore, createChatStore({ sendMessageStream }));
 
     renderWithTheme(
       <MessageBubble
@@ -224,7 +224,7 @@ describe('MessageBubble', () => {
   });
 
   it('renders user messages with user label', () => {
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'TestUser',
       chatFontSize: 16,
       messageTruncateChars: 500,
@@ -246,7 +246,7 @@ describe('MessageBubble', () => {
   it('deletes message when delete action is confirmed', async () => {
     const deleteMessage = jest.fn((): Promise<void> => Promise.resolve());
 
-    mockUseChatStore.mockReturnValue(createChatStore({ deleteMessage }));
+    selectorize(mockUseChatStore, createChatStore({ deleteMessage }));
 
     renderWithTheme(<MessageBubble message={createMessage({ id: 'message-1' })} />);
 
@@ -272,7 +272,7 @@ describe('MessageBubble', () => {
   it('unpins message from context when already pinned', async () => {
     const updateMessageContext = jest.fn((): Promise<void> => Promise.resolve());
 
-    mockUseChatStore.mockReturnValue(createChatStore({ updateMessageContext }));
+    selectorize(mockUseChatStore, createChatStore({ updateMessageContext }));
 
     renderWithTheme(
       <MessageBubble
@@ -313,7 +313,7 @@ describe('MessageBubble', () => {
   it('forks conversation at message boundary', async () => {
     const forkTopic = jest.fn((): Promise<void> => Promise.resolve());
 
-    mockUseTopicStore.mockReturnValue({
+    selectorize(mockUseTopicStore, {
       forkTopic,
     });
 
@@ -358,7 +358,7 @@ describe('MessageBubble', () => {
   });
 
   it('shows different button states on mobile vs desktop', () => {
-    mockUseUiStore.mockReturnValue({
+    selectorize(mockUseUiStore, {
       isMobile: true,
       currentlySpeakingMessageId: null,
     });
@@ -370,7 +370,7 @@ describe('MessageBubble', () => {
   });
 
   it('shows StopCircleIcon and Stop speech tooltip when this message is being read', () => {
-    mockUseUiStore.mockReturnValue({
+    selectorize(mockUseUiStore, {
       currentlySpeakingMessageId: 'message-1',
       isMobile: false,
     });
@@ -393,7 +393,7 @@ describe('MessageBubble', () => {
   });
 
   it('calls stopSpeech when Stop speech is clicked on the currently speaking message', () => {
-    mockUseUiStore.mockReturnValue({
+    selectorize(mockUseUiStore, {
       currentlySpeakingMessageId: 'msg-42',
       isMobile: false,
     });
@@ -409,7 +409,7 @@ describe('MessageBubble', () => {
   // ─── Summarization ────────────────────────────────────────────────────────
 
   it('renders summarization button when message is long enough and aiSummaryEnabled', () => {
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 0,
@@ -430,13 +430,13 @@ describe('MessageBubble', () => {
 
   it('calls maybeSummarize when summarization button is clicked', () => {
     const maybeSummarize = jest.fn((): Promise<void> => Promise.resolve());
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 0,
       aiSummaryEnabled: true,
     });
-    mockUseChatStore.mockReturnValue(
+    selectorize(mockUseChatStore, 
       createChatStore({ maybeSummarize }),
     );
 
@@ -456,13 +456,13 @@ describe('MessageBubble', () => {
   });
 
   it('shows CircularProgress when summarization is in progress', () => {
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 0,
       aiSummaryEnabled: true,
     });
-    mockUseChatStore.mockReturnValue(
+    selectorize(mockUseChatStore, 
       createChatStore({ summarizingMessageIds: new Set(['msg-sum-progress']) }),
     );
 
@@ -480,13 +480,13 @@ describe('MessageBubble', () => {
   });
 
   it('shows retry state for failed summarization', () => {
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 0,
       aiSummaryEnabled: true,
     });
-    mockUseChatStore.mockReturnValue(
+    selectorize(mockUseChatStore, 
       createChatStore({ failedSummaryMessageIds: new Set(['msg-sum-failed']) }),
     );
 
@@ -504,7 +504,7 @@ describe('MessageBubble', () => {
   });
 
   it('shows regenerate summary label when message already has summary', () => {
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 0,
@@ -525,7 +525,7 @@ describe('MessageBubble', () => {
   });
 
   it('shows summary text in info popover', () => {
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 0,
@@ -570,7 +570,7 @@ describe('MessageBubble', () => {
   });
 
   it('shows thinking label while assistant is typing and reasoning is present', () => {
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 0,
@@ -647,7 +647,7 @@ describe('MessageBubble', () => {
 
   it('calls switchMessageVersion when navigating versions', () => {
     const switchMessageVersion = jest.fn((): Promise<void> => Promise.resolve());
-    mockUseChatStore.mockReturnValue(
+    selectorize(mockUseChatStore, 
       createChatStore({ switchMessageVersion }),
     );
 
@@ -881,7 +881,7 @@ describe('MessageBubble', () => {
 
   it('calls regenerateResponse from menu', () => {
     const regenerateResponse = jest.fn((): Promise<void> => Promise.resolve());
-    mockUseChatStore.mockReturnValue(
+    selectorize(mockUseChatStore, 
       createChatStore({ regenerateResponse }),
     );
 
@@ -904,7 +904,7 @@ describe('MessageBubble', () => {
 
   it('calls forkTopic from Fork menu item', () => {
     const forkTopic = jest.fn((): Promise<void> => Promise.resolve());
-    mockUseTopicStore.mockReturnValue({ forkTopic });
+    selectorize(mockUseTopicStore, { forkTopic });
 
     renderWithTheme(
       <MessageBubble
@@ -943,7 +943,7 @@ describe('MessageBubble', () => {
   // ─── Truncated Content ───────────────────────────────────────────────────
 
   it('truncates long messages when messageTruncateChars is set', () => {
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 10,
@@ -965,7 +965,7 @@ describe('MessageBubble', () => {
   });
 
   it('expands truncated message when Show more is clicked', () => {
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 10,
@@ -988,7 +988,7 @@ describe('MessageBubble', () => {
   });
 
   it('does not truncate messages shorter than truncate limit', () => {
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 500,
@@ -1008,7 +1008,7 @@ describe('MessageBubble', () => {
   });
 
   it('automatically expands during streaming (empty content)', () => {
-    mockUseAuthStore.mockReturnValue({
+    selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
       messageTruncateChars: 10,
@@ -1034,8 +1034,8 @@ describe('MessageBubble', () => {
     const updateMessageContext = jest.fn(
       (): Promise<void> => Promise.reject(new Error('Update failed')),
     );
-    mockUseNotificationStore.mockReturnValue({ addNotification });
-    mockUseChatStore.mockReturnValue(
+    selectorize(mockUseNotificationStore, { addNotification });
+    selectorize(mockUseChatStore, 
       createChatStore({ updateMessageContext }),
     );
 
@@ -1067,7 +1067,7 @@ describe('MessageBubble', () => {
       writable: true,
       value: { writeText: mockFailingWriteText },
     });
-    mockUseNotificationStore.mockReturnValue({ addNotification });
+    selectorize(mockUseNotificationStore, { addNotification });
 
     renderWithTheme(
       <MessageBubble
@@ -1089,8 +1089,8 @@ describe('MessageBubble', () => {
     const forkTopic = jest.fn(
       (): Promise<void> => Promise.reject(new Error('Fork failed')),
     );
-    mockUseNotificationStore.mockReturnValue({ addNotification });
-    mockUseTopicStore.mockReturnValue({ forkTopic });
+    selectorize(mockUseNotificationStore, { addNotification });
+    selectorize(mockUseTopicStore, { forkTopic });
 
     renderWithTheme(
       <MessageBubble
@@ -1142,8 +1142,8 @@ describe('MessageBubble', () => {
     const deleteMessage = jest.fn(
       (): Promise<void> => Promise.reject(new Error('Delete failed')),
     );
-    mockUseNotificationStore.mockReturnValue({ addNotification });
-    mockUseChatStore.mockReturnValue(createChatStore({ deleteMessage }));
+    selectorize(mockUseNotificationStore, { addNotification });
+    selectorize(mockUseChatStore, createChatStore({ deleteMessage }));
 
     renderWithTheme(
       <MessageBubble
@@ -1270,7 +1270,7 @@ describe('MessageBubble', () => {
 
   it('edits an SVG via the edit dialog', async () => {
     const editSvgInMessage = jest.fn((): Promise<void> => Promise.resolve());
-    mockUseChatStore.mockReturnValue(createChatStore({ editSvgInMessage }));
+    selectorize(mockUseChatStore, createChatStore({ editSvgInMessage }));
 
     renderWithTheme(<MessageBubble message={createMessage({ id: 'msg-svg', type: 'assistant', content: 'Diagram' })} />);
 
@@ -1288,8 +1288,8 @@ describe('MessageBubble', () => {
   it('shows notification when SVG edit fails', async () => {
     const addNotification = jest.fn();
     const editSvgInMessage = jest.fn((): Promise<void> => Promise.reject(new Error('Edit failed')));
-    mockUseNotificationStore.mockReturnValue({ addNotification });
-    mockUseChatStore.mockReturnValue(createChatStore({ editSvgInMessage }));
+    selectorize(mockUseNotificationStore, { addNotification });
+    selectorize(mockUseChatStore, createChatStore({ editSvgInMessage }));
 
     renderWithTheme(<MessageBubble message={createMessage({ id: 'msg-svg', type: 'assistant', content: 'Diagram' })} />);
 
@@ -1306,7 +1306,7 @@ describe('MessageBubble', () => {
 
   it('edits a message via the edit dialog', async () => {
     const updateMessage = jest.fn((): Promise<void> => Promise.resolve());
-    mockUseChatStore.mockReturnValue(createChatStore({ updateMessage }));
+    selectorize(mockUseChatStore, createChatStore({ updateMessage }));
 
     renderWithTheme(<MessageBubble message={createMessage({ id: 'msg-edit', type: 'assistant', content: 'Original text' })} />);
 
@@ -1326,8 +1326,8 @@ describe('MessageBubble', () => {
   it('shows notification when message edit fails', async () => {
     const addNotification = jest.fn();
     const updateMessage = jest.fn((): Promise<void> => Promise.reject(new Error('Save failed')));
-    mockUseNotificationStore.mockReturnValue({ addNotification });
-    mockUseChatStore.mockReturnValue(createChatStore({ updateMessage }));
+    selectorize(mockUseNotificationStore, { addNotification });
+    selectorize(mockUseChatStore, createChatStore({ updateMessage }));
 
     renderWithTheme(<MessageBubble message={createMessage({ id: 'msg-edit', type: 'assistant', content: 'Original' })} />);
 
