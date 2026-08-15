@@ -52,24 +52,40 @@ const FollowFab = (): JSX.Element | null => {
   );
 };
 
-const StreamingMessage: React.FC<{ message: Message; versions?: Message[] }> = ({ message, versions }) => {
-  const streaming = useChatStore((s) => s.streaming);
+const MessageItem: React.FC<{ message: Message; versions?: Message[]; showAllMessages: boolean }> = ({
+  message,
+  versions,
+  showAllMessages,
+}) => {
   const scrollToBottom = useScrollToBottom();
   const [sticky] = useSticky();
-  const contentLength = streaming?.content.length ?? 0;
+
+  const isStreamingThis = useChatStore((s) => s.streaming?.assistantMessageId === message.id);
+  const streamedContent = useChatStore((s) =>
+    s.streaming?.assistantMessageId === message.id ? s.streaming.content : message.content,
+  );
+  const streamedReasoning = useChatStore((s) =>
+    s.streaming?.assistantMessageId === message.id ? s.streaming.reasoning : message.reasoning,
+  );
 
   useEffect(() => {
-    if (sticky && contentLength > 0) {
+    if (isStreamingThis && sticky && streamedContent.length > 0) {
       scrollToBottom({ behavior: 'auto' });
     }
-  }, [contentLength, sticky, scrollToBottom]);
+  }, [isStreamingThis, sticky, streamedContent.length, scrollToBottom]);
 
-  const rendered = {
+  const rendered: Message = {
     ...message,
-    content: streaming?.content ?? message.content,
-    reasoning: streaming?.reasoning ?? message.reasoning,
+    content: streamedContent,
+    reasoning: streamedReasoning,
   };
-  return <MessageBubble message={rendered} versions={versions} />;
+
+  const displayMessage =
+    message.type === 'aiNote' && !showAllMessages
+      ? { ...rendered, content: '⚠️ Assistant stored a hidden note here.' }
+      : rendered;
+
+  return <MessageBubble message={displayMessage} versions={versions} />;
 };
 
 const Pane: React.FC<{
@@ -79,7 +95,6 @@ const Pane: React.FC<{
 }> = ({ groups, maxContextMessages, showAllMessages }) => {
   const scrollToBottom = useScrollToBottom();
   const [sticky] = useSticky();
-  const streamingAssistantId = useChatStore((s) => s.streaming?.assistantMessageId ?? null);
 
   const lastGroup = groups.length > 0 ? groups[groups.length - 1] : undefined;
   const last = lastGroup?.msg;
@@ -121,14 +136,7 @@ const Pane: React.FC<{
               </ListItem>
             )}
             <ListItem id={`msg-${m.id}`} component="div" disableGutters sx={{ px: 2 }}>
-              {m.id === streamingAssistantId ? (
-                <StreamingMessage message={m} versions={versions} />
-              ) : (
-                <MessageBubble
-                  message={m.type === 'aiNote' && !showAllMessages ? { ...m, content: '⚠️ Assistant stored a hidden note here.' } : m}
-                  versions={versions}
-                />
-              )}
+              <MessageItem message={m} versions={versions} showAllMessages={showAllMessages} />
             </ListItem>
           </React.Fragment>
         );
