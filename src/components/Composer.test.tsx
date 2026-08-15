@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import Composer from './Composer';
 import { useAuthStore } from '../store/AuthStore';
 import { useProviderStore } from '../store/ProviderStore';
@@ -150,31 +150,35 @@ interface MockRecognition {
   onend: (() => void) | null;
 }
 
-function createMockRecognitionEvent(transcript: string): SpeechRecognitionEvent {
-  const alternative: SpeechRecognitionAlternative = { transcript, confidence: 1 };
+function createMockRecognitionEvent(segments: { transcript: string; isFinal: boolean }[], resultIndex = 0): SpeechRecognitionEvent {
+  const results = segments.map((segment) => {
+    const alternative: SpeechRecognitionAlternative = { transcript: segment.transcript, confidence: 1 };
+    const result = {
+      isFinal: segment.isFinal,
+      length: 1,
+      item: (_index: number): SpeechRecognitionAlternative => alternative,
+      0: alternative,
+      [Symbol.iterator]: function* (): IterableIterator<SpeechRecognitionAlternative> {
+        yield alternative;
+      },
+    };
+    return result as SpeechRecognitionResult;
+  });
 
-  const result = {
-    isFinal: true as const,
-    length: 1,
-    item: (_index: number): SpeechRecognitionAlternative => alternative,
-    0: alternative,
-    [Symbol.iterator]: function* (): IterableIterator<SpeechRecognitionAlternative> {
-      yield alternative;
-    },
-  };
-
-  const results = {
-    length: 1,
-    item: (_index: number): SpeechRecognitionResult => result as unknown as SpeechRecognitionResult,
-    0: result,
+  const resultsList = {
+    length: results.length,
+    item: (index: number): SpeechRecognitionResult => results[index],
     [Symbol.iterator]: function* (): IterableIterator<SpeechRecognitionResult> {
-      yield result as unknown as SpeechRecognitionResult;
+      for (const result of results) yield result;
     },
   };
+  results.forEach((result, index) => {
+    (resultsList as unknown as Record<number, SpeechRecognitionResult>)[index] = result;
+  });
 
   return {
-    resultIndex: 0,
-    results: results as unknown as SpeechRecognitionResultList,
+    resultIndex,
+    results: resultsList as unknown as SpeechRecognitionResultList,
   } as SpeechRecognitionEvent;
 }
 
@@ -480,12 +484,12 @@ describe('Composer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
 
     expect(mockRecognition.start).toHaveBeenCalledTimes(1);
-    expect(mockRecognition.continuous).toBe(false);
-    expect(mockRecognition.interimResults).toBe(false);
+    expect(mockRecognition.continuous).toBe(true);
+    expect(mockRecognition.interimResults).toBe(true);
     expect(mockRecognition.lang).toBe('en-US');
   });
 
-  it('auto-sends transcript on speech recognition result', () => {
+  it('fills input with live transcript but does not auto-send on interim results', () => {
     render(<Composer sending={false} onSend={onSend} isMobile />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
@@ -493,28 +497,141 @@ describe('Composer', () => {
     const handler = mockRecognition.onresult;
     expect(handler).not.toBeNull();
 
-    const event = createMockRecognitionEvent('Hello world');
     if (handler) {
-      handler(event);
-    }
-
-    expect(onSend).toHaveBeenCalledWith('Hello world', []);
-  });
-
-  it('does not send empty transcript', () => {
-    render(<Composer sending={false} onSend={onSend} isMobile />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
-
-    const handler = mockRecognition.onresult;
-    expect(handler).not.toBeNull();
-
-    const event = createMockRecognitionEvent('   ');
-    if (handler) {
-      handler(event);
+      act(() => {
+        handler(createMockRecognitionEvent([{ transcript: 'Hello', isFinal: false }]));
+      });
     }
 
     expect(onSend).not.toHaveBeenCalled();
+    expect((screen.getByPlaceholderText<HTMLInputElement>('Message...') ).value).toBe('Hello');
+  });
+
+  it('accumulates final results and does not send while recording', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    const handler = mockRecognition.onresult;
+    expect(handler).not.toBeNull();
+
+    if (handler) {
+      act(() => {
+        handler(createMockRecognitionEvent([{ transcript: 'Hello ', isFinal: true }], 0));
+        handler(
+          createMockRecognitionEvent(
+            [
+              { transcript: 'Hello ', isFinal: true },
+              { transcript: 'world', isFinal: false },
+            ],
+            1,
+          ),
+        );
+      });
+    }
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect((screen.getByPlaceholderText<HTMLInputElement>('Message...') ).value).toBe('Hello world');
+  });
+
+  it('fills input with final transcript on recognition end without auto-sending', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    const onResult = mockRecognition.onresult;
+    if (onResult) {
+      act(() => {
+        onResult(createMockRecognitionEvent([{ transcript: 'Hello world', isFinal: true }]));
+      });
+    }
+
+    const onEnd = mockRecognition.onend;
+    if (onEnd) {
+      act(() => {
+        onEnd();
+      });
+    }
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect((screen.getByPlaceholderText<HTMLInputElement>('Message...') ).value).toBe('Hello world');
+  });
+
+  it('does not populate input from whitespace-only speech', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    const onResult = mockRecognition.onresult;
+    if (onResult) {
+      act(() => {
+        onResult(createMockRecognitionEvent([{ transcript: '   ', isFinal: true }]));
+      });
+    }
+    const onEnd = mockRecognition.onend;
+    if (onEnd) {
+      act(() => {
+        onEnd();
+      });
+    }
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect((screen.getByPlaceholderText<HTMLInputElement>('Message...') ).value).toBe('');
+  });
+
+  it('stops recording after a silence timeout and fills input without sending', () => {
+    jest.useFakeTimers();
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    const onResult = mockRecognition.onresult;
+    if (onResult) {
+      act(() => {
+        onResult(createMockRecognitionEvent([{ transcript: 'Hello world', isFinal: true }]));
+      });
+    }
+
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+
+    expect(mockRecognition.stop).toHaveBeenCalledTimes(1);
+
+    const onEnd = mockRecognition.onend;
+    if (onEnd) {
+      act(() => {
+        onEnd();
+      });
+    }
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect((screen.getByPlaceholderText<HTMLInputElement>('Message...') ).value).toBe('Hello world');
+
+    jest.useRealTimers();
+  });
+
+  it('sends the filled transcript when Send is pressed after recording', () => {
+    render(<Composer sending={false} onSend={onSend} isMobile />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Voice Input' }));
+
+    const onResult = mockRecognition.onresult;
+    if (onResult) {
+      act(() => {
+        onResult(createMockRecognitionEvent([{ transcript: 'Hello world', isFinal: true }]));
+      });
+    }
+    const onEnd = mockRecognition.onend;
+    if (onEnd) {
+      act(() => {
+        onEnd();
+      });
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send Message' }));
+
+    expect(onSend).toHaveBeenCalledWith('Hello world', []);
   });
 
   it('stops speech recognition when mic button is clicked while listening', () => {

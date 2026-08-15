@@ -65,6 +65,7 @@ import { useNotificationStore } from '../store/NotificationStore';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const SUGGESTION_DEBOUNCE_MS = 500;
+const VOICE_SILENCE_TIMEOUT_MS = 2000;
 
 const MUSIC_TEMPLATE = `Genre:
 Mood:
@@ -130,6 +131,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const questionRef = useRef('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const finalTranscriptRef = useRef('');
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const topicStore = useTopicStore();
   const selectedModel = useChatStore((s) => s.selectedModel);
   const setSelectedModel = useChatStore((s) => s.setSelectedModel);
@@ -208,31 +211,47 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
     setAnchorEl(null);
   };
 
+  const clearSilenceTimer = (): void => {
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+  };
+
+  const resetSilenceTimer = (): void => {
+    clearSilenceTimer();
+    silenceTimeoutRef.current = setTimeout(() => {
+      recognitionRef.current?.stop();
+    }, VOICE_SILENCE_TIMEOUT_MS);
+  };
+
   const startListening = (): void => {
     const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) return;
 
     const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.lang = navigator.language || 'en-US';
 
+    finalTranscriptRef.current = '';
+
     recognition.onresult = (event: SpeechRecognitionEvent): void => {
-      if (event.results.length > 0) {
-        const firstResult = event.results[0];
-        if (firstResult.length > 0) {
-          const transcript = firstResult[0].transcript;
-          if (transcript.trim()) {
-            setInputValue('');
-            setAttachments([]);
-            onSend(transcript.trim(), []);
-          }
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscriptRef.current += transcript;
+        } else {
+          interim += transcript;
         }
       }
-      setIsListening(false);
+      setInputValue((finalTranscriptRef.current + interim).trim());
+      resetSilenceTimer();
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent): void => {
+      clearSilenceTimer();
       setIsListening(false);
       if (event.error === 'not-allowed') {
         addNotification('Microphone access denied', 'Please allow microphone access in your browser settings.');
@@ -244,15 +263,19 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
     };
 
     recognition.onend = (): void => {
+      clearSilenceTimer();
       setIsListening(false);
+      setInputValue(finalTranscriptRef.current.trim());
     };
 
     recognitionRef.current = recognition;
     recognition.start();
     setIsListening(true);
+    resetSilenceTimer();
   };
 
   const stopListening = (): void => {
+    clearSilenceTimer();
     recognitionRef.current?.stop();
     setIsListening(false);
   };
@@ -260,11 +283,20 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   // Clean up speech recognition on unmount
   useEffect(() => {
     return (): void => {
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+        silenceTimeoutRef.current = null;
+      }
       recognitionRef.current?.stop();
     };
   }, []);
 
   const handleSendOrRecord = (): void => {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+
     if (sending && !pendingUserQuestion) {
       void handleStop();
       return;
@@ -279,11 +311,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
     }
 
     if (!inputValue.trim() && !attachments.length) {
-      if (isListening) {
-        stopListening();
-      } else {
-        startListening();
-      }
+      startListening();
       return;
     }
 
@@ -1788,6 +1816,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                 >
                   {sending && !pendingUserQuestion ? (
                     <StopCircleIcon />
+                  ) : isListening ? (
+                    <MicIcon />
                   ) : currentlySpeakingMessageId && !inputValue.trim() && !attachments.length ? (
                     <StopCircleIcon />
                   ) : !inputValue.trim() && !attachments.length && isMobile ? (
