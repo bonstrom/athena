@@ -99,40 +99,39 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
           return model ? model.label : selected;
         }}
       >
-        {groups.map((group) => (
-          <React.Fragment key={group.providerId}>
-            <ListSubheader
-              sx={{
-                lineHeight: '28px',
-                fontWeight: 'bold',
-                fontSize: '0.7rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                color: 'primary.main',
-                bgcolor: 'transparent',
-              }}
-            >
-              {group.name}
-            </ListSubheader>
-            {group.models.map((m) => (
-              <MenuItem key={m.id} value={m.id}>
-                <Box display="flex" justifyContent="space-between" width="100%" alignItems="center" gap={2}>
-                  <Typography sx={{ lineHeight: 1.2 }}>{m.label}</Typography>
-                  <Box display="flex" alignItems="center" gap={0.5} flexShrink={0} whiteSpace="nowrap">
-                    {isDeepSeekPeakHours() && m.providerId === 'builtin-deepseek' && (
-                      <Tooltip title="DeepSeek peak hours — 2x pricing">
-                        <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main', display: 'flex' }} />
-                      </Tooltip>
-                    )}
-                    <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
-                      {`${formatCost(m.input, currency, 0)} | ${formatCost(m.output, currency, 0)} / 1M`}
-                    </Typography>
-                  </Box>
+        {groups.flatMap((group) => [
+          <ListSubheader
+            key={`header-${group.providerId}`}
+            sx={{
+              lineHeight: '28px',
+              fontWeight: 'bold',
+              fontSize: '0.7rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              color: 'primary.main',
+              bgcolor: 'transparent',
+            }}
+          >
+            {group.name}
+          </ListSubheader>,
+          ...group.models.map((m) => (
+            <MenuItem key={m.id} value={m.id}>
+              <Box display="flex" justifyContent="space-between" width="100%" alignItems="center" gap={2}>
+                <Typography sx={{ lineHeight: 1.2 }}>{m.label}</Typography>
+                <Box display="flex" alignItems="center" gap={0.5} flexShrink={0} whiteSpace="nowrap">
+                  {isDeepSeekPeakHours() && m.providerId === 'builtin-deepseek' && (
+                    <Tooltip title="DeepSeek peak hours — 2x pricing">
+                      <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main', display: 'flex' }} />
+                    </Tooltip>
+                  )}
+                  <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
+                    {`${formatCost(m.input, currency, 0)} | ${formatCost(m.output, currency, 0)} / 1M`}
+                  </Typography>
                 </Box>
-              </MenuItem>
-            ))}
-          </React.Fragment>
-        ))}
+              </Box>
+            </MenuItem>
+          )),
+        ])}
       </Select>
     </FormControl>
   );

@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ModelSelector, { getDefaultModel, getDefaultTopicNameModel, getAvailableModels, getModelByApiId, ChatModel } from './ModelSelector';
 import { useProviderStore } from '../store/ProviderStore';
 import { useAuthStore } from '../store/AuthStore';
-import { createUserChatModel, selectorize } from '../testUtils';
+import { createUserChatModel, createLlmProvider, selectorize } from '../testUtils';
 
 jest.mock('../store/ProviderStore', () => ({
   useProviderStore: Object.assign(jest.fn(), { getState: jest.fn() }),
@@ -107,6 +107,42 @@ describe('ModelSelector', () => {
 
     warnSpy.mockRestore();
     errorSpy.mockRestore();
+  });
+
+  it('calls onChange when selecting a model from a provider-grouped dropdown', async () => {
+    const modelA = createUserChatModel({
+      id: 'model-a',
+      label: 'Model A',
+      apiModelId: 'model-a',
+      providerId: 'provider-a',
+    });
+    const modelB = createUserChatModel({
+      id: 'model-b',
+      label: 'Model B',
+      apiModelId: 'model-b',
+      providerId: 'provider-b',
+    });
+    const providers = [
+      createLlmProvider({ id: 'provider-a', name: 'Provider A' }),
+      createLlmProvider({ id: 'provider-b', name: 'Provider B' }),
+    ];
+
+    mockUseProviderStore.mockReturnValue({
+      getAvailableModels: (): ChatModel[] => [modelA, modelB],
+      models: [modelA, modelB],
+      providers,
+    });
+
+    const onChange = jest.fn<undefined, [ChatModel]>();
+    render(<ModelSelector selectedModel={modelA} onChange={onChange} />);
+
+    const select = screen.getByRole('combobox');
+    fireEvent.mouseDown(select);
+    fireEvent.click(screen.getByRole('option', { name: /Model B/ }));
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(modelB);
+    });
   });
 
   it('renders empty state message when no models available', (): void => {
