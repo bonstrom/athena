@@ -143,6 +143,8 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
       safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-deepseek-v4-flash');
     } else if (selected === 'builtin-deepseek-reasoner') {
       safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-deepseek-v4-pro');
+    } else if (selected === 'builtin-gemini-3-flash') {
+      safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-gemini-3-7-flash');
     }
 
     const existingModelIds = new Set(models.map((m) => m.id));

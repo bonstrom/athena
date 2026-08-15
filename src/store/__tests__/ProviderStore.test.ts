@@ -497,6 +497,16 @@ describe('ProviderStore migrations', () => {
     expect(store.getState().models.length).toBeGreaterThan(0);
   });
 
+  it('migrates Gemini 3 Flash to 3.7 Flash selection key', () => {
+    seedProvider('builtin-google');
+    localStorage.setItem('athena_selected_model', 'builtin-gemini-3-flash');
+
+    const store = loadProviderStore();
+    const selected = localStorage.getItem('athena_selected_model');
+    expect(selected).toBe('builtin-gemini-3-7-flash');
+    expect(store.getState().models.length).toBeGreaterThan(0);
+  });
+
   it('updates built-in model properties from new defaults', () => {
     // Must include at least one provider so migration path is taken
     localStorage.setItem(
