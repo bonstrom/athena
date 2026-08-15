@@ -1,5 +1,5 @@
 import React from 'react';
-import { FormControl, InputLabel, MenuItem, Select, Box, Tooltip, Typography } from '@mui/material';
+import { FormControl, InputLabel, MenuItem, Select, Box, Tooltip, Typography, ListSubheader } from '@mui/material';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
 import { useProviderStore } from '../store/ProviderStore';
 import { UserChatModel } from '../types/provider';
@@ -58,6 +58,17 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
   const selectedStillAvailable = sortedModels.some((m) => m.id === selectedModel.id);
   const selectValue = selectedStillAvailable ? selectedModel.id : '';
 
+  const groups: { providerId: string; name: string; models: ChatModel[] }[] = [];
+  for (const m of sortedModels) {
+    const provider = providers.find((p) => p.id === m.providerId);
+    const last = groups[groups.length - 1];
+    if (last && last.providerId === m.providerId) {
+      last.models.push(m);
+    } else {
+      groups.push({ providerId: m.providerId, name: provider?.name ?? m.providerId, models: [m] });
+    }
+  }
+
   React.useEffect(() => {
     if (!selectedStillAvailable && sortedModels.length > 0) {
       onChange(sortedModels[0]);
@@ -87,31 +98,40 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
           return model ? model.label : selected;
         }}
       >
-        {sortedModels.map((m) => {
-          const provider = providers.find((p) => p.id === m.providerId);
-          return (
-            <MenuItem key={m.id} value={m.id}>
-              <Box display="flex" justifyContent="space-between" width="100%" alignItems="center" gap={2}>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="caption" color="primary" sx={{ display: 'block', fontSize: '0.65rem', lineHeight: 1, mb: 0.5 }}>
-                    {provider?.name.toUpperCase()}
-                  </Typography>
+        {groups.map((group) => (
+          <React.Fragment key={group.providerId}>
+            <ListSubheader
+              sx={{
+                lineHeight: '28px',
+                fontWeight: 'bold',
+                fontSize: '0.7rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                color: 'primary.main',
+                bgcolor: 'transparent',
+              }}
+            >
+              {group.name}
+            </ListSubheader>
+            {group.models.map((m) => (
+              <MenuItem key={m.id} value={m.id}>
+                <Box display="flex" justifyContent="space-between" width="100%" alignItems="center" gap={2}>
                   <Typography sx={{ lineHeight: 1.2 }}>{m.label}</Typography>
+                  <Box display="flex" alignItems="center" gap={0.5} flexShrink={0} whiteSpace="nowrap">
+                    {isDeepSeekPeakHours() && m.providerId === 'builtin-deepseek' && (
+                      <Tooltip title="DeepSeek peak hours — 2x pricing">
+                        <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main', display: 'flex' }} />
+                      </Tooltip>
+                    )}
+                    <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
+                      {`${formatCost(m.input, currency, 0)} | ${formatCost(m.output, currency, 0)} / 1M`}
+                    </Typography>
+                  </Box>
                 </Box>
-                <Box display="flex" alignItems="center" gap={0.5} flexShrink={0} whiteSpace="nowrap">
-                  {isDeepSeekPeakHours() && m.providerId === 'builtin-deepseek' && (
-                    <Tooltip title="DeepSeek peak hours — 2x pricing">
-                      <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main', display: 'flex' }} />
-                    </Tooltip>
-                  )}
-                  <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
-                    {`${formatCost(m.input, currency, 0)} | ${formatCost(m.output, currency, 0)} / 1M`}
-                  </Typography>
-                </Box>
-              </Box>
-            </MenuItem>
-          );
-        })}
+              </MenuItem>
+            ))}
+          </React.Fragment>
+        ))}
       </Select>
     </FormControl>
   );
