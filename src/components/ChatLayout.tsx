@@ -40,6 +40,8 @@ const ChatLayout: React.FC = () => {
             boxSizing: 'border-box',
             display: 'flex',
             flexDirection: 'column',
+            borderTopLeftRadius: 0,
+            borderBottomLeftRadius: 0,
           },
         }}
       >
@@ -103,16 +105,16 @@ const ChatLayout: React.FC = () => {
                     minWidth: 0,
                   }}
                 >
-                  <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, flexShrink: 0 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
                     <Typography variant="subtitle2" fontWeight="bold" noWrap sx={{ lineHeight: 1.2 }}>
                       {topic.name || 'New Topic'}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                    <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.3, lineHeight: 1 }}>
                       {isDeepSeekPeakHours() && selectedModel.providerId === 'builtin-deepseek' && (
                         <Tooltip title="DeepSeek peak hours — 2x pricing">
                           <Box component="span" display="inline-flex" alignItems="center" gap={0.2}>
-                            <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
-                            <Typography variant="caption" color="warning.main" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
+                            <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main', display: 'flex' }} />
+                            <Typography variant="caption" color="warning.main" sx={{ fontWeight: 'bold', fontSize: '0.65rem', lineHeight: 1 }}>
                               2×
                             </Typography>
                           </Box>
