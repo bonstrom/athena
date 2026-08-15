@@ -187,12 +187,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   const hasWebSearchProvider = providers.some((p) => p.supportsWebSearch && !!p.apiKeyEncrypted);
   const openTempMenu = Boolean(anchorEl);
 
-  const activeModes: string[] = [];
-  if (webSearchEnabled) activeModes.push('Web Search');
-  if (autoReadEnabled) activeModes.push('Auto-Read');
-  if (imageGenerationEnabled) activeModes.push('Images');
-  if (musicGenerationEnabled) activeModes.push('Music');
-
   useEffect(() => {
     if (availableModels.length === 0) return;
     const selectedStillAvailable = availableModels.some((m) => m.id === selectedModel.id);
@@ -1325,20 +1319,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
             rowGap: 0,
           }}
         >
-          {activeModes.length > 0 && (
-            <Box display="flex" gap={0.5} flexWrap="wrap" sx={{ width: '100%', flexBasis: '100%', order: 0, px: 1, pb: 0.5 }}>
-              {activeModes.map((mode) => (
-                <Chip
-                  key={mode}
-                  label={mode}
-                  size="small"
-                  variant="outlined"
-                  color="primary"
-                  sx={{ height: 20, fontSize: '0.65rem', '& .MuiChip-label': { px: 1 } }}
-                />
-              ))}
-            </Box>
-          )}
           {/* Left Actions (Icons) */}
           <Box
             sx={{
