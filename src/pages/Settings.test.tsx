@@ -65,6 +65,8 @@ interface AuthState {
   ttsVoiceId: string;
   setTtsEnabled: jest.MockedFunction<(enabled: boolean) => void>;
   setTtsVoiceId: jest.MockedFunction<(voiceId: string) => void>;
+  currency: string;
+  setCurrency: jest.MockedFunction<(currency: string) => void>;
 }
 
 interface BackupStoreState {
@@ -209,6 +211,8 @@ function buildAuthState(): AuthState {
     ttsVoiceId: 'English_Graceful_Lady',
     setTtsEnabled: jest.fn(),
     setTtsVoiceId: jest.fn(),
+    currency: 'SEK',
+    setCurrency: jest.fn(),
   };
 }
 

@@ -18,7 +18,6 @@ export const SHORTENED_ID_LENGTH = 8; // prefix length for shortened UUID displa
 
 export const SCRATCHPAD_LIMIT = 8000;
 export const SHORT_SCRATCHPAD_RULES = `You have a private scratchpad for long-term memory (max {{SCRATCHPAD_LIMIT}} chars). Proactively store user preferences, goals, key decisions, and message bookmarks. Prefer 'replace' over 'append' to stay concise.`;
-export const USD_TO_SEK = 10;
 
 export const DEEPSEEK_PEAK_HOURS_UTC: { start: number; end: number }[] = [
   { start: 1, end: 4 },  // 01:00–04:00 UTC

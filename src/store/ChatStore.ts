@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { calculateCostSEK, getPeakMultiplier, ChatModel, getDefaultModel, getAvailableModels } from '../components/ModelSelector';
+import { calculateCostUSD, getPeakMultiplier, ChatModel, getDefaultModel, getAvailableModels } from '../components/ModelSelector';
 import { useProviderStore } from './ProviderStore';
 import { useTopicStore } from './TopicStore';
 import { useNotificationStore } from './NotificationStore';
@@ -1224,7 +1224,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         totalCachedTokens > 0 || totalCacheCreationTokens > 0
           ? { cached_tokens: totalCachedTokens, cache_creation_tokens: totalCacheCreationTokens }
           : undefined;
-      const finalTotalCost = calculateCostSEK(effectiveModel, totalPromptTokens, totalCompletionTokens, promptTokensDetails, getPeakMultiplier(effectiveModel));
+      const finalTotalCost = calculateCostUSD(effectiveModel, totalPromptTokens, totalCompletionTokens, promptTokensDetails, getPeakMultiplier(effectiveModel));
 
       const debugPayload: LlmDebugPayload = {
         rawContent: lastResult.rawContent,
@@ -1590,7 +1590,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const result = await askLlm(cloudModel, 0.3, messages, undefined, undefined, undefined, { includeCustomInstructions: false });
         rawSummary = result.content;
         summaryTokens = result.promptTokens + result.completionTokens;
-        summaryCost = calculateCostSEK(cloudModel, result.promptTokens, result.completionTokens, result.promptTokensDetails, getPeakMultiplier(cloudModel));
+        summaryCost = calculateCostUSD(cloudModel, result.promptTokens, result.completionTokens, result.promptTokensDetails, getPeakMultiplier(cloudModel));
 
         // ── Verification: Summary generation ──
         if (!rawSummary.trim()) console.warn('[verify:summary] Cloud summary returned empty for message:', messageId);

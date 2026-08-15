@@ -45,6 +45,7 @@ import {
 } from '../services/analyticsService';
 import { rollupAnalytics } from '../services/analyticsRollupService';
 import { useAuthStore } from '../store/AuthStore';
+import { formatCost as formatCostForCurrency } from '../utils/currency';
 
 const SIZE_BUCKET_ORDER = ['0-100', '101-500', '501-1000', '1001-2000', '2001-4000', '4000-8000', '8000+'];
 
@@ -55,7 +56,7 @@ function formatTokens(n: number): string {
 }
 
 function formatCost(n: number): string {
-  return n.toFixed(2) + ' kr';
+  return formatCostForCurrency(n, useAuthStore.getState().currency);
 }
 
 function formatLatency(ms: number): string {
@@ -454,7 +455,7 @@ const Analytics: React.FC = () => {
             <LineChart
               xAxis={[{ data: trends.map((t) => dateLabel(t.date)), scaleType: 'band' }]}
               series={[
-                { data: trends.map((t) => t.cost), label: 'Cost (kr)', color: '#dc004e' },
+                { data: trends.map((t) => t.cost), label: 'Cost', color: '#dc004e' },
               ]}
               height={200}
             />

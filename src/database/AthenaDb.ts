@@ -222,6 +222,54 @@ class AthenaDatabase extends Dexie {
       learningCycles: 'id, topicId, phase, weekStart',
       learningDays: 'id, cycleId, dayNumber',
     });
+
+    // Version 14: convert stored costs from SEK to USD (canonical base currency).
+    // The old hardcoded exchange rate was USD_TO_SEK = 10.
+    this.version(14)
+      .stores({
+        topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+        messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+        predefinedPrompts: 'id, name',
+        userSettings: 'id',
+        analyticsSnapshots: 'date',
+        learningCycles: 'id, topicId, phase, weekStart',
+        learningDays: 'id, cycleId, dayNumber',
+      })
+      .upgrade(async (trans) => {
+        try {
+          const SEK_TO_USD = 1 / 10;
+          await trans
+            .table('messages')
+            .toCollection()
+            .modify((msg: Message) => {
+              if (typeof msg.totalCost === 'number') {
+                msg.totalCost = msg.totalCost * SEK_TO_USD;
+              }
+              if (typeof msg.summaryCost === 'number') {
+                msg.summaryCost = msg.summaryCost * SEK_TO_USD;
+              }
+            });
+          await trans
+            .table('analyticsSnapshots')
+            .toCollection()
+            .modify((snap: AnalyticsSnapshot) => {
+              if (typeof snap.cost === 'number') {
+                snap.cost = snap.cost * SEK_TO_USD;
+              }
+              if (snap.providerStats) {
+                for (const key of Object.keys(snap.providerStats)) {
+                  const stat = snap.providerStats[key];
+                  if (typeof stat.cost === 'number') {
+                    stat.cost = stat.cost * SEK_TO_USD;
+                  }
+                }
+              }
+            });
+        } catch (err) {
+          console.error('[migration-error] AthenaDb v14 migration failed', err);
+          throw err;
+        }
+      });
   }
 
   analyticsSnapshots!: Table<AnalyticsSnapshot, string>;

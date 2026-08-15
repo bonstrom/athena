@@ -70,12 +70,15 @@ jest.mock('../../services/analyticsRollupService', () => ({
   rollupAnalytics: (): Promise<void> => Promise.resolve(),
 }));
 
-jest.mock('../../store/AuthStore', () => ({
-  useAuthStore: (): { userName: string; dateFormat: string } => ({
+jest.mock('../../store/AuthStore', () => {
+  const useAuthStore = (): { userName: string; dateFormat: string; currency: string } => ({
     userName: 'TestUser',
     dateFormat: 'en-US',
-  }),
-}));
+    currency: 'USD',
+  });
+  useAuthStore.getState = (): { currency: string } => ({ currency: 'USD' });
+  return { useAuthStore };
+});
 
 import Analytics from '../Analytics';
 

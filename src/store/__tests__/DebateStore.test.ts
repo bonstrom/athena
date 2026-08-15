@@ -12,7 +12,7 @@ const mockTopicsUpdate = jest.fn<Promise<number>, [string, Partial<Topic>]>().mo
 const mockAskLlmStream = jest.fn<unknown, unknown[]>();
 const mockGetAvailableModels = jest.fn<unknown, unknown[]>();
 const mockGetDefaultModel = jest.fn<unknown, unknown[]>();
-const mockCalculateCostSEK = jest.fn<number, unknown[]>().mockReturnValue(0.5);
+const mockCalculateCostUSD = jest.fn<number, unknown[]>().mockReturnValue(0.5);
 const mockGetPeakMultiplier = jest.fn<number, unknown[]>().mockReturnValue(1);
 const mockAddNotification = jest.fn<undefined, [string, string?]>();
 const mockTopicStoreSetState = jest.fn<undefined, unknown[]>();
@@ -51,7 +51,7 @@ jest.mock('../../services/analyticsRollupService', () => ({
 jest.mock('../../components/ModelSelector', () => ({
   getAvailableModels: (): unknown => mockGetAvailableModels(),
   getDefaultModel: (): unknown => mockGetDefaultModel(),
-  calculateCostSEK: (...args: unknown[]): number => mockCalculateCostSEK(...args),
+  calculateCostUSD: (...args: unknown[]): number => mockCalculateCostUSD(...args),
   getPeakMultiplier: (...args: unknown[]): number => mockGetPeakMultiplier(...args),
 }));
 
@@ -137,7 +137,7 @@ beforeEach(() => {
   mockMessagesUpdate.mockResolvedValue(1);
   mockMessagesDelete.mockResolvedValue(undefined);
   mockTopicsUpdate.mockResolvedValue(1);
-  mockCalculateCostSEK.mockReturnValue(0.5);
+  mockCalculateCostUSD.mockReturnValue(0.5);
   resetStore();
 
   Object.defineProperty(globalThis, 'crypto', {

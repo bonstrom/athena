@@ -67,6 +67,7 @@ interface AuthStoreSlice {
   showCameraButton: 'auto' | 'always' | 'never';
   ttsEnabled: boolean;
   ttsVoiceId: string;
+  currency: string;
 }
 
 interface ProviderStoreSlice {
@@ -252,6 +253,7 @@ describe('Composer', () => {
       showCameraButton: 'never',
       ttsEnabled: false,
       ttsVoiceId: 'English_Graceful_Lady',
+      currency: 'SEK',
     };
 
     const selectedModel = createUserChatModel({

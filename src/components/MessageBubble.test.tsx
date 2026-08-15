@@ -28,6 +28,8 @@ interface AuthStoreSlice {
   chatFontSize: number;
   messageTruncateChars: number;
   aiSummaryEnabled: boolean;
+  dateFormat: string;
+  currency: string;
 }
 
 interface NotificationStoreSlice {
@@ -147,6 +149,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 500,
       aiSummaryEnabled: false,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
 
     selectorize(mockUseChatStore, createChatStore());
@@ -229,6 +233,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 500,
       aiSummaryEnabled: false,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
 
     renderWithTheme(
@@ -414,6 +420,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 0,
       aiSummaryEnabled: true,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
 
     renderWithTheme(
@@ -435,6 +443,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 0,
       aiSummaryEnabled: true,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
     selectorize(mockUseChatStore, 
       createChatStore({ maybeSummarize }),
@@ -461,6 +471,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 0,
       aiSummaryEnabled: true,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
     selectorize(mockUseChatStore, 
       createChatStore({ summarizingMessageIds: new Set(['msg-sum-progress']) }),
@@ -485,6 +497,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 0,
       aiSummaryEnabled: true,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
     selectorize(mockUseChatStore, 
       createChatStore({ failedSummaryMessageIds: new Set(['msg-sum-failed']) }),
@@ -509,6 +523,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 0,
       aiSummaryEnabled: true,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
 
     renderWithTheme(
@@ -530,6 +546,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 0,
       aiSummaryEnabled: false,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
 
     renderWithTheme(
@@ -575,6 +593,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 0,
       aiSummaryEnabled: false,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
 
     renderWithTheme(
@@ -710,7 +730,7 @@ describe('MessageBubble', () => {
 
     fireEvent.click(screen.getByText('Model One'));
 
-    expect(screen.getByText('1.500 kr')).toBeInTheDocument();
+    expect(screen.getByText('$1.500')).toBeInTheDocument();
     expect(screen.getByText(/Prompt: 100/)).toBeInTheDocument();
   });
 
@@ -782,11 +802,11 @@ describe('MessageBubble', () => {
 
     const label = screen.getByText('Model One');
     fireEvent.click(label);
-    expect(screen.getByText('1.000 kr')).toBeInTheDocument();
+    expect(screen.getByText('$1.000')).toBeInTheDocument();
 
     fireEvent.click(label);
     await waitFor(() => {
-      expect(screen.queryByText('1.000 kr')).not.toBeInTheDocument();
+      expect(screen.queryByText('$1.000')).not.toBeInTheDocument();
     });
   });
 
@@ -948,6 +968,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 10,
       aiSummaryEnabled: false,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
 
     const longContent = 'This is a very long message that should be truncated';
@@ -970,6 +992,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 10,
       aiSummaryEnabled: false,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
 
     const longContent = 'This is a very long message that should be truncated';
@@ -993,6 +1017,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 500,
       aiSummaryEnabled: false,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
 
     renderWithTheme(
@@ -1013,6 +1039,8 @@ describe('MessageBubble', () => {
       chatFontSize: 16,
       messageTruncateChars: 10,
       aiSummaryEnabled: false,
+      dateFormat: 'sv-SE',
+      currency: 'USD',
     });
 
     renderWithTheme(

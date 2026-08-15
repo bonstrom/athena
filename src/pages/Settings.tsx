@@ -38,7 +38,8 @@ import { llmSuggestionService, LlmProgress } from '../services/llmSuggestionServ
 import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
 import { useProviderStore } from '../store/ProviderStore';
 import { getApiKey as getProviderApiKey } from '../types/provider';
-import { USD_TO_SEK, DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from '../constants';
+import { DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from '../constants';
+import { formatCost, CurrencyCode } from '../utils/currency';
 import { ENGLISH_VOICES } from '../constants/voices';
 import ThemeSelector from '../components/ThemeSelector';
 import ImportDialog from '../components/ImportDialog';
@@ -135,6 +136,8 @@ const Settings: React.FC = () => {
     setSvgGenerationEnabled,
     dateFormat,
     setDateFormat,
+    currency,
+    setCurrency,
   } = useAuthStore();
 
   const { providers } = useProviderStore();
@@ -388,12 +391,12 @@ const Settings: React.FC = () => {
 
   const getProviderBalanceLabel = (providerId: string): string | undefined => {
     if (providerId === 'builtin-moonshot' && moonshotBalance !== null) {
-      return `${(moonshotBalance * USD_TO_SEK).toFixed(2)}kr`;
+      return formatCost(moonshotBalance, currency);
     }
 
     if (providerId === 'builtin-deepseek' && deepSeekBalance !== null) {
-      const sekBalance = deepSeekBalance.balance * (deepSeekBalance.currency === 'CNY' ? 1.5 : USD_TO_SEK);
-      return `${sekBalance.toFixed(2)}kr`;
+      const usdBalance = deepSeekBalance.balance * (deepSeekBalance.currency === 'CNY' ? 0.14 : 1);
+      return formatCost(usdBalance, currency);
     }
 
     return undefined;
@@ -496,6 +499,19 @@ const Settings: React.FC = () => {
                     <MenuItem value="sv-SE">YYYY-MM-DD (ISO)</MenuItem>
                     <MenuItem value="en-GB">DD/MM/YYYY</MenuItem>
                     <MenuItem value="en-US">MM/DD/YYYY</MenuItem>
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+                  <InputLabel>Currency</InputLabel>
+                  <Select
+                    value={currency}
+                    label="Currency"
+                    onChange={(e): void => setCurrency(e.target.value as CurrencyCode)}
+                    inputProps={{ 'data-testid': 'currency-select' } as React.InputHTMLAttributes<HTMLInputElement>}
+                  >
+                    <MenuItem value="USD">USD ($)</MenuItem>
+                    <MenuItem value="SEK">SEK (kr)</MenuItem>
+                    <MenuItem value="EUR">EUR (€)</MenuItem>
                   </Select>
                 </FormControl>
               </Box>
@@ -743,7 +759,7 @@ const Settings: React.FC = () => {
                     <>
                       {summaryStats != null ? (
                         <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: 0.5, display: 'block' }}>
-                          {summaryStats.count === 0 ? 'No summaries generated yet.' : (String(summaryStats.count) + ' summaries generated | Total cost: ' + summaryStats.totalCost.toFixed(3) + ' kr')}
+                          {summaryStats.count === 0 ? 'No summaries generated yet.' : (String(summaryStats.count) + ' summaries generated | Total cost: ' + formatCost(summaryStats.totalCost, currency, 3))}
                         </Typography>
                       ) : null}
                       <FormControl fullWidth size="small" sx={{ mt: 1, ml: 4, width: 'calc(100% - 32px)' }}>

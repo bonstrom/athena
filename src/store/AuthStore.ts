@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { PredefinedPrompt, athenaDb } from '../database/AthenaDb';
 import { DEFAULT_SCRATCHPAD_RULES } from '../constants';
 import { DEFAULT_VOICE_ID } from '../constants/voices';
+import { CurrencyCode } from '../utils/currency';
 
 function getDeviceId(): string {
   let deviceId = localStorage.getItem('analyticsDeviceId');
@@ -24,6 +25,7 @@ interface AuthState {
   themeMode: 'light' | 'dark';
   colorTheme: string;
   dateFormat: 'sv-SE' | 'en-GB' | 'en-US';
+  currency: CurrencyCode;
   predefinedPrompts: PredefinedPrompt[];
   llmSuggestionEnabled: boolean;
   replyPredictionEnabled: boolean;
@@ -73,6 +75,7 @@ interface AuthState {
   setThemeMode: (mode: 'light' | 'dark') => void;
   setColorTheme: (theme: string) => void;
   setDateFormat: (format: 'sv-SE' | 'en-GB' | 'en-US') => void;
+  setCurrency: (currency: CurrencyCode) => void;
   setPredefinedPrompts: (prompts: PredefinedPrompt[]) => void;
   addPredefinedPrompt: (prompt: PredefinedPrompt) => void;
   updatePredefinedPrompt: (prompt: PredefinedPrompt) => void;
@@ -90,6 +93,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedThemeMode = (localStorage.getItem('themeMode') as 'light' | 'dark' | null) ?? 'dark';
   const storedColorTheme = localStorage.getItem('colorTheme') ?? 'default';
   const storedDateFormat = (localStorage.getItem('dateFormat') as 'sv-SE' | 'en-GB' | 'en-US' | null) ?? 'sv-SE';
+  const storedCurrency = (localStorage.getItem('currency') as CurrencyCode | null) ?? 'SEK';
   const storedLlmSuggestionEnabled = localStorage.getItem('llmSuggestionEnabled') === 'true';
   const storedReplyPredictionEnabled = localStorage.getItem('replyPredictionEnabled') === 'true';
   const storedReplyPredictionModel = localStorage.getItem('replyPredictionModel') ?? 'same';
@@ -124,6 +128,7 @@ export const useAuthStore = create<AuthState>((set) => {
     themeMode: storedThemeMode,
     colorTheme: storedColorTheme,
     dateFormat: storedDateFormat,
+    currency: storedCurrency,
     predefinedPrompts: [],
     llmSuggestionEnabled: storedLlmSuggestionEnabled,
     replyPredictionEnabled: storedReplyPredictionEnabled,
@@ -170,6 +175,7 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem('ttsEnabled');
       localStorage.removeItem('ttsVoiceId');
       localStorage.removeItem('svgGenerationEnabled');
+      localStorage.removeItem('currency');
       void athenaDb.predefinedPrompts.clear().catch((err: unknown) => {
         console.error('Failed to clear predefined prompts:', err);
       });
@@ -181,6 +187,7 @@ export const useAuthStore = create<AuthState>((set) => {
         themeMode: 'dark',
         colorTheme: 'default',
         dateFormat: 'sv-SE',
+        currency: 'SEK',
         predefinedPrompts: [],
         llmSuggestionEnabled: false,
         replyPredictionEnabled: false,
@@ -315,6 +322,10 @@ export const useAuthStore = create<AuthState>((set) => {
     setDateFormat: (format: 'sv-SE' | 'en-GB' | 'en-US'): void => {
       localStorage.setItem('dateFormat', format);
       set({ dateFormat: format });
+    },
+    setCurrency: (currency: CurrencyCode): void => {
+      localStorage.setItem('currency', currency);
+      set({ currency });
     },
     setPredefinedPrompts: (predefinedPrompts: PredefinedPrompt[]): void => {
       set({ predefinedPrompts });

@@ -25,8 +25,9 @@ import {
   ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 import { useProviderStore } from '../store/ProviderStore';
+import { useAuthStore } from '../store/AuthStore';
 import { UserChatModel } from '../types/provider';
-import { USD_TO_SEK } from '../constants';
+import { formatCost } from '../utils/currency';
 import ConfirmDialog from './ConfirmDialog';
 
 const emptyModel = (providerId = ''): Omit<UserChatModel, 'id'> => ({
@@ -57,6 +58,7 @@ const emptyModel = (providerId = ''): Omit<UserChatModel, 'id'> => ({
 
 const ModelsSettings: React.FC = () => {
   const { models, providers, addModel, updateModel, deleteModel } = useProviderStore();
+  const currency = useAuthStore((s) => s.currency);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -174,7 +176,7 @@ const ModelsSettings: React.FC = () => {
         </Box>
         <Box display="flex" alignItems="center" gap={1}>
           <Typography variant="caption" color="text.secondary" noWrap>
-            {`${(model.input * USD_TO_SEK).toFixed(0)}kr | ${(model.output * USD_TO_SEK).toFixed(0)}kr /1M`}
+            {`${formatCost(model.input, currency, 0)} | ${formatCost(model.output, currency, 0)} /1M`}
           </Typography>
           <Tooltip title="Edit">
             <IconButton size="small" onClick={(): void => openEdit(model)}>

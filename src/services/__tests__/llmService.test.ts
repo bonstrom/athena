@@ -8,7 +8,7 @@ jest.mock('../../store/ProviderStore', () => ({
   useProviderStore: { getState: (): ReturnType<typeof mockProviderGetState> => mockProviderGetState() },
 }));
 jest.mock('../../components/ModelSelector', () => ({
-  calculateCostSEK: jest.fn(),
+  calculateCostUSD: jest.fn(),
   getDefaultModel: jest.fn(),
 }));
 jest.mock('../estimateTokens', () => ({ estimateTokens: jest.fn() }));
@@ -16,13 +16,13 @@ jest.mock('../embeddingWorkerFactory', () => ({ createEmbeddingWorker: jest.fn()
 jest.mock('../llmWorkerFactory', () => ({ createLlmWorker: jest.fn() }));
 
 import { filterMessagesForModel, LlmMessage, orchestrateLlmLoop } from '../llmService';
-import { calculateCostSEK } from '../../components/ModelSelector';
+import { calculateCostUSD } from '../../components/ModelSelector';
 import { estimateTokens } from '../estimateTokens';
 import { LlmProvider, UserChatModel } from '../../types/provider';
 import { createUserChatModel } from '../../testUtils';
 
 const mockEstimateTokens = estimateTokens as jest.MockedFunction<typeof estimateTokens>;
-const mockCalculateCostSEK = calculateCostSEK as jest.MockedFunction<typeof calculateCostSEK>;
+const mockCalculateCostUSD = calculateCostUSD as jest.MockedFunction<typeof calculateCostUSD>;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -1482,17 +1482,17 @@ describe('buildPayload — Anthropic max_tokens default', () => {
 });
 
 describe('estimateStreamedTokens', () => {
-  it('uses estimated tokens and calculateCostSEK to build the result', async () => {
+  it('uses estimated tokens and calculateCostUSD to build the result', async () => {
     const model = createUserChatModel({ enforceAlternatingRoles: false });
     mockEstimateTokens.mockReturnValue({ promptTokens: 123, completionTokens: 45, totalTokens: 168 });
-    mockCalculateCostSEK.mockReturnValue(1.75);
+    mockCalculateCostUSD.mockReturnValue(1.75);
 
     const { estimateStreamedTokens } = await import('../llmService');
     const result = estimateStreamedTokens(model, [user('hello')], 'streamed response');
 
     expect(mockEstimateTokens).toHaveBeenCalledWith([user('hello')], 'streamed response');
-    expect(mockCalculateCostSEK).toHaveBeenCalledWith(model, 123, 45);
-    expect(result).toEqual({ promptTokens: 123, completionTokens: 45, costSEK: 1.75 });
+    expect(mockCalculateCostUSD).toHaveBeenCalledWith(model, 123, 45);
+    expect(result).toEqual({ promptTokens: 123, completionTokens: 45, costUsd: 1.75 });
   });
 });
 
@@ -1919,14 +1919,14 @@ describe('generateMinimaxSpeech', () => {
 });
 
 describe('estimateStreamedTokens — with cost calculation', () => {
-  it('returns costSEK when calculateCostSEK succeeds', async () => {
+  it('returns costUsd when calculateCostUSD succeeds', async () => {
     const model = createUserChatModel({ enforceAlternatingRoles: false });
     mockEstimateTokens.mockReturnValue({ promptTokens: 100, completionTokens: 50, totalTokens: 150 });
-    mockCalculateCostSEK.mockReturnValue(2.5);
+    mockCalculateCostUSD.mockReturnValue(2.5);
 
     const { estimateStreamedTokens } = await import('../llmService');
     const result = estimateStreamedTokens(model, [user('hi')], 'short answer');
 
-    expect(result.costSEK).toBe(2.5);
+    expect(result.costUsd).toBe(2.5);
   });
 });

@@ -8,6 +8,10 @@ jest.mock('./TypingIndicator', () => ({
   default: (): React.ReactElement => <div data-testid="typing-indicator" />,
 }));
 
+jest.mock('../store/AuthStore', () => ({
+  useAuthStore: jest.fn(),
+}));
+
 describe('MessageBubbleTyping', () => {
   it('shows the model label and typing indicator', () => {
     renderWithTheme(<MessageBubbleTyping model={createUserChatModel({ label: 'GPT-5.4 Nano' })} />);

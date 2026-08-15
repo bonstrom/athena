@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { AddProviderCard, ProviderCard } from './ProviderCard';
 import { useProviderStore } from '../store/ProviderStore';
+import { useAuthStore } from '../store/AuthStore';
 import { encodeApiKey, LlmProvider, UserChatModel } from '../types/provider';
-import { createLlmProvider, createUserChatModel } from '../testUtils';
+import { createLlmProvider, createUserChatModel, selectorize } from '../testUtils';
 
 type ProviderHandler = (provider: LlmProvider) => void;
 type ProviderIdHandler = (providerId: string) => void;
@@ -29,7 +30,12 @@ jest.mock('../store/ProviderStore', () => ({
   useProviderStore: Object.assign(jest.fn(), { getState: jest.fn() }),
 }));
 
+jest.mock('../store/AuthStore', () => ({
+  useAuthStore: jest.fn(),
+}));
+
 const mockUseProviderStore = useProviderStore as unknown as ProviderStoreHookMock;
+const mockUseAuthStore = useAuthStore as unknown as jest.Mock<{ currency: string }>;
 
 
 describe('ProviderCard and AddProviderCard', () => {
@@ -42,6 +48,8 @@ describe('ProviderCard and AddProviderCard', () => {
         randomUUID: jest.fn((): string => 'provider-uuid'),
       },
     });
+
+    selectorize(mockUseAuthStore, { currency: 'SEK' });
 
     mockUseProviderStore.mockReturnValue({
       models: [],
@@ -141,7 +149,7 @@ describe('ProviderCard and AddProviderCard', () => {
     expect(screen.getByText('Vision')).toBeInTheDocument();
     expect(screen.getByText('Alt-roles')).toBeInTheDocument();
     expect(screen.getByText('T=0.4')).toBeInTheDocument();
-    expect(screen.getByText('10kr | 20kr /1M')).toBeInTheDocument();
+    expect(screen.getByText('10 kr | 20 kr /1M')).toBeInTheDocument();
   });
 
   it('updates provider settings with advanced options and a new API key', async () => {

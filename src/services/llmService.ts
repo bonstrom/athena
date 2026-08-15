@@ -1,4 +1,4 @@
-import { calculateCostSEK, ChatModel } from '../components/ModelSelector';
+import { calculateCostUSD, ChatModel } from '../components/ModelSelector';
 import { useAuthStore } from '../store/AuthStore';
 import { useProviderStore } from '../store/ProviderStore';
 import { useChatStore } from '../store/ChatStore';
@@ -1476,10 +1476,10 @@ export function estimateStreamedTokens(
   model: ChatModel,
   messages: LlmMessage[],
   response: string,
-): Pick<LlmResult, 'promptTokens' | 'completionTokens'> & { costSEK: number } {
+): Pick<LlmResult, 'promptTokens' | 'completionTokens'> & { costUsd: number } {
   const { promptTokens, completionTokens } = estimateTokens(messages, response);
-  const costSEK = calculateCostSEK(model, promptTokens, completionTokens);
-  return { promptTokens, completionTokens, costSEK };
+  const costUsd = calculateCostUSD(model, promptTokens, completionTokens);
+  return { promptTokens, completionTokens, costUsd };
 }
 
 interface MoonshotBalanceResponse {

@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import ModelsSettings from './ModelsSettings';
 import { useProviderStore } from '../store/ProviderStore';
-import { createUserChatModel } from '../testUtils';
+import { useAuthStore } from '../store/AuthStore';
+import { createUserChatModel, selectorize } from '../testUtils';
 
 interface ProviderStoreSlice {
   providers: { id: string; name: string }[];
@@ -37,7 +38,12 @@ jest.mock('../store/ProviderStore', () => ({
   useProviderStore: jest.fn(),
 }));
 
+jest.mock('../store/AuthStore', () => ({
+  useAuthStore: jest.fn(),
+}));
+
 const mockUseProviderStore = useProviderStore as unknown as jest.Mock<ProviderStoreSlice>;
+const mockUseAuthStore = useAuthStore as unknown as jest.Mock<{ currency: string }>;
 
 describe('ModelsSettings', () => {
   beforeEach(() => {
@@ -46,6 +52,7 @@ describe('ModelsSettings', () => {
       value: { randomUUID: jest.fn((): string => 'model-uuid') },
       writable: true,
     });
+    selectorize(mockUseAuthStore, { currency: 'SEK' });
   });
 
   it('adds a model from add form', async () => {

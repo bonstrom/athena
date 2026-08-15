@@ -92,7 +92,7 @@ const mockBaseTopic: Topic = createTopic({
 });
 
 jest.mock('../../components/ModelSelector', () => ({
-  calculateCostSEK: jest.fn(() => 1),
+  calculateCostUSD: jest.fn(() => 1),
   getDefaultModel: (): UserChatModel => mockGetDefaultModel(),
   getAvailableModels: (): UserChatModel[] => mockGetAvailableModels(),
   getPeakMultiplier: jest.fn(() => 1),
@@ -192,7 +192,7 @@ jest.mock('../../database/AthenaDb', () => ({
 }));
 
 import { useChatStore } from '../../store/ChatStore';
-import { calculateCostSEK } from '../../components/ModelSelector';
+import { calculateCostUSD } from '../../components/ModelSelector';
 
 describe('ChatStore', () => {
   let consoleDebugSpy: jest.SpiedFunction<typeof console.debug>;
@@ -312,7 +312,7 @@ describe('ChatStore', () => {
   });
 
   it('assigns cost and cache usage to the assistant message, not the user message', async () => {
-    jest.mocked(calculateCostSEK).mockReturnValue(1);
+    jest.mocked(calculateCostUSD).mockReturnValue(1);
     mockOrchestrateLlmLoop.mockResolvedValue({
       finalContent: 'Assistant final answer',
       totalPromptTokens: 10,
@@ -349,7 +349,7 @@ describe('ChatStore', () => {
   });
 
   it('streams into transient state without mutating messagesByTopic, then commits', async () => {
-    jest.mocked(calculateCostSEK).mockReturnValue(1);
+    jest.mocked(calculateCostUSD).mockReturnValue(1);
     let onToken: ((chunk: string) => void) | undefined;
     let resolveLoop: ((r: LlmLoopResult) => void) | undefined;
     const loopPromise = new Promise<LlmLoopResult>((resolve) => {
@@ -397,7 +397,7 @@ describe('ChatStore', () => {
   });
 
   it('sendMessageStream includes ask-user and retrieval instructions at runtime', async () => {
-    jest.mocked(calculateCostSEK).mockReturnValue(1);
+    jest.mocked(calculateCostUSD).mockReturnValue(1);
     mockAuthGetState.mockReturnValue({
       customInstructions: '',
       scratchpadRules: 'Rules',

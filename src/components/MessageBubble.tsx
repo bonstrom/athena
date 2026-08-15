@@ -46,6 +46,7 @@ import { stripMarkdown } from '../utils/stripMarkdown';
 import { detectContentTypes, CONTENT_TYPE_LABELS, ContentType } from '../utils/contentTypes';
 import { NotificationSeverity } from '../store/NotificationStore';
 import { isDeepSeekPeakHours } from './ModelSelector';
+import { formatCost } from '../utils/currency';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
@@ -198,6 +199,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const messageTruncateChars = useAuthStore((s) => s.messageTruncateChars);
   const aiSummaryEnabled = useAuthStore((s) => s.aiSummaryEnabled);
   const dateFormat = useAuthStore((s) => s.dateFormat);
+  const currency = useAuthStore((s) => s.currency);
   const isMobile = useUiStore((s) => s.isMobile);
   const currentlySpeakingMessageId = useUiStore((s) => s.currentlySpeakingMessageId);
 
@@ -465,7 +467,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   {new Date(message.created).toLocaleString(dateFormat)}
                 </Typography>
                 <Typography variant="caption" display="block">
-                  {`${message.totalCost.toFixed(3)} kr`}
+                  {formatCost(message.totalCost, currency, 3)}
                 </Typography>
                 {(message.promptTokens > 0 || message.completionTokens > 0) && (
                   <Typography variant="caption" display="block">
@@ -507,7 +509,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     </Typography>
                     {(message.summaryTokens ?? 0) > 0 && (
                       <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                        {`Summary cost: ${(message.summaryCost ?? 0).toFixed(3)} kr | Prompt: ${(message.summaryTokens ?? 0).toLocaleString()} tok`}
+                        {`Summary cost: ${formatCost(message.summaryCost ?? 0, currency, 3)} | Prompt: ${(message.summaryTokens ?? 0).toLocaleString()} tok`}
                       </Typography>
                     )}
                   </Box>

@@ -26,8 +26,9 @@ import {
   Settings as SettingsIcon,
 } from '@mui/icons-material';
 import { useProviderStore } from '../store/ProviderStore';
+import { useAuthStore } from '../store/AuthStore';
 import { LlmProvider, UserChatModel, getApiKey, encodeApiKey } from '../types/provider';
-import { USD_TO_SEK } from '../constants';
+import { formatCost } from '../utils/currency';
 import ConfirmDialog from './ConfirmDialog';
 
 // ── Provider form helpers ─────────────────────────────────────────────────────
@@ -458,6 +459,7 @@ interface ProviderCardProps {
 
 const ProviderCardComponent: React.FC<ProviderCardProps> = ({ provider, balanceLabel }) => {
   const { models, deleteProvider } = useProviderStore();
+  const currency = useAuthStore((s) => s.currency);
   const [editingProviderSettings, setEditingProviderSettings] = useState(false);
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [showAddModel, setShowAddModel] = useState(false);
@@ -580,7 +582,7 @@ const ProviderCardComponent: React.FC<ProviderCardProps> = ({ provider, balanceL
               </Box>
               <Box display="flex" alignItems="center" gap={1}>
                 <Typography variant="caption" color="text.secondary" noWrap>
-                  {`${(model.input * USD_TO_SEK).toFixed(0)}kr | ${(model.output * USD_TO_SEK).toFixed(0)}kr /1M`}
+                  {`${formatCost(model.input, currency, 0)} | ${formatCost(model.output, currency, 0)} /1M`}
                 </Typography>
                 <Tooltip title="Edit model">
                   <IconButton size="small" onClick={(): void => setEditingModelId((id) => (id === model.id ? null : model.id))}>

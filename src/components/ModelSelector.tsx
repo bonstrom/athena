@@ -3,10 +3,11 @@ import { FormControl, InputLabel, MenuItem, Select, Box, Tooltip, Typography } f
 import WhatshotIcon from '@mui/icons-material/Whatshot';
 import { useProviderStore } from '../store/ProviderStore';
 import { UserChatModel } from '../types/provider';
-import { USD_TO_SEK, DEEPSEEK_PEAK_HOURS_UTC, DEEPSEEK_PEAK_MULTIPLIER } from '../constants';
+import { DEEPSEEK_PEAK_HOURS_UTC, DEEPSEEK_PEAK_MULTIPLIER } from '../constants';
+import { formatCost } from '../utils/currency';
+import { useAuthStore } from '../store/AuthStore';
 
 export type ChatModel = UserChatModel;
-export type { ProviderId } from '../services/llmService';
 
 function resolveModelFromSavedId(savedModelId: string | null, models: ChatModel[]): ChatModel | undefined {
   if (!savedModelId) return undefined;
@@ -44,16 +45,6 @@ export function calculateCostUSD(
   );
 }
 
-export function calculateCostSEK(
-  model: ChatModel,
-  prompt: number,
-  completion: number,
-  promptDetails?: { cached_tokens?: number; cache_creation_tokens?: number },
-  peakMultiplier?: number,
-): number {
-  return calculateCostUSD(model, prompt, completion, promptDetails, peakMultiplier) * USD_TO_SEK;
-}
-
 interface Props {
   selectedModel: ChatModel;
   onChange: (model: ChatModel) => void;
@@ -62,6 +53,7 @@ interface Props {
 const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
   const sortedModels = useSortedAvailableModels();
   const { models, providers } = useProviderStore();
+  const currency = useAuthStore((s) => s.currency);
 
   const selectedStillAvailable = sortedModels.some((m) => m.id === selectedModel.id);
   const selectValue = selectedStillAvailable ? selectedModel.id : '';
@@ -99,21 +91,23 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
           const provider = providers.find((p) => p.id === m.providerId);
           return (
             <MenuItem key={m.id} value={m.id}>
-              <Box display="flex" justifyContent="space-between" width="100%" alignItems="center">
-                <Box>
+              <Box display="flex" justifyContent="space-between" width="100%" alignItems="center" gap={2}>
+                <Box sx={{ minWidth: 0 }}>
                   <Typography variant="caption" color="primary" sx={{ display: 'block', fontSize: '0.65rem', lineHeight: 1, mb: 0.5 }}>
                     {provider?.name.toUpperCase()}
                   </Typography>
-                  <Typography>{m.label}</Typography>
+                  <Typography sx={{ lineHeight: 1.2 }}>{m.label}</Typography>
                 </Box>
-                <Typography variant="caption" color="text.secondary" ml={2} whiteSpace="nowrap" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Box display="flex" alignItems="center" gap={0.5} flexShrink={0} whiteSpace="nowrap">
                   {isDeepSeekPeakHours() && m.providerId === 'builtin-deepseek' && (
                     <Tooltip title="DeepSeek peak hours — 2x pricing">
-                      <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                      <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main', display: 'flex' }} />
                     </Tooltip>
                   )}
-                  {`${(m.input * USD_TO_SEK).toFixed(0)}kr | ${(m.output * USD_TO_SEK).toFixed(0)}kr / 1M`}
-                </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
+                    {`${formatCost(m.input, currency, 0)} | ${formatCost(m.output, currency, 0)} / 1M`}
+                  </Typography>
+                </Box>
               </Box>
             </MenuItem>
           );

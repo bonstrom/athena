@@ -1,10 +1,15 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import ModelSelector, { getDefaultModel, getDefaultTopicNameModel, getAvailableModels, getModelByApiId, ChatModel } from './ModelSelector';
 import { useProviderStore } from '../store/ProviderStore';
-import { createUserChatModel } from '../testUtils';
+import { useAuthStore } from '../store/AuthStore';
+import { createUserChatModel, selectorize } from '../testUtils';
 
 jest.mock('../store/ProviderStore', () => ({
   useProviderStore: Object.assign(jest.fn(), { getState: jest.fn() }),
+}));
+
+jest.mock('../store/AuthStore', () => ({
+  useAuthStore: jest.fn(),
 }));
 
 interface ProviderStoreStateForSelector {
@@ -24,12 +29,14 @@ type UseProviderStoreMock = jest.Mock<ProviderStoreStateForSelector> & {
 };
 
 const mockUseProviderStore = useProviderStore as unknown as UseProviderStoreMock;
+const mockUseAuthStore = useAuthStore as unknown as jest.Mock<{ currency: string }>;
 
 
 describe('ModelSelector', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+    selectorize(mockUseAuthStore, { currency: 'SEK' });
   });
 
   it('restores the same saved model across repeated getDefaultModel calls (reopen simulation)', () => {

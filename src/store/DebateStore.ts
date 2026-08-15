@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { athenaDb, DebatePhase, Message } from '../database/AthenaDb';
-import { ChatModel, calculateCostSEK, getPeakMultiplier, getAvailableModels, getDefaultModel } from '../components/ModelSelector';
+import { ChatModel, calculateCostUSD, getPeakMultiplier, getAvailableModels, getDefaultModel } from '../components/ModelSelector';
 import { askLlmStream, LlmMessage } from '../services/llmService';
 import { useTopicStore } from './TopicStore';
 import { useNotificationStore } from './NotificationStore';
@@ -181,8 +181,8 @@ async function runDebatePhase(
     throw err;
   }
 
-  const costA = calculateCostSEK(debateModelA, resultA.promptTokens, resultA.completionTokens, resultA.promptTokensDetails, getPeakMultiplier(debateModelA));
-  const costB = calculateCostSEK(debateModelB, resultB.promptTokens, resultB.completionTokens, resultB.promptTokensDetails, getPeakMultiplier(debateModelB));
+  const costA = calculateCostUSD(debateModelA, resultA.promptTokens, resultA.completionTokens, resultA.promptTokensDetails, getPeakMultiplier(debateModelA));
+  const costB = calculateCostUSD(debateModelB, resultB.promptTokens, resultB.completionTokens, resultB.promptTokensDetails, getPeakMultiplier(debateModelB));
 
   await Promise.all([
     updateMessage(msgIdA, {
@@ -376,7 +376,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         controller.signal,
         { includeCustomInstructions: false },
       );
-      const consensusCost = calculateCostSEK(
+      const consensusCost = calculateCostUSD(
         debateModelA,
         consensusResult.promptTokens,
         consensusResult.completionTokens,
@@ -587,7 +587,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
           controller.signal,
           { includeCustomInstructions: false },
         );
-        const consensusCost = calculateCostSEK(
+        const consensusCost = calculateCostUSD(
           debateModelA,
           consensusResult.promptTokens,
           consensusResult.completionTokens,

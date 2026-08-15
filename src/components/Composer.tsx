@@ -57,8 +57,8 @@ import { llmSuggestionService } from '../services/llmSuggestionService';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
 import { useUiStore } from '../store/UiStore';
-import { USD_TO_SEK } from '../constants';
 import { isDeepSeekPeakHours } from './ModelSelector';
+import { formatCost } from '../utils/currency';
 import { ENGLISH_VOICES } from '../constants/voices';
 import { Attachment } from '../database/AthenaDb';
 import { useNotificationStore } from '../store/NotificationStore';
@@ -162,6 +162,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
     ttsEnabled,
     ttsVoiceId,
     setTtsVoiceId,
+    currency,
   } = useAuthStore();
   const { getAvailableModels, providers } = useProviderStore();
   const currentlySpeakingMessageId = useUiStore((s) => s.currentlySpeakingMessageId);
@@ -630,16 +631,18 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
               >
                 {availableModels.map((m) => (
                   <MenuItem key={m.id} value={m.id}>
-                    <Box display="flex" justifyContent="space-between" width="100%" alignItems="center">
-                      <Typography variant="body2">{m.label}</Typography>
-                      <Typography variant="caption" color="text.secondary" ml={2} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Box display="flex" justifyContent="space-between" width="100%" alignItems="center" gap={2}>
+                      <Typography variant="body2" sx={{ lineHeight: 1.2 }}>{m.label}</Typography>
+                      <Box display="flex" alignItems="center" gap={0.5} flexShrink={0} whiteSpace="nowrap">
                         {isDeepSeekPeakHours() && m.providerId === 'builtin-deepseek' && (
                           <Tooltip title="DeepSeek peak hours — 2x pricing">
-                            <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                            <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main', display: 'flex' }} />
                           </Tooltip>
                         )}
-                        {`${(m.input * USD_TO_SEK).toFixed(0)}kr | ${(m.output * USD_TO_SEK).toFixed(0)}kr / 1M`}
-                      </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
+                          {`${formatCost(m.input, currency, 0)} | ${formatCost(m.output, currency, 0)} / 1M`}
+                        </Typography>
+                      </Box>
                     </Box>
                   </MenuItem>
                 ))}
@@ -1110,7 +1113,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                     if (nextState) {
                       setWebSearchEnabled(false);
                       setMusicGenerationEnabled(false);
-                      if (!inputValue.trim()) setInputValue(IMAGE_TEMPLATE);
+                      if (!inputValue.trim() || inputValue === MUSIC_TEMPLATE) setInputValue(IMAGE_TEMPLATE);
+                    } else if (inputValue === IMAGE_TEMPLATE) {
+                      setInputValue('');
                     }
                     setImageGenerationEnabled(nextState);
                   }}
@@ -1142,7 +1147,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                     if (nextState) {
                       setWebSearchEnabled(false);
                       setImageGenerationEnabled(false);
-                      if (!inputValue.trim()) setInputValue(MUSIC_TEMPLATE);
+                      if (!inputValue.trim() || inputValue === IMAGE_TEMPLATE) setInputValue(MUSIC_TEMPLATE);
+                    } else if (inputValue === MUSIC_TEMPLATE) {
+                      setInputValue('');
                     }
                     setMusicGenerationEnabled(nextState);
                   }}
