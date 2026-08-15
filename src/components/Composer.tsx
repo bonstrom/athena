@@ -1322,7 +1322,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
             display: 'flex',
             flexDirection: 'row',
             flexWrap: 'wrap',
-            alignItems: 'center',
+            alignItems: isExpanded ? 'flex-end' : 'center',
             columnGap: { xs: 0.5, md: 1 },
             rowGap: 0,
           }}
