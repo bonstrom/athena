@@ -59,13 +59,14 @@ const ModelSelector: React.FC<Props> = ({ selectedModel, onChange }) => {
   const selectValue = selectedStillAvailable ? selectedModel.id : '';
 
   const groups: { providerId: string; name: string; models: ChatModel[] }[] = [];
+  let currentGroup: { providerId: string; name: string; models: ChatModel[] } | undefined;
   for (const m of sortedModels) {
     const provider = providers.find((p) => p.id === m.providerId);
-    const last = groups[groups.length - 1];
-    if (last && last.providerId === m.providerId) {
-      last.models.push(m);
+    if (currentGroup && currentGroup.providerId === m.providerId) {
+      currentGroup.models.push(m);
     } else {
-      groups.push({ providerId: m.providerId, name: provider?.name ?? m.providerId, models: [m] });
+      currentGroup = { providerId: m.providerId, name: provider?.name ?? m.providerId, models: [m] };
+      groups.push(currentGroup);
     }
   }
 

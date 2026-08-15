@@ -107,7 +107,7 @@ const ChatLayout: React.FC = () => {
                   }}
                 >
                   <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, flexShrink: 0 }}>
-                    <Typography variant="subtitle2" fontWeight="bold" noWrap>
+                    <Typography variant="subtitle2" fontWeight="bold" noWrap sx={{ lineHeight: 1.2 }}>
                       {topic.name || 'New Topic'}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.3 }}>
@@ -156,76 +156,6 @@ const ChatLayout: React.FC = () => {
                     )
                   )}
                 </Box>
-              )}
-            </Box>
-          )}
-
-          {!isMobile && topic && (
-            <Box
-              sx={{
-                px: 2,
-                py: 1,
-                bgcolor: (theme) => alpha(theme.palette.background.default, 0.85),
-                backdropFilter: 'blur(12px)',
-                borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
-                boxShadow: (theme) => (theme.palette.mode === 'dark' ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.05)'),
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 1.5,
-                position: 'relative',
-                zIndex: 10,
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, flexShrink: 0 }}>
-                <Typography variant="subtitle1" fontWeight="bold" noWrap>
-                  {topic.name || 'New Topic'}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.3 }}>
-                  {isDeepSeekPeakHours() && selectedModel.providerId === 'builtin-deepseek' && (
-                    <Tooltip title="DeepSeek peak hours — 2x pricing">
-                      <Box component="span" display="inline-flex" alignItems="center" gap={0.2}>
-                        <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
-                        <Typography variant="caption" color="warning.main" sx={{ fontWeight: 'bold', fontSize: '0.65rem' }}>
-                          2×
-                        </Typography>
-                      </Box>
-                    </Tooltip>
-                  )}
-                  {selectedModel.label}
-                </Typography>
-              </Box>
-              {topic.selectedPromptIds && topic.selectedPromptIds.length > 0 && (
-                isNarrow ? (
-                  <Chip
-                    label={`Prompts (${topic.selectedPromptIds.length})`}
-                    size="small"
-                    sx={{ height: 20, fontSize: '0.65rem', bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08) }}
-                  />
-                ) : (
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                    {predefinedPrompts
-                      .filter((p) => topic.selectedPromptIds?.includes(p.id))
-                      .map((prompt) => (
-                        <Chip
-                          key={prompt.id}
-                          label={prompt.name}
-                          size="small"
-                          onDelete={(): void => {
-                            const newIds = topic.selectedPromptIds?.filter((id) => id !== prompt.id) ?? [];
-                            void topicStore.updateTopicPromptSelection(topic.id, newIds);
-                          }}
-                          sx={{
-                            height: 20,
-                            fontSize: '0.65rem',
-                            bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-                            '& .MuiChip-deleteIcon': { fontSize: 14 },
-                          }}
-                        />
-                      ))}
-                  </Box>
-                )
               )}
             </Box>
           )}

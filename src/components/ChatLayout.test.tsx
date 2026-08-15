@@ -129,7 +129,7 @@ describe('ChatLayout', () => {
     expect(screen.queryByText('Code Review')).not.toBeInTheDocument();
   });
 
-  it('desktop mode renders predefined prompt chips with onDelete', () => {
+  it('desktop mode does not render the header prompt chips', () => {
     const updateTopicPromptSelection = jest.fn((): Promise<void> => Promise.resolve());
     mockUseMediaQuery.mockReturnValue(false);
     mockUseChatStore.mockReturnValue({
@@ -149,8 +149,8 @@ describe('ChatLayout', () => {
 
     render(<ChatLayout />);
 
-    expect(screen.getByText('Code Review')).toBeInTheDocument();
-    expect(screen.getByText('Debug Mode')).toBeInTheDocument();
+    expect(screen.queryByText('Code Review')).toBeNull();
+    expect(screen.queryByText('Debug Mode')).toBeNull();
   });
 
   it('mobile header shows collapsed Prompts (N) chip', () => {
@@ -176,27 +176,6 @@ describe('ChatLayout', () => {
     render(<ChatLayout />);
 
     expect(screen.getByText('Prompts (1)')).toBeInTheDocument();
-  });
-
-  it('removes prompt chip from desktop header when delete is clicked', () => {
-    const updateTopicPromptSelection = jest.fn((): Promise<void> => Promise.resolve());
-    mockUseMediaQuery.mockReturnValue(false);
-    mockUseChatStore.mockReturnValue({
-      currentTopicId: 'topic-1',
-      selectedModel: { label: 'GPT-5.4 Nano' },
-    });
-    mockUseTopicStore.mockReturnValue({
-      topics: [{ id: 'topic-1', name: 'Topic A', selectedPromptIds: ['prompt-1'] }],
-      updateTopicPromptSelection,
-    });
-    mockUseAuthStore.mockReturnValue({
-      predefinedPrompts: [{ id: 'prompt-1', name: 'Code Review' }],
-    });
-
-    render(<ChatLayout />);
-
-    const chip = screen.getByText('Code Review').closest('.MuiChip-root');
-    expect(chip).toBeInTheDocument();
   });
 
   it('desktop mode renders outlet and sidebar without mobile menu button', () => {

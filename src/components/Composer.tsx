@@ -182,6 +182,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   const suggestionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const topic = topicStore.topics.find((t) => t.id === currentTopicId);
+  const hasSelectedPrompt = (topic?.selectedPromptIds?.length ?? 0) > 0;
 
   const availableModels = getAvailableModels();
   const hasMiniMaxKey = providers.some((p) => p.id === 'builtin-minimax' && !!p.apiKeyEncrypted);
@@ -1451,7 +1452,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
 
             <Tooltip title="Predefined Prompts" disableTouchListener={isMobile}>
               <span>
-                <IconButton onClick={handlePromptClick} disabled={sending || predefinedPrompts.length === 0} aria-label="Predefined Prompts">
+                <IconButton onClick={handlePromptClick} disabled={sending || predefinedPrompts.length === 0} aria-label="Predefined Prompts" color={hasSelectedPrompt ? 'primary' : 'default'}>
                   <PsychologyIcon />
                 </IconButton>
               </span>
