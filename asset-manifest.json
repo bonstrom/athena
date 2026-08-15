@@ -1,7 +1,7 @@
 {
   "files": {
     "main.css": "/athena/static/css/main.48c336c4.css",
-    "main.js": "/athena/static/js/main.ff68f333.js",
+    "main.js": "/athena/static/js/main.5f9d6374.js",
     "static/js/9954.ea259584.chunk.js": "/athena/static/js/9954.ea259584.chunk.js",
     "static/js/2654.bfb31c6a.chunk.js": "/athena/static/js/2654.bfb31c6a.chunk.js",
     "static/js/3971.abae9183.chunk.js": "/athena/static/js/3971.abae9183.chunk.js",
@@ -127,7 +127,7 @@
     "static/media/KaTeX_Size3-Regular.woff2": "/athena/static/media/KaTeX_Size3-Regular.e1951519f6f0596f7356.woff2",
     "index.html": "/athena/index.html",
     "main.48c336c4.css.map": "/athena/static/css/main.48c336c4.css.map",
-    "main.ff68f333.js.map": "/athena/static/js/main.ff68f333.js.map",
+    "main.5f9d6374.js.map": "/athena/static/js/main.5f9d6374.js.map",
     "9954.ea259584.chunk.js.map": "/athena/static/js/9954.ea259584.chunk.js.map",
     "2654.bfb31c6a.chunk.js.map": "/athena/static/js/2654.bfb31c6a.chunk.js.map",
     "3971.abae9183.chunk.js.map": "/athena/static/js/3971.abae9183.chunk.js.map",
@@ -184,6 +184,6 @@
   },
   "entrypoints": [
     "static/css/main.48c336c4.css",
-    "static/js/main.ff68f333.js"
+    "static/js/main.5f9d6374.js"
   ]
 }
