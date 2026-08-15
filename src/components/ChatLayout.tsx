@@ -1,12 +1,11 @@
 import React, { useEffect } from 'react';
-import { Box, CssBaseline, Drawer, useMediaQuery, useTheme, IconButton, Tooltip, Typography, Chip, alpha } from '@mui/material';
+import { Box, CssBaseline, Drawer, useMediaQuery, useTheme, IconButton, Tooltip, Typography, alpha } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
 import { Outlet } from 'react-router-dom';
 import { useUiStore } from '../store/UiStore';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
-import { useAuthStore } from '../store/AuthStore';
 import { Sidebar } from './Sidebar';
 import { isDeepSeekPeakHours } from './ModelSelector';
 
@@ -15,11 +14,9 @@ const drawerWidth = 300;
 const ChatLayout: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const isNarrow = useMediaQuery(theme.breakpoints.down('lg'));
 
   const { drawerOpen, openDrawer, closeDrawer, setMobile } = useUiStore();
   const { currentTopicId, selectedModel } = useChatStore();
-  const { predefinedPrompts } = useAuthStore();
   const topicStore = useTopicStore();
   const topic = topicStore.topics.find((t) => t.id === currentTopicId);
 
@@ -124,37 +121,6 @@ const ChatLayout: React.FC = () => {
                       {selectedModel.label}
                     </Typography>
                   </Box>
-                  {topic.selectedPromptIds && topic.selectedPromptIds.length > 0 && (
-                    isNarrow ? (
-                      <Chip
-                        label={`Prompts (${topic.selectedPromptIds.length})`}
-                        size="small"
-                        sx={{ height: 18, fontSize: '0.6rem', bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08) }}
-                      />
-                    ) : (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {predefinedPrompts
-                          .filter((p) => topic.selectedPromptIds?.includes(p.id))
-                          .map((prompt) => (
-                            <Chip
-                              key={prompt.id}
-                              label={prompt.name}
-                              size="small"
-                              onDelete={(): void => {
-                                const newIds = topic.selectedPromptIds?.filter((id) => id !== prompt.id) ?? [];
-                                void topicStore.updateTopicPromptSelection(topic.id, newIds);
-                              }}
-                              sx={{
-                                height: 18,
-                                fontSize: '0.6rem',
-                                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-                                '& .MuiChip-deleteIcon': { fontSize: 12 },
-                              }}
-                            />
-                          ))}
-                      </Box>
-                    )
-                  )}
                 </Box>
               )}
             </Box>
