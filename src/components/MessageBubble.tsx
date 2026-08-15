@@ -50,7 +50,6 @@ import { formatCost } from '../utils/currency';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import StopCircleIcon from '@mui/icons-material/StopCircle';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import CodeIcon from '@mui/icons-material/Code';
 import ImageIcon from '@mui/icons-material/Image';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
@@ -438,7 +437,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   gap: 0.5,
                   userSelect: 'none',
                   borderRadius: 1,
-                  px: 0.5,
+                  px: 0,
                   py: 0.25,
                   '&:hover': { opacity: 0.7 },
                 }}
@@ -453,7 +452,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
                     </Tooltip>
                   )}
-                <InfoOutlinedIcon sx={{ fontSize: 12, color: 'text.disabled', opacity: 0.6 }} />
               </ButtonBase>
               <Popover
                 open={Boolean(infoAnchorEl)}
