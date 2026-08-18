@@ -620,7 +620,7 @@ const AnthropicAdapter: IMessageAdapter = {
       const block = p.content_block;
       if (block?.type === 'tool_use') {
         if (!state.toolCalls) state.toolCalls = [];
-        state.toolCalls[p.index ?? 0] = { id: block.id ?? '', type: 'function', function: { name: block.name ?? '', arguments: '' } };
+        state.toolCalls.push({ id: block.id ?? '', type: 'function', function: { name: block.name ?? '', arguments: '' } });
       }
     } else if (p.type === 'content_block_delta') {
       const delta = p.delta;
@@ -633,9 +633,9 @@ const AnthropicAdapter: IMessageAdapter = {
         state.reasoning += rToken;
         if (onReasoning) onReasoning(rToken);
       } else if (delta?.type === 'input_json_delta') {
-        const idx: number = p.index ?? 0;
-        if (state.toolCalls?.[idx]) {
-          state.toolCalls[idx].function.arguments += delta.partial_json ?? '';
+        const lastToolCall = state.toolCalls?.[state.toolCalls.length - 1];
+        if (lastToolCall) {
+          lastToolCall.function.arguments += delta.partial_json ?? '';
         }
       }
     } else if (p.type === 'message_start') {

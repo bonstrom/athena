@@ -1366,6 +1366,97 @@ describe('buildPayload — Anthropic adapter output_config', () => {
   });
 });
 
+describe('Anthropic streaming — tool_use after thinking block', () => {
+  const provider: LlmProvider = {
+    id: 'test-anthropic',
+    name: 'Test Anthropic',
+    baseUrl: 'https://example.com/v1/messages',
+    messageFormat: 'anthropic',
+    apiKeyEncrypted: 'key-encrypted',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: false,
+  };
+
+  beforeEach(() => {
+    mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 16000 });
+    mockEstimateTokens.mockReturnValue({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+  });
+
+  it('assembles tool calls densely when a thinking block precedes the tool_use block', async () => {
+    const model = createUserChatModel({ streaming: true, supportsThinking: true });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    const dataLine = (obj: unknown): string => `data: ${JSON.stringify(obj)}`;
+    const sse = [
+      'event: message_start',
+      dataLine({ type: 'message_start', message: { id: 'msg_1', model: 'mini-max', usage: { input_tokens: 20, output_tokens: 0 } } }),
+      '',
+      'event: content_block_start',
+      dataLine({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
+      '',
+      'event: content_block_delta',
+      dataLine({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'Let me think.' } }),
+      '',
+      'event: content_block_stop',
+      dataLine({ type: 'content_block_stop', index: 0 }),
+      '',
+      'event: content_block_start',
+      dataLine({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'toolu_1', name: 'read_messages' } }),
+      '',
+      'event: content_block_delta',
+      dataLine({
+        type: 'content_block_delta',
+        index: 1,
+        delta: { type: 'input_json_delta', partial_json: '{"messages":[{"messageId":"abc"}]}' },
+      }),
+      '',
+      'event: content_block_stop',
+      dataLine({ type: 'content_block_stop', index: 1 }),
+      '',
+      'event: message_delta',
+      dataLine({ type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 15 } }),
+      '',
+      'event: message_stop',
+      dataLine({ type: 'message_stop' }),
+      '',
+      '',
+    ].join('\n');
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({
+        start(controller): void {
+          controller.enqueue(new TextEncoder().encode(sse));
+          controller.close();
+        },
+      }),
+    } as unknown as Response);
+
+    const { askLlmStream } = await import('../llmService');
+    const result = await askLlmStream(model, 0.7, [user('Hi')]);
+
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls?.[0].id).toBe('toolu_1');
+    expect(result.toolCalls?.[0].function.name).toBe('read_messages');
+    expect(result.toolCalls?.[0].function.arguments).toBe('{"messages":[{"messageId":"abc"}]}');
+    expect(result.finishReason).toBe('tool_use');
+    expect(result.reasoning).toBe('Let me think.');
+    expect(result.promptTokens).toBe(20);
+    expect(result.completionTokens).toBe(15);
+
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+});
+
 describe('resolveModelAndProvider — fallback and error paths', () => {
   const provider: LlmProvider = {
     id: 'test-provider',
