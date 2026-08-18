@@ -523,7 +523,7 @@ describe('ChatStore', () => {
 
     expect(useChatStore.getState().pendingUserQuestion).toBeNull();
     const assistant = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant');
-    expect(assistant?.content).toBe('Thanks for clarifying: Here are more details');
+    expect(assistant?.content).toBe('**Question for you:** Could you clarify?\n\nThanks for clarifying: Here are more details');
   });
 
   it('regenerateResponse retries using the preceding user message content and id', async () => {

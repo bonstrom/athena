@@ -1028,6 +1028,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       const loopStartTime = Date.now();
       let streamedContent = '';
+      const askedQuestions: string[] = [];
       let lastContentRenderTime = 0;
       const RENDER_THROTTLE_MS = 64; // ~15fps for smooth but efficient UI
 
@@ -1158,11 +1159,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               const question = parsedArgs.question ?? 'Could you clarify?';
               const context = parsedArgs.context ?? '';
 
-              // Append the question to the assistant's visible content
-              streamedContent += `\n\n${question}`;
-              get().updateMessageStateOnly(assistantId, {
-                content: streamedContent.replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '').replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, ''),
-              });
+              // Persist the question so it can be surfaced in the final message
+              askedQuestions.push(question);
 
               // Return a Promise that resolves when the user submits an answer
               return new Promise<string>((resolve, reject) => {
@@ -1251,7 +1249,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (finalTotalCost <= 0) console.warn('[verify:chat] Calculated cost is 0 — model:', effectiveModel.id);
 
       // ── Fallback: detect inline clarification questions when ask_user tool wasn't called ──
-      const askUserWasCalled = get().pendingUserQuestion != null;
+      const askUserWasCalled = askedQuestions.length > 0;
       if (useAuthStore.getState().askUserEnabled && !askUserWasCalled && looksLikeClarificationQuestion(finalContent)) {
         const capturedTopicId = topicId;
         set({
@@ -1279,10 +1277,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         failed: false,
       };
       const assistantPatch = {
-        content: finalContent
-          .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
-          .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
-          .trim(),
+        content: [
+          ...askedQuestions.map((q) => `**Question for you:** ${q}`),
+          finalContent
+            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
+            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
+            .trim(),
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
         reasoning: streamedThinking.trim(),
         completionTokens: totalCompletionTokens,
         totalCost: finalTotalCost,

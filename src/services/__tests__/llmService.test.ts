@@ -566,6 +566,52 @@ describe('orchestrateLlmLoop — tool calls', () => {
     expect(onToolLog).toHaveBeenCalledWith(expect.stringContaining('... *(display truncated — full content sent to LLM)*'));
   });
 
+  it('does not emit tool logs for ask_user', async () => {
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-1',
+          model: model.apiModelId,
+          choices: [
+            {
+              finish_reason: 'tool_calls',
+              message: {
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call-ask-user',
+                    type: 'function',
+                    function: { name: 'ask_user', arguments: '{"question":"Could you clarify?","context":"Need details."}' },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 3 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-2',
+          model: model.apiModelId,
+          choices: [{ finish_reason: 'stop', message: { content: 'Thanks' } }],
+          usage: { prompt_tokens: 11, completion_tokens: 4 },
+        }),
+      );
+
+    const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('Here is the answer'));
+    const onToolLog = jest.fn((log: string): void => {
+      void log;
+    });
+
+    await orchestrateLlmLoop(model, 0.7, [user('Ask me a question')], undefined, undefined, undefined, onExecuteTool, onToolLog);
+
+    expect(onToolLog).not.toHaveBeenCalled();
+  });
+
   it('captures tool execution errors and continues the loop', async () => {
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });

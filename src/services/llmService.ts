@@ -1380,9 +1380,10 @@ export async function orchestrateLlmLoop(
       for (const tc of result.toolCalls) {
         const isWebSearch = tc.function.name === '$web_search';
         const isScratchpad = tc.function.name === 'update_scratchpad';
+        const isAskUser = tc.function.name === 'ask_user';
         let toolResult = 'Updated.';
 
-        if (onToolLog) {
+        if (onToolLog && !isAskUser) {
           onToolLog(`\n\n**Executing Tool**: \`${tc.function.name}\`\n> \`\`\`json\n> ${tc.function.arguments}\n> \`\`\`\n`);
         }
 
@@ -1411,7 +1412,7 @@ export async function orchestrateLlmLoop(
           toolResult = toolResult.slice(0, TOOL_RESULT_CHAR_LIMIT) + `\n\n[TRUNCATED: result exceeded ${TOOL_RESULT_CHAR_LIMIT} chars]`;
         }
 
-        if (onToolLog) {
+        if (onToolLog && !isAskUser) {
           const summary = toolResult.length > TOOL_RESULT_PREVIEW_LIMIT ? toolResult.slice(0, TOOL_RESULT_PREVIEW_LIMIT) + '... *(display truncated — full content sent to LLM)*' : toolResult;
           onToolLog(`**Tool Result**: \`${tc.function.name}\`\n> ${summary.replace(/\n/g, '\n> ')}\n\n`);
         }

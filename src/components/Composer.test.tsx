@@ -364,6 +364,22 @@ describe('Composer', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it('shows a clarification banner while a user question is pending', () => {
+    chatStore.pendingUserQuestion = {
+      question: 'Which model should I use?',
+      context: 'Need clarification',
+      resolve: jest.fn(),
+      reject: jest.fn(),
+    };
+    selectorize(mockUseChatStore, chatStore);
+
+    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+
+    expect(screen.getByText('Assistant needs clarification')).toBeInTheDocument();
+    expect(screen.getByText('Which model should I use?')).toBeInTheDocument();
+    expect(screen.getByText('Need clarification')).toBeInTheDocument();
+  });
+
   it('restores the stopped content when generation is cancelled on the same topic', async () => {
     chatStore.stopSending = jest.fn((): Promise<string | null> => Promise.resolve('Recovered draft'));
     selectorize(mockUseChatStore, chatStore);

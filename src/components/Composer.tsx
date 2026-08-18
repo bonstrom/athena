@@ -48,6 +48,7 @@ import MusicNoteIcon from '@mui/icons-material/MusicNote';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import MicIcon from '@mui/icons-material/Mic';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { stopSpeech } from '../services/mediaService';
 import TopicContextDialog from './TopicContextDialog';
 import ScratchpadDialog from './ScratchpadDialog';
@@ -1564,6 +1565,41 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                     size="small"
                   />
                 ))}
+              </Box>
+            )}
+            {pendingUserQuestion && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 1,
+                  mb: 1,
+                  px: 1.5,
+                  py: 1,
+                  borderRadius: 2,
+                  border: (theme): string => `1px solid ${alpha(theme.palette.primary.main, 0.4)}`,
+                  bgcolor: (theme): string =>
+                    theme.palette.mode === 'dark' ? alpha(theme.palette.primary.main, 0.12) : alpha(theme.palette.primary.main, 0.08),
+                }}
+              >
+                <HelpOutlineIcon color="primary" sx={{ fontSize: '1.25rem', mt: 0.25 }} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography
+                    variant="caption"
+                    color="primary"
+                    sx={{ fontWeight: 'bold', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                  >
+                    Assistant needs clarification
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                    {pendingUserQuestion.question}
+                  </Typography>
+                  {pendingUserQuestion.context && (
+                    <Typography variant="caption" color="text.secondary">
+                      {pendingUserQuestion.context}
+                    </Typography>
+                  )}
+                </Box>
               </Box>
             )}
             <Box
