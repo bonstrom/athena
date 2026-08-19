@@ -523,7 +523,141 @@ describe('ChatStore', () => {
 
     expect(useChatStore.getState().pendingUserQuestion).toBeNull();
     const assistant = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant');
-    expect(assistant?.content).toBe('**Question for you:** Could you clarify?\n\nThanks for clarifying: Here are more details');
+    expect(assistant?.content).toBe(
+      '**Question for you:** Could you clarify?\n\n**Your answer:** Here are more details\n\nThanks for clarifying: Here are more details',
+    );
+  });
+
+  it('interleaves ask_user question and answer at the interruption point in the final content', async () => {
+    type ExecuteToolCallback = (toolName: string, argsJson: string) => Promise<string>;
+
+    mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]) => {
+      const executeTool = args[6] as ExecuteToolCallback | undefined;
+      if (!executeTool) throw new Error('Expected execute tool callback');
+
+      const answer = await executeTool('ask_user', JSON.stringify({ question: 'Which framework do you use?', context: '' }));
+
+      return {
+        finalContent: `Let me help with that.\n\nHere's the continuation: ${answer}`,
+        totalPromptTokens: 10,
+        totalCompletionTokens: 5,
+        totalSearchCount: 0,
+        toolLoopTrace: [
+          {
+            iteration: 1,
+            llmResponse: {
+              content: 'Let me help with that.',
+              toolCalls: [
+                {
+                  id: 'call-1',
+                  type: 'function',
+                  function: { name: 'ask_user', arguments: JSON.stringify({ question: 'Which framework do you use?' }) },
+                },
+              ],
+            },
+            toolResults: [{ toolCallId: 'call-1', toolName: 'ask_user', result: answer }],
+          },
+          {
+            iteration: 2,
+            llmResponse: { content: `Here's the continuation: ${answer}` },
+            toolResults: [],
+          },
+        ],
+        lastResult: {
+          content: `Here's the continuation: ${answer}`,
+          rawContent: `Here's the continuation: ${answer}`,
+          promptTokens: 10,
+          completionTokens: 5,
+          searchCount: 0,
+        },
+      };
+    });
+
+    const sendPromise = useChatStore.getState().sendMessageStream('I need help', 'topic-1');
+
+    for (let i = 0; i < 20; i++) {
+      if (useChatStore.getState().pendingUserQuestion) break;
+      await Promise.resolve();
+    }
+
+    useChatStore.getState().resolvePendingQuestion('React');
+    await sendPromise;
+
+    const assistant = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant');
+    expect(assistant?.content).toBe(
+      "Let me help with that.\n\n**Question for you:** Which framework do you use?\n\n**Your answer:** React\n\nHere's the continuation: React",
+    );
+  });
+
+  it('continuation mode appends the answer and reply into the existing assistant message without new bubbles', async () => {
+    const existingAssistant = createMessage({
+      id: 'assistant-existing',
+      type: 'assistant',
+      content: 'Which framework do you use?',
+    });
+
+    useChatStore.setState({ messagesByTopic: { 'topic-1': [existingAssistant] } });
+    mockDbGet.mockResolvedValue(existingAssistant);
+
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: "Let's set up Vite.",
+      totalPromptTokens: 10,
+      totalCompletionTokens: 5,
+      totalSearchCount: 0,
+      toolLoopTrace: [],
+      lastResult: {
+        content: "Let's set up Vite.",
+        rawContent: "Let's set up Vite.",
+        promptTokens: 10,
+        completionTokens: 5,
+        searchCount: 0,
+      },
+    });
+
+    await useChatStore.getState().sendMessageStream('React', 'topic-1', undefined, undefined, 'assistant-existing');
+
+    const topicMessages = useChatStore.getState().messagesByTopic['topic-1'] ?? [];
+    expect(topicMessages).toHaveLength(1);
+    expect(topicMessages[0].id).toBe('assistant-existing');
+    expect(topicMessages[0].type).toBe('assistant');
+    expect(topicMessages[0].content).toBe("Which framework do you use?\n\n**Your answer:** React\n\nLet's set up Vite.");
+    expect(mockDbAdd).not.toHaveBeenCalled();
+  });
+
+  it('fallback answer continues into the same assistant message via continuation mode', async () => {
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: 'Which framework do you use?',
+      totalPromptTokens: 10,
+      totalCompletionTokens: 5,
+      totalSearchCount: 0,
+      toolLoopTrace: [],
+      lastResult: {
+        content: 'Which framework do you use?',
+        rawContent: 'Which framework do you use?',
+        promptTokens: 10,
+        completionTokens: 5,
+        searchCount: 0,
+      },
+    });
+
+    await useChatStore.getState().sendMessageStream('I need help', 'topic-1');
+
+    const pending = useChatStore.getState().pendingUserQuestion;
+    expect(pending).toBeDefined();
+
+    const assistantId = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant')?.id;
+    expect(assistantId).toBeDefined();
+
+    const originalSend = useChatStore.getState().sendMessageStream;
+    const sendSpy = jest.spyOn(useChatStore.getState(), 'sendMessageStream').mockResolvedValue();
+
+    pending?.resolve('React');
+    await Promise.resolve();
+
+    expect(sendSpy).toHaveBeenCalledWith('React', 'topic-1', undefined, undefined, assistantId);
+
+    sendSpy.mockRestore();
+    useChatStore.getState().sendMessageStream = originalSend;
   });
 
   it('regenerateResponse retries using the preceding user message content and id', async () => {

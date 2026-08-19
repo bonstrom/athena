@@ -15,6 +15,7 @@ import {
   ASK_USER_TOOL,
   LlmTool,
   LlmDebugPayload,
+  ToolLoopIteration,
 } from '../services/llmService';
 import { generateImage, generateMusic, speakText } from '../services/mediaService';
 import { stripMarkdown } from '../utils/stripMarkdown';
@@ -50,6 +51,76 @@ function looksLikeClarificationQuestion(text: string): boolean {
   const clarificationPatterns =
     /\b(clarif|specify|which|what (do|would|are|is|did)|could you (tell|let|provide|share|specify)|more (context|information|details)|what.*(mean|refer)|need.*(know|more|information|context|detail))\b/i;
   return clarificationPatterns.test(trimmed);
+}
+
+interface AskedQuestion {
+  question: string;
+  context: string;
+  answer: string;
+}
+
+function stripPersistReplaceComments(text: string): string {
+  return text
+    .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
+    .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
+    .trim();
+}
+
+/**
+ * Builds the final assistant message content, interleaving any ask_user
+ * questions and the user's answers at the point where the model interrupted
+ * itself. When a per-iteration trace is unavailable, falls back to prepending
+ * the Q&A blocks above the full content.
+ */
+function buildAssistantContent(
+  toolLoopTrace: ToolLoopIteration[],
+  finalContent: string,
+  askedQuestions: AskedQuestion[],
+): string {
+  const cleanedFinal = stripPersistReplaceComments(finalContent);
+
+  if (askedQuestions.length === 0) return cleanedFinal;
+
+  if (toolLoopTrace.length === 0) {
+    const blocks: string[] = [];
+    for (const qa of askedQuestions) {
+      blocks.push(`**Question for you:** ${qa.question}`);
+      if (qa.answer) blocks.push(`**Your answer:** ${qa.answer}`);
+    }
+    blocks.push(cleanedFinal);
+    return blocks.filter(Boolean).join('\n\n');
+  }
+
+  const blocks: string[] = [];
+  let questionIndex = 0;
+  let hasTraceContent = false;
+
+  for (const iteration of toolLoopTrace) {
+    const content = stripPersistReplaceComments(iteration.llmResponse.content);
+    if (content) {
+      hasTraceContent = true;
+      blocks.push(content);
+    }
+
+    for (const toolCall of iteration.llmResponse.toolCalls ?? []) {
+      if (toolCall.function.name !== 'ask_user') continue;
+      const qa = askedQuestions.at(questionIndex);
+      questionIndex += 1;
+      if (!qa) continue;
+      blocks.push(`**Question for you:** ${qa.question}`);
+      if (qa.answer) blocks.push(`**Your answer:** ${qa.answer}`);
+    }
+  }
+
+  const built = blocks.filter(Boolean).join('\n\n');
+
+  // The loop can exhaust with no text output and fire a forced final tool-free
+  // call whose content is not represented in the trace. Append it if so.
+  if (cleanedFinal && !hasTraceContent) {
+    return [built, cleanedFinal].filter(Boolean).join('\n\n');
+  }
+
+  return built || cleanedFinal;
 }
 
 interface ChatSystemEntry {
@@ -185,7 +256,13 @@ interface ChatStore {
   updateMessages: (updates: { id: string; patch: Partial<Message> }[]) => Promise<void>;
   updateMessageStateOnly: (id: string, patch: Partial<Message>) => void;
   editSvgInMessage: (messageId: string, svgSource: string, instruction: string, onReasoning?: (partial: string) => void) => Promise<void>;
-  sendMessageStream: (content: string, topicId: string, messageId?: string, attachments?: Attachment[]) => Promise<void>;
+  sendMessageStream: (
+    content: string,
+    topicId: string,
+    messageId?: string,
+    attachments?: Attachment[],
+    continuationAssistantId?: string,
+  ) => Promise<void>;
   buildFullContext: (topicId: string, userMessagePreview?: string) => Promise<ContextEntry[]>;
   setSelectedModel: (model: ChatModel) => void;
   updateMessageContext: (messageId: string, include: boolean) => Promise<void>;
@@ -710,7 +787,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     await get().updateMessage(messageId, { content: newContent });
   },
 
-  sendMessageStream: async (content: string, topicId: string, messageId?: string, attachments?: Attachment[]): Promise<void> => {
+  sendMessageStream: async (
+    content: string,
+    topicId: string,
+    messageId?: string,
+    attachments?: Attachment[],
+    continuationAssistantId?: string,
+  ): Promise<void> => {
     // Guard against concurrent sends (e.g. rapid double-tap)
     if (get().sending) return;
 
@@ -740,7 +823,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set({ sending: true, abortController: controller });
 
     const now = new Date().toISOString();
-    const isRetry = !!messageId;
+    const isContinuation = continuationAssistantId !== undefined;
+    const isRetry = !!messageId && !isContinuation;
 
     let userMessage: Message;
     const topic = topicStoreState.topics.find((t) => t.id === topicId);
@@ -751,6 +835,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const existing = await athenaDb.messages.get(messageId);
       if (!existing) throw new Error('Original message not found for retry.');
       userMessage = existing;
+    } else if (isContinuation) {
+      // Continuation: the answer is appended to an existing assistant message, so no
+      // user bubble is persisted. Build a transient message solely for context inclusion.
+      userMessage = {
+        id: '',
+        topicId,
+        forkId: activeForkId,
+        type: 'user',
+        content: content.trim(),
+        created: now,
+        model: undefined,
+        isDeleted: false,
+        includeInContext: false,
+        failed: false,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalCost: 0,
+      };
     } else {
       userMessage = {
         id: crypto.randomUUID(),
@@ -845,15 +947,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     // 3. Prepare Assistant Message
-    const assistantId = crypto.randomUUID();
-    const assistantMessage: Message = {
+    const existingAssistant = isContinuation ? await athenaDb.messages.get(continuationAssistantId) : undefined;
+    if (isContinuation && !existingAssistant) {
+      throw new Error('Assistant message not found for continuation.');
+    }
+    const assistantId = isContinuation ? continuationAssistantId : crypto.randomUUID();
+    const existingAssistantContent = existingAssistant?.content ?? '';
+
+    const assistantMessage: Message = existingAssistant ?? {
       id: assistantId,
       topicId,
       forkId: activeForkId,
       type: 'assistant',
       content: '',
       created: new Date().toISOString(),
-        model: effectiveModel.apiModelId,
+      model: effectiveModel.apiModelId,
       isDeleted: false,
       includeInContext: false,
       failed: false,
@@ -862,6 +970,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       totalCost: 0,
       parentMessageId: userMessage.id,
     };
+
+    // For a continuation, the answer is embedded into the existing assistant
+    // message (no new user bubble). Prefix everything streamed/finalized with it.
+    const contentPrefix = isContinuation ? `${existingAssistantContent}\n\n**Your answer:** ${userMessage.content}` : '';
 
     if (get().imageGenerationEnabled) {
       try {
@@ -986,6 +1098,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     try {
       // Create initial DB state in a single transaction
       await athenaDb.transaction('rw', athenaDb.messages, async () => {
+        if (isContinuation) {
+          // Reuse the existing assistant message — nothing new to insert.
+          return;
+        }
         if (isRetry) {
           await athenaDb.messages.update(userMessage.id, { failed: false });
         } else {
@@ -995,8 +1111,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await athenaDb.messages.update(userMessage.id, { activeResponseId: assistantId });
       });
 
-      // Fire-and-forget embedding for the new user message (not a retry)
-      if (!isRetry && embeddingService.isReady && userMessage.content.trim()) {
+      // Fire-and-forget embedding for the new user message (not a retry or continuation)
+      if (!isRetry && !isContinuation && embeddingService.isReady && userMessage.content.trim()) {
         void embeddingService
           .generateEmbedding(userMessage.content)
           .then((vector) => athenaDb.messages.update(userMessage.id, { embedding: vector }));
@@ -1007,12 +1123,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const existingMessages = state.messagesByTopic[topicId] ?? [];
         let updated = [...existingMessages];
 
-        if (isRetry) {
+        if (isContinuation) {
+          updated = updated.map((m) => (m.id === assistantId ? { ...m, failed: false } : m));
+        } else if (isRetry) {
           updated = updated.map((m) => (m.id === userMessage.id ? { ...m, failed: false, activeResponseId: assistantId } : m));
+          updated.push(assistantMessage);
         } else {
           updated.push(userMessage);
+          updated.push(assistantMessage);
         }
-        updated.push(assistantMessage);
 
         return {
           messagesByTopic: {
@@ -1020,7 +1139,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             [topicId]: sortMessages(updated),
           },
           currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId },
-          streaming: { topicId, assistantMessageId: assistantId, content: '', reasoning: '' },
+          streaming: { topicId, assistantMessageId: assistantId, content: contentPrefix, reasoning: '' },
         };
       });
 
@@ -1028,7 +1147,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       const loopStartTime = Date.now();
       let streamedContent = '';
-      const askedQuestions: string[] = [];
+      const askedQuestions: AskedQuestion[] = [];
       let lastContentRenderTime = 0;
       const RENDER_THROTTLE_MS = 64; // ~15fps for smooth but efficient UI
 
@@ -1036,9 +1155,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         streamedContent += chunk;
         const now = Date.now();
         if (now - lastContentRenderTime > RENDER_THROTTLE_MS) {
-          const displayContent = streamedContent
-            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
-            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '');
+          const displayContent =
+            contentPrefix +
+            streamedContent
+              .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
+              .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '');
           set({ streaming: { topicId, assistantMessageId: assistantId, content: displayContent, reasoning: streamedThinking.trim() } });
           lastContentRenderTime = now;
         }
@@ -1051,14 +1172,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         streamedThinking += token;
         const now = Date.now();
         if (now - lastThinkingRenderTime > RENDER_THROTTLE_MS) {
-          set({ streaming: { topicId, assistantMessageId: assistantId, content: streamedContent, reasoning: streamedThinking.trim() } });
+          set({ streaming: { topicId, assistantMessageId: assistantId, content: contentPrefix + streamedContent, reasoning: streamedThinking.trim() } });
           lastThinkingRenderTime = now;
         }
       };
 
       const onToolLogCallback = (log: string): void => {
         streamedThinking += log;
-        set({ streaming: { topicId, assistantMessageId: assistantId, content: streamedContent, reasoning: streamedThinking.trim() } });
+        set({ streaming: { topicId, assistantMessageId: assistantId, content: contentPrefix + streamedContent, reasoning: streamedThinking.trim() } });
       };
 
       // 4. Call the Orchestrator for the Primary Model
@@ -1159,8 +1280,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               const question = parsedArgs.question ?? 'Could you clarify?';
               const context = parsedArgs.context ?? '';
 
-              // Persist the question so it can be surfaced in the final message
-              askedQuestions.push(question);
+              // Persist the question (and later the answer) so it can be surfaced
+              // in the final message.
+              const entry: AskedQuestion = { question, context, answer: '' };
+              askedQuestions.push(entry);
 
               // Return a Promise that resolves when the user submits an answer
               return new Promise<string>((resolve, reject) => {
@@ -1174,6 +1297,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
                 const wrappedResolve = (answer: string): void => {
                   clearTimeout(timeout);
+                  entry.answer = answer;
+
+                  // Separate the intro from the continuation so the resumed stream
+                  // doesn't jam onto the same line the model stopped on.
+                  if (streamedContent && !streamedContent.endsWith('\n\n')) {
+                    streamedContent += streamedContent.endsWith('\n') ? '\n' : '\n\n';
+                    set({
+                      streaming: { topicId, assistantMessageId: assistantId, content: streamedContent, reasoning: streamedThinking.trim() },
+                    });
+                  }
+
                   resolve(answer);
                 };
 
@@ -1259,7 +1393,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             resolve: (answer: string) => {
               set({ pendingUserQuestion: null });
               const resolvedTopicId = get().currentTopicId ?? capturedTopicId;
-              void get().sendMessageStream(answer, resolvedTopicId);
+              void get().sendMessageStream(answer, resolvedTopicId, undefined, undefined, assistantId);
             },
             reject: () => {
               set({ pendingUserQuestion: null });
@@ -1276,16 +1410,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         promptTokens: totalPromptTokens,
         failed: false,
       };
+      const continuationContent = buildAssistantContent(primaryResult.toolLoopTrace, finalContent, askedQuestions);
+      const finalAssistantContent = isContinuation
+        ? [contentPrefix, continuationContent].filter(Boolean).join('\n\n')
+        : continuationContent;
       const assistantPatch = {
-        content: [
-          ...askedQuestions.map((q) => `**Question for you:** ${q}`),
-          finalContent
-            .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
-            .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
-            .trim(),
-        ]
-          .filter(Boolean)
-          .join('\n\n'),
+        content: finalAssistantContent,
         reasoning: streamedThinking.trim(),
         completionTokens: totalCompletionTokens,
         totalCost: finalTotalCost,
@@ -1298,7 +1428,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       };
 
       await athenaDb.transaction('rw', athenaDb.messages, async () => {
-        await athenaDb.messages.update(userMessage.id, userPatch);
+        if (!isContinuation) {
+          await athenaDb.messages.update(userMessage.id, userPatch);
+        }
         await athenaDb.messages.update(assistantId, assistantPatch);
       });
 
@@ -1334,7 +1466,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
 
       // Fire-and-forget summarization for user and assistant messages
-      if (!isRetry) {
+      if (!isRetry && !isContinuation) {
         void get().maybeSummarize(userMessage.id, userMessage.content);
       }
       void get().maybeSummarize(assistantId, assistantPatch.content, undefined, [
@@ -1432,8 +1564,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const msg = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification('LLM request failed', msg);
 
-      await get().updateMessage(userMessage.id, { failed: true });
-      await get().updateMessage(assistantId, { isDeleted: true });
+      if (isContinuation) {
+        await get().updateMessage(assistantId, { failed: true });
+      } else {
+        await get().updateMessage(userMessage.id, { failed: true });
+        await get().updateMessage(assistantId, { isDeleted: true });
+      }
     } finally {
       set({ sending: false, abortController: null, currentRequestMessageIds: null, streaming: null });
     }
@@ -1475,6 +1611,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const messages = messagesByTopic[currentTopicId] ?? [];
       const userMsg = messages.find((m) => m.id === userMessageId);
       const content = userMsg?.content ?? null;
+
+      // Continuation requests have no user message — don't delete the assistant
+      // message (it pre-exists with the original question), just stop streaming.
+      if (!userMessageId) {
+        set({ sending: false, abortController: null, currentRequestMessageIds: null, streaming: null });
+        return null;
+      }
 
       // Delete from DB
       await athenaDb.messages.delete(userMessageId);
