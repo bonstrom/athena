@@ -32,27 +32,6 @@ import { LATEX_INSTRUCTIONS, SVG_INSTRUCTIONS, SVG_EDIT_INSTRUCTIONS, SCRATCHPAD
 import { normalizeSvgDocument, replaceSvgBlockInMessage } from '../utils/svgEdit';
 import { parseStringArray } from '../utils/structuredJson';
 
-/**
- * Heuristic: detect when the LLM response is primarily a clarification question
- * rather than a substantive answer. Used as a fallback when the model ignores the
- * ask_user tool and embeds questions directly in its reply text.
- */
-function looksLikeClarificationQuestion(text: string): boolean {
-  const trimmed = text.trim();
-  if (!trimmed) return false;
-  // Must end with a question mark
-  if (!trimmed.endsWith('?')) return false;
-  // Must have at least one question mark
-  const questionCount = (trimmed.match(/\?/g) ?? []).length;
-  if (questionCount < 1) return false;
-  // Skip long, substantive responses (likely real answers that happen to end with a question)
-  if (trimmed.length > 2000) return false;
-  // Should contain clarification-related language
-  const clarificationPatterns =
-    /\b(clarif|specify|which|what (do|would|are|is|did)|could you (tell|let|provide|share|specify)|more (context|information|details)|what.*(mean|refer)|need.*(know|more|information|context|detail))\b/i;
-  return clarificationPatterns.test(trimmed);
-}
-
 interface AskedQuestion {
   question: string;
   context: string;
@@ -1381,26 +1360,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (totalPromptTokens === 0) console.warn('[verify:chat] promptTokens is 0 — possible usage tracking issue');
       if (totalCompletionTokens === 0) console.warn('[verify:chat] completionTokens is 0 — possible usage tracking issue');
       if (finalTotalCost <= 0) console.warn('[verify:chat] Calculated cost is 0 — model:', effectiveModel.id);
-
-      // ── Fallback: detect inline clarification questions when ask_user tool wasn't called ──
-      const askUserWasCalled = askedQuestions.length > 0;
-      if (useAuthStore.getState().askUserEnabled && !askUserWasCalled && looksLikeClarificationQuestion(finalContent)) {
-        const capturedTopicId = topicId;
-        set({
-          pendingUserQuestion: {
-            question: finalContent.trim(),
-            context: 'Fallback: model asked inline instead of using ask_user tool.',
-            resolve: (answer: string) => {
-              set({ pendingUserQuestion: null });
-              const resolvedTopicId = get().currentTopicId ?? capturedTopicId;
-              void get().sendMessageStream(answer, resolvedTopicId, undefined, undefined, assistantId);
-            },
-            reject: () => {
-              set({ pendingUserQuestion: null });
-            },
-          },
-        });
-      }
 
       // 5. Finalize DB Updates in atomic transaction
       const latencyMs = Date.now() - loopStartTime;

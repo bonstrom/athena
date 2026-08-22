@@ -624,42 +624,6 @@ describe('ChatStore', () => {
     expect(mockDbAdd).not.toHaveBeenCalled();
   });
 
-  it('fallback answer continues into the same assistant message via continuation mode', async () => {
-    mockOrchestrateLlmLoop.mockResolvedValue({
-      finalContent: 'Which framework do you use?',
-      totalPromptTokens: 10,
-      totalCompletionTokens: 5,
-      totalSearchCount: 0,
-      toolLoopTrace: [],
-      lastResult: {
-        content: 'Which framework do you use?',
-        rawContent: 'Which framework do you use?',
-        promptTokens: 10,
-        completionTokens: 5,
-        searchCount: 0,
-      },
-    });
-
-    await useChatStore.getState().sendMessageStream('I need help', 'topic-1');
-
-    const pending = useChatStore.getState().pendingUserQuestion;
-    expect(pending).toBeDefined();
-
-    const assistantId = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant')?.id;
-    expect(assistantId).toBeDefined();
-
-    const originalSend = useChatStore.getState().sendMessageStream;
-    const sendSpy = jest.spyOn(useChatStore.getState(), 'sendMessageStream').mockResolvedValue();
-
-    pending?.resolve('React');
-    await Promise.resolve();
-
-    expect(sendSpy).toHaveBeenCalledWith('React', 'topic-1', undefined, undefined, assistantId);
-
-    sendSpy.mockRestore();
-    useChatStore.getState().sendMessageStream = originalSend;
-  });
-
   it('regenerateResponse retries using the preceding user message content and id', async () => {
     const userMessage: Message = {
       id: 'u-regen',
@@ -1532,9 +1496,9 @@ describe('ChatStore', () => {
     expect(mockDbDelete).not.toHaveBeenCalled();
   });
 
-  // ========== looksLikeClarificationQuestion fallback path ==========
+  // ========== inline question (no ask_user tool) must not trigger clarification ==========
 
-  it('sendMessageStream activates clarification fallback when ask_user tool was not called but response looks like a question', async () => {
+  it('sendMessageStream does not set a pending question when the model answers inline without calling ask_user', async () => {
     mockAuthGetState.mockReturnValue({
       customInstructions: '',
       scratchpadRules: 'Rules',
@@ -1548,15 +1512,18 @@ describe('ChatStore', () => {
       llmModelDownloadStatus: {},
     });
 
+    const inlineAnswer =
+      'Nice! That confirms mDNS is running. ## Why it works `nuclear.local` works because your NUC is running an mDNS responder. Want me to help you configure Avahi to broadcast a specific name?';
+
     mockOrchestrateLlmLoop.mockResolvedValue({
-      finalContent: 'Which approach would you prefer for this task?',
+      finalContent: inlineAnswer,
       totalPromptTokens: 10,
       totalCompletionTokens: 5,
       totalSearchCount: 0,
       toolLoopTrace: [],
       lastResult: {
-        content: 'Which approach would you prefer for this task?',
-        rawContent: 'Which approach would you prefer for this task?',
+        content: inlineAnswer,
+        rawContent: inlineAnswer,
         promptTokens: 10,
         completionTokens: 5,
         searchCount: 0,
@@ -1565,43 +1532,6 @@ describe('ChatStore', () => {
 
     const sendPromise = useChatStore.getState().sendMessageStream('I need help with my project', 'topic-1');
     await sendPromise;
-
-    expect(useChatStore.getState().pendingUserQuestion).toBeDefined();
-    expect(useChatStore.getState().pendingUserQuestion?.question).toContain('Which approach would you prefer');
-  });
-
-  it('sendMessageStream does not activate fallback when clarification text is long', async () => {
-    mockAuthGetState.mockReturnValue({
-      customInstructions: '',
-      scratchpadRules: 'Rules',
-      predefinedPrompts: [],
-      messageRetrievalEnabled: false,
-      askUserEnabled: true,
-      aiSummaryEnabled: false,
-      replyPredictionEnabled: false,
-      replyPredictionModel: 'same',
-      llmModelSelected: 'qwen3.5-0.8b',
-      llmModelDownloadStatus: {},
-    });
-
-    const longContent = 'A'.repeat(2001) + '?';
-
-    mockOrchestrateLlmLoop.mockResolvedValue({
-      finalContent: longContent,
-      totalPromptTokens: 10,
-      totalCompletionTokens: 5,
-      totalSearchCount: 0,
-      toolLoopTrace: [],
-      lastResult: {
-        content: longContent,
-        rawContent: longContent,
-        promptTokens: 10,
-        completionTokens: 5,
-        searchCount: 0,
-      },
-    });
-
-    await useChatStore.getState().sendMessageStream('I need help', 'topic-1');
 
     expect(useChatStore.getState().pendingUserQuestion).toBeNull();
   });
