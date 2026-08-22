@@ -2,7 +2,7 @@ const React = require('react');
 
 const SyntaxHighlighter = Object.assign(
   ({ children, language }) => React.createElement('pre', { 'data-testid': 'syntax-highlighter', 'data-language': language }, children),
-  { registerLanguage: () => {} },
+  { registerLanguage: () => {}, alias: () => {} },
 );
 
 module.exports = {

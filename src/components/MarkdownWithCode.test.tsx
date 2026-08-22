@@ -23,22 +23,25 @@ jest.mock('react-markdown', () => ({
   }: {
     children?: string;
     components?: {
-      code?: (props: { inline?: boolean; className?: string; children?: unknown }) => React.ReactElement;
+      pre?: (props: { children?: React.ReactNode }) => React.ReactElement;
     };
   }): React.ReactElement => {
-    const codeRenderer = components?.code;
+    const preRenderer = components?.pre;
     const segments = children.split(/(```[\s\S]*?```)/g).filter((segment) => segment.length > 0);
 
     return (
       <div data-testid="markdown-root">
         {segments.map((segment, index) => {
-          const match = /^```(\w+)?\n([\s\S]*?)```$/s.exec(segment);
-          if (!match || !codeRenderer) {
+          const match = /^```([\w+-]+)?\n([\s\S]*?)```$/s.exec(segment);
+          if (!match || !preRenderer) {
             return <span key={`text-${String(index)}`}>{segment}</span>;
           }
 
-          const language = match[1] || 'text';
-          return <span key={`code-${String(index)}`}>{codeRenderer({ inline: false, className: `language-${language}`, children: match[2] })}</span>;
+          const language = match[1];
+          const codeElement = (
+            <code className={language ? `language-${language}` : undefined}>{match[2]}</code>
+          );
+          return <span key={`code-${String(index)}`}>{preRenderer({ children: codeElement })}</span>;
         })}
       </div>
     );
@@ -93,6 +96,19 @@ describe('MarkdownWithCode', () => {
     expect(screen.getByTestId('syntax-highlighter')).toHaveAttribute('data-language', 'python');
   });
 
+  it('passes hyphenated language names to the syntax highlighter intact', () => {
+    render(<MarkdownWithCode>{'```objective-c\n[self doThing];\n```'}</MarkdownWithCode>);
+
+    expect(screen.getByTestId('syntax-highlighter')).toHaveAttribute('data-language', 'objective-c');
+  });
+
+  it('renders a copy button for language-less code blocks', () => {
+    render(<MarkdownWithCode>{'```\nplain text block\n```'}</MarkdownWithCode>);
+
+    expect(screen.getByRole('button', { name: 'Copy code to clipboard' })).toBeInTheDocument();
+    expect(screen.getByText('plain text block')).toBeInTheDocument();
+  });
+
   it('renders multiple code blocks in one message', () => {
     render(<MarkdownWithCode>{'```javascript\nconst a = 1;\n```\n```python\nprint("b")\n```'}</MarkdownWithCode>);
 
@@ -134,6 +150,37 @@ describe('MarkdownWithCode — mermaid', () => {
     await waitFor(() => {
       expect(screen.getByTestId('mermaid-svg')).toBeInTheDocument();
     });
+  });
+
+  it('sanitizes mermaid SVG output before injecting it', async () => {
+    mockMermaidRender.mockResolvedValue({
+      svg: '<svg data-testid="mermaid-svg"><script>alert("xss")</script><text>hi</text></svg>',
+    });
+
+    const { container } = render(<MarkdownWithCode>{'```mermaid\ngraph TD\n    A --> B\n```'}</MarkdownWithCode>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mermaid-svg')).toBeInTheDocument();
+    });
+
+    expect(container.innerHTML).not.toContain('<script>');
+    expect(container.innerHTML).not.toContain('alert');
+  });
+
+  it('preserves mermaid HTML labels inside foreignObject while sanitizing', async () => {
+    mockMermaidRender.mockResolvedValue({
+      svg:
+        '<svg data-testid="mermaid-svg"><foreignObject><div><span class="nodeLabel">Node A</span><img src="x" onerror="alert(1)"/></div></foreignObject></svg>',
+    });
+
+    const { container } = render(<MarkdownWithCode>{'```mermaid\ngraph TD\n    A --> B\n```'}</MarkdownWithCode>);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mermaid-svg')).toBeInTheDocument();
+    });
+
+    expect(container.innerHTML).toContain('Node A');
+    expect(container.innerHTML).not.toContain('onerror');
   });
 
   it('calls mermaid render with diagram content', async () => {
@@ -249,6 +296,22 @@ Normal paragraph text after.`;
     const root = screen.getByTestId('markdown-root');
     expect(root).toBeInTheDocument();
     expect(root.textContent).toMatch(/\\\$/);
+  });
+
+  it('preserves $$ display math delimiters when the equation starts with a digit', () => {
+    render(<MarkdownWithCode>{'$$2(x_2 - x_1)h + 2(y_2 - y_1)k = x_2^2 + y_2^2$$'}</MarkdownWithCode>);
+    const root = screen.getByTestId('markdown-root');
+    expect(root).toBeInTheDocument();
+    expect(root.textContent).not.toMatch(/\\\$/);
+    expect(root.textContent).toContain('$$2(x_2 - x_1)h');
+  });
+
+  it('escapes standalone currency dollar signs still', () => {
+    render(<MarkdownWithCode>{'It costs $5 and $10.50'}</MarkdownWithCode>);
+    const root = screen.getByTestId('markdown-root');
+    expect(root).toBeInTheDocument();
+    expect(root.textContent).toContain('\\$5');
+    expect(root.textContent).toContain('\\$10.50');
   });
 
   it('does not duplicate closing fence when SVG block is properly closed', () => {

@@ -15,12 +15,15 @@ import css from 'react-syntax-highlighter/dist/esm/languages/prism/css';
 import markup from 'react-syntax-highlighter/dist/esm/languages/prism/markup';
 import java from 'react-syntax-highlighter/dist/esm/languages/prism/java';
 import csharp from 'react-syntax-highlighter/dist/esm/languages/prism/csharp';
+import c from 'react-syntax-highlighter/dist/esm/languages/prism/c';
+import cpp from 'react-syntax-highlighter/dist/esm/languages/prism/cpp';
+import objectivec from 'react-syntax-highlighter/dist/esm/languages/prism/objectivec';
 import sql from 'react-syntax-highlighter/dist/esm/languages/prism/sql';
 import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
 import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown';
 import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx';
 import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
-import { useState, useEffect, useRef, CSSProperties, useMemo, memo } from 'react';
+import { useState, useEffect, useRef, CSSProperties, useMemo, memo, Children } from 'react';
 import { useTheme, alpha } from '@mui/material/styles';
 import DOMPurify from 'dompurify';
 import { useAuthStore } from '../store/AuthStore';
@@ -38,6 +41,11 @@ SyntaxHighlighter.registerLanguage('html', markup);
 SyntaxHighlighter.registerLanguage('xml', markup);
 SyntaxHighlighter.registerLanguage('java', java);
 SyntaxHighlighter.registerLanguage('csharp', csharp);
+SyntaxHighlighter.registerLanguage('c', c);
+SyntaxHighlighter.registerLanguage('cpp', cpp);
+SyntaxHighlighter.registerLanguage('objectivec', objectivec);
+SyntaxHighlighter.alias('cpp', 'c++');
+SyntaxHighlighter.alias('objectivec', 'objective-c');
 SyntaxHighlighter.registerLanguage('sql', sql);
 SyntaxHighlighter.registerLanguage('yaml', yaml);
 SyntaxHighlighter.registerLanguage('yml', yaml);
@@ -132,7 +140,7 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
         const id = `mermaid-${crypto.randomUUID()}`;
         const { svg } = await mermaid.render(id, children.trim());
         if (cancelled) return;
-        container.innerHTML = svg;
+        container.innerHTML = sanitizeSvg(svg);
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -191,6 +199,127 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
   );
 };
 
+const SVG_SANITIZE_CONFIG: DOMPurify.Config = {
+  ADD_TAGS: [
+    'svg',
+    'circle',
+    'rect',
+    'path',
+    'line',
+    'polygon',
+    'polyline',
+    'ellipse',
+    'text',
+    'tspan',
+    'g',
+    'defs',
+    'linearGradient',
+    'radialGradient',
+    'stop',
+    'use',
+    'clipPath',
+    'mask',
+    'pattern',
+    'symbol',
+    'marker',
+    'animate',
+    'animateTransform',
+    'animateMotion',
+    'filter',
+    'feGaussianBlur',
+    'feOffset',
+    'feMerge',
+    'feMergeNode',
+    'feColorMatrix',
+    'feBlend',
+    'image',
+    'foreignObject',
+    'switch',
+    'title',
+    'desc',
+    'metadata',
+    'style',
+  ],
+  ADD_ATTR: [
+    'd',
+    'cx',
+    'cy',
+    'r',
+    'rx',
+    'ry',
+    'x',
+    'y',
+    'x1',
+    'x2',
+    'y1',
+    'y2',
+    'width',
+    'height',
+    'viewBox',
+    'fill',
+    'stroke',
+    'stroke-width',
+    'stroke-linecap',
+    'stroke-linejoin',
+    'stroke-dasharray',
+    'opacity',
+    'transform',
+    'dx',
+    'dy',
+    'text-anchor',
+    'font-size',
+    'font-family',
+    'font-weight',
+    'font-style',
+    'text-decoration',
+    'dominant-baseline',
+    'alignment-baseline',
+    'clip-path',
+    'clip-rule',
+    'fill-rule',
+    'fill-opacity',
+    'stroke-opacity',
+    'marker-end',
+    'marker-start',
+    'marker-mid',
+    'filter',
+    'offset',
+    'stdDeviation',
+    'in',
+    'in2',
+    'mode',
+    'result',
+    'values',
+    'keyTimes',
+    'keySplines',
+    'repeatCount',
+    'begin',
+    'dur',
+    'attributeName',
+    'from',
+    'to',
+    'gradientUnits',
+    'gradientTransform',
+    'xlink:href',
+    'href',
+    'style',
+    'class',
+    'id',
+    'vector-effect',
+    'shape-rendering',
+    'text-rendering',
+  ],
+  // Allow sanitizing (rather than dropping) HTML content inside
+  // <foreignObject> — mermaid renders flowchart labels there. Content is
+  // still sanitized under normal HTML rules (scripts, on* handlers, etc.
+  // are stripped), so this remains safe.
+  HTML_INTEGRATION_POINTS: { 'annotation-xml': true, foreignobject: true },
+};
+
+function sanitizeSvg(svg: string): string {
+  return DOMPurify.sanitize(svg, SVG_SANITIZE_CONFIG);
+}
+
 type SvgBackground = 'light' | 'dark' | 'transparent';
 
 const SVG_BACKGROUND_COLORS: Record<SvgBackground, string> = {
@@ -207,119 +336,7 @@ interface SvgDiagramProps {
 const SvgDiagram: React.FC<SvgDiagramProps> = ({ children, onEditSvg }) => {
   const [background, setBackground] = useState<SvgBackground>('transparent');
 
-  const sanitized = useMemo(() => {
-    return DOMPurify.sanitize(children.trim(), {
-      ADD_TAGS: [
-        'svg',
-        'circle',
-        'rect',
-        'path',
-        'line',
-        'polygon',
-        'polyline',
-        'ellipse',
-        'text',
-        'tspan',
-        'g',
-        'defs',
-        'linearGradient',
-        'radialGradient',
-        'stop',
-        'use',
-        'clipPath',
-        'mask',
-        'pattern',
-        'symbol',
-        'marker',
-        'animate',
-        'animateTransform',
-        'animateMotion',
-        'filter',
-        'feGaussianBlur',
-        'feOffset',
-        'feMerge',
-        'feMergeNode',
-        'feColorMatrix',
-        'feBlend',
-        'image',
-        'foreignObject',
-        'switch',
-        'title',
-        'desc',
-        'metadata',
-        'style',
-      ],
-      ADD_ATTR: [
-        'd',
-        'cx',
-        'cy',
-        'r',
-        'rx',
-        'ry',
-        'x',
-        'y',
-        'x1',
-        'x2',
-        'y1',
-        'y2',
-        'width',
-        'height',
-        'viewBox',
-        'fill',
-        'stroke',
-        'stroke-width',
-        'stroke-linecap',
-        'stroke-linejoin',
-        'stroke-dasharray',
-        'opacity',
-        'transform',
-        'dx',
-        'dy',
-        'text-anchor',
-        'font-size',
-        'font-family',
-        'font-weight',
-        'font-style',
-        'text-decoration',
-        'dominant-baseline',
-        'alignment-baseline',
-        'clip-path',
-        'clip-rule',
-        'fill-rule',
-        'fill-opacity',
-        'stroke-opacity',
-        'marker-end',
-        'marker-start',
-        'marker-mid',
-        'filter',
-        'offset',
-        'stdDeviation',
-        'in',
-        'in2',
-        'mode',
-        'result',
-        'values',
-        'keyTimes',
-        'keySplines',
-        'repeatCount',
-        'begin',
-        'dur',
-        'attributeName',
-        'from',
-        'to',
-        'gradientUnits',
-        'gradientTransform',
-        'xlink:href',
-        'href',
-        'style',
-        'class',
-        'id',
-        'vector-effect',
-        'shape-rendering',
-        'text-rendering',
-      ],
-    });
-  }, [children]);
+  const sanitized = useMemo(() => sanitizeSvg(children.trim()), [children]);
 
   const handleBackgroundChange = (_event: React.MouseEvent<HTMLElement>, value: SvgBackground | null): void => {
     if (value !== null) {
@@ -393,68 +410,111 @@ const SvgDiagram: React.FC<SvgDiagramProps> = ({ children, onEditSvg }) => {
 };
 
 /**
- * Ensures all fenced code blocks are properly closed.
- * If the LLM forgets a closing ```, react-markdown would swallow the rest
- * of the content into the code block — everything after the unclosed fence
- * would render as plain text instead of formatted markdown.
- *
- * Uses two-phase approach:
- * 1. General: balance any unmatched ``` fences by appending at end.
- * 2. SVG-specific: when a ```svg fence opens and an </svg> tag appears
- *    inside it, insert a closing ``` right after </svg> so the remaining
- *    content is properly parsed as markdown.
+ * A parsed code-fence marker (``` or ~~~).
  */
-function ensureClosedFences(content: string): string {
-  const lines = content.split('\n');
-  const openFences: string[] = [];
-  const result: string[] = [];
-  let svgFenceOpen = false;
+interface FenceMarker {
+  char: '`' | '~';
+  length: number;
+  info: string;
+}
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-    const isFence = trimmed.startsWith('```');
+function parseFenceMarker(trimmed: string): FenceMarker | null {
+  const match = /^(`{3,}|~{3,})(.*)$/.exec(trimmed);
+  if (!match) return null;
+  const marker = match[1];
+  return { char: marker[0] as '`' | '~', length: marker.length, info: match[2].trim() };
+}
 
-    if (isFence) {
-      if (openFences.length === 0) {
-        openFences.push('```');
-        if (trimmed === '```svg') {
-          svgFenceOpen = true;
-        }
-      } else {
-        openFences.pop();
-        svgFenceOpen = false;
-      }
-      result.push(line);
-    } else if (svgFenceOpen && trimmed.endsWith('</svg>')) {
-      const lookAhead = lines.slice(i + 1, i + 5).map((l) => l.trim());
-      const hasCloseFence = lookAhead.some((la) => la.startsWith('```'));
-      result.push(line);
-      if (!hasCloseFence) {
-        result.push('```');
-        openFences.pop();
-        svgFenceOpen = false;
-      }
-    } else {
-      result.push(line);
-    }
-  }
+function isOpeningFence(marker: FenceMarker): boolean {
+  // A backtick fence's info string must not contain a backtick (CommonMark).
+  return marker.char === '~' || !marker.info.includes('`');
+}
 
-  if (openFences.length > 0) {
-    result.push('```');
-  }
-
-  return result.join('\n');
+function isClosingFence(marker: FenceMarker, open: FenceMarker): boolean {
+  return marker.char === open.char && marker.length >= open.length && marker.info === '';
 }
 
 /**
  * Escapes $ signs that appear to be currency markers (followed by a digit)
  * so remark-math doesn't misinterpret them as inline math delimiters.
- * Proper $...$ math expressions are unaffected since the opening $ is
- * typically followed by a letter or backslash, not a digit.
+ * Inline code spans (`...`) are left untouched because a backslash there is
+ * a literal, not an escape. A $ that is part of a $$ display-math delimiter
+ * or already escaped is also left alone, so display math like $$2x = 4$$
+ * starting with a digit still renders correctly.
  */
-function escapeCurrencyDollars(content: string): string {
-  return content.replace(/\$(?=\d)/g, '\\$');
+function escapeCurrencyInProse(text: string): string {
+  return text.replace(/(`+)[\s\S]*?\1|(?<![$\\])\$(?=\d)/g, (match: string, backticks: string | undefined): string =>
+    backticks ? match : '\\$',
+  );
+}
+
+/**
+ * Preprocesses markdown before parsing:
+ *
+ * 1. Balances fenced code blocks (``` and ~~~) using CommonMark matching
+ *    (same char, closing length >= opening length), so an unclosed fence
+ *    can't swallow the rest of the message as a code block.
+ * 2. Auto-closes a ```svg fence right after its </svg> tag so trailing
+ *    markdown renders normally (searches the whole document for a real
+ *    closing fence rather than a fixed window).
+ * 3. Escapes currency-style $ (followed by a digit) only outside code fences
+ *    and inline code spans.
+ */
+function preprocessMarkdown(content: string): string {
+  const lines = content.split('\n');
+  const result: string[] = [];
+  const openFences: FenceMarker[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (openFences.length > 0) {
+      const open = openFences[openFences.length - 1];
+      const marker = parseFenceMarker(trimmed);
+
+      if (marker && isClosingFence(marker, open)) {
+        openFences.pop();
+        result.push(line);
+        continue;
+      }
+
+      const isSvgFence = open.char === '`' && open.info.toLowerCase() === 'svg';
+      if (isSvgFence && trimmed.endsWith('</svg>')) {
+        const hasCloseAhead = lines.slice(i + 1).some((l) => {
+          const next = parseFenceMarker(l.trim());
+          return next !== null && isClosingFence(next, open);
+        });
+        result.push(line);
+        if (!hasCloseAhead) {
+          result.push(open.char.repeat(open.length));
+          openFences.pop();
+        }
+        continue;
+      }
+
+      result.push(line);
+      continue;
+    }
+
+    const marker = parseFenceMarker(trimmed);
+    if (marker && isOpeningFence(marker)) {
+      openFences.push(marker);
+      result.push(line);
+      continue;
+    }
+
+    result.push(escapeCurrencyInProse(line));
+  }
+
+  while (openFences.length > 0) {
+    const open = openFences.pop();
+    if (open) {
+      result.push(open.char.repeat(open.length));
+    }
+  }
+
+  return result.join('\n');
 }
 
 const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode({
@@ -507,15 +567,29 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
         </li>
       ),
 
-      code({
-        inline,
-        className,
-        children,
-        style: _inlineCodeStyle,
-        ...props
-      }: React.ComponentPropsWithoutRef<'code'> & { inline?: boolean }): React.ReactElement {
-        const match = /language-(\w+)/.exec(className ?? '');
-        const codeString = String(children).replace(/\n$/, '');
+      pre({ children }: React.ComponentPropsWithoutRef<'pre'>): React.ReactElement {
+        const codeElement = Children.only(children) as React.ReactElement<{
+          className?: string;
+          children?: React.ReactNode;
+        }>;
+        const className = codeElement.props.className ?? '';
+        const match = /language-([\w+-]+)/.exec(className);
+        const language = match ? match[1] : '';
+        const codeString = String(codeElement.props.children ?? '').replace(/\n$/, '');
+
+        if (language === 'mermaid' && !disableMermaid) {
+          return <MermaidDiagram key={codeString}>{codeString}</MermaidDiagram>;
+        }
+        if (language === 'svg' && !disableSvg) {
+          return (
+            <SvgDiagram
+              key={codeString}
+              onEditSvg={onEditSvg}>
+              {codeString}
+            </SvgDiagram>
+          );
+        }
+
         const darkSyntaxStyle: Record<string, CSSProperties> = {
           ...oneDark,
           comment: { ...oneDark.comment, color: '#7f8ea3' },
@@ -525,28 +599,21 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
         const lightSyntaxStyle = oneLight as Record<string, CSSProperties>;
         const syntaxStyle: Record<string, CSSProperties> =
           theme.palette.mode === 'dark' ? darkSyntaxStyle : lightSyntaxStyle;
-        return !inline && match ? (
-          match[1] === 'mermaid' && !disableMermaid ? (
-            <MermaidDiagram key={codeString}>{codeString}</MermaidDiagram>
-          ) : match[1] === 'svg' && !disableSvg ? (
-            <SvgDiagram
-              key={codeString}
-              onEditSvg={onEditSvg}>
-              {codeString}
-            </SvgDiagram>
-          ) : (
-            <Box
-              sx={{
-                position: 'relative',
-                overflowX: 'auto',
-                my: 1,
-                fontSize: `${Math.max(12, fontSize - 2)}px`,
-                borderRadius: 1,
-                '&:hover .copy-button': { opacity: 1 },
-              }}>
-              <CopyButton text={codeString} />
+
+        return (
+          <Box
+            sx={{
+              position: 'relative',
+              overflowX: 'auto',
+              my: 1,
+              fontSize: `${Math.max(12, fontSize - 2)}px`,
+              borderRadius: 1,
+              '&:hover .copy-button': { opacity: 1 },
+            }}>
+            <CopyButton text={codeString} />
+            {language ? (
               <SyntaxHighlighter
-                language={match[1]}
+                language={language}
                 style={syntaxStyle}
                 PreTag="div"
                 customStyle={{
@@ -555,13 +622,35 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
                   margin: 0,
                   lineHeight: '1.4',
                 }}
-                wrapLongLines={false}
-                {...props}>
+                wrapLongLines={false}>
                 {codeString}
               </SyntaxHighlighter>
-            </Box>
-          )
-        ) : (
+            ) : (
+              <Box
+                component="pre"
+                sx={{
+                  whiteSpace: 'pre',
+                  overflowX: 'auto',
+                  padding: '1em',
+                  margin: 0,
+                  lineHeight: '1.4',
+                  fontFamily: 'monospace',
+                  backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+                }}>
+                {codeString}
+              </Box>
+            )}
+          </Box>
+        );
+      },
+
+      code({
+        className,
+        children,
+        node: _node,
+        ...props
+      }: React.ComponentPropsWithoutRef<'code'> & { node?: unknown }): React.ReactElement {
+        return (
           <code
             className={className}
             style={{
@@ -586,7 +675,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
         components={markdownComponents}>
-        {escapeCurrencyDollars(ensureClosedFences(children))}
+        {preprocessMarkdown(children)}
       </ReactMarkdown>
     </Box>
   );
