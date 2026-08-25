@@ -46,6 +46,7 @@ import ImportDialog from '../components/ImportDialog';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { ProviderCard, AddProviderCard } from '../components/ProviderCard';
 import Analytics from '../components/Analytics';
+import DatabaseHealth from '../components/DatabaseHealth';
 import { PredefinedPrompt } from '../database/AthenaDb';
 import { athenaDb } from '../database/AthenaDb';
 
@@ -1262,6 +1263,8 @@ const Settings: React.FC = () => {
                       )}
                     </Stack>
                   </Box>
+
+                  <DatabaseHealth />
                 </Stack>
               </Box>
             </Stack>
