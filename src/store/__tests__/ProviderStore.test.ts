@@ -780,6 +780,20 @@ describe('ProviderStore migrations', () => {
     expect(provider?.name).toBe('OpenAI');
   });
 
+  it('adds missing built-in providers to existing storage', () => {
+    seedProvider('builtin-deepseek');
+    localStorage.setItem('athena_models', JSON.stringify([]));
+
+    const store = loadProviderStore();
+    const mistral = store.getState().getProviderById('builtin-mistral');
+    expect(mistral).toBeDefined();
+    expect(mistral?.baseUrl).toBe('https://api.mistral.ai/v1/chat/completions');
+    expect(mistral?.apiKeyEncrypted).toBe('');
+
+    const storedProviders = JSON.parse(localStorage.getItem('athena_providers') ?? '[]') as LlmProvider[];
+    expect(storedProviders.some((p) => p.id === 'builtin-mistral')).toBe(true);
+  });
+
   it('reorders built-in models to match DEFAULT_MODELS order', () => {
     localStorage.setItem(
       'athena_models',

@@ -229,8 +229,15 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
 
     if (modelsChanged) saveModels(models);
 
-    // 4. Update built-in providers (e.g. name changes)
+    // 4. Add missing built-in providers (e.g. newly shipped Mistral) and update existing ones (e.g. name changes)
     let providersChanged = false;
+    const existingProviderIds = new Set(providers.map((p) => p.id));
+    for (const def of DEFAULT_PROVIDERS) {
+      if (!existingProviderIds.has(def.id)) {
+        providers.push({ ...def, apiKeyEncrypted: '' });
+        providersChanged = true;
+      }
+    }
     for (let i = 0; i < providers.length; i++) {
       const p = providers[i];
       if (!p.isBuiltIn) continue;
