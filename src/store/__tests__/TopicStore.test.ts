@@ -23,7 +23,7 @@ const mockTopicsDelete = jest.fn<Promise<void>, [string]>();
 const mockTopicsBulkDelete = jest.fn<Promise<void>, [string[]]>();
 const mockDbBulkAdd = jest.fn<Promise<void>, [Message[]]>();
 const mockMessagesDelete = jest.fn<Promise<number>, [Message[]]>();
-const _mockMessagesAnyOfDelete = jest.fn<Promise<number>, []>();
+const mockMessagesAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 const mockTopicsUpdate = jest.fn<Promise<number>, [string, Partial<Topic>]>();
 const mockDbTransaction = jest.fn<Promise<void>, [string, unknown[], () => Promise<void>]>();
 const mockMessagesToArray = jest.fn<Promise<Message[]>, []>();
@@ -92,6 +92,7 @@ jest.mock('../../database/AthenaDb', () => ({
             delete: () => Promise<number>;
           };
         };
+        anyOf: (ids: string[]) => { delete: () => Promise<number> };
       } => ({
         equals: (
           topicId: string,
@@ -124,6 +125,9 @@ jest.mock('../../database/AthenaDb', () => ({
             },
           }),
         }),
+        anyOf: (ids: string[]): { delete: () => Promise<number> } => ({
+          delete: (): Promise<number> => mockMessagesAnyOfDelete(ids),
+        }),
       }),
       bulkAdd: (...args: [Message[]]): Promise<void> => mockDbBulkAdd(...args),
       toArray: (): Promise<Message[]> => mockMessagesToArray(),
@@ -147,9 +151,11 @@ describe('TopicStore.getTopicContext', () => {
     mockTopicsToArray.mockReset();
     mockTopicsAdd.mockReset();
     mockTopicsDelete.mockReset();
+    mockTopicsBulkDelete.mockReset();
     mockSearchSimilarMessages.mockReset();
     mockDbBulkAdd.mockReset();
     mockMessagesDelete.mockReset();
+    mockMessagesAnyOfDelete.mockReset();
     mockTopicsUpdate.mockReset();
     mockDbTransaction.mockReset();
     mockMessagesToArray.mockReset();
@@ -165,7 +171,9 @@ describe('TopicStore.getTopicContext', () => {
     mockTopicsToArray.mockResolvedValue([]);
     mockTopicsAdd.mockResolvedValue();
     mockTopicsDelete.mockResolvedValue();
+    mockTopicsBulkDelete.mockResolvedValue();
     mockMessagesDelete.mockResolvedValue(0);
+    mockMessagesAnyOfDelete.mockResolvedValue(0);
     mockTopicsUpdate.mockResolvedValue(1);
     mockHasAnyApiKey.mockReturnValue(false);
     mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
@@ -906,8 +914,10 @@ describe('TopicStore actions', () => {
     mockTopicsToArray.mockReset();
     mockTopicsAdd.mockReset();
     mockTopicsDelete.mockReset();
+    mockTopicsBulkDelete.mockReset();
     mockTopicsUpdate.mockReset();
     mockMessagesDelete.mockReset();
+    mockMessagesAnyOfDelete.mockReset();
     mockDbBulkAdd.mockReset();
     mockDbTransaction.mockReset();
     mockMessagesToArray.mockReset();
@@ -922,8 +932,10 @@ describe('TopicStore actions', () => {
     mockTopicsToArray.mockResolvedValue([]);
     mockTopicsAdd.mockResolvedValue();
     mockTopicsDelete.mockResolvedValue();
+    mockTopicsBulkDelete.mockResolvedValue();
     mockTopicsUpdate.mockResolvedValue(1);
     mockMessagesDelete.mockResolvedValue(0);
+    mockMessagesAnyOfDelete.mockResolvedValue(0);
     mockHasAnyApiKey.mockReturnValue(false);
     mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
       await callback();
@@ -1598,7 +1610,7 @@ describe('TopicStore actions', () => {
     });
   });
 
-  it('deleteTopic removes topic from store on success', async () => {
+  it('deleteTopic removes topic and its messages from store on success', async () => {
     useTopicStore.setState({
       topics: [
         createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'Topic 1' }),
@@ -1608,14 +1620,16 @@ describe('TopicStore actions', () => {
 
     await useTopicStore.getState().deleteTopic('t1');
 
-    expect(mockTopicsDelete).toHaveBeenCalledTimes(1);
-    expect(mockTopicsDelete).toHaveBeenCalledWith('t1');
+    expect(mockTopicsBulkDelete).toHaveBeenCalledTimes(1);
+    expect(mockTopicsBulkDelete).toHaveBeenCalledWith(['t1']);
+    expect(mockMessagesAnyOfDelete).toHaveBeenCalledTimes(1);
+    expect(mockMessagesAnyOfDelete).toHaveBeenCalledWith(['t1']);
     expect(useTopicStore.getState().topics.map((t) => t.id)).toEqual(['t2']);
     expect(mockAddNotification).not.toHaveBeenCalled();
   });
 
   it('deleteTopic notifies when DB delete fails', async () => {
-    mockTopicsDelete.mockRejectedValueOnce(new Error('topic delete failed'));
+    mockTopicsBulkDelete.mockRejectedValueOnce(new Error('topic delete failed'));
 
     await useTopicStore.getState().deleteTopic('topic-1');
 

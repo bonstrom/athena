@@ -18,6 +18,13 @@ function updateTopicAndSort(topics: Topic[], id: string, patch: Partial<Topic>, 
   return next.sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime());
 }
 
+async function deleteTopicsFromDb(ids: string[]): Promise<void> {
+  await athenaDb.transaction('rw', [athenaDb.topics, athenaDb.messages], async () => {
+    await athenaDb.topics.bulkDelete(ids);
+    await athenaDb.messages.where('topicId').anyOf(ids).delete();
+  });
+}
+
 interface TopicState {
   topics: Topic[];
   loading: boolean;
@@ -484,7 +491,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
   deleteTopic: async (id): Promise<void> => {
     try {
-      await athenaDb.topics.delete(id);
+      await deleteTopicsFromDb([id]);
       set((state) => ({
         topics: state.topics.filter((t) => t.id !== id),
       }));
@@ -497,10 +504,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
   deleteTopics: async (ids: string[]): Promise<void> => {
     try {
-      await athenaDb.transaction('rw', athenaDb.topics, athenaDb.messages, async () => {
-        await athenaDb.topics.bulkDelete(ids);
-        await athenaDb.messages.where('topicId').anyOf(ids).delete();
-      });
+      await deleteTopicsFromDb(ids);
       const idSet = new Set(ids);
       set((state) => ({
         topics: state.topics.filter((t) => !idSet.has(t.id)),
