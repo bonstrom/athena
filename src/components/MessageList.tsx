@@ -185,6 +185,19 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, suggestion
       }
     }
 
+    // Assistant replies that belong to a user message present in this list are
+    // "claimed" by that user. When `created` timestamps are out of order (a
+    // reply timestamped before its question), the reply is encountered first;
+    // deferring it here prevents the same message from being rendered twice —
+    // once as a standalone bubble and again as the user's active response.
+    const userIds = new Set(all.filter((m) => m.type === 'user').map((m) => m.id));
+    const claimedAssistantIds = new Set<string>();
+    for (const [parentId, versions] of assistantByParent) {
+      if (userIds.has(parentId)) {
+        for (const v of versions) claimedAssistantIds.add(v.id);
+      }
+    }
+
     for (const m of all) {
       if (processedIds.has(m.id)) continue;
 
@@ -199,6 +212,9 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, suggestion
           groups.push({ msg: activeVersion, versions });
           versions.forEach((v) => processedIds.add(v.id));
         }
+      } else if (m.type === 'assistant' && claimedAssistantIds.has(m.id)) {
+        // Reply deferred to its parent's grouping (out-of-order timestamps).
+        processedIds.add(m.id);
       } else {
         // Standalone assistant, aiNote, system, etc.
         groups.push({ msg: m });

@@ -198,6 +198,23 @@ describe('MessageList', () => {
     expect(screen.getByText('Version 2')).toBeInTheDocument();
   });
 
+  it('renders a reply once when its timestamp precedes its question', () => {
+    selectorize(mockUseChatStore, {
+      visibleMessageCount: 20,
+      increaseVisibleMessageCount: jest.fn(),
+    });
+
+    const messages: Message[] = [
+      createMessage({ id: 'a1', type: 'assistant', content: 'Reply', created: '2026-04-17T09:59:00.000Z', includeInContext: true, parentMessageId: 'u1' }),
+      createMessage({ id: 'u1', type: 'user', content: 'Question', created: '2026-04-17T10:00:00.000Z', includeInContext: true }),
+    ];
+
+    render(<MessageList messages={messages} maxContextMessages={10} />);
+
+    expect(screen.getAllByText('Reply')).toHaveLength(1);
+    expect(screen.getByText('Question')).toBeInTheDocument();
+  });
+
   it('hides aiNote content when showAllMessages is false', () => {
     selectorize(mockUseUiStore, { showAllMessages: false });
     selectorize(mockUseChatStore, {
