@@ -32,12 +32,6 @@ import { LATEX_INSTRUCTIONS, SVG_INSTRUCTIONS, SVG_EDIT_INSTRUCTIONS, SCRATCHPAD
 import { normalizeSvgDocument, replaceSvgBlockInMessage } from '../utils/svgEdit';
 import { parseStringArray } from '../utils/structuredJson';
 
-interface AskedQuestion {
-  question: string;
-  context: string;
-  answer: string;
-}
-
 function stripPersistReplaceComments(text: string): string {
   return text
     .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
@@ -46,60 +40,45 @@ function stripPersistReplaceComments(text: string): string {
 }
 
 /**
- * Builds the final assistant message content, interleaving any ask_user
- * questions and the user's answers at the point where the model interrupted
- * itself. When a per-iteration trace is unavailable, falls back to prepending
- * the Q&A blocks above the full content.
+ * Splits a completed tool-loop response into one content string per assistant
+ * turn, broken at each `ask_user` call. This lets the clarifying question and
+ * the user's answer become their own first-class messages while keeping the
+ * assistant's own output split across the interruption point.
+ *
+ * Note: `toolLoopTrace` only records iterations that made tool calls, so the
+ * final (tool-free) answer is not in the trace. It is derived by stripping the
+ * traced prefix from `finalContent`.
  */
-function buildAssistantContent(
-  toolLoopTrace: ToolLoopIteration[],
-  finalContent: string,
-  askedQuestions: AskedQuestion[],
-): string {
+function splitAssistantContents(toolLoopTrace: ToolLoopIteration[], finalContent: string, segmentCount: number): string[] {
   const cleanedFinal = stripPersistReplaceComments(finalContent);
+  if (segmentCount <= 1) return [cleanedFinal];
 
-  if (askedQuestions.length === 0) return cleanedFinal;
-
-  if (toolLoopTrace.length === 0) {
-    const blocks: string[] = [];
-    for (const qa of askedQuestions) {
-      blocks.push(`**Question for you:** ${qa.question}`);
-      if (qa.answer) blocks.push(`**Your answer:** ${qa.answer}`);
-    }
-    blocks.push(cleanedFinal);
-    return blocks.filter(Boolean).join('\n\n');
-  }
-
-  const blocks: string[] = [];
-  let questionIndex = 0;
-  let hasTraceContent = false;
-
+  // Collect the content produced before each ask_user interruption.
+  const segments: string[] = [];
+  let parts: string[] = [];
   for (const iteration of toolLoopTrace) {
     const content = stripPersistReplaceComments(iteration.llmResponse.content);
-    if (content) {
-      hasTraceContent = true;
-      blocks.push(content);
-    }
+    if (content) parts.push(content);
 
     for (const toolCall of iteration.llmResponse.toolCalls ?? []) {
       if (toolCall.function.name !== 'ask_user') continue;
-      const qa = askedQuestions.at(questionIndex);
-      questionIndex += 1;
-      if (!qa) continue;
-      blocks.push(`**Question for you:** ${qa.question}`);
-      if (qa.answer) blocks.push(`**Your answer:** ${qa.answer}`);
+      segments.push(parts.filter(Boolean).join('\n\n'));
+      parts = [];
     }
   }
 
-  const built = blocks.filter(Boolean).join('\n\n');
-
-  // The loop can exhaust with no text output and fire a forced final tool-free
-  // call whose content is not represented in the trace. Append it if so.
-  if (cleanedFinal && !hasTraceContent) {
-    return [built, cleanedFinal].filter(Boolean).join('\n\n');
+  // The final segment is the content produced after the last ask_user, which is
+  // absent from the trace. Remove the traced prefix (non-empty segments joined
+  // the same way the orchestrator joins `finalContent`) to recover it.
+  const tracedPrefix = segments.filter(Boolean).join('\n\n');
+  let finalSegment = cleanedFinal;
+  if (tracedPrefix && cleanedFinal.startsWith(tracedPrefix)) {
+    finalSegment = cleanedFinal.slice(tracedPrefix.length).replace(/^\n\n/, '');
   }
 
-  return built || cleanedFinal;
+  const result = [...segments, finalSegment];
+  while (result.length < segmentCount) result.push('');
+  return result.slice(0, segmentCount);
 }
 
 interface ChatSystemEntry {
@@ -256,7 +235,7 @@ interface ChatStore {
   thinkingMode: 'enabled' | 'disabled' | null;
   setThinkingMode: (mode: 'enabled' | 'disabled' | null) => void;
   abortController: AbortController | null;
-  currentRequestMessageIds: { userMessageId: string; assistantMessageId: string } | null;
+  currentRequestMessageIds: { userMessageId: string; assistantMessageId: string; extraMessageIds?: string[] } | null;
   streaming: StreamingState | null;
   stopSending: () => Promise<string | null>;
   pendingSuggestions: string[] | null;
@@ -953,6 +932,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // For a continuation, the answer is embedded into the existing assistant
     // message (no new user bubble). Prefix everything streamed/finalized with it.
     const contentPrefix = isContinuation ? `${existingAssistantContent}\n\n**Your answer:** ${userMessage.content}` : '';
+    // Mutable segment state: when `ask_user` interrupts the stream we finalize the
+    // current assistant message and start a fresh one (part 2) below the Q&A.
+    let currentAssistantId = assistantId;
+    let currentContentPrefix = contentPrefix;
+    const assistantSegmentIds: string[] = [assistantId];
+    const segmentReasoning: string[] = [];
+    const extraMessageIds: string[] = [];
 
     if (get().imageGenerationEnabled) {
       try {
@@ -1126,7 +1112,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       const loopStartTime = Date.now();
       let streamedContent = '';
-      const askedQuestions: AskedQuestion[] = [];
+      let streamedThinking = '';
       let lastContentRenderTime = 0;
       const RENDER_THROTTLE_MS = 64; // ~15fps for smooth but efficient UI
 
@@ -1135,30 +1121,35 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const now = Date.now();
         if (now - lastContentRenderTime > RENDER_THROTTLE_MS) {
           const displayContent =
-            contentPrefix +
+            currentContentPrefix +
             streamedContent
               .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
               .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '');
-          set({ streaming: { topicId, assistantMessageId: assistantId, content: displayContent, reasoning: streamedThinking.trim() } });
+          set({
+            streaming: { topicId, assistantMessageId: currentAssistantId, content: displayContent, reasoning: streamedThinking.trim() },
+          });
           lastContentRenderTime = now;
         }
       };
 
-      let streamedThinking = '';
       let lastThinkingRenderTime = 0;
 
       const onReasoningCallback = (token: string): void => {
         streamedThinking += token;
         const now = Date.now();
         if (now - lastThinkingRenderTime > RENDER_THROTTLE_MS) {
-          set({ streaming: { topicId, assistantMessageId: assistantId, content: contentPrefix + streamedContent, reasoning: streamedThinking.trim() } });
+          set({
+            streaming: { topicId, assistantMessageId: currentAssistantId, content: currentContentPrefix + streamedContent, reasoning: streamedThinking.trim() },
+          });
           lastThinkingRenderTime = now;
         }
       };
 
       const onToolLogCallback = (log: string): void => {
         streamedThinking += log;
-        set({ streaming: { topicId, assistantMessageId: assistantId, content: contentPrefix + streamedContent, reasoning: streamedThinking.trim() } });
+        set({
+          streaming: { topicId, assistantMessageId: currentAssistantId, content: currentContentPrefix + streamedContent, reasoning: streamedThinking.trim() },
+        });
       };
 
       // 4. Call the Orchestrator for the Primary Model
@@ -1259,10 +1250,36 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               const question = parsedArgs.question ?? 'Could you clarify?';
               const context = parsedArgs.context ?? '';
 
-              // Persist the question (and later the answer) so it can be surfaced
-              // in the final message.
-              const entry: AskedQuestion = { question, context, answer: '' };
-              askedQuestions.push(entry);
+              // Surface the question as its own assistant message so it's not
+              // buried inside the surrounding answer.
+              const clarificationId = crypto.randomUUID();
+              const clarificationMessage: Message = {
+                id: clarificationId,
+                topicId,
+                forkId: activeForkId,
+                type: 'assistant',
+                content: question,
+                created: new Date().toISOString(),
+                model: effectiveModel.apiModelId,
+                isDeleted: false,
+                includeInContext: false,
+                isClarification: true,
+                failed: false,
+                promptTokens: 0,
+                completionTokens: 0,
+                totalCost: 0,
+              };
+              extraMessageIds.push(clarificationId);
+              await athenaDb.messages.add(clarificationMessage);
+              set((state) => {
+                const existing = state.messagesByTopic[topicId] ?? [];
+                return {
+                  messagesByTopic: { ...state.messagesByTopic, [topicId]: sortMessages([...existing, clarificationMessage]) },
+                  currentRequestMessageIds: state.currentRequestMessageIds
+                    ? { ...state.currentRequestMessageIds, extraMessageIds: [...extraMessageIds] }
+                    : state.currentRequestMessageIds,
+                };
+              });
 
               // Return a Promise that resolves when the user submits an answer
               return new Promise<string>((resolve, reject) => {
@@ -1276,18 +1293,73 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
                 const wrappedResolve = (answer: string): void => {
                   clearTimeout(timeout);
-                  entry.answer = answer;
 
-                  // Separate the intro from the continuation so the resumed stream
-                  // doesn't jam onto the same line the model stopped on.
-                  if (streamedContent && !streamedContent.endsWith('\n\n')) {
-                    streamedContent += streamedContent.endsWith('\n') ? '\n' : '\n\n';
-                    set({
-                      streaming: { topicId, assistantMessageId: assistantId, content: streamedContent, reasoning: streamedThinking.trim() },
+                  // Close out the reasoning for the segment that just finished.
+                  segmentReasoning.push(streamedThinking.trim());
+
+                  // Persist the answer as a real user message and start a fresh
+                  // assistant segment (part 2) that will stream below it.
+                  const answerId = crypto.randomUUID();
+                  const part2Id = crypto.randomUUID();
+                  const answerMessage: Message = {
+                    id: answerId,
+                    topicId,
+                    forkId: activeForkId,
+                    type: 'user',
+                    content: answer,
+                    created: new Date().toISOString(),
+                    isDeleted: false,
+                    includeInContext: false,
+                    failed: false,
+                    promptTokens: 0,
+                    completionTokens: 0,
+                    totalCost: 0,
+                  };
+                  const part2Message: Message = {
+                    id: part2Id,
+                    topicId,
+                    forkId: activeForkId,
+                    type: 'assistant',
+                    content: '',
+                    created: new Date().toISOString(),
+                    model: effectiveModel.apiModelId,
+                    isDeleted: false,
+                    includeInContext: false,
+                    failed: false,
+                    promptTokens: 0,
+                    completionTokens: 0,
+                    totalCost: 0,
+                    parentMessageId: answerId,
+                  };
+
+                  assistantSegmentIds.push(part2Id);
+                  extraMessageIds.push(answerId, part2Id);
+                  currentAssistantId = part2Id;
+                  currentContentPrefix = '';
+                  streamedContent = '';
+                  streamedThinking = '';
+
+                  void (async (): Promise<void> => {
+                    await athenaDb.transaction('rw', athenaDb.messages, async () => {
+                      await athenaDb.messages.add(answerMessage);
+                      await athenaDb.messages.add(part2Message);
+                      await athenaDb.messages.update(answerId, { activeResponseId: part2Id });
                     });
-                  }
-
-                  resolve(answer);
+                    set((state) => {
+                      const existing = state.messagesByTopic[topicId] ?? [];
+                      return {
+                        messagesByTopic: {
+                          ...state.messagesByTopic,
+                          [topicId]: sortMessages([...existing, answerMessage, part2Message]),
+                        },
+                        currentRequestMessageIds: state.currentRequestMessageIds
+                          ? { ...state.currentRequestMessageIds, extraMessageIds: [...extraMessageIds] }
+                          : state.currentRequestMessageIds,
+                        streaming: { topicId, assistantMessageId: part2Id, content: '', reasoning: '' },
+                      };
+                    });
+                    resolve(answer);
+                  })();
                 };
 
                 const wrappedReject = (reason?: unknown): void => {
@@ -1369,57 +1441,79 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         promptTokens: totalPromptTokens,
         failed: false,
       };
-      const continuationContent = buildAssistantContent(primaryResult.toolLoopTrace, finalContent, askedQuestions);
-      const finalAssistantContent = isContinuation
-        ? [contentPrefix, continuationContent].filter(Boolean).join('\n\n')
-        : continuationContent;
-      const assistantPatch = {
-        content: finalAssistantContent,
-        reasoning: streamedThinking.trim(),
-        completionTokens: totalCompletionTokens,
-        totalCost: finalTotalCost,
-        cachedTokens: dbCachedTokens,
-        cacheCreationTokens: dbCacheCreationTokens,
-        failed: false,
-        latencyMs,
-        model: effectiveModel.apiModelId,
-        rawResponse: JSON.stringify(debugPayload),
-      };
+
+      // Split the assistant output into segments (one per interrupted answer),
+      // then attribute completion tokens/cost proportionally by content length.
+      const segmentContents = splitAssistantContents(primaryResult.toolLoopTrace, finalContent, assistantSegmentIds.length);
+      const segmentReasonings = [...segmentReasoning, streamedThinking.trim()];
+      const totalSegmentLength = segmentContents.reduce((sum, c) => sum + c.length, 0) || 1;
+      const segmentPatches: Partial<Message>[] = assistantSegmentIds.map((id, index) => {
+        const raw = segmentContents[index] ?? '';
+        const content = index === 0 ? [currentContentPrefix, raw].filter(Boolean).join('\n\n') : raw;
+        const ratio = raw.length / totalSegmentLength;
+        return {
+          content,
+          reasoning: segmentReasonings[index] ?? '',
+          completionTokens: Math.round(totalCompletionTokens * ratio),
+          totalCost: finalTotalCost * ratio,
+          failed: false,
+          model: effectiveModel.apiModelId,
+          ...(index === 0
+            ? {
+                cachedTokens: dbCachedTokens,
+                cacheCreationTokens: dbCacheCreationTokens,
+                latencyMs,
+                rawResponse: JSON.stringify(debugPayload),
+              }
+            : {}),
+        };
+      });
 
       await athenaDb.transaction('rw', athenaDb.messages, async () => {
         if (!isContinuation) {
           await athenaDb.messages.update(userMessage.id, userPatch);
         }
-        await athenaDb.messages.update(assistantId, assistantPatch);
+        for (const [index, id] of assistantSegmentIds.entries()) {
+          await athenaDb.messages.update(id, segmentPatches[index]);
+        }
       });
 
-      // Fire-and-forget embedding for the finalized assistant response
-      if (embeddingService.isReady && assistantPatch.content.trim()) {
-        void embeddingService
-          .generateEmbedding(assistantPatch.content)
-          .then((vector) => athenaDb.messages.update(assistantId, { embedding: vector }))
-          .catch((err: unknown) => {
-            console.warn('[ChatStore] Failed to generate embedding for assistant response', assistantId.slice(0, 8), '— message will not appear in RAG results:', err);
-          });
+      // Fire-and-forget embeddings for each finalized assistant segment
+      if (embeddingService.isReady) {
+        for (const [index, id] of assistantSegmentIds.entries()) {
+          const content = segmentPatches[index]?.content ?? '';
+          if (!content.trim()) continue;
+          void embeddingService
+            .generateEmbedding(content)
+            .then((vector) => athenaDb.messages.update(id, { embedding: vector }))
+            .catch((err: unknown) => {
+              console.warn('[ChatStore] Failed to generate embedding for assistant response', id.slice(0, 8), '— message will not appear in RAG results:', err);
+            });
+        }
       }
 
       // Update state in one go
-      set((state) => ({
-        messagesByTopic: {
-          ...state.messagesByTopic,
-          [topicId]: (state.messagesByTopic[topicId] ?? []).map((m) => {
-            if (m.id === userMessage.id) return { ...m, ...userPatch };
-            if (m.id === assistantId) return { ...m, ...assistantPatch };
-            return m;
-          }),
-        },
-        streaming: null,
-      }));
+      set((state) => {
+        const patchById = new Map(assistantSegmentIds.map((id, index) => [id, segmentPatches[index]]));
+        return {
+          messagesByTopic: {
+            ...state.messagesByTopic,
+            [topicId]: (state.messagesByTopic[topicId] ?? []).map((m) => {
+              if (m.id === userMessage.id) return { ...m, ...userPatch };
+              const segPatch = patchById.get(m.id);
+              if (segPatch) return { ...m, ...segPatch };
+              return m;
+            }),
+          },
+          streaming: null,
+        };
+      });
 
-      // Fire-and-forget TTS if enabled and auto-read is on
-      if (useAuthStore.getState().ttsEnabled && get().autoReadEnabled && assistantPatch.content.trim()) {
-        const ttsText = stripMarkdown(assistantPatch.content.trim());
-        void speakText(ttsText, assistantId).catch((err: unknown) => {
+      // Fire-and-forget TTS if enabled and auto-read is on (reads the final segment)
+      const finalSegmentPatch = segmentPatches[segmentPatches.length - 1];
+      if (useAuthStore.getState().ttsEnabled && get().autoReadEnabled && finalSegmentPatch.content?.trim()) {
+        const ttsText = stripMarkdown(finalSegmentPatch.content.trim());
+        void speakText(ttsText, assistantSegmentIds[assistantSegmentIds.length - 1]).catch((err: unknown) => {
           console.warn('TTS playback failed:', err);
         });
       }
@@ -1428,10 +1522,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (!isRetry && !isContinuation) {
         void get().maybeSummarize(userMessage.id, userMessage.content);
       }
-      void get().maybeSummarize(assistantId, assistantPatch.content, undefined, [
-        ...llmContext,
-        { role: 'assistant', content: assistantPatch.content },
-      ]);
+      for (const [index, id] of assistantSegmentIds.entries()) {
+        const content = segmentPatches[index]?.content ?? '';
+        if (!content.trim()) continue;
+        void get().maybeSummarize(id, content, undefined, [...llmContext, { role: 'assistant', content }]);
+      }
 
       void topicStoreState.generateTopicName(topicId, content);
 
@@ -1439,6 +1534,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       void rollupAnalytics();
 
       // Generate reply predictions if enabled
+      const finalAssistantContent = finalSegmentPatch.content ?? '';
       const { replyPredictionEnabled, replyPredictionModel } = useAuthStore.getState();
       if (replyPredictionEnabled) {
         set({ isSuggestionsLoading: true });
@@ -1448,7 +1544,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               replyPredictionModel === 'same'
                 ? [
                     ...llmContext,
-                    { role: 'assistant', content: assistantPatch.content },
+                    { role: 'assistant', content: finalAssistantContent },
                     {
                       role: 'user',
                       content:
@@ -1457,7 +1553,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                   ]
                 : [
                     { role: 'user', content },
-                    { role: 'assistant', content: assistantPatch.content },
+                    { role: 'assistant', content: finalAssistantContent },
                     {
                       role: 'user',
                       content:
@@ -1471,7 +1567,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               // Use local LLM via llmSuggestionService with a full instruct prompt
               const prompt =
                 `<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n` +
-                `<|im_start|>user\nConversation summary:\nUser: ${content.slice(-300)}\nAssistant: ${assistantPatch.content.slice(-300)}\n\n` +
+                `<|im_start|>user\nConversation summary:\nUser: ${content.slice(-300)}\nAssistant: ${finalAssistantContent.slice(-300)}\n\n` +
                 `List exactly 3 short follow-up questions the user might ask next. Reply with ONLY a JSON array of 3 strings, e.g. ["Q1","Q2","Q3"].<|im_end|>\n` +
                 `<|im_start|>assistant\n<think>\n</think>\n`;
               const raw = await (llmSuggestionService.getCompletion as (p: string, t: number) => Promise<string>)(prompt, 150);
@@ -1524,10 +1620,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       useNotificationStore.getState().addNotification('LLM request failed', msg);
 
       if (isContinuation) {
-        await get().updateMessage(assistantId, { failed: true });
+        await get().updateMessage(currentAssistantId, { failed: true });
       } else {
         await get().updateMessage(userMessage.id, { failed: true });
-        await get().updateMessage(assistantId, { isDeleted: true });
+        for (const id of assistantSegmentIds) {
+          await get().updateMessage(id, { isDeleted: true });
+        }
+        for (const id of extraMessageIds) {
+          await get().updateMessage(id, { isDeleted: true });
+        }
       }
     } finally {
       set({ sending: false, abortController: null, currentRequestMessageIds: null, streaming: null });
@@ -1566,7 +1667,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     if (currentRequestMessageIds && currentTopicId) {
-      const { userMessageId, assistantMessageId } = currentRequestMessageIds;
+      const { userMessageId, assistantMessageId, extraMessageIds = [] } = currentRequestMessageIds;
       const messages = messagesByTopic[currentTopicId] ?? [];
       const userMsg = messages.find((m) => m.id === userMessageId);
       const content = userMsg?.content ?? null;
@@ -1578,9 +1679,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         return null;
       }
 
+      const idsToDelete = [userMessageId, assistantMessageId, ...extraMessageIds];
+
       // Delete from DB
-      await athenaDb.messages.delete(userMessageId);
-      await athenaDb.messages.delete(assistantMessageId);
+      await athenaDb.messages.bulkDelete(idsToDelete);
 
       // Update state
       set((state) => ({
@@ -1590,7 +1692,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         streaming: null,
         messagesByTopic: {
           ...state.messagesByTopic,
-          [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? []).filter((m) => m.id !== userMessageId && m.id !== assistantMessageId),
+          [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? []).filter((m) => !idsToDelete.includes(m.id)),
         },
       }));
 

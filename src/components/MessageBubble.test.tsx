@@ -180,6 +180,16 @@ describe('MessageBubble', () => {
     expect(screen.getByTestId('markdown-content')).toHaveTextContent('Hello from assistant');
   });
 
+  it('renders a clarifying question with a distinct label', () => {
+    renderWithTheme(
+      <MessageBubble message={createMessage({ type: 'assistant', content: 'Which framework?', model: 'model-1', isClarification: true })} />,
+    );
+
+    expect(screen.getByText('Question for you')).toBeInTheDocument();
+    expect(screen.getByTestId('markdown-content')).toHaveTextContent('Which framework?');
+    expect(screen.queryByText('Model One')).not.toBeInTheDocument();
+  });
+
   it('copies message content to clipboard from the copy action', async () => {
     renderWithTheme(<MessageBubble message={createMessage({ content: 'Hello from assistant' })} />);
 

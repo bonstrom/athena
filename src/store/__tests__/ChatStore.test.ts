@@ -475,8 +475,7 @@ describe('ChatStore', () => {
     const returnedContent = await useChatStore.getState().stopSending();
 
     expect(returnedContent).toBe('Pending question');
-    expect(mockDbDelete).toHaveBeenCalledWith('u-1');
-    expect(mockDbDelete).toHaveBeenCalledWith('a-1');
+    expect(mockDbBulkDelete).toHaveBeenCalledWith(['u-1', 'a-1']);
     expect(useChatStore.getState().abortController).toBeNull();
     expect(useChatStore.getState().currentRequestMessageIds).toBeNull();
     expect(useChatStore.getState().messagesByTopic['topic-1']).toEqual([]);
@@ -522,10 +521,16 @@ describe('ChatStore', () => {
     await sendPromise;
 
     expect(useChatStore.getState().pendingUserQuestion).toBeNull();
-    const assistant = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant');
-    expect(assistant?.content).toBe(
-      '**Question for you:** Could you clarify?\n\n**Your answer:** Here are more details\n\nThanks for clarifying: Here are more details',
-    );
+    const messages = useChatStore.getState().messagesByTopic['topic-1'] ?? [];
+    const clarification = messages.find((m) => m.isClarification);
+    expect(clarification).toBeDefined();
+    expect(clarification?.content).toBe('Could you clarify?');
+    const answerMessage = messages.find((m) => m.type === 'user' && m.content === 'Here are more details');
+    expect(answerMessage).toBeDefined();
+    const assistants = messages.filter((m) => m.type === 'assistant' && !m.isClarification);
+    expect(assistants).toHaveLength(2);
+    expect(assistants[0].content).toBe('Thanks for clarifying: Here are more details');
+    expect(assistants[1].content).toBe('');
   });
 
   it('interleaves ask_user question and answer at the interruption point in the final content', async () => {
@@ -557,11 +562,6 @@ describe('ChatStore', () => {
             },
             toolResults: [{ toolCallId: 'call-1', toolName: 'ask_user', result: answer }],
           },
-          {
-            iteration: 2,
-            llmResponse: { content: `Here's the continuation: ${answer}` },
-            toolResults: [],
-          },
         ],
         lastResult: {
           content: `Here's the continuation: ${answer}`,
@@ -583,10 +583,13 @@ describe('ChatStore', () => {
     useChatStore.getState().resolvePendingQuestion('React');
     await sendPromise;
 
-    const assistant = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant');
-    expect(assistant?.content).toBe(
-      "Let me help with that.\n\n**Question for you:** Which framework do you use?\n\n**Your answer:** React\n\nHere's the continuation: React",
-    );
+    const messages = useChatStore.getState().messagesByTopic['topic-1'] ?? [];
+    const clarification = messages.find((m) => m.isClarification);
+    expect(clarification?.content).toBe('Which framework do you use?');
+    const answerMessage = messages.find((m) => m.type === 'user' && m.content === 'React');
+    expect(answerMessage).toBeDefined();
+    const assistants = messages.filter((m) => m.type === 'assistant' && !m.isClarification);
+    expect(assistants.map((m) => m.content)).toEqual(['Let me help with that.', "Here's the continuation: React"]);
   });
 
   it('continuation mode appends the answer and reply into the existing assistant message without new bubbles', async () => {

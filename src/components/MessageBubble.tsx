@@ -63,6 +63,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SummarizeIcon from '@mui/icons-material/Summarize';
 import BugReportIcon from '@mui/icons-material/BugReport';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
+import LiveHelpIcon from '@mui/icons-material/LiveHelp';
 
 const AI_SUMMARY_MIN_CHARS = 250;
 
@@ -219,6 +220,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const isSpeaking = currentlySpeakingMessageId === message.id;
 
   const isAssistant = message.type === 'assistant';
+  const isClarification = !!message.isClarification;
   const isLong = messageTruncateChars > 0 && message.content.length > messageTruncateChars;
   const displayContent = isLong && !isExpanded ? message.content.slice(0, messageTruncateChars) + '\u2026' : message.content;
   const contentTypes = useMemo(() => (isLong ? detectContentTypes(message.content) : []), [isLong, message.content]);
@@ -405,7 +407,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
         width: '100%',
         borderRadius: 3,
         border: message.failed ? (theme): string => `1px solid ${theme.palette.error.main}` : 'none',
-        borderLeft: !message.failed && message.type === 'assistant' ? (theme): string => `3px solid ${theme.palette.primary.main}` : undefined,
+        borderLeft: !message.failed && message.type === 'assistant' ? (theme): string => `3px solid ${isClarification ? theme.palette.warning.main : theme.palette.primary.main}` : undefined,
         bgcolor: (theme): string | undefined => {
           if (message.failed) return alpha(theme.palette.error.main, 0.1);
           if (message.type === 'assistant') return theme.palette.assistant.main;
@@ -442,8 +444,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   '&:hover': { opacity: 0.7 },
                 }}
               >
-                <Typography variant="subtitle2" color="text.secondary" sx={{ transition: 'color 0.2s', display: 'inline-block' }}>
-                  {message.type === 'user' ? userName : getModelLabel(message.model)}
+                <Typography variant="subtitle2" color="text.secondary" sx={{ transition: 'color 0.2s', display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                  {isClarification && <LiveHelpIcon sx={{ fontSize: 15, color: 'warning.main' }} />}
+                  {isClarification ? 'Question for you' : message.type === 'user' ? userName : getModelLabel(message.model)}
                 </Typography>
                 {message.type !== 'user' &&
                   isDeepSeekPeakHours() &&

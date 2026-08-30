@@ -25,6 +25,30 @@ async function deleteTopicsFromDb(ids: string[]): Promise<void> {
   });
 }
 
+/**
+ * Folds `isClarification` assistant messages into the preceding assistant turn.
+ * The clarifying question is displayed as its own bubble, but for the LLM it must
+ * belong to the assistant's own turn so the outgoing message list stays strictly
+ * alternating (user → assistant) for models that enforce it.
+ */
+function mergeClarifications(messages: Message[]): Message[] {
+  const result: Message[] = [];
+  for (const m of messages) {
+    if (m.isClarification && m.type === 'assistant') {
+      const prev = result.length > 0 ? result[result.length - 1] : undefined;
+      if (prev && prev.type === 'assistant' && !prev.isClarification) {
+        result[result.length - 1] = {
+          ...prev,
+          content: `${prev.content}\n\n[Assistant asked the user]: ${m.content}`,
+        };
+        continue;
+      }
+    }
+    result.push(m);
+  }
+  return result;
+}
+
 interface TopicState {
   topics: Topic[];
   loading: boolean;
@@ -413,10 +437,10 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     }
 
     if (ragMessage) {
-      return [...base, ragMessage];
+      return [...mergeClarifications(base), ragMessage];
     }
 
-    return base;
+    return mergeClarifications(base);
   },
 
   generateTopicName: async (topicId: string, userMessage: string): Promise<void> => {

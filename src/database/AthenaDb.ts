@@ -317,6 +317,7 @@ export interface Message {
   model?: string;
   isDeleted: boolean;
   includeInContext: boolean;
+  isClarification?: boolean;
   created: string;
   failed: boolean;
   promptTokens: number;

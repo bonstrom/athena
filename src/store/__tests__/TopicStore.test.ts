@@ -202,6 +202,57 @@ describe('TopicStore.getTopicContext', () => {
     Object.defineProperty(embeddingService, 'isReady', { value: false, configurable: true });
   });
 
+  it('merges clarification messages into the preceding assistant turn', async () => {
+    mockAuthGetState.mockReturnValue({
+      defaultMaxContextMessages: 20,
+      maxContextTokens: 100000,
+      contextWindowRatio: 0.75,
+      messageRetrievalEnabled: false,
+      ragEnabled: false,
+    });
+
+    const u1 = createMessage({ topicId: 'topic-1', forkId: 'main', id: 'u1', type: 'user', content: 'Original question', created: '2024-01-01T00:00:00.000Z' });
+    const a1 = createMessage({
+      topicId: 'topic-1',
+      forkId: 'main',
+      id: 'a1',
+      type: 'assistant',
+      content: 'Part 1 answer',
+      created: '2024-01-01T00:01:00.000Z',
+      parentMessageId: 'u1',
+    });
+    const c1 = createMessage({
+      topicId: 'topic-1',
+      forkId: 'main',
+      id: 'c1',
+      type: 'assistant',
+      content: 'Which framework do you use?',
+      created: '2024-01-01T00:02:00.000Z',
+      isClarification: true,
+    });
+    const u2 = createMessage({ topicId: 'topic-1', forkId: 'main', id: 'u2', type: 'user', content: 'React', created: '2024-01-01T00:03:00.000Z' });
+    const a2 = createMessage({
+      topicId: 'topic-1',
+      forkId: 'main',
+      id: 'a2',
+      type: 'assistant',
+      content: 'Part 2 answer',
+      created: '2024-01-01T00:04:00.000Z',
+      parentMessageId: 'u2',
+    });
+
+    mockDbMessages = [u1, a1, c1, u2, a2];
+
+    const context = await useTopicStore.getState().getTopicContext('topic-1');
+
+    expect(context.some((m) => m.isClarification)).toBe(false);
+    const part1 = context.find((m) => m.id === 'a1');
+    expect(part1?.content).toContain('Part 1 answer');
+    expect(part1?.content).toContain('Which framework do you use?');
+    const part2 = context.find((m) => m.id === 'a2');
+    expect(part2?.content).toBe('Part 2 answer');
+  });
+
   it('includes RAG context when retrieval returns relevant older messages', async () => {
     useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })] });
     mockAuthGetState.mockReturnValue({
