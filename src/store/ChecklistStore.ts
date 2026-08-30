@@ -574,6 +574,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           CHECKLIST_TOOLS,
           undefined,
           editAbortController.signal,
+          { includeCustomInstructions: false },
         );
 
         set({ lastEditSummary: result.finalContent.trim() });

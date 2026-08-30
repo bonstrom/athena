@@ -1,7 +1,9 @@
-import { JSX, KeyboardEvent, useState } from 'react';
-import { Box, IconButton, TextField, Typography } from '@mui/material';
+import { JSX, KeyboardEvent, useEffect, useState } from 'react';
+import { Box, Collapse, IconButton, TextField, Typography } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import StopIcon from '@mui/icons-material/Stop';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import MarkdownWithCode from './MarkdownWithCode';
 
 interface ChecklistComposerProps {
@@ -22,6 +24,11 @@ const ChecklistComposer = ({
   onStop,
 }: ChecklistComposerProps): JSX.Element => {
   const [value, setValue] = useState('');
+  const [summaryCollapsed, setSummaryCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (streamingContent || lastEditSummary) setSummaryCollapsed(false);
+  }, [streamingContent, lastEditSummary]);
 
   const handleSend = (): void => {
     const trimmed = value.trim();
@@ -42,32 +49,45 @@ const ChecklistComposer = ({
       px={2}
       py={1.5}
       sx={{ borderTop: (theme) => `1px solid ${theme.palette.divider}`, flexShrink: 0 }}>
-      {streamingContent && (
+      {(streamingContent || lastEditSummary) && (
         <Box
           sx={{
             bgcolor: 'assistant.main',
             borderRadius: 2,
-            px: 1.5,
-            py: 1,
             mb: 1,
-            maxHeight: 160,
-            overflow: 'auto',
+            overflow: 'hidden',
           }}>
-          <MarkdownWithCode>{streamingContent}</MarkdownWithCode>
-        </Box>
-      )}
-      {!streamingContent && lastEditSummary && (
-        <Box
-          sx={{
-            bgcolor: 'assistant.main',
-            borderRadius: 2,
-            px: 1.5,
-            py: 1,
-            mb: 1,
-            maxHeight: 160,
-            overflow: 'auto',
-          }}>
-          <MarkdownWithCode>{lastEditSummary}</MarkdownWithCode>
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="space-between"
+            px={1.5}
+            py={0.5}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              fontWeight="bold">
+              {streamingContent ? 'AI is working…' : 'Last edit'}
+            </Typography>
+            <IconButton
+              size="small"
+              aria-label={summaryCollapsed ? 'Show last edit' : 'Hide last edit'}
+              onClick={(): void => setSummaryCollapsed((v) => !v)}
+              sx={{ p: 0.25 }}>
+              {summaryCollapsed ? <KeyboardArrowUpIcon fontSize="small" /> : <KeyboardArrowDownIcon fontSize="small" />}
+            </IconButton>
+          </Box>
+          <Collapse in={!summaryCollapsed}>
+            <Box
+              sx={{
+                px: 1.5,
+                pb: 1,
+                maxHeight: 160,
+                overflow: 'auto',
+              }}>
+              <MarkdownWithCode>{streamingContent || lastEditSummary}</MarkdownWithCode>
+            </Box>
+          </Collapse>
         </Box>
       )}
       <Box

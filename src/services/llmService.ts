@@ -1315,6 +1315,7 @@ export async function orchestrateLlmLoop(
   tools: LlmTool[] = [SCRATCHPAD_TOOL],
   webSearch?: boolean,
   signal?: AbortSignal,
+  options?: LlmRequestOptions,
 ): Promise<OrchestrateResult> {
   const { model: resolvedModel } = resolveModelAndProvider(model);
   const llmContext = [...messages];
@@ -1335,8 +1336,8 @@ export async function orchestrateLlmLoop(
     // iterations are not masked by a stale result.
     const toolResultCache = new Map<string, string>();
     const result = resolvedModel.streaming
-      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, tools, webSearch, signal)
-      : await askLlm(resolvedModel, temperature, llmContext, tools, webSearch, signal);
+      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, tools, webSearch, signal, options)
+      : await askLlm(resolvedModel, temperature, llmContext, tools, webSearch, signal, options);
 
     if (!resolvedModel.streaming && result.reasoning && onReasoning) {
       onReasoning(result.reasoning);
@@ -1445,8 +1446,8 @@ export async function orchestrateLlmLoop(
   if (!finalContent.trim() && lastResult?.toolCalls && lastResult.toolCalls.length > 0) {
     console.warn('[orchestrateLlmLoop] Loop exhausted with no text output — firing forced final call without tools.');
     const finalResult = resolvedModel.streaming
-      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, undefined, false, signal)
-      : await askLlm(resolvedModel, temperature, llmContext, undefined, false, signal);
+      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, undefined, false, signal, options)
+      : await askLlm(resolvedModel, temperature, llmContext, undefined, false, signal, options);
 
     if (!resolvedModel.streaming && finalResult.reasoning && onReasoning) {
       onReasoning(finalResult.reasoning);
