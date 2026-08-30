@@ -17,10 +17,12 @@ function useSortable() {
 
 function sortableKeyboardCoordinates() {}
 function horizontalListSortingStrategy() {}
+function verticalListSortingStrategy() {}
 
 module.exports = {
   SortableContext,
   useSortable,
   sortableKeyboardCoordinates,
   horizontalListSortingStrategy,
+  verticalListSortingStrategy,
 };

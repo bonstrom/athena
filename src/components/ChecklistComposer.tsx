@@ -1,0 +1,118 @@
+import { JSX, KeyboardEvent, useState } from 'react';
+import { Box, IconButton, TextField, Typography } from '@mui/material';
+import SendIcon from '@mui/icons-material/Send';
+import StopIcon from '@mui/icons-material/Stop';
+import MarkdownWithCode from './MarkdownWithCode';
+
+interface ChecklistComposerProps {
+  editing: boolean;
+  streamingContent: string;
+  lastEditSummary: string;
+  canEdit: boolean;
+  onSend: (content: string) => void;
+  onStop: () => void;
+}
+
+const ChecklistComposer = ({
+  editing,
+  streamingContent,
+  lastEditSummary,
+  canEdit,
+  onSend,
+  onStop,
+}: ChecklistComposerProps): JSX.Element => {
+  const [value, setValue] = useState('');
+
+  const handleSend = (): void => {
+    const trimmed = value.trim();
+    if (!trimmed || editing || !canEdit) return;
+    setValue('');
+    onSend(trimmed);
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  return (
+    <Box
+      px={2}
+      py={1.5}
+      sx={{ borderTop: (theme) => `1px solid ${theme.palette.divider}`, flexShrink: 0 }}>
+      {streamingContent && (
+        <Box
+          sx={{
+            bgcolor: 'assistant.main',
+            borderRadius: 2,
+            px: 1.5,
+            py: 1,
+            mb: 1,
+            maxHeight: 160,
+            overflow: 'auto',
+          }}>
+          <MarkdownWithCode>{streamingContent}</MarkdownWithCode>
+        </Box>
+      )}
+      {!streamingContent && lastEditSummary && (
+        <Box
+          sx={{
+            bgcolor: 'assistant.main',
+            borderRadius: 2,
+            px: 1.5,
+            py: 1,
+            mb: 1,
+            maxHeight: 160,
+            overflow: 'auto',
+          }}>
+          <MarkdownWithCode>{lastEditSummary}</MarkdownWithCode>
+        </Box>
+      )}
+      <Box
+        display="flex"
+        alignItems="flex-end"
+        gap={1}>
+        <TextField
+          fullWidth
+          multiline
+          maxRows={5}
+          placeholder="Ask the AI to change this checklist… (e.g. 'add a packing section', 'mark the venue as done')"
+          value={value}
+          onChange={(e): void => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={editing || !canEdit}
+          size="small"
+          inputProps={{ 'aria-label': 'Checklist instruction' }}
+        />
+        {editing ? (
+          <IconButton
+            aria-label="Stop editing"
+            color="error"
+            onClick={onStop}>
+            <StopIcon />
+          </IconButton>
+        ) : (
+          <IconButton
+            aria-label="Send checklist instruction"
+            color="primary"
+            onClick={handleSend}
+            disabled={!value.trim() || !canEdit}>
+            <SendIcon />
+          </IconButton>
+        )}
+      </Box>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ mt: 0.5, display: 'block' }}>
+        {canEdit
+          ? 'Tip: both you and the AI can add, remove, check, and reorder tasks.'
+          : 'This model does not support editing checklists. Select a model with tool support to use this.'}
+      </Typography>
+    </Box>
+  );
+};
+
+export default ChecklistComposer;

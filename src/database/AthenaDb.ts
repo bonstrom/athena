@@ -22,34 +22,34 @@ class AthenaDatabase extends Dexie {
       })
       .upgrade(async (trans) => {
         try {
-        const DEFAULT_FORK_ID = 'main';
+          const DEFAULT_FORK_ID = 'main';
 
-        // Migrate topics
-        await trans
-          .table('topics')
-          .toCollection()
-          .modify((topic: Topic) => {
-            if (!topic.forks) {
-              topic.forks = [
-                {
-                  id: DEFAULT_FORK_ID,
-                  name: 'Main',
-                  createdOn: topic.createdOn,
-                },
-              ];
-              topic.activeForkId = DEFAULT_FORK_ID;
-            }
-          });
+          // Migrate topics
+          await trans
+            .table('topics')
+            .toCollection()
+            .modify((topic: Topic) => {
+              if (!topic.forks) {
+                topic.forks = [
+                  {
+                    id: DEFAULT_FORK_ID,
+                    name: 'Main',
+                    createdOn: topic.createdOn,
+                  },
+                ];
+                topic.activeForkId = DEFAULT_FORK_ID;
+              }
+            });
 
-        // Migrate messages
-        await trans
-          .table('messages')
-          .toCollection()
-          .modify((message: Message) => {
-            if (!message.forkId) {
-              message.forkId = DEFAULT_FORK_ID;
-            }
-          });
+          // Migrate messages
+          await trans
+            .table('messages')
+            .toCollection()
+            .modify((message: Message) => {
+              if (!message.forkId) {
+                message.forkId = DEFAULT_FORK_ID;
+              }
+            });
         } catch (err) {
           console.error('[migration-error] AthenaDb v2 migration failed', err);
           throw err;
@@ -74,32 +74,32 @@ class AthenaDatabase extends Dexie {
       })
       .upgrade(async (trans) => {
         try {
-        const allMessages = (await trans.table('messages').toArray()) as Message[];
+          const allMessages = (await trans.table('messages').toArray()) as Message[];
 
-        // Sort by topic and created time
-        const sorted = allMessages.sort((a, b) => {
-          if (a.topicId !== b.topicId) return a.topicId.localeCompare(b.topicId);
-          return new Date(a.created).getTime() - new Date(b.created).getTime();
-        });
+          // Sort by topic and created time
+          const sorted = allMessages.sort((a, b) => {
+            if (a.topicId !== b.topicId) return a.topicId.localeCompare(b.topicId);
+            return new Date(a.created).getTime() - new Date(b.created).getTime();
+          });
 
-        const updates: { id: string; parentMessageId: string }[] = [];
-        const lastUserMessageByTopic = new Map<string, string>();
+          const updates: { id: string; parentMessageId: string }[] = [];
+          const lastUserMessageByTopic = new Map<string, string>();
 
-        for (const m of sorted) {
-          if (m.type === 'user') {
-            lastUserMessageByTopic.set(m.topicId, m.id);
-          } else if (m.type === 'assistant' && !m.parentMessageId) {
-            const parentId = lastUserMessageByTopic.get(m.topicId);
-            if (parentId) {
-              updates.push({ id: m.id, parentMessageId: parentId });
+          for (const m of sorted) {
+            if (m.type === 'user') {
+              lastUserMessageByTopic.set(m.topicId, m.id);
+            } else if (m.type === 'assistant' && !m.parentMessageId) {
+              const parentId = lastUserMessageByTopic.get(m.topicId);
+              if (parentId) {
+                updates.push({ id: m.id, parentMessageId: parentId });
+              }
             }
+            // aiNote / system messages do not reset the last-user-message tracking
           }
-          // aiNote / system messages do not reset the last-user-message tracking
-        }
 
-        for (const update of updates) {
-          await trans.table('messages').update(update.id, { parentMessageId: update.parentMessageId });
-        }
+          for (const update of updates) {
+            await trans.table('messages').update(update.id, { parentMessageId: update.parentMessageId });
+          }
         } catch (err) {
           console.error('[migration-error] AthenaDb v5 migration failed', err);
           throw err;
@@ -140,31 +140,31 @@ class AthenaDatabase extends Dexie {
       })
       .upgrade(async (trans) => {
         try {
-        const allMessages = (await trans.table('messages').toArray()) as Message[];
+          const allMessages = (await trans.table('messages').toArray()) as Message[];
 
-        // Find the last (most recent) assistant message per topic that has a model
-        const lastModelByTopic = new Map<string, string>();
-        const lastCreatedByTopic = new Map<string, string>();
+          // Find the last (most recent) assistant message per topic that has a model
+          const lastModelByTopic = new Map<string, string>();
+          const lastCreatedByTopic = new Map<string, string>();
 
-        for (const m of allMessages) {
-          if (m.type === 'assistant' && m.model) {
-            const prevCreated = lastCreatedByTopic.get(m.topicId);
-            const prevModel = lastModelByTopic.get(m.topicId);
-            if (!prevCreated || m.created > prevCreated || (m.created === prevCreated && m.id > (prevModel ?? ''))) {
-              lastCreatedByTopic.set(m.topicId, m.created);
-              lastModelByTopic.set(m.topicId, m.model);
+          for (const m of allMessages) {
+            if (m.type === 'assistant' && m.model) {
+              const prevCreated = lastCreatedByTopic.get(m.topicId);
+              const prevModel = lastModelByTopic.get(m.topicId);
+              if (!prevCreated || m.created > prevCreated || (m.created === prevCreated && m.id > (prevModel ?? ''))) {
+                lastCreatedByTopic.set(m.topicId, m.created);
+                lastModelByTopic.set(m.topicId, m.model);
+              }
             }
           }
-        }
 
-        // Update only topics that don't already have a modelId
-        const allTopics = (await trans.table('topics').toArray()) as Topic[];
-        for (const topic of allTopics) {
-          const modelId = lastModelByTopic.get(topic.id);
-          if (modelId && !topic.modelId) {
-            await trans.table('topics').update(topic.id, { modelId });
+          // Update only topics that don't already have a modelId
+          const allTopics = (await trans.table('topics').toArray()) as Topic[];
+          for (const topic of allTopics) {
+            const modelId = lastModelByTopic.get(topic.id);
+            if (modelId && !topic.modelId) {
+              await trans.table('topics').update(topic.id, { modelId });
+            }
           }
-        }
         } catch (err) {
           console.error('[migration-error] AthenaDb v9 migration failed', err);
           throw err;
@@ -270,11 +270,41 @@ class AthenaDatabase extends Dexie {
           throw err;
         }
       });
+
+    // Version 15: add checklistGroups and checklistItems tables for Checklist mode
+    this.version(15).stores({
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
+      analyticsSnapshots: 'date',
+      learningCycles: 'id, topicId, phase, weekStart',
+      learningDays: 'id, cycleId, dayNumber',
+      checklistGroups: 'id, topicId, sortOrder',
+      checklistItems: 'id, groupId, sortOrder',
+    });
+
+    // Version 16: add checklistHistory table for checklist instruction continuity
+    this.version(16).stores({
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
+      analyticsSnapshots: 'date',
+      learningCycles: 'id, topicId, phase, weekStart',
+      learningDays: 'id, cycleId, dayNumber',
+      checklistGroups: 'id, topicId, sortOrder',
+      checklistItems: 'id, groupId, sortOrder',
+      checklistHistory: 'id, topicId, seq',
+    });
   }
 
   analyticsSnapshots!: Table<AnalyticsSnapshot, string>;
   learningCycles!: Table<LearningCycle, string>;
   learningDays!: Table<LearningDay, string>;
+  checklistGroups!: Table<ChecklistGroup, string>;
+  checklistItems!: Table<ChecklistItem, string>;
+  checklistHistory!: Table<ChecklistHistoryEntry, string>;
 }
 
 export type MessageType = 'user' | 'assistant' | 'system' | 'aiNote';
@@ -343,7 +373,7 @@ export interface Message {
   debatePhase?: DebatePhase;
 }
 
-export type TopicMode = 'topic' | 'debate' | 'curator';
+export type TopicMode = 'topic' | 'debate' | 'curator' | 'checklist';
 
 export type CuratorPhase = 'suggesting' | 'active' | 'completed' | 'rated';
 
@@ -380,6 +410,32 @@ export interface LearningDay {
   estimatedReadingMinutes: number;
   reflectionQuestions: ReflectionQuestion[];
   isCompleted: boolean;
+}
+
+export interface ChecklistGroup {
+  id: string;
+  topicId: string;
+  title: string;
+  sortOrder: number;
+}
+
+export interface ChecklistItem {
+  id: string;
+  groupId: string;
+  content: string;
+  details?: string;
+  checked: boolean;
+  sortOrder: number;
+  createdBy?: 'user' | 'assistant';
+}
+
+export interface ChecklistHistoryEntry {
+  id: string;
+  topicId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created: string;
+  seq: number;
 }
 
 export interface Topic {

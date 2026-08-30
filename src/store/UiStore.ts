@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type SidebarFilterMode = 'all' | 'topics' | 'messages' | 'courses' | 'debates';
+export type SidebarFilterMode = 'all' | 'topics' | 'messages' | 'courses' | 'debates' | 'checklists';
 
 interface UiState {
   drawerOpen: boolean;

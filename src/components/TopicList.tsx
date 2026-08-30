@@ -71,6 +71,7 @@ export const TopicList = (): JSX.Element => {
   const filteredTopics = React.useMemo(() => {
     if (sidebarFilter === 'courses') return topics.filter((t) => t.mode === 'curator');
     if (sidebarFilter === 'debates') return topics.filter((t) => t.mode === 'debate');
+    if (sidebarFilter === 'checklists') return topics.filter((t) => t.mode === 'checklist');
     if (sidebarFilter === 'topics') return topics.filter((t) => !t.mode || t.mode === 'topic');
     return topics;
   }, [topics, sidebarFilter]);

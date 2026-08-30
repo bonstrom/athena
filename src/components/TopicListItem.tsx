@@ -31,6 +31,7 @@ import TopicContextDialog from './TopicContextDialog';
 import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
+import ChecklistIcon from '@mui/icons-material/Checklist';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { Topic } from '../database/AthenaDb';
 
@@ -155,6 +156,11 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                     {topic.mode === 'curator' && (
                       <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
                         <MenuBookOutlined sx={{ fontSize: '0.85rem' }} />
+                      </Box>
+                    )}
+                    {topic.mode === 'checklist' && (
+                      <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
+                        <ChecklistIcon sx={{ fontSize: '0.85rem' }} />
                       </Box>
                     )}
                     {(topic.forks?.length ?? 0) > 1 && (

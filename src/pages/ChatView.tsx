@@ -10,6 +10,7 @@ import Composer from '../components/Composer';
 import ForkTabs from '../components/ForkTabs';
 import DebateView from '../components/DebateView';
 import CuratorView from '../components/CuratorView';
+import ChecklistView from '../components/ChecklistView';
 
 const ChatView: React.FC = () => {
   const { topicId } = useParams<{ topicId: string }>();
@@ -106,6 +107,8 @@ const ChatView: React.FC = () => {
                   <DebateView topic={topic} messages={messages} />
                 ) : topic?.mode === 'curator' ? (
                   <CuratorView topic={topic} messages={messages} />
+                ) : topic?.mode === 'checklist' ? (
+                  <ChecklistView topic={topic} />
                 ) : (
                   <MessageList
                     messages={messages}
@@ -125,7 +128,7 @@ const ChatView: React.FC = () => {
         </Box>
       </Box>
 
-      {(!topic || (topic.mode !== 'debate' && topic.mode !== 'curator')) && (
+      {(!topic || (topic.mode !== 'debate' && topic.mode !== 'curator' && topic.mode !== 'checklist')) && (
         <>
           {displayTopicId && <ForkTabs topicId={displayTopicId} collapsed={forksCollapsed} />}
           <Composer

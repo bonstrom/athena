@@ -20,7 +20,7 @@ export const SCRATCHPAD_LIMIT = 8000;
 export const SHORT_SCRATCHPAD_RULES = `You have a private scratchpad for long-term memory (max {{SCRATCHPAD_LIMIT}} chars). Proactively store user preferences, goals, key decisions, and message bookmarks. Prefer 'replace' over 'append' to stay concise.`;
 
 export const DEEPSEEK_PEAK_HOURS_UTC: { start: number; end: number }[] = [
-  { start: 1, end: 4 },  // 01:00–04:00 UTC
+  { start: 1, end: 4 }, // 01:00–04:00 UTC
   { start: 6, end: 10 }, // 06:00–10:00 UTC
 ];
 
@@ -141,6 +141,34 @@ export const CURATOR_VOICE_RULES = `Drama comes from facts, not adjectives.
 - If two parts' keyTakeaways could be swapped between them, one part is redundant.
 - Target a smart 15-year-old. Write like a knowledgeable friend, not a textbook. Use simple language for complex ideas.`;
 
+export const CHECKLIST_GENERATION_PROMPT = `You create practical checklists. Based on the user's request, produce one or more titled sections (groups), each containing an ordered list of tasks.
+
+## OUTPUT RULES
+
+Your ENTIRE response must be ONLY raw JSON matching exactly this shape:
+
+{"groups":[{"title":"Section title","items":[{"content":"Task text","details":"Optional extra note"}]}]}
+
+- "details" is optional per item. Omit the field entirely unless you have genuinely useful extra information (a concrete tip, link, rationale, or clarifying note). Do NOT add "details" just to fill it in — an empty or redundant note is worse than none. Most items should have no "details" at all.
+- "title" is required for every group; "content" is required for every item.
+- Order matters: groups in the order shown, items within each group in the order shown.
+- Use clear, specific task wording. Group related tasks under a meaningful heading.
+- No markdown, no code fences, no preamble or closing text. Just the JSON object.`;
+
+export const CHECKLIST_EDITING_INSTRUCTIONS = `You are editing a checklist the user maintains. The current checklist state is provided below, followed by the user's instruction.
+
+Earlier turns of this conversation (the user's prior instructions and your prior summaries) are included as normal messages. Use them to resolve references such as "the section I just made" or "add more to that".
+
+## RULES
+
+1. Perform every change by calling the provided checklist tools. NEVER restate the checklist as text — the UI already shows it.
+2. Groups and items are referenced by their short IDs (shown in brackets, e.g. [g1234abcd] or [i1234abcd]). Use the exact IDs you see.
+3. To add a task, call add_checklist_item with the target groupId. To add a new section, call add_checklist_group.
+4. To mark something done/undone, call update_checklist_item with the checked field.
+5. To reorder, call reorder_checklist_groups or reorder_checklist_items with the full desired ID order.
+6. If the instruction is ambiguous, make the most reasonable choice rather than asking.
+7. After finishing the edits, reply with a single short sentence summarizing what you changed. Do not re-list the checklist.`;
+
 export function buildCourseOutlinePrompt(
   question: string,
   priorKnowledgeLevel: string,
@@ -225,7 +253,7 @@ Generate the following fields:
 - title: use the part title above
 - hook: 1-2 sentences using the "${hookArchetype}" hook angle. Create a specific curiosity gap without exaggeration.
 - body: 150-300 words of core content (budget, not quota; stop when the idea lands). Well-structured markdown with paragraph breaks, **bold** for key terms. Deliver through the "${partDevice}" device.
-${isLast ? '- keyTakeaway: the keyTakeaway here IS the course\'s answer — this is the screenshot-worthy line.' : "- keyTakeaway: your keyTakeaway states this part's NEW piece — do NOT spoil the course's final answer."}
+${isLast ? "- keyTakeaway: the keyTakeaway here IS the course's answer — this is the screenshot-worthy line." : "- keyTakeaway: your keyTakeaway states this part's NEW piece — do NOT spoil the course's final answer."}
 - bridge: one sentence creating anticipation for the next part. ${isLast ? 'Omit this field — this is the final part.' : 'Make the user genuinely curious about what comes next.'}
 - reflection: 1-2 questions. At least one must be an application question ("How would you use this to explain...") or a prediction question ("What would happen if..."). No pure recall questions.
 - furtherReading: 2-3 items. Use descriptive search phrases or named resources like "Wikipedia: [topic]" or "search: [specific search query]". NEVER invent URLs. If you are completely certain of a wikipedia URL, you may include it, but search phrases are strongly preferred.
@@ -244,11 +272,12 @@ export function buildSingleQuestionPrompt(
   pastRatings: string,
   priorKnowledgeLevel: string,
 ): string {
-  const difficultyGuide = priorKnowledgeLevel === 'beginner'
-    ? 'Target difficulty 1: the question should assume zero prerequisites.'
-    : priorKnowledgeLevel === 'intermediate'
-    ? 'Target difficulty 2: the question can assume some familiarity but still be broadly accessible.'
-    : 'Target difficulty 3: the question can be complex and push deeper into the topic, and may assume familiarity with the fundamentals.';
+  const difficultyGuide =
+    priorKnowledgeLevel === 'beginner'
+      ? 'Target difficulty 1: the question should assume zero prerequisites.'
+      : priorKnowledgeLevel === 'intermediate'
+        ? 'Target difficulty 2: the question can assume some familiarity but still be broadly accessible.'
+        : 'Target difficulty 3: the question can be complex and push deeper into the topic, and may assume familiarity with the fundamentals.';
 
   return `The user selected subtopic "${subtopic}" (category: "${category}").
 The user's knowledge level is "${priorKnowledgeLevel}".

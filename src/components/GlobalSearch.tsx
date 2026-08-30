@@ -18,6 +18,7 @@ import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import TopicIcon from '@mui/icons-material/Topic';
 import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
+import ChecklistIcon from '@mui/icons-material/Checklist';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import { useNavigate } from 'react-router-dom';
 import Fuse from 'fuse.js';
@@ -30,7 +31,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 const MAX_SEARCH_RESULTS = 20;
 const SEARCH_SNIPPET_LENGTH = 60;
 
-type SearchResultType = 'topic' | 'message' | 'course' | 'debate';
+type SearchResultType = 'topic' | 'message' | 'course' | 'debate' | 'checklist';
 
 interface SearchResult {
   id: string;
@@ -53,7 +54,7 @@ interface CourseSearchEntry {
   type: 'cycle' | 'day';
 }
 
-const MODE_ORDER: SidebarFilterMode[] = ['all', 'topics', 'messages', 'courses', 'debates'];
+const MODE_ORDER: SidebarFilterMode[] = ['all', 'topics', 'messages', 'courses', 'debates', 'checklists'];
 
 const MODE_ICONS: Record<SidebarFilterMode, JSX.Element> = {
   all: <FilterListIcon />,
@@ -61,6 +62,7 @@ const MODE_ICONS: Record<SidebarFilterMode, JSX.Element> = {
   messages: <ChatBubbleOutlineIcon />,
   courses: <MenuBookOutlinedIcon />,
   debates: <CompareArrowsIcon />,
+  checklists: <ChecklistIcon />,
 };
 
 const MODE_LABELS: Record<SidebarFilterMode, string> = {
@@ -69,6 +71,7 @@ const MODE_LABELS: Record<SidebarFilterMode, string> = {
   messages: 'Messages',
   courses: 'Courses',
   debates: 'Debates',
+  checklists: 'Checklists',
 };
 
 function buildSnippet(content: string, matchIndices: [number, number] | undefined, snippetLen: number): string {
@@ -139,6 +142,8 @@ export const GlobalSearch = (): JSX.Element => {
         filtered = allTopics.filter((t) => t.mode === 'curator');
       } else if (filterMode === 'debates') {
         filtered = allTopics.filter((t) => t.mode === 'debate');
+      } else if (filterMode === 'checklists') {
+        filtered = allTopics.filter((t) => t.mode === 'checklist');
       } else if (filterMode === 'topics') {
         filtered = allTopics.filter((t) => !t.mode || t.mode === 'topic');
       }
@@ -183,8 +188,9 @@ export const GlobalSearch = (): JSX.Element => {
           lookup.set(t.id, t);
           if (filterByMode === 'courses' && t.mode === 'curator') modeTopicIds.add(t.id);
           else if (filterByMode === 'debates' && t.mode === 'debate') modeTopicIds.add(t.id);
+          else if (filterByMode === 'checklists' && t.mode === 'checklist') modeTopicIds.add(t.id);
         });
-        if (filterByMode === 'courses' || filterByMode === 'debates') {
+        if (filterByMode === 'courses' || filterByMode === 'debates' || filterByMode === 'checklists') {
           filteredMessages = allMessages.filter((m) => modeTopicIds.has(m.topicId));
         }
       } else {
@@ -341,20 +347,30 @@ export const GlobalSearch = (): JSX.Element => {
     return debateResults;
   };
 
+  const searchChecklists = async (searchQuery: string): Promise<SearchResult[]> => {
+    const topicResults = await searchTopics(searchQuery, 'checklists');
+    return topicResults.slice(0, MAX_SEARCH_RESULTS).map((r) => ({
+      ...r,
+      id: `checklist-topic-${r.topicId}`,
+      type: 'checklist' as SearchResultType,
+    }));
+  };
+
   const performSearch = async (searchQuery: string): Promise<void> => {
     try {
       let allResults: SearchResult[] = [];
 
       switch (sidebarFilter) {
         case 'all': {
-          const [topicRes, messageRes, courseRes, debateRes] = await Promise.all([
+          const [topicRes, messageRes, courseRes, debateRes, checklistRes] = await Promise.all([
             searchTopics(searchQuery),
             searchMessages(searchQuery),
             searchCourses(searchQuery),
             searchDebates(searchQuery),
+            searchChecklists(searchQuery),
           ]);
 
-          const merged = [...topicRes, ...messageRes, ...courseRes, ...debateRes];
+          const merged = [...topicRes, ...messageRes, ...courseRes, ...debateRes, ...checklistRes];
           merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
           const seen = new Set<string>();
@@ -380,6 +396,9 @@ export const GlobalSearch = (): JSX.Element => {
           break;
         case 'debates':
           allResults = await searchDebates(searchQuery);
+          break;
+        case 'checklists':
+          allResults = await searchChecklists(searchQuery);
           break;
       }
 
@@ -428,6 +447,8 @@ export const GlobalSearch = (): JSX.Element => {
         return <MenuBookOutlinedIcon sx={{ mr: 2, color: 'primary.main', fontSize: 20 }} />;
       case 'debate':
         return <CompareArrowsIcon sx={{ mr: 2, color: 'secondary.main', fontSize: 20 }} />;
+      case 'checklist':
+        return <ChecklistIcon sx={{ mr: 2, color: 'success.main', fontSize: 20 }} />;
       case 'message':
         return <ChatBubbleOutlineIcon sx={{ mr: 2, color: 'text.secondary', fontSize: 20 }} />;
       case 'topic':

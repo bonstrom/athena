@@ -53,8 +53,8 @@ Config: `.eslintrc.cjs` (ESLint 8, `@typescript-eslint/parser`, type-checked rul
 - **Single CRA package** (no monorepo). All source in `src/`.
 - **Entrypoint:** `src/index.tsx` → `App.tsx` → `<HashRouter>` with routes `/`, `/settings`, `/chat/:topicId`.
 - **UI framework:** MUI 7 with custom theme (`src/theme.tsx`). 5 color presets (Default Blue, Midnight Purple, Forest Green, Rose Pink, Golden Amber) each with light/dark palettes. Custom palette colors: `assistant` and `aiNote` (used for message bubble theming).
-- **State:** 8 Zustand 5 stores. Cross-store access via `useXxxStore.getState()` — never use hooks outside React components.
-- **Database:** Dexie/IndexedDB (`src/database/AthenaDb.ts`) with **5 tables** across **12 schema migrations** (v1–v12). All types (`Message`, `Topic`, `Fork`, etc.) are defined in this file.
+- **State:** 9 Zustand stores. Cross-store access via `useXxxStore.getState()` — never use hooks outside React components.
+- **Database:** Dexie/IndexedDB (`src/database/AthenaDb.ts`) with **10 tables** across **16 schema migrations** (v1–v16). All types (`Message`, `Topic`, `Fork`, `ChecklistGroup`, `ChecklistItem`, `ChecklistHistoryEntry`, etc.) are defined in this file.
 - **Web Workers** for local ML (excluded from test coverage):
   - `src/services/llmWorker.ts` — Qwen via `@xenova/transformers`
   - `src/services/embeddingWorker.ts` — all-MiniLM-L6-v2 for semantic embeddings
@@ -67,6 +67,7 @@ Config: `.eslintrc.cjs` (ESLint 8, `@typescript-eslint/parser`, type-checked rul
 |---|---|---|
 | `ChatStore.ts` | 1555 | Messages, streaming, forks, summaries, RAG, tool loops, model selection, context management |
 | `TopicStore.ts` | 793 | Topic CRUD, prompt selection, scratchpad, context window settings |
+| `ChecklistStore.ts` | — | Checklist groups/items CRUD, reorder, LLM generation & tool-based editing |
 | `DebateStore.ts` | 629 | Dual-model debate orchestration (answer → review → consensus) |
 | `ProviderStore.ts` | 385 | LLM provider/model CRUD, seeding, data migrations |
 | `AuthStore.ts` | 368 | Auth state, preferences (TTS, backup interval, theme, preset, date format) |
@@ -76,9 +77,9 @@ Config: `.eslintrc.cjs` (ESLint 8, `@typescript-eslint/parser`, type-checked rul
 
 ### Database Schema & Migrations
 
-5 tables: `topics`, `messages`, `predefinedPrompts`, `userSettings`, `analyticsSnapshots`.
+10 tables: `topics`, `messages`, `predefinedPrompts`, `userSettings`, `analyticsSnapshots`, `learningCycles`, `learningDays`, `checklistGroups`, `checklistItems`, `checklistHistory`.
 
-12 schema versions — all migrations run in-band through Dexie's `version().stores().upgrade()`:
+16 schema versions — all migrations run in-band through Dexie's `version().stores().upgrade()`:
 
 | Version | What changed |
 |---|---|
@@ -94,6 +95,10 @@ Config: `.eslintrc.cjs` (ESLint 8, `@typescript-eslint/parser`, type-checked rul
 | v10 | `summaryTokens`, `summaryCost` on messages |
 | v11 | `summaryReadCount` on messages, backfill existing summaries to 0 |
 | v12 | `analyticsSnapshots` table for time-based analytics |
+| v13 | `learningCycles`, `learningDays` tables for Curator mode |
+| v14 | Convert stored costs from SEK to USD |
+| v15 | `checklistGroups`, `checklistItems` tables for Checklist mode |
+| v16 | `checklistHistory` table for checklist instruction continuity |
 
 All migrations wrap logic in try/catch with `[migration-error]` `console.error` prefix. If a migration fails, the error is re-thrown to abort the upgrade.
 

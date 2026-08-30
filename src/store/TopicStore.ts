@@ -7,7 +7,14 @@ import { useProviderStore } from './ProviderStore';
 import { askLlm } from '../services/llmService';
 import { embeddingService, ScoredMessage } from '../services/embeddingService';
 import { getDefaultTopicNameModel } from '../components/ModelSelector';
-import { SHORTENED_ID_LENGTH, SCRATCHPAD_LIMIT, RAG_TOP_K, RAG_MIN_SCORE, RAG_MAX_CHARS, RAG_CONTENT_LIMIT } from '../constants';
+import {
+  SHORTENED_ID_LENGTH,
+  SCRATCHPAD_LIMIT,
+  RAG_TOP_K,
+  RAG_MIN_SCORE,
+  RAG_MAX_CHARS,
+  RAG_CONTENT_LIMIT,
+} from '../constants';
 
 function updateTopicAndSort(topics: Topic[], id: string, patch: Partial<Topic>, now: string): Topic[] {
   const idx = topics.findIndex((t) => t.id === id);
@@ -19,10 +26,22 @@ function updateTopicAndSort(topics: Topic[], id: string, patch: Partial<Topic>, 
 }
 
 async function deleteTopicsFromDb(ids: string[]): Promise<void> {
-  await athenaDb.transaction('rw', [athenaDb.topics, athenaDb.messages], async () => {
-    await athenaDb.topics.bulkDelete(ids);
-    await athenaDb.messages.where('topicId').anyOf(ids).delete();
-  });
+  await athenaDb.transaction(
+    'rw',
+    [athenaDb.topics, athenaDb.messages, athenaDb.checklistGroups, athenaDb.checklistItems, athenaDb.checklistHistory],
+    async () => {
+      // Delete checklist groups (and their items) for any checklist topics being removed.
+      const groupIds = await athenaDb.checklistGroups.where('topicId').anyOf(ids).primaryKeys();
+      if (groupIds.length > 0) {
+        await athenaDb.checklistItems.where('groupId').anyOf(groupIds).delete();
+      }
+
+      await athenaDb.topics.bulkDelete(ids);
+      await athenaDb.messages.where('topicId').anyOf(ids).delete();
+      await athenaDb.checklistGroups.where('topicId').anyOf(ids).delete();
+      await athenaDb.checklistHistory.where('topicId').anyOf(ids).delete();
+    },
+  );
 }
 
 /**
@@ -120,7 +139,14 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     try {
       const newTopic: Topic = {
         id: crypto.randomUUID(),
-        name: mode === 'debate' ? 'New Debate' : mode === 'curator' ? 'New Course' : 'New Topic',
+        name:
+          mode === 'debate'
+            ? 'New Debate'
+            : mode === 'curator'
+              ? 'New Course'
+              : mode === 'checklist'
+                ? 'New Checklist'
+                : 'New Topic',
         createdOn: new Date().toISOString(),
         isDeleted: false,
         updatedOn: new Date().toISOString(),
@@ -277,7 +303,12 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     if (retrievalEnabled) {
       base = base.map((m, idx) => {
         const isVeryRecent = idx >= base.length - KEEP_FULL_COUNT;
-        if (!isVeryRecent && !m.includeInContext && (m.type === 'user' || m.type === 'assistant') && m.content.length > RAG_CONTENT_LIMIT) {
+        if (
+          !isVeryRecent &&
+          !m.includeInContext &&
+          (m.type === 'user' || m.type === 'assistant') &&
+          m.content.length > RAG_CONTENT_LIMIT
+        ) {
           const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
           if (m.summary) retrievedSummaryIds.add(m.id);
           return {
@@ -303,7 +334,11 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       );
 
       try {
-        const scoredResults: ScoredMessage[] = await embeddingService.searchSimilarMessages(userQuery, candidates, RAG_TOP_K);
+        const scoredResults: ScoredMessage[] = await embeddingService.searchSimilarMessages(
+          userQuery,
+          candidates,
+          RAG_TOP_K,
+        );
         // Apply minimum similarity threshold — drop weakly-related matches
         const relevant: ScoredMessage[] = scoredResults.filter((s) => s.score >= RAG_MIN_SCORE);
         if (relevant.length > 0) {
@@ -319,7 +354,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
             seenIds.add(m.id);
             if (m.type === 'user') {
               const assistantVersions = assistantByParent.get(m.id) ?? [];
-              const activeId = m.activeResponseId ?? (assistantVersions.length > 0 ? assistantVersions[assistantVersions.length - 1].id : null);
+              const activeId =
+                m.activeResponseId ??
+                (assistantVersions.length > 0 ? assistantVersions[assistantVersions.length - 1].id : null);
               if (activeId && !baseIds.has(activeId) && !seenIds.has(activeId)) {
                 const reply = allCandidatesById.get(activeId);
                 if (reply) {
@@ -343,7 +380,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
                 if (m.summary) retrievedSummaryIds.add(m.id);
                 return {
                   ...m,
-            content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, SHORTENED_ID_LENGTH)} to reach full content]`,
+                  content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, SHORTENED_ID_LENGTH)} to reach full content]`,
                 };
               }
               return m;
@@ -360,8 +397,12 @@ export const useTopicStore = create<TopicState>((set, get) => ({
             for (const m of budgetedMessages) ragInjectedIds.add(m.id);
 
             // Sort chronologically for readable context
-            const sorted = budgetedMessages.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
-            const ragContent = sorted.map((m) => `[${m.type === 'user' ? 'User' : 'Assistant'}]: ${m.content}`).join('\n\n');
+            const sorted = budgetedMessages.sort(
+              (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime(),
+            );
+            const ragContent = sorted
+              .map((m) => `[${m.type === 'user' ? 'User' : 'Assistant'}]: ${m.content}`)
+              .join('\n\n');
             ragMessage = {
               id: '__rag_context__',
               topicId,
@@ -386,7 +427,9 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     // Excludes messages already present via RAG to avoid duplicates.
     if (retrievalEnabled) {
       const includedIds = new Set([...base.map((m) => m.id), ...ragInjectedIds]);
-      const directoryMessages = activeSequence.filter((m) => (m.type === 'user' || m.type === 'assistant') && !includedIds.has(m.id) && !m.isDeleted);
+      const directoryMessages = activeSequence.filter(
+        (m) => (m.type === 'user' || m.type === 'assistant') && !includedIds.has(m.id) && !m.isDeleted,
+      );
 
       if (directoryMessages.length > 0) {
         // Show only the most recent 30 missing messages in the prompt directory to save tokens
@@ -455,7 +498,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       topics: updateTopicAndSort(state.topics, topicId, {}, now),
     }));
 
-    if (topic.name !== 'New Topic' && topic.name !== 'New Debate') return;
+    if (topic.name !== 'New Topic' && topic.name !== 'New Debate' && topic.name !== 'New Checklist') return;
 
     const hasAnyKey = useProviderStore.getState().hasAnyApiKey();
 
@@ -476,7 +519,8 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         [
           {
             role: 'system',
-            content: 'Reply with a short and descriptive title for the message. No explanation. Just the title. Max 5 words.',
+            content:
+              'Reply with a short and descriptive title for the message. No explanation. Just the title. Max 5 words.',
           },
           {
             role: 'user',
@@ -497,7 +541,8 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
       // ── Verification: Topic name ──
       if (!name) console.warn('[verify:topic-name] LLM returned empty topic name for topic:', topicId);
-      else if (name.split(/\s+/).length > 8) console.warn('[verify:topic-name] Name too long (%d words):', name.split(/\s+/).length, name);
+      else if (name.split(/\s+/).length > 8)
+        console.warn('[verify:topic-name] Name too long (%d words):', name.split(/\s+/).length, name);
 
       if (name) {
         await renameTopic(topicId, name);
@@ -564,7 +609,8 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
       // If this topic has never been forked, bootstrap the implicit "main" fork
       // so the ForkTabs component (which requires length > 1) will render.
-      const baseForks = existingForks.length === 0 ? [{ id: 'main', name: 'Main', createdOn: originalTopic.createdOn }] : existingForks;
+      const baseForks =
+        existingForks.length === 0 ? [{ id: 'main', name: 'Main', createdOn: originalTopic.createdOn }] : existingForks;
 
       let nextForkNumber = 1;
       for (const fork of baseForks) {

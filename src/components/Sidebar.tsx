@@ -59,6 +59,15 @@ export const Sidebar = (): JSX.Element => {
     }
   };
 
+  const handleCreateChecklist = async (): Promise<void> => {
+    setNewTopicMenuAnchor(null);
+    const topic = await createTopic('checklist');
+    if (topic) {
+      void navigate(`/chat/${topic.id}`);
+      if (isMobile) closeDrawer();
+    }
+  };
+
   return (
     <Box display="flex" flexDirection="column" height="100%">
       <SidebarHeader />
@@ -123,6 +132,15 @@ export const Sidebar = (): JSX.Element => {
             sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}
           >
             New Course
+          </MenuItem>
+          <MenuItem
+            dense
+            onClick={(): void => {
+              void handleCreateChecklist();
+            }}
+            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}
+          >
+            New Checklist
           </MenuItem>
         </Menu>
       </Box>

@@ -9,7 +9,10 @@ import { getDefaultTopicNameModel } from '../../components/ModelSelector';
 let mockDbMessages: Message[] = [];
 let lastBulkAddedMessages: Message[] = [];
 
-const mockSearchSimilarMessages = jest.fn<Promise<{ message: Message; score: number }[]>, [string, Message[], number]>();
+const mockSearchSimilarMessages = jest.fn<
+  Promise<{ message: Message; score: number }[]>,
+  [string, Message[], number]
+>();
 const mockAuthGetState = jest.fn();
 const mockHasAnyApiKey = jest.fn<boolean, []>();
 const mockAddNotification = jest.fn((title: string, message?: string): undefined => {
@@ -27,6 +30,10 @@ const mockMessagesAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 const mockTopicsUpdate = jest.fn<Promise<number>, [string, Partial<Topic>]>();
 const mockDbTransaction = jest.fn<Promise<void>, [string, unknown[], () => Promise<void>]>();
 const mockMessagesToArray = jest.fn<Promise<Message[]>, []>();
+const mockChecklistGroupsPrimaryKeys = jest.fn<Promise<string[]>, [string[]]>();
+const mockChecklistGroupsAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
+const mockChecklistItemsAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
+const mockChecklistHistoryAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 
 jest.mock('gpt-tokenizer', () => ({
   encode: jest.fn((text: string): number[] => new Array<number>(text.length).fill(0)),
@@ -41,7 +48,8 @@ jest.mock('../../store/AuthStore', () => ({
 jest.mock('../../services/embeddingService', () => ({
   embeddingService: {
     isReady: false,
-    searchSimilarMessages: (...args: [string, Message[], number]): ReturnType<typeof mockSearchSimilarMessages> => mockSearchSimilarMessages(...args),
+    searchSimilarMessages: (...args: [string, Message[], number]): ReturnType<typeof mockSearchSimilarMessages> =>
+      mockSearchSimilarMessages(...args),
   },
 }));
 
@@ -109,7 +117,9 @@ jest.mock('../../database/AthenaDb', () => ({
             }
             return Promise.resolve(mockDbMessages.filter((m) => m.topicId === topicId));
           },
-          and: (predicate: (message: Message) => boolean): { toArray: () => Promise<Message[]>; delete: () => Promise<number> } => ({
+          and: (
+            predicate: (message: Message) => boolean,
+          ): { toArray: () => Promise<Message[]>; delete: () => Promise<number> } => ({
             toArray: (): Promise<Message[]> => {
               if (field !== 'topicId') {
                 return Promise.resolve([]);
@@ -131,6 +141,30 @@ jest.mock('../../database/AthenaDb', () => ({
       }),
       bulkAdd: (...args: [Message[]]): Promise<void> => mockDbBulkAdd(...args),
       toArray: (): Promise<Message[]> => mockMessagesToArray(),
+    },
+    checklistGroups: {
+      where: (): {
+        anyOf: (ids: string[]) => { primaryKeys: () => Promise<string[]>; delete: () => Promise<number> };
+      } => ({
+        anyOf: (ids: string[]): { primaryKeys: () => Promise<string[]>; delete: () => Promise<number> } => ({
+          primaryKeys: (): Promise<string[]> => mockChecklistGroupsPrimaryKeys(ids),
+          delete: (): Promise<number> => mockChecklistGroupsAnyOfDelete(ids),
+        }),
+      }),
+    },
+    checklistItems: {
+      where: (): { anyOf: (ids: string[]) => { delete: () => Promise<number> } } => ({
+        anyOf: (ids: string[]): { delete: () => Promise<number> } => ({
+          delete: (): Promise<number> => mockChecklistItemsAnyOfDelete(ids),
+        }),
+      }),
+    },
+    checklistHistory: {
+      where: (): { anyOf: (ids: string[]) => { delete: () => Promise<number> } } => ({
+        anyOf: (ids: string[]): { delete: () => Promise<number> } => ({
+          delete: (): Promise<number> => mockChecklistHistoryAnyOfDelete(ids),
+        }),
+      }),
     },
     transaction: (...args: [string, unknown[], () => Promise<void>]): Promise<void> => mockDbTransaction(...args),
   },
@@ -159,6 +193,10 @@ describe('TopicStore.getTopicContext', () => {
     mockTopicsUpdate.mockReset();
     mockDbTransaction.mockReset();
     mockMessagesToArray.mockReset();
+    mockChecklistGroupsPrimaryKeys.mockReset();
+    mockChecklistGroupsAnyOfDelete.mockReset();
+    mockChecklistItemsAnyOfDelete.mockReset();
+    mockChecklistHistoryAnyOfDelete.mockReset();
     mockHasAnyApiKey.mockReset();
     mockAskLlm.mockReset();
     mockGetDefaultTopicNameModel.mockReset();
@@ -176,10 +214,16 @@ describe('TopicStore.getTopicContext', () => {
     mockMessagesAnyOfDelete.mockResolvedValue(0);
     mockTopicsUpdate.mockResolvedValue(1);
     mockHasAnyApiKey.mockReturnValue(false);
-    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
-      await callback();
-    });
+    mockDbTransaction.mockImplementation(
+      async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+        await callback();
+      },
+    );
     mockMessagesToArray.mockResolvedValue([]);
+    mockChecklistGroupsPrimaryKeys.mockResolvedValue([]);
+    mockChecklistGroupsAnyOfDelete.mockResolvedValue(0);
+    mockChecklistItemsAnyOfDelete.mockResolvedValue(0);
+    mockChecklistHistoryAnyOfDelete.mockResolvedValue(0);
 
     const uuidSequence = ['uuid-default-1', 'uuid-default-2', 'uuid-default-3'];
     let uuidIndex = 0;
@@ -211,7 +255,14 @@ describe('TopicStore.getTopicContext', () => {
       ragEnabled: false,
     });
 
-    const u1 = createMessage({ topicId: 'topic-1', forkId: 'main', id: 'u1', type: 'user', content: 'Original question', created: '2024-01-01T00:00:00.000Z' });
+    const u1 = createMessage({
+      topicId: 'topic-1',
+      forkId: 'main',
+      id: 'u1',
+      type: 'user',
+      content: 'Original question',
+      created: '2024-01-01T00:00:00.000Z',
+    });
     const a1 = createMessage({
       topicId: 'topic-1',
       forkId: 'main',
@@ -230,7 +281,14 @@ describe('TopicStore.getTopicContext', () => {
       created: '2024-01-01T00:02:00.000Z',
       isClarification: true,
     });
-    const u2 = createMessage({ topicId: 'topic-1', forkId: 'main', id: 'u2', type: 'user', content: 'React', created: '2024-01-01T00:03:00.000Z' });
+    const u2 = createMessage({
+      topicId: 'topic-1',
+      forkId: 'main',
+      id: 'u2',
+      type: 'user',
+      content: 'React',
+      created: '2024-01-01T00:03:00.000Z',
+    });
     const a2 = createMessage({
       topicId: 'topic-1',
       forkId: 'main',
@@ -254,7 +312,9 @@ describe('TopicStore.getTopicContext', () => {
   });
 
   it('includes RAG context when retrieval returns relevant older messages', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })],
+    });
     mockAuthGetState.mockReturnValue({
       defaultMaxContextMessages: 4,
       maxContextTokens: 10000,
@@ -303,7 +363,9 @@ describe('TopicStore.getTopicContext', () => {
     Object.defineProperty(embeddingService, 'isReady', { value: true, configurable: true });
     mockSearchSimilarMessages.mockResolvedValue([{ message: u1, score: 0.92 }]);
 
-    const context = await useTopicStore.getState().getTopicContext('topic-1', undefined, 'What did we discuss earlier?');
+    const context = await useTopicStore
+      .getState()
+      .getTopicContext('topic-1', undefined, 'What did we discuss earlier?');
 
     const ragMsg = context[context.length - 1];
     expect(ragMsg.id).toBe('__rag_context__');
@@ -313,7 +375,9 @@ describe('TopicStore.getTopicContext', () => {
   });
 
   it('filters out RAG matches below the minimum similarity threshold', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })],
+    });
     mockAuthGetState.mockReturnValue({
       defaultMaxContextMessages: 4,
       maxContextTokens: 10000,
@@ -394,7 +458,9 @@ describe('TopicStore.getTopicContext', () => {
   });
 
   it('caps RAG injected content by max char budget across retrieved pairs', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })],
+    });
     mockAuthGetState.mockReturnValue({
       defaultMaxContextMessages: 4,
       maxContextTokens: 10000,
@@ -465,7 +531,9 @@ describe('TopicStore.getTopicContext', () => {
   });
 
   it('always keeps at least the previous Q&A pair in context even with a low message cap', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 1 })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 1 })],
+    });
 
     const u1 = createMessage({
       topicId: 'topic-1',
@@ -512,7 +580,9 @@ describe('TopicStore.getTopicContext', () => {
   });
 
   it('keeps pinned messages full and truncates old non-pinned long messages', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 5 })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 5 })],
+    });
     const longContent = 'L'.repeat(RAG_CONTENT_LIMIT + 40);
 
     const pinnedOld = createMessage({
@@ -527,13 +597,17 @@ describe('TopicStore.getTopicContext', () => {
     });
     // Add enough messages to push old messages outside the keep-full window
     const extraMessages = Array.from({ length: 6 }, (_, i) => [
-      createMessage({ topicId: 'topic-1', forkId: 'main',
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
         id: `extra-u-${i}`,
         type: 'user',
         content: `Extra user ${i}`,
         created: new Date(`2024-01-01T00:0${i + 1}:00.000Z`).toISOString(),
       }),
-      createMessage({ topicId: 'topic-1', forkId: 'main',
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
         id: `extra-a-${i}`,
         type: 'assistant',
         content: 'L'.repeat(RAG_CONTENT_LIMIT + 10), // long content to trigger truncation
@@ -687,7 +761,9 @@ describe('TopicStore.getTopicContext', () => {
   });
 
   it('adds a history directory message when retrieval is enabled and older messages are outside context', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })],
+    });
     mockAuthGetState.mockReturnValue({
       defaultMaxContextMessages: 2,
       maxContextTokens: 10000,
@@ -759,7 +835,9 @@ describe('TopicStore.getTopicContext', () => {
   });
 
   it('history directory shows only last 30 missing messages and includes a truncation note', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })],
+    });
     mockAuthGetState.mockReturnValue({
       defaultMaxContextMessages: 2,
       maxContextTokens: 10000,
@@ -809,7 +887,9 @@ describe('TopicStore.getTopicContext', () => {
   });
 
   it('getTopicContext respects window token budget beyond the always-kept last pair', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 10 })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 10 })],
+    });
     mockAuthGetState.mockReturnValue({
       defaultMaxContextMessages: 10,
       maxContextTokens: 20,
@@ -818,7 +898,14 @@ describe('TopicStore.getTopicContext', () => {
     });
 
     mockDbMessages = [
-      createMessage({ topicId: 'topic-1', forkId: 'main', id: 'u1', type: 'user', content: 'x'.repeat(90), created: '2024-01-01T00:00:00.000Z' }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u1',
+        type: 'user',
+        content: 'x'.repeat(90),
+        created: '2024-01-01T00:00:00.000Z',
+      }),
       createMessage({
         topicId: 'topic-1',
         forkId: 'main',
@@ -828,7 +915,14 @@ describe('TopicStore.getTopicContext', () => {
         created: '2024-01-01T00:01:00.000Z',
         parentMessageId: 'u1',
       }),
-      createMessage({ topicId: 'topic-1', forkId: 'main', id: 'u2', type: 'user', content: 'x'.repeat(90), created: '2024-01-01T00:02:00.000Z' }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u2',
+        type: 'user',
+        content: 'x'.repeat(90),
+        created: '2024-01-01T00:02:00.000Z',
+      }),
       createMessage({
         topicId: 'topic-1',
         forkId: 'main',
@@ -838,7 +932,14 @@ describe('TopicStore.getTopicContext', () => {
         created: '2024-01-01T00:03:00.000Z',
         parentMessageId: 'u2',
       }),
-      createMessage({ topicId: 'topic-1', forkId: 'main', id: 'u3', type: 'user', content: 'x'.repeat(90), created: '2024-01-01T00:04:00.000Z' }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u3',
+        type: 'user',
+        content: 'x'.repeat(90),
+        created: '2024-01-01T00:04:00.000Z',
+      }),
       createMessage({
         topicId: 'topic-1',
         forkId: 'main',
@@ -865,7 +966,9 @@ describe('TopicStore.getTopicContext', () => {
       configurable: true,
     });
 
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', forks: [], activeForkId: 'main' })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', forks: [], activeForkId: 'main' })],
+    });
 
     const u1 = createMessage({
       topicId: 'topic-1',
@@ -885,7 +988,14 @@ describe('TopicStore.getTopicContext', () => {
       created: '2024-01-01T00:01:00.000Z',
       parentMessageId: 'u1',
     });
-    const u2 = createMessage({ topicId: 'topic-1', forkId: 'main', id: 'u2', type: 'user', content: 'Q2', created: '2024-01-01T00:02:00.000Z' });
+    const u2 = createMessage({
+      topicId: 'topic-1',
+      forkId: 'main',
+      id: 'u2',
+      type: 'user',
+      content: 'Q2',
+      created: '2024-01-01T00:02:00.000Z',
+    });
     const a2 = createMessage({
       topicId: 'topic-1',
       forkId: 'main',
@@ -934,9 +1044,18 @@ describe('TopicStore.getTopicContext', () => {
   });
 
   it('forkTopic exits without writes when selected message is not found', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', forks: [], activeForkId: 'main' })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', forks: [], activeForkId: 'main' })],
+    });
     mockDbMessages = [
-      createMessage({ topicId: 'topic-1', forkId: 'main', id: 'u1', type: 'user', content: 'Q1', created: '2024-01-01T00:00:00.000Z' }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u1',
+        type: 'user',
+        content: 'Q1',
+        created: '2024-01-01T00:00:00.000Z',
+      }),
     ];
 
     await useTopicStore.getState().forkTopic('topic-1', 'missing-message-id');
@@ -972,6 +1091,10 @@ describe('TopicStore actions', () => {
     mockDbBulkAdd.mockReset();
     mockDbTransaction.mockReset();
     mockMessagesToArray.mockReset();
+    mockChecklistGroupsPrimaryKeys.mockReset();
+    mockChecklistGroupsAnyOfDelete.mockReset();
+    mockChecklistItemsAnyOfDelete.mockReset();
+    mockChecklistHistoryAnyOfDelete.mockReset();
     mockHasAnyApiKey.mockReset();
     mockAskLlm.mockReset();
     mockGetDefaultTopicNameModel.mockReset();
@@ -988,10 +1111,16 @@ describe('TopicStore actions', () => {
     mockMessagesDelete.mockResolvedValue(0);
     mockMessagesAnyOfDelete.mockResolvedValue(0);
     mockHasAnyApiKey.mockReturnValue(false);
-    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
-      await callback();
-    });
+    mockDbTransaction.mockImplementation(
+      async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+        await callback();
+      },
+    );
     mockMessagesToArray.mockResolvedValue([]);
+    mockChecklistGroupsPrimaryKeys.mockResolvedValue([]);
+    mockChecklistGroupsAnyOfDelete.mockResolvedValue(0);
+    mockChecklistItemsAnyOfDelete.mockResolvedValue(0);
+    mockChecklistHistoryAnyOfDelete.mockResolvedValue(0);
 
     useTopicStore.setState({
       topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main' })],
@@ -1034,8 +1163,22 @@ describe('TopicStore actions', () => {
 
   it('loadTopics populates topics and clears loading/error flags on success', async () => {
     const loadedTopics: Topic[] = [
-      createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 'newer', name: 'Newer', updatedOn: '2024-01-03T00:00:00.000Z' }),
-      createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 'older', name: 'Older', updatedOn: '2024-01-01T00:00:00.000Z' }),
+      createTopic({
+        id: 'topic-1',
+        name: 'Topic',
+        activeForkId: 'main',
+        id: 'newer',
+        name: 'Newer',
+        updatedOn: '2024-01-03T00:00:00.000Z',
+      }),
+      createTopic({
+        id: 'topic-1',
+        name: 'Topic',
+        activeForkId: 'main',
+        id: 'older',
+        name: 'Older',
+        updatedOn: '2024-01-01T00:00:00.000Z',
+      }),
     ];
     mockTopicsToArray.mockResolvedValueOnce(loadedTopics);
 
@@ -1092,8 +1235,22 @@ describe('TopicStore actions', () => {
   });
 
   it('renameTopic updates target name and sorts topics by updatedOn desc', async () => {
-    const t1 = createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'First', updatedOn: '2024-01-01T00:00:00.000Z' });
-    const t2 = createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't2', name: 'Second', updatedOn: '2024-01-02T00:00:00.000Z' });
+    const t1 = createTopic({
+      id: 'topic-1',
+      name: 'Topic',
+      activeForkId: 'main',
+      id: 't1',
+      name: 'First',
+      updatedOn: '2024-01-01T00:00:00.000Z',
+    });
+    const t2 = createTopic({
+      id: 'topic-1',
+      name: 'Topic',
+      activeForkId: 'main',
+      id: 't2',
+      name: 'Second',
+      updatedOn: '2024-01-02T00:00:00.000Z',
+    });
     useTopicStore.setState({ topics: [t1, t2] });
 
     await useTopicStore.getState().renameTopic('t1', 'Renamed First');
@@ -1119,7 +1276,14 @@ describe('TopicStore actions', () => {
   it('generateTopicName bumps timestamp but skips rename for already named topic', async () => {
     useTopicStore.setState({
       topics: [
-        createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'Existing Name', updatedOn: '2024-01-01T00:00:00.000Z' }),
+        createTopic({
+          id: 'topic-1',
+          name: 'Topic',
+          activeForkId: 'main',
+          id: 't1',
+          name: 'Existing Name',
+          updatedOn: '2024-01-01T00:00:00.000Z',
+        }),
       ],
     });
 
@@ -1133,7 +1297,9 @@ describe('TopicStore actions', () => {
   });
 
   it('generateTopicName uses local fallback when no API key exists', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'New Topic' })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'New Topic' })],
+    });
     mockHasAnyApiKey.mockReturnValue(false);
 
     await useTopicStore.getState().generateTopicName('t1', 'alpha beta gamma delta epsilon zeta eta theta');
@@ -1141,12 +1307,16 @@ describe('TopicStore actions', () => {
     expect(mockTopicsUpdate).toHaveBeenCalledTimes(2);
     expect(mockTopicsUpdate.mock.calls[1][0]).toBe('t1');
     expect(mockTopicsUpdate.mock.calls[1][1]).toMatchObject({ name: 'alpha beta gamma delta epsilon zeta' });
-    expect(useTopicStore.getState().topics.find((t) => t.id === 't1')?.name).toBe('alpha beta gamma delta epsilon zeta');
+    expect(useTopicStore.getState().topics.find((t) => t.id === 't1')?.name).toBe(
+      'alpha beta gamma delta epsilon zeta',
+    );
     expect(mockAskLlm).not.toHaveBeenCalled();
   });
 
   it('generateTopicName uses LLM result when API key exists', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'New Topic' })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'New Topic' })],
+    });
     mockHasAnyApiKey.mockReturnValue(true);
 
     const model = DEFAULT_MODELS[0];
@@ -1171,7 +1341,9 @@ describe('TopicStore actions', () => {
   });
 
   it('generateTopicName falls back to message preview when LLM call fails', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'New Topic' })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'New Topic' })],
+    });
     mockHasAnyApiKey.mockReturnValue(true);
 
     const model = DEFAULT_MODELS[0];
@@ -1188,7 +1360,9 @@ describe('TopicStore actions', () => {
   });
 
   it('generateTopicName renames a debate topic ("New Debate")', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'New Debate' })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'New Debate' })],
+    });
     mockHasAnyApiKey.mockReturnValue(false);
 
     await useTopicStore.getState().generateTopicName('t1', 'What is the meaning of life the universe and everything');
@@ -1198,8 +1372,22 @@ describe('TopicStore actions', () => {
   });
 
   it('updateTopicScratchpad updates scratchpad and sorts by updatedOn desc', async () => {
-    const t1 = createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'First', updatedOn: '2024-01-01T00:00:00.000Z' });
-    const t2 = createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't2', name: 'Second', updatedOn: '2024-01-02T00:00:00.000Z' });
+    const t1 = createTopic({
+      id: 'topic-1',
+      name: 'Topic',
+      activeForkId: 'main',
+      id: 't1',
+      name: 'First',
+      updatedOn: '2024-01-01T00:00:00.000Z',
+    });
+    const t2 = createTopic({
+      id: 'topic-1',
+      name: 'Topic',
+      activeForkId: 'main',
+      id: 't2',
+      name: 'Second',
+      updatedOn: '2024-01-02T00:00:00.000Z',
+    });
     useTopicStore.setState({ topics: [t1, t2] });
 
     await useTopicStore.getState().updateTopicScratchpad('t1', 'Use concise answers');
@@ -1224,8 +1412,22 @@ describe('TopicStore actions', () => {
   });
 
   it('updateTopicTimestamp updates timestamp and reorders topics', async () => {
-    const t1 = createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', name: 'First', updatedOn: '2024-01-01T00:00:00.000Z' });
-    const t2 = createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't2', name: 'Second', updatedOn: '2024-01-02T00:00:00.000Z' });
+    const t1 = createTopic({
+      id: 'topic-1',
+      name: 'Topic',
+      activeForkId: 'main',
+      id: 't1',
+      name: 'First',
+      updatedOn: '2024-01-01T00:00:00.000Z',
+    });
+    const t2 = createTopic({
+      id: 'topic-1',
+      name: 'Topic',
+      activeForkId: 'main',
+      id: 't2',
+      name: 'Second',
+      updatedOn: '2024-01-02T00:00:00.000Z',
+    });
     useTopicStore.setState({ topics: [t1, t2] });
 
     await useTopicStore.getState().updateTopicTimestamp('t1');
@@ -1294,7 +1496,9 @@ describe('TopicStore actions', () => {
   });
 
   it('switchFork updates active fork and state', async () => {
-    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', activeForkId: 'main' })] });
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', activeForkId: 'main' })],
+    });
 
     await useTopicStore.getState().switchFork('t1', 'fork-2');
 
@@ -1438,11 +1642,13 @@ describe('TopicStore actions', () => {
     let updateInside = false;
     let deleteInside = false;
 
-    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
-      inTransaction = true;
-      await callback();
-      inTransaction = false;
-    });
+    mockDbTransaction.mockImplementation(
+      async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+        inTransaction = true;
+        await callback();
+        inTransaction = false;
+      },
+    );
     mockTopicsUpdate.mockImplementation((): Promise<number> => {
       updateInside = inTransaction;
       return Promise.resolve(1);
@@ -1518,9 +1724,7 @@ describe('TopicStore actions', () => {
     const topic = createTopic({
       id: 't1',
       activeForkId: 'main',
-      forks: [
-        { id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' },
-      ],
+      forks: [{ id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' }],
     });
     useTopicStore.setState({ topics: [topic] });
 
@@ -1535,9 +1739,7 @@ describe('TopicStore actions', () => {
         createTopic({
           id: 't1',
           activeForkId: 'main',
-          forks: [
-            { id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' },
-          ],
+          forks: [{ id: 'main', name: 'Main', createdOn: '2024-01-01T00:00:00.000Z' }],
         }),
       ],
     });
@@ -1687,6 +1889,20 @@ describe('TopicStore actions', () => {
     expect(mockAddNotification).toHaveBeenCalledWith('Failed to delete topic', 'topic delete failed');
   });
 
+  it('deleteTopic also deletes checklist groups and their items', async () => {
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', mode: 'checklist' })],
+    });
+    mockChecklistGroupsPrimaryKeys.mockResolvedValue(['g1', 'g2']);
+
+    await useTopicStore.getState().deleteTopic('t1');
+
+    expect(mockChecklistGroupsPrimaryKeys).toHaveBeenCalledWith(['t1']);
+    expect(mockChecklistItemsAnyOfDelete).toHaveBeenCalledWith(['g1', 'g2']);
+    expect(mockChecklistGroupsAnyOfDelete).toHaveBeenCalledWith(['t1']);
+    expect(mockChecklistHistoryAnyOfDelete).toHaveBeenCalledWith(['t1']);
+  });
+
   it('updateTopicMaxContextMessages persists and updates state', async () => {
     useTopicStore.setState({
       topics: [
@@ -1763,7 +1979,9 @@ describe('TopicStore actions', () => {
       }),
     ];
 
-    const getTopicContextSpy = jest.spyOn(useTopicStore.getState(), 'getTopicContext').mockResolvedValue(contextMessages);
+    const getTopicContextSpy = jest
+      .spyOn(useTopicStore.getState(), 'getTopicContext')
+      .mockResolvedValue(contextMessages);
 
     const total = await useTopicStore.getState().getTopicTokenCount('token-topic');
 
