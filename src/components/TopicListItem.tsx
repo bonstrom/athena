@@ -14,11 +14,12 @@ import {
   Box,
   Typography,
   Checkbox,
+  Tooltip,
 } from '@mui/material';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useUiStore } from '../store/UiStore';
 import { useAuthStore } from '../store/AuthStore';
-import { JSX, useState } from 'react';
+import { JSX, useEffect, useRef, useState } from 'react';
 import { useTopicStore } from '../store/TopicStore';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Check';
@@ -47,6 +48,25 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(topic.name);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const topicName = topic.name || topic.id;
+  const topicNameRef = useRef<HTMLSpanElement>(null);
+  const [isTopicNameOverflowing, setIsTopicNameOverflowing] = useState(false);
+
+  useEffect(() => {
+    const topicNameElement = topicNameRef.current;
+    if (!topicNameElement) return;
+    const updateOverflow = (): void => {
+      setIsTopicNameOverflowing(topicNameElement.scrollWidth > topicNameElement.clientWidth);
+    };
+    updateOverflow();
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateOverflow);
+    resizeObserver?.observe(topicNameElement);
+    window.addEventListener('resize', updateOverflow);
+    return (): void => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateOverflow);
+    };
+  }, [topicName]);
 
   const save = async (): Promise<void> => {
     await renameTopic(topic.id, editedName);
@@ -138,16 +158,19 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
               <ListItemText
                 primary={
                   <Box display="flex" alignItems="center" gap={1}>
-                    <Box
-                      component="span"
-                      sx={{
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {topic.name || topic.id}
-                    </Box>
+                    <Tooltip title={isTopicNameOverflowing ? topicName : ''} disableInteractive>
+                      <Box
+                        ref={topicNameRef}
+                        component="span"
+                        sx={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {topicName}
+                      </Box>
+                    </Tooltip>
                     {topic.mode === 'debate' && (
                       <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
                         <CompareArrowsIcon sx={{ fontSize: '0.85rem' }} />

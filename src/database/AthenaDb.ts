@@ -5,6 +5,8 @@ class AthenaDatabase extends Dexie {
   messages!: Table<Message, string>;
   predefinedPrompts!: Table<PredefinedPrompt, string>;
   userSettings!: Table<UserSetting, string>;
+  llmOperationUsages!: Table<LlmOperationUsage, string>;
+  operationLeases!: Table<OperationLease, string>;
 
   constructor() {
     super('AthenaDatabase');
@@ -297,11 +299,86 @@ class AthenaDatabase extends Dexie {
       checklistItems: 'id, groupId, sortOrder',
       checklistHistory: 'id, topicId, seq',
     });
+
+    // Version 17: track paid LLM operations that do not create chat messages
+    this.version(17).stores({
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
+      analyticsSnapshots: 'date',
+      learningCycles: 'id, topicId, phase, weekStart',
+      learningDays: 'id, cycleId, dayNumber',
+      checklistGroups: 'id, topicId, sortOrder',
+      checklistItems: 'id, groupId, sortOrder',
+      checklistHistory: 'id, topicId, seq',
+      llmOperationUsages: 'id, topicId, created, operationType',
+    });
+
+    // Version 18: coordinate long-running operations across browser tabs
+    this.version(18).stores({
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
+      analyticsSnapshots: 'date',
+      learningCycles: 'id, topicId, phase, weekStart',
+      learningDays: 'id, cycleId, dayNumber',
+      checklistGroups: 'id, topicId, sortOrder',
+      checklistItems: 'id, groupId, sortOrder',
+      checklistHistory: 'id, topicId, seq',
+      llmOperationUsages: 'id, topicId, created, operationType',
+      operationLeases: 'id, topicId, expiresAt',
+    });
+
+    // Version 19: add tabs within checklist topics and assign legacy groups to a Main tab
+    this.version(19)
+      .stores({
+        topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+        messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+        predefinedPrompts: 'id, name',
+        userSettings: 'id',
+        analyticsSnapshots: 'date',
+        learningCycles: 'id, topicId, phase, weekStart',
+        learningDays: 'id, cycleId, dayNumber',
+        checklistTabs: 'id, topicId, sortOrder',
+        checklistGroups: 'id, topicId, tabId, sortOrder',
+        checklistItems: 'id, groupId, sortOrder',
+        checklistHistory: 'id, topicId, tabId, seq',
+        llmOperationUsages: 'id, topicId, created, operationType',
+        operationLeases: 'id, topicId, expiresAt',
+      })
+      .upgrade(async (trans) => {
+        try {
+          const topics = (await trans.table('topics').toArray()) as Topic[];
+          const groups = (await trans.table('checklistGroups').toArray()) as ChecklistGroup[];
+          const history = (await trans.table('checklistHistory').toArray()) as ChecklistHistoryEntry[];
+          const checklistTopicIds = new Set(topics.filter((topic) => topic.mode === 'checklist').map((topic) => topic.id));
+          for (const group of groups) checklistTopicIds.add(group.topicId);
+
+          for (const topicId of checklistTopicIds) {
+            const tabId = crypto.randomUUID();
+            const tab: ChecklistTab = { id: tabId, topicId, name: 'Main', sortOrder: 0 };
+            await trans.table('checklistTabs').add(tab);
+            await trans.table('topics').update(topicId, { activeChecklistTabId: tabId });
+            for (const group of groups.filter((candidate) => candidate.topicId === topicId)) {
+              await trans.table('checklistGroups').update(group.id, { tabId });
+            }
+            for (const entry of history.filter((candidate) => candidate.topicId === topicId)) {
+              await trans.table('checklistHistory').update(entry.id, { tabId });
+            }
+          }
+        } catch (err) {
+          console.error('[migration-error] AthenaDb v19 migration failed', err);
+          throw err;
+        }
+      });
   }
 
   analyticsSnapshots!: Table<AnalyticsSnapshot, string>;
   learningCycles!: Table<LearningCycle, string>;
   learningDays!: Table<LearningDay, string>;
+  checklistTabs!: Table<ChecklistTab, string>;
   checklistGroups!: Table<ChecklistGroup, string>;
   checklistItems!: Table<ChecklistItem, string>;
   checklistHistory!: Table<ChecklistHistoryEntry, string>;
@@ -415,7 +492,15 @@ export interface LearningDay {
 export interface ChecklistGroup {
   id: string;
   topicId: string;
+  tabId?: string;
   title: string;
+  sortOrder: number;
+}
+
+export interface ChecklistTab {
+  id: string;
+  topicId: string;
+  name: string;
   sortOrder: number;
 }
 
@@ -432,6 +517,7 @@ export interface ChecklistItem {
 export interface ChecklistHistoryEntry {
   id: string;
   topicId: string;
+  tabId?: string;
   role: 'user' | 'assistant';
   content: string;
   created: string;
@@ -450,6 +536,7 @@ export interface Topic {
   maxContextMessages?: number;
   selectedPromptIds?: string[];
   modelId?: string;
+  activeChecklistTabId?: string;
   // Debate fields
   mode?: TopicMode;
   debateModelAId?: string;
@@ -466,6 +553,30 @@ export interface AnalyticsSnapshot {
   latencySamples?: number[];
   providerStats?: Record<string, { cost: number; tokens: number; messageCount: number }>;
   toolStats?: Record<string, { calls: number; successCount: number; errors: string[] }>;
+}
+
+export interface LlmOperationUsage {
+  id: string;
+  topicId: string;
+  operationType: 'checklist_generate' | 'checklist_edit';
+  model?: string;
+  created: string;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens?: number;
+  cacheCreationTokens?: number;
+  totalCost: number;
+  searchCount?: number;
+  latencyMs?: number;
+  failed: boolean;
+  rawResponse?: string;
+}
+
+export interface OperationLease {
+  id: string;
+  topicId: string;
+  owner: string;
+  expiresAt: number;
 }
 
 export const athenaDb = new AthenaDatabase();

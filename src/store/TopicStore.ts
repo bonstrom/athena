@@ -7,14 +7,7 @@ import { useProviderStore } from './ProviderStore';
 import { askLlm } from '../services/llmService';
 import { embeddingService, ScoredMessage } from '../services/embeddingService';
 import { getDefaultTopicNameModel } from '../components/ModelSelector';
-import {
-  SHORTENED_ID_LENGTH,
-  SCRATCHPAD_LIMIT,
-  RAG_TOP_K,
-  RAG_MIN_SCORE,
-  RAG_MAX_CHARS,
-  RAG_CONTENT_LIMIT,
-} from '../constants';
+import { SHORTENED_ID_LENGTH, SCRATCHPAD_LIMIT, RAG_TOP_K, RAG_MIN_SCORE, RAG_MAX_CHARS, RAG_CONTENT_LIMIT } from '../constants';
 
 function updateTopicAndSort(topics: Topic[], id: string, patch: Partial<Topic>, now: string): Topic[] {
   const idx = topics.findIndex((t) => t.id === id);
@@ -25,10 +18,25 @@ function updateTopicAndSort(topics: Topic[], id: string, patch: Partial<Topic>, 
   return next.sort((a, b) => new Date(b.updatedOn).getTime() - new Date(a.updatedOn).getTime());
 }
 
+const topicSyncChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('athena-topic-sync');
+
+function broadcastDeletedTopics(ids: string[]): void {
+  topicSyncChannel?.postMessage({ type: 'topics-deleted', ids });
+}
+
 async function deleteTopicsFromDb(ids: string[]): Promise<void> {
   await athenaDb.transaction(
     'rw',
-    [athenaDb.topics, athenaDb.messages, athenaDb.checklistGroups, athenaDb.checklistItems, athenaDb.checklistHistory],
+    [
+      athenaDb.topics,
+      athenaDb.messages,
+      athenaDb.checklistTabs,
+      athenaDb.checklistGroups,
+      athenaDb.checklistItems,
+      athenaDb.checklistHistory,
+      athenaDb.llmOperationUsages,
+      athenaDb.operationLeases,
+    ],
     async () => {
       // Delete checklist groups (and their items) for any checklist topics being removed.
       const groupIds = await athenaDb.checklistGroups.where('topicId').anyOf(ids).primaryKeys();
@@ -38,8 +46,11 @@ async function deleteTopicsFromDb(ids: string[]): Promise<void> {
 
       await athenaDb.topics.bulkDelete(ids);
       await athenaDb.messages.where('topicId').anyOf(ids).delete();
+      await athenaDb.checklistTabs.where('topicId').anyOf(ids).delete();
       await athenaDb.checklistGroups.where('topicId').anyOf(ids).delete();
       await athenaDb.checklistHistory.where('topicId').anyOf(ids).delete();
+      await athenaDb.llmOperationUsages.where('topicId').anyOf(ids).delete();
+      await athenaDb.operationLeases.where('topicId').anyOf(ids).delete();
     },
   );
 }
@@ -71,6 +82,7 @@ function mergeClarifications(messages: Message[]): Message[] {
 interface TopicState {
   topics: Topic[];
   loading: boolean;
+  topicsLoaded: boolean;
   error: string | null;
   visibleTopicCount: number;
   increaseVisibleTopicCount: () => void;
@@ -101,6 +113,7 @@ interface TopicState {
 export const useTopicStore = create<TopicState>((set, get) => ({
   topics: [],
   loading: false,
+  topicsLoaded: false,
   error: null,
   visibleTopicCount: 10,
 
@@ -131,7 +144,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       useNotificationStore.getState().addNotification('Failed to load topics', message);
       set({ error: 'Failed to load topics' });
     } finally {
-      set({ loading: false });
+      set({ loading: false, topicsLoaded: true });
     }
   },
 
@@ -139,14 +152,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     try {
       const newTopic: Topic = {
         id: crypto.randomUUID(),
-        name:
-          mode === 'debate'
-            ? 'New Debate'
-            : mode === 'curator'
-              ? 'New Course'
-              : mode === 'checklist'
-                ? 'New Checklist'
-                : 'New Topic',
+        name: mode === 'debate' ? 'New Debate' : mode === 'curator' ? 'New Course' : mode === 'checklist' ? 'New Checklist' : 'New Topic',
         createdOn: new Date().toISOString(),
         isDeleted: false,
         updatedOn: new Date().toISOString(),
@@ -303,12 +309,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     if (retrievalEnabled) {
       base = base.map((m, idx) => {
         const isVeryRecent = idx >= base.length - KEEP_FULL_COUNT;
-        if (
-          !isVeryRecent &&
-          !m.includeInContext &&
-          (m.type === 'user' || m.type === 'assistant') &&
-          m.content.length > RAG_CONTENT_LIMIT
-        ) {
+        if (!isVeryRecent && !m.includeInContext && (m.type === 'user' || m.type === 'assistant') && m.content.length > RAG_CONTENT_LIMIT) {
           const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
           if (m.summary) retrievedSummaryIds.add(m.id);
           return {
@@ -329,16 +330,10 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
     if (ragEnabled && userQuery && embeddingService.isReady) {
       const baseIds = new Set(base.map((m) => m.id));
-      const candidates = activeSequence.filter(
-        (m) => (m.type === 'user' || m.type === 'assistant') && m.embedding && m.embedding.length > 0,
-      );
+      const candidates = activeSequence.filter((m) => (m.type === 'user' || m.type === 'assistant') && m.embedding && m.embedding.length > 0);
 
       try {
-        const scoredResults: ScoredMessage[] = await embeddingService.searchSimilarMessages(
-          userQuery,
-          candidates,
-          RAG_TOP_K,
-        );
+        const scoredResults: ScoredMessage[] = await embeddingService.searchSimilarMessages(userQuery, candidates, RAG_TOP_K);
         // Apply minimum similarity threshold — drop weakly-related matches
         const relevant: ScoredMessage[] = scoredResults.filter((s) => s.score >= RAG_MIN_SCORE);
         if (relevant.length > 0) {
@@ -354,9 +349,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
             seenIds.add(m.id);
             if (m.type === 'user') {
               const assistantVersions = assistantByParent.get(m.id) ?? [];
-              const activeId =
-                m.activeResponseId ??
-                (assistantVersions.length > 0 ? assistantVersions[assistantVersions.length - 1].id : null);
+              const activeId = m.activeResponseId ?? (assistantVersions.length > 0 ? assistantVersions[assistantVersions.length - 1].id : null);
               if (activeId && !baseIds.has(activeId) && !seenIds.has(activeId)) {
                 const reply = allCandidatesById.get(activeId);
                 if (reply) {
@@ -397,12 +390,8 @@ export const useTopicStore = create<TopicState>((set, get) => ({
             for (const m of budgetedMessages) ragInjectedIds.add(m.id);
 
             // Sort chronologically for readable context
-            const sorted = budgetedMessages.sort(
-              (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime(),
-            );
-            const ragContent = sorted
-              .map((m) => `[${m.type === 'user' ? 'User' : 'Assistant'}]: ${m.content}`)
-              .join('\n\n');
+            const sorted = budgetedMessages.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+            const ragContent = sorted.map((m) => `[${m.type === 'user' ? 'User' : 'Assistant'}]: ${m.content}`).join('\n\n');
             ragMessage = {
               id: '__rag_context__',
               topicId,
@@ -427,9 +416,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     // Excludes messages already present via RAG to avoid duplicates.
     if (retrievalEnabled) {
       const includedIds = new Set([...base.map((m) => m.id), ...ragInjectedIds]);
-      const directoryMessages = activeSequence.filter(
-        (m) => (m.type === 'user' || m.type === 'assistant') && !includedIds.has(m.id) && !m.isDeleted,
-      );
+      const directoryMessages = activeSequence.filter((m) => (m.type === 'user' || m.type === 'assistant') && !includedIds.has(m.id) && !m.isDeleted);
 
       if (directoryMessages.length > 0) {
         // Show only the most recent 30 missing messages in the prompt directory to save tokens
@@ -519,8 +506,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         [
           {
             role: 'system',
-            content:
-              'Reply with a short and descriptive title for the message. No explanation. Just the title. Max 5 words.',
+            content: 'Reply with a short and descriptive title for the message. No explanation. Just the title. Max 5 words.',
           },
           {
             role: 'user',
@@ -541,8 +527,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
       // ── Verification: Topic name ──
       if (!name) console.warn('[verify:topic-name] LLM returned empty topic name for topic:', topicId);
-      else if (name.split(/\s+/).length > 8)
-        console.warn('[verify:topic-name] Name too long (%d words):', name.split(/\s+/).length, name);
+      else if (name.split(/\s+/).length > 8) console.warn('[verify:topic-name] Name too long (%d words):', name.split(/\s+/).length, name);
 
       if (name) {
         await renameTopic(topicId, name);
@@ -564,6 +549,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       set((state) => ({
         topics: state.topics.filter((t) => t.id !== id),
       }));
+      broadcastDeletedTopics([id]);
     } catch (err) {
       console.error('Failed to delete topic', err);
       const message = err instanceof Error ? err.message : String(err);
@@ -578,6 +564,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
       set((state) => ({
         topics: state.topics.filter((t) => !idSet.has(t.id)),
       }));
+      broadcastDeletedTopics(ids);
     } catch (err) {
       console.error('Failed to delete topics', err);
       const message = err instanceof Error ? err.message : String(err);
@@ -609,8 +596,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
       // If this topic has never been forked, bootstrap the implicit "main" fork
       // so the ForkTabs component (which requires length > 1) will render.
-      const baseForks =
-        existingForks.length === 0 ? [{ id: 'main', name: 'Main', createdOn: originalTopic.createdOn }] : existingForks;
+      const baseForks = existingForks.length === 0 ? [{ id: 'main', name: 'Main', createdOn: originalTopic.createdOn }] : existingForks;
 
       let nextForkNumber = 1;
       for (const fork of baseForks) {
@@ -853,3 +839,14 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     }
   },
 }));
+
+topicSyncChannel?.addEventListener('message', (event: MessageEvent<unknown>): void => {
+  const data = event.data;
+  if (typeof data !== 'object' || data === null) return;
+  const record = data as Record<string, unknown>;
+  if (record.type !== 'topics-deleted' || !Array.isArray(record.ids)) return;
+  const ids = record.ids.filter((id): id is string => typeof id === 'string');
+  if (ids.length === 0) return;
+  const idSet = new Set(ids);
+  useTopicStore.setState((state) => ({ topics: state.topics.filter((topic) => !idSet.has(topic.id)) }));
+});

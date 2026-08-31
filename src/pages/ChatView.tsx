@@ -33,6 +33,7 @@ const ChatView: React.FC = () => {
   const [forksCollapsed, setForksCollapsed] = useState(false);
 
   const topic = useTopicStore((state) => state.topics.find((t) => t.id === displayTopicId));
+  const topicsLoaded = useTopicStore((state) => state.topicsLoaded);
   const maxContextMessages = topic?.maxContextMessages ?? defaultMaxContextMessages;
 
   const messages = displayTopicId ? (messagesByTopic[displayTopicId] ?? []) : [];
@@ -71,6 +72,13 @@ const ChatView: React.FC = () => {
       }
     };
   }, [fetchMessages, topicId, clearSuggestions, stopSending]);
+
+  useEffect(() => {
+    if (topicsLoaded && displayTopicId && !topic) {
+      setError('Topic not found');
+      setIsVisible(false);
+    }
+  }, [displayTopicId, topic, topicsLoaded]);
 
   return (
     <Box display="flex" flexDirection="column" height="100%" width="100%" sx={{ overflow: 'hidden' }}>

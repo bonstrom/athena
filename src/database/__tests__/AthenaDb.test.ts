@@ -68,6 +68,11 @@ interface TopicV9Like extends TopicLike {
   modelId?: string;
 }
 
+interface TopicV19Like extends TopicLike {
+  mode?: 'topic' | 'debate' | 'curator' | 'checklist';
+  activeChecklistTabId?: string;
+}
+
 function loadAthenaDbModule(): void {
   jest.isolateModules(() => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -89,10 +94,10 @@ describe('AthenaDb migrations', () => {
     mockVersionRecords.clear();
   });
 
-  it('registers schema versions 1 through 10', () => {
+  it('registers schema versions 1 through 19', () => {
     loadAthenaDbModule();
 
-    for (const version of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+    for (let version = 1; version <= 19; version++) {
       expect(mockVersionRecords.has(version)).toBe(true);
       expect(mockVersionRecords.get(version)?.storesSchema).toBeDefined();
     }
@@ -332,6 +337,53 @@ describe('AthenaDb migrations', () => {
     // t1: most recent assistant is m-a2 with model 'gpt-5'
     // t3: already has modelId, should NOT be in updates
     expect(topicUpdates).toEqual([{ id: 't1', modelId: 'gpt-5' }]);
+  });
+
+  it('v19 wraps existing checklist data in a Main tab', async () => {
+    loadAthenaDbModule();
+    const topics: TopicV19Like[] = [
+      { id: 't1', createdOn: '2024-01-01T00:00:00.000Z', mode: 'checklist' },
+      { id: 't2', createdOn: '2024-01-01T00:00:00.000Z', mode: 'topic' },
+    ];
+    const groups = [{ id: 'g1', topicId: 't1' }];
+    const history = [{ id: 'h1', topicId: 't1' }];
+    const addedTabs: { id: string; topicId: string; name: string; sortOrder: number }[] = [];
+
+    const v19Transaction = {
+      table: (
+        tableName: string,
+      ): {
+        toArray: () => Promise<unknown[]>;
+        add: (record: { id: string; topicId: string; name: string; sortOrder: number }) => Promise<void>;
+        update: (id: string, patch: Record<string, unknown>) => Promise<number>;
+      } => ({
+        toArray: (): Promise<unknown[]> => {
+          if (tableName === 'topics') return Promise.resolve(topics);
+          if (tableName === 'checklistGroups') return Promise.resolve(groups);
+          if (tableName === 'checklistHistory') return Promise.resolve(history);
+          return Promise.resolve([]);
+        },
+        add: (record: { id: string; topicId: string; name: string; sortOrder: number }): Promise<void> => {
+          if (tableName === 'checklistTabs') addedTabs.push(record);
+          return Promise.resolve();
+        },
+        update: (id: string, patch: Record<string, unknown>): Promise<number> => {
+          if (tableName === 'topics') Object.assign(topics.find((topic) => topic.id === id) ?? {}, patch);
+          if (tableName === 'checklistGroups') Object.assign(groups.find((group) => group.id === id) ?? {}, patch);
+          if (tableName === 'checklistHistory') Object.assign(history.find((entry) => entry.id === id) ?? {}, patch);
+          return Promise.resolve(1);
+        },
+      }),
+    };
+
+    await getUpgradeCallback(19)(v19Transaction);
+
+    expect(addedTabs).toHaveLength(1);
+    expect(addedTabs[0]).toMatchObject({ topicId: 't1', name: 'Main', sortOrder: 0 });
+    expect(topics[0].activeChecklistTabId).toBe(addedTabs[0].id);
+    expect(groups[0]).toMatchObject({ tabId: addedTabs[0].id });
+    expect(history[0]).toMatchObject({ tabId: addedTabs[0].id });
+    expect(topics[1].activeChecklistTabId).toBeUndefined();
   });
 });
 

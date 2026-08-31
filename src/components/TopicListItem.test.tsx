@@ -84,6 +84,30 @@ describe('TopicListItem', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/chat/topic-1');
   });
 
+  it('shows the full topic name in a tooltip when the name is truncated', async () => {
+    const clientWidth = jest.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100);
+    const scrollWidth = jest.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(200);
+    render(<TopicListItem topic={testTopic} />);
+
+    fireEvent.mouseOver(screen.getByText('Alpha Topic'));
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Alpha Topic');
+    clientWidth.mockRestore();
+    scrollWidth.mockRestore();
+  });
+
+  it('does not add a tooltip when the full topic name fits', () => {
+    const clientWidth = jest.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(200);
+    const scrollWidth = jest.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(100);
+    render(<TopicListItem topic={testTopic} />);
+
+    fireEvent.mouseOver(screen.getByText('Alpha Topic'));
+
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    clientWidth.mockRestore();
+    scrollWidth.mockRestore();
+  });
+
   it('renames a topic from the options menu', async () => {
     render(<TopicListItem topic={testTopic} />);
 

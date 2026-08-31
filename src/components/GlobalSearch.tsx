@@ -54,6 +54,13 @@ interface CourseSearchEntry {
   type: 'cycle' | 'day';
 }
 
+interface ChecklistSearchEntry {
+  topicId: string;
+  title: string;
+  content: string;
+  date: string;
+}
+
 const MODE_ORDER: SidebarFilterMode[] = ['all', 'topics', 'messages', 'courses', 'debates', 'checklists'];
 
 const MODE_ICONS: Record<SidebarFilterMode, JSX.Element> = {
@@ -348,12 +355,47 @@ export const GlobalSearch = (): JSX.Element => {
   };
 
   const searchChecklists = async (searchQuery: string): Promise<SearchResult[]> => {
-    const topicResults = await searchTopics(searchQuery, 'checklists');
-    return topicResults.slice(0, MAX_SEARCH_RESULTS).map((r) => ({
-      ...r,
-      id: `checklist-topic-${r.topicId}`,
-      type: 'checklist' as SearchResultType,
-    }));
+    const topics = await athenaDb.topics
+      .toCollection()
+      .filter((topic) => !topic.isDeleted && topic.mode === 'checklist')
+      .toArray();
+    const topicIds = new Set(topics.map((topic) => topic.id));
+    const groups = (await athenaDb.checklistGroups.toArray()).filter((group) => topicIds.has(group.topicId));
+    const groupTopicIds = new Map(groups.map((group) => [group.id, group.topicId]));
+    const items = (await athenaDb.checklistItems.toArray()).filter((item) => groupTopicIds.has(item.groupId));
+
+    const entries: ChecklistSearchEntry[] = topics.map((topic) => {
+      const topicGroups = groups.filter((group) => group.topicId === topic.id);
+      const groupIds = new Set(topicGroups.map((group) => group.id));
+      const topicItems = items.filter((item) => groupIds.has(item.groupId));
+      return {
+        topicId: topic.id,
+        title: topic.name,
+        content: [topic.name, ...topicGroups.map((group) => group.title), ...topicItems.flatMap((item) => [item.content, item.details ?? ''])].join(
+          '\n',
+        ),
+        date: topic.updatedOn,
+      };
+    });
+    const fuse = new Fuse(entries, {
+      keys: ['title', 'content'],
+      threshold: 0.4,
+      includeMatches: true,
+      minMatchCharLength: 2,
+      ignoreLocation: true,
+    });
+
+    return fuse
+      .search(searchQuery)
+      .slice(0, MAX_SEARCH_RESULTS)
+      .map((result) => ({
+        id: `checklist-topic-${result.item.topicId}`,
+        topicId: result.item.topicId,
+        type: 'checklist' as SearchResultType,
+        title: result.item.title,
+        snippet: buildSnippet(result.item.content, result.matches?.[0]?.indices[0], SEARCH_SNIPPET_LENGTH),
+        date: result.item.date,
+      }));
   };
 
   const performSearch = async (searchQuery: string): Promise<void> => {

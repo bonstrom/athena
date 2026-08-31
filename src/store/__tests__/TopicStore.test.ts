@@ -9,10 +9,7 @@ import { getDefaultTopicNameModel } from '../../components/ModelSelector';
 let mockDbMessages: Message[] = [];
 let lastBulkAddedMessages: Message[] = [];
 
-const mockSearchSimilarMessages = jest.fn<
-  Promise<{ message: Message; score: number }[]>,
-  [string, Message[], number]
->();
+const mockSearchSimilarMessages = jest.fn<Promise<{ message: Message; score: number }[]>, [string, Message[], number]>();
 const mockAuthGetState = jest.fn();
 const mockHasAnyApiKey = jest.fn<boolean, []>();
 const mockAddNotification = jest.fn((title: string, message?: string): undefined => {
@@ -31,9 +28,12 @@ const mockTopicsUpdate = jest.fn<Promise<number>, [string, Partial<Topic>]>();
 const mockDbTransaction = jest.fn<Promise<void>, [string, unknown[], () => Promise<void>]>();
 const mockMessagesToArray = jest.fn<Promise<Message[]>, []>();
 const mockChecklistGroupsPrimaryKeys = jest.fn<Promise<string[]>, [string[]]>();
+const mockChecklistTabsAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 const mockChecklistGroupsAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 const mockChecklistItemsAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 const mockChecklistHistoryAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
+const mockLlmOperationUsagesAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
+const mockOperationLeasesAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 
 jest.mock('gpt-tokenizer', () => ({
   encode: jest.fn((text: string): number[] => new Array<number>(text.length).fill(0)),
@@ -48,8 +48,7 @@ jest.mock('../../store/AuthStore', () => ({
 jest.mock('../../services/embeddingService', () => ({
   embeddingService: {
     isReady: false,
-    searchSimilarMessages: (...args: [string, Message[], number]): ReturnType<typeof mockSearchSimilarMessages> =>
-      mockSearchSimilarMessages(...args),
+    searchSimilarMessages: (...args: [string, Message[], number]): ReturnType<typeof mockSearchSimilarMessages> => mockSearchSimilarMessages(...args),
   },
 }));
 
@@ -117,9 +116,7 @@ jest.mock('../../database/AthenaDb', () => ({
             }
             return Promise.resolve(mockDbMessages.filter((m) => m.topicId === topicId));
           },
-          and: (
-            predicate: (message: Message) => boolean,
-          ): { toArray: () => Promise<Message[]>; delete: () => Promise<number> } => ({
+          and: (predicate: (message: Message) => boolean): { toArray: () => Promise<Message[]>; delete: () => Promise<number> } => ({
             toArray: (): Promise<Message[]> => {
               if (field !== 'topicId') {
                 return Promise.resolve([]);
@@ -152,6 +149,13 @@ jest.mock('../../database/AthenaDb', () => ({
         }),
       }),
     },
+    checklistTabs: {
+      where: (): { anyOf: (ids: string[]) => { delete: () => Promise<number> } } => ({
+        anyOf: (ids: string[]): { delete: () => Promise<number> } => ({
+          delete: (): Promise<number> => mockChecklistTabsAnyOfDelete(ids),
+        }),
+      }),
+    },
     checklistItems: {
       where: (): { anyOf: (ids: string[]) => { delete: () => Promise<number> } } => ({
         anyOf: (ids: string[]): { delete: () => Promise<number> } => ({
@@ -163,6 +167,20 @@ jest.mock('../../database/AthenaDb', () => ({
       where: (): { anyOf: (ids: string[]) => { delete: () => Promise<number> } } => ({
         anyOf: (ids: string[]): { delete: () => Promise<number> } => ({
           delete: (): Promise<number> => mockChecklistHistoryAnyOfDelete(ids),
+        }),
+      }),
+    },
+    llmOperationUsages: {
+      where: (): { anyOf: (ids: string[]) => { delete: () => Promise<number> } } => ({
+        anyOf: (ids: string[]): { delete: () => Promise<number> } => ({
+          delete: (): Promise<number> => mockLlmOperationUsagesAnyOfDelete(ids),
+        }),
+      }),
+    },
+    operationLeases: {
+      where: (): { anyOf: (ids: string[]) => { delete: () => Promise<number> } } => ({
+        anyOf: (ids: string[]): { delete: () => Promise<number> } => ({
+          delete: (): Promise<number> => mockOperationLeasesAnyOfDelete(ids),
         }),
       }),
     },
@@ -194,9 +212,12 @@ describe('TopicStore.getTopicContext', () => {
     mockDbTransaction.mockReset();
     mockMessagesToArray.mockReset();
     mockChecklistGroupsPrimaryKeys.mockReset();
+    mockChecklistTabsAnyOfDelete.mockReset();
     mockChecklistGroupsAnyOfDelete.mockReset();
     mockChecklistItemsAnyOfDelete.mockReset();
     mockChecklistHistoryAnyOfDelete.mockReset();
+    mockLlmOperationUsagesAnyOfDelete.mockReset();
+    mockOperationLeasesAnyOfDelete.mockReset();
     mockHasAnyApiKey.mockReset();
     mockAskLlm.mockReset();
     mockGetDefaultTopicNameModel.mockReset();
@@ -214,16 +235,17 @@ describe('TopicStore.getTopicContext', () => {
     mockMessagesAnyOfDelete.mockResolvedValue(0);
     mockTopicsUpdate.mockResolvedValue(1);
     mockHasAnyApiKey.mockReturnValue(false);
-    mockDbTransaction.mockImplementation(
-      async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
-        await callback();
-      },
-    );
+    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+      await callback();
+    });
     mockMessagesToArray.mockResolvedValue([]);
     mockChecklistGroupsPrimaryKeys.mockResolvedValue([]);
+    mockChecklistTabsAnyOfDelete.mockResolvedValue(0);
     mockChecklistGroupsAnyOfDelete.mockResolvedValue(0);
     mockChecklistItemsAnyOfDelete.mockResolvedValue(0);
     mockChecklistHistoryAnyOfDelete.mockResolvedValue(0);
+    mockLlmOperationUsagesAnyOfDelete.mockResolvedValue(0);
+    mockOperationLeasesAnyOfDelete.mockResolvedValue(0);
 
     const uuidSequence = ['uuid-default-1', 'uuid-default-2', 'uuid-default-3'];
     let uuidIndex = 0;
@@ -363,9 +385,7 @@ describe('TopicStore.getTopicContext', () => {
     Object.defineProperty(embeddingService, 'isReady', { value: true, configurable: true });
     mockSearchSimilarMessages.mockResolvedValue([{ message: u1, score: 0.92 }]);
 
-    const context = await useTopicStore
-      .getState()
-      .getTopicContext('topic-1', undefined, 'What did we discuss earlier?');
+    const context = await useTopicStore.getState().getTopicContext('topic-1', undefined, 'What did we discuss earlier?');
 
     const ragMsg = context[context.length - 1];
     expect(ragMsg.id).toBe('__rag_context__');
@@ -1092,6 +1112,7 @@ describe('TopicStore actions', () => {
     mockDbTransaction.mockReset();
     mockMessagesToArray.mockReset();
     mockChecklistGroupsPrimaryKeys.mockReset();
+    mockChecklistTabsAnyOfDelete.mockReset();
     mockChecklistGroupsAnyOfDelete.mockReset();
     mockChecklistItemsAnyOfDelete.mockReset();
     mockChecklistHistoryAnyOfDelete.mockReset();
@@ -1111,13 +1132,12 @@ describe('TopicStore actions', () => {
     mockMessagesDelete.mockResolvedValue(0);
     mockMessagesAnyOfDelete.mockResolvedValue(0);
     mockHasAnyApiKey.mockReturnValue(false);
-    mockDbTransaction.mockImplementation(
-      async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
-        await callback();
-      },
-    );
+    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+      await callback();
+    });
     mockMessagesToArray.mockResolvedValue([]);
     mockChecklistGroupsPrimaryKeys.mockResolvedValue([]);
+    mockChecklistTabsAnyOfDelete.mockResolvedValue(0);
     mockChecklistGroupsAnyOfDelete.mockResolvedValue(0);
     mockChecklistItemsAnyOfDelete.mockResolvedValue(0);
     mockChecklistHistoryAnyOfDelete.mockResolvedValue(0);
@@ -1307,9 +1327,7 @@ describe('TopicStore actions', () => {
     expect(mockTopicsUpdate).toHaveBeenCalledTimes(2);
     expect(mockTopicsUpdate.mock.calls[1][0]).toBe('t1');
     expect(mockTopicsUpdate.mock.calls[1][1]).toMatchObject({ name: 'alpha beta gamma delta epsilon zeta' });
-    expect(useTopicStore.getState().topics.find((t) => t.id === 't1')?.name).toBe(
-      'alpha beta gamma delta epsilon zeta',
-    );
+    expect(useTopicStore.getState().topics.find((t) => t.id === 't1')?.name).toBe('alpha beta gamma delta epsilon zeta');
     expect(mockAskLlm).not.toHaveBeenCalled();
   });
 
@@ -1642,13 +1660,11 @@ describe('TopicStore actions', () => {
     let updateInside = false;
     let deleteInside = false;
 
-    mockDbTransaction.mockImplementation(
-      async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
-        inTransaction = true;
-        await callback();
-        inTransaction = false;
-      },
-    );
+    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+      inTransaction = true;
+      await callback();
+      inTransaction = false;
+    });
     mockTopicsUpdate.mockImplementation((): Promise<number> => {
       updateInside = inTransaction;
       return Promise.resolve(1);
@@ -1889,7 +1905,7 @@ describe('TopicStore actions', () => {
     expect(mockAddNotification).toHaveBeenCalledWith('Failed to delete topic', 'topic delete failed');
   });
 
-  it('deleteTopic also deletes checklist groups and their items', async () => {
+  it('deleteTopic also deletes checklist tabs, groups, and items', async () => {
     useTopicStore.setState({
       topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', id: 't1', mode: 'checklist' })],
     });
@@ -1898,6 +1914,7 @@ describe('TopicStore actions', () => {
     await useTopicStore.getState().deleteTopic('t1');
 
     expect(mockChecklistGroupsPrimaryKeys).toHaveBeenCalledWith(['t1']);
+    expect(mockChecklistTabsAnyOfDelete).toHaveBeenCalledWith(['t1']);
     expect(mockChecklistItemsAnyOfDelete).toHaveBeenCalledWith(['g1', 'g2']);
     expect(mockChecklistGroupsAnyOfDelete).toHaveBeenCalledWith(['t1']);
     expect(mockChecklistHistoryAnyOfDelete).toHaveBeenCalledWith(['t1']);
@@ -1979,9 +1996,7 @@ describe('TopicStore actions', () => {
       }),
     ];
 
-    const getTopicContextSpy = jest
-      .spyOn(useTopicStore.getState(), 'getTopicContext')
-      .mockResolvedValue(contextMessages);
+    const getTopicContextSpy = jest.spyOn(useTopicStore.getState(), 'getTopicContext').mockResolvedValue(contextMessages);
 
     const total = await useTopicStore.getState().getTopicTokenCount('token-topic');
 
