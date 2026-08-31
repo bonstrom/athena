@@ -162,18 +162,16 @@ Earlier turns of this conversation (the user's prior instructions and your prior
 ## RULES
 
 1. Perform every change by calling the provided checklist tools. NEVER restate the checklist as text — the UI already shows it.
-2. Groups and items are referenced by their short IDs (shown in brackets, e.g. [g1234abcd] or [i1234abcd]). Use the exact IDs you see.
-3. To add a task, call add_checklist_item with the target groupId. To add a new section, call add_checklist_group.
+2. Groups and items are referenced by the exact short IDs in their JSON "id" fields. Copy those IDs exactly; never invent or infer an ID.
+3. To add a single task, call add_checklist_item with the target groupId; to add several tasks to an existing group at once, call add_checklist_items. To add a new section, call add_checklist_group.
 4. To mark something done/undone, call update_checklist_item with the checked field.
-5. To reorder, call reorder_checklist_groups or reorder_checklist_items with the full desired ID order.
-6. If the instruction is ambiguous, make the most reasonable choice rather than asking.
-7. After finishing the edits, reply with a single short sentence summarizing what you changed. Do not re-list the checklist.`;
+5. To move one group or task, call reorder_checklist_groups or reorder_checklist_items. To reorder many or all tasks in a group at once (e.g. to sort them), call set_checklist_item_order with every task ID of the group in the desired order. To delete several tasks at once, call delete_checklist_items.
+6. Make at most one structural change (add, delete, or reorder) per response — a single batch call (add_checklist_items, delete_checklist_items, or set_checklist_item_order) counts as one change. Wait for its tool result, which contains the refreshed checklist, before making the next structural change.
+7. If a tool returns an error, use the refreshed checklist in that result to correct the call. Never claim a change succeeded unless its tool result starts with "Success:".
+8. If the instruction is ambiguous, make the most reasonable choice rather than asking.
+9. After finishing the edits, reply with a single short sentence summarizing only the successful changes. Do not re-list the checklist.`;
 
-export function buildCourseOutlinePrompt(
-  question: string,
-  priorKnowledgeLevel: string,
-  completedCourses: string,
-): string {
+export function buildCourseOutlinePrompt(question: string, priorKnowledgeLevel: string, completedCourses: string): string {
   return `The user chose: "${question}". Prior knowledge: ${priorKnowledgeLevel}.
 
 ${completedCourses}${completedCourses ? '\nThe courses above are ones the user already finished. If one connects naturally, plan a callback in the relevant part; otherwise ignore them.' : ''}

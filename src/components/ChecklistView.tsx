@@ -11,28 +11,18 @@ import {
   DialogContentText,
   DialogTitle,
   IconButton,
+  Tab,
+  Tabs,
   TextField,
+  Tooltip,
   Typography,
   alpha,
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import AddIcon from '@mui/icons-material/Add';
@@ -43,7 +33,7 @@ import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
-import type { Topic, ChecklistGroup, ChecklistItem } from '../database/AthenaDb';
+import type { Topic, ChecklistGroup, ChecklistItem, ChecklistTab } from '../database/AthenaDb';
 import { useChecklistStore } from '../store/ChecklistStore';
 import { useChatStore } from '../store/ChatStore';
 import ChecklistComposer from './ChecklistComposer';
@@ -80,6 +70,7 @@ const SortableItem = React.memo(function SortableItem({
 }: SortableItemProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const [expanded, setExpanded] = useState(false);
+  const detailsId = `checklist-item-details-${item.id}`;
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -101,7 +92,8 @@ const SortableItem = React.memo(function SortableItem({
         '&:hover': {
           bgcolor: (theme) => (theme.palette.mode === 'dark' ? alpha('#fff', 0.04) : alpha('#000', 0.03)),
         },
-      }}>
+      }}
+    >
       {isMobile ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', mt: 0.25 }}>
           <IconButton
@@ -109,7 +101,8 @@ const SortableItem = React.memo(function SortableItem({
             aria-label={`Move task ${item.content} up`}
             disabled={index === 0}
             onClick={(): void => onMoveItem(index, index - 1)}
-            sx={{ p: 0, color: 'text.secondary' }}>
+            sx={{ p: 0, color: 'text.secondary' }}
+          >
             <KeyboardArrowUpIcon fontSize="small" />
           </IconButton>
           <IconButton
@@ -117,7 +110,8 @@ const SortableItem = React.memo(function SortableItem({
             aria-label={`Move task ${item.content} down`}
             disabled={index === count - 1}
             onClick={(): void => onMoveItem(index, index + 1)}
-            sx={{ p: 0, color: 'text.secondary' }}>
+            sx={{ p: 0, color: 'text.secondary' }}
+          >
             <KeyboardArrowDownIcon fontSize="small" />
           </IconButton>
         </Box>
@@ -127,7 +121,8 @@ const SortableItem = React.memo(function SortableItem({
           {...attributes}
           {...listeners}
           aria-label={`Reorder task ${item.content}`}
-          sx={{ cursor: isDragging ? 'grabbing' : 'grab', mt: 0.25, p: 0.25, color: 'text.secondary' }}>
+          sx={{ cursor: isDragging ? 'grabbing' : 'grab', mt: 0.25, p: 0.25, color: 'text.secondary' }}
+        >
           <DragIndicatorIcon fontSize="small" />
         </IconButton>
       )}
@@ -147,27 +142,33 @@ const SortableItem = React.memo(function SortableItem({
             textDecoration: item.checked ? 'line-through' : 'none',
             color: item.checked ? 'text.secondary' : 'text.primary',
             wordBreak: 'break-word',
-          }}>
+          }}
+        >
           {item.content}
         </Typography>
         {item.details && (
           <>
             <Button
               size="small"
+              aria-controls={detailsId}
+              aria-expanded={expanded}
               onClick={(): void => setExpanded((v) => !v)}
               sx={{ p: 0, minWidth: 0, fontSize: '0.7rem', textTransform: 'none', color: 'primary.main' }}
-              endIcon={<ExpandMoreIcon sx={{ fontSize: 16, transform: expanded ? 'rotate(180deg)' : 'none' }} />}>
+              endIcon={<ExpandMoreIcon sx={{ fontSize: 16, transform: expanded ? 'rotate(180deg)' : 'none' }} />}
+            >
               {expanded ? 'Hide details' : 'Details'}
             </Button>
             <Collapse in={expanded}>
               <Box
+                id={detailsId}
                 sx={{
                   mt: 0.5,
                   px: 1,
                   py: 0.5,
                   borderRadius: 1,
                   bgcolor: (theme) => (theme.palette.mode === 'dark' ? alpha('#fff', 0.04) : alpha('#000', 0.03)),
-                }}>
+                }}
+              >
                 <MarkdownWithCode>{item.details}</MarkdownWithCode>
               </Box>
             </Collapse>
@@ -175,18 +176,10 @@ const SortableItem = React.memo(function SortableItem({
         )}
       </Box>
 
-      <IconButton
-        size="small"
-        aria-label={`Edit task ${item.content}`}
-        onClick={(): void => onEdit(item)}
-        sx={{ color: 'text.secondary' }}>
+      <IconButton size="small" aria-label={`Edit task ${item.content}`} onClick={(): void => onEdit(item)} sx={{ color: 'text.secondary' }}>
         <EditOutlinedIcon fontSize="small" />
       </IconButton>
-      <IconButton
-        size="small"
-        aria-label={`Delete task ${item.content}`}
-        onClick={(): void => onDelete(item.id)}
-        sx={{ color: 'text.secondary' }}>
+      <IconButton size="small" aria-label={`Delete task ${item.content}`} onClick={(): void => onDelete(item.id)} sx={{ color: 'text.secondary' }}>
         <DeleteOutlineIcon fontSize="small" />
       </IconButton>
     </Box>
@@ -202,7 +195,7 @@ interface SortableGroupProps {
   onToggleItem: (item: ChecklistItem) => void;
   onEditItem: (item: ChecklistItem) => void;
   onDeleteItem: (itemId: string) => void;
-  onAddItem: (groupId: string, content: string) => void;
+  onAddItem: (groupId: string, content: string) => Promise<boolean>;
   onRenameGroup: (group: ChecklistGroup) => void;
   onDeleteGroup: (groupId: string) => void;
   onReorderItems: (groupId: string, fromIndex: number, toIndex: number) => void;
@@ -228,6 +221,7 @@ const SortableGroup = React.memo(function SortableGroup({
   const sensors = useDndSensors();
   const [adding, setAdding] = useState(false);
   const [newItemText, setNewItemText] = useState('');
+  const [addingItem, setAddingItem] = useState(false);
 
   const itemIds = useMemo(() => items.map((i) => i.id), [items]);
 
@@ -243,12 +237,16 @@ const SortableGroup = React.memo(function SortableGroup({
     [itemIds, group.id, onReorderItems],
   );
 
-  const commitNewItem = (): void => {
+  const commitNewItem = async (): Promise<void> => {
     const trimmed = newItemText.trim();
-    if (!trimmed) return;
-    onAddItem(group.id, trimmed);
-    setNewItemText('');
-    setAdding(false);
+    if (!trimmed || addingItem) return;
+    setAddingItem(true);
+    const created = await onAddItem(group.id, trimmed);
+    setAddingItem(false);
+    if (created) {
+      setNewItemText('');
+      setAdding(false);
+    }
   };
 
   const style: React.CSSProperties = {
@@ -266,7 +264,8 @@ const SortableGroup = React.memo(function SortableGroup({
         borderRadius: 2,
         border: (theme) => `1px solid ${theme.palette.divider}`,
         overflow: 'hidden',
-      }}>
+      }}
+    >
       <Box
         sx={{
           display: 'flex',
@@ -274,18 +273,17 @@ const SortableGroup = React.memo(function SortableGroup({
           gap: 0.5,
           px: 1,
           py: 0.75,
-          bgcolor: (theme) =>
-            theme.palette.mode === 'dark'
-              ? alpha(theme.palette.primary.main, 0.12)
-              : alpha(theme.palette.primary.main, 0.08),
-        }}>
+          bgcolor: (theme) => (theme.palette.mode === 'dark' ? alpha(theme.palette.primary.main, 0.12) : alpha(theme.palette.primary.main, 0.08)),
+        }}
+      >
         {!isMobile && (
           <IconButton
             size="small"
             {...attributes}
             {...listeners}
             aria-label={`Reorder list ${group.title}`}
-            sx={{ cursor: isDragging ? 'grabbing' : 'grab', p: 0.25, color: 'text.secondary' }}>
+            sx={{ cursor: isDragging ? 'grabbing' : 'grab', p: 0.25, color: 'text.secondary' }}
+          >
             <DragIndicatorIcon fontSize="small" />
           </IconButton>
         )}
@@ -296,7 +294,8 @@ const SortableGroup = React.memo(function SortableGroup({
               aria-label={`Move list ${group.title} up`}
               disabled={groupIndex === 0}
               onClick={(): void => onMoveGroup(groupIndex, groupIndex - 1)}
-              sx={{ p: 0, color: 'text.secondary' }}>
+              sx={{ p: 0, color: 'text.secondary' }}
+            >
               <KeyboardArrowUpIcon fontSize="small" />
             </IconButton>
             <IconButton
@@ -304,49 +303,39 @@ const SortableGroup = React.memo(function SortableGroup({
               aria-label={`Move list ${group.title} down`}
               disabled={groupIndex === groupCount - 1}
               onClick={(): void => onMoveGroup(groupIndex, groupIndex + 1)}
-              sx={{ p: 0, color: 'text.secondary' }}>
+              sx={{ p: 0, color: 'text.secondary' }}
+            >
               <KeyboardArrowDownIcon fontSize="small" />
             </IconButton>
           </Box>
         )}
-        <Typography
-          variant="subtitle2"
-          fontWeight="bold"
-          sx={{ flexGrow: 1, wordBreak: 'break-word' }}>
+        <Typography variant="subtitle2" fontWeight="bold" sx={{ flexGrow: 1, wordBreak: 'break-word' }}>
           {group.title}
         </Typography>
-        <Typography
-          variant="caption"
-          color="text.secondary">
+        <Typography variant="caption" color="text.secondary">
           {items.filter((i) => i.checked).length}/{items.length}
         </Typography>
         <IconButton
           size="small"
           aria-label={`Rename list ${group.title}`}
           onClick={(): void => onRenameGroup(group)}
-          sx={{ color: 'text.secondary' }}>
+          sx={{ color: 'text.secondary' }}
+        >
           <EditOutlinedIcon fontSize="small" />
         </IconButton>
         <IconButton
           size="small"
           aria-label={`Delete list ${group.title}`}
           onClick={(): void => onDeleteGroup(group.id)}
-          sx={{ color: 'text.secondary' }}>
+          sx={{ color: 'text.secondary' }}
+        >
           <DeleteOutlineIcon fontSize="small" />
         </IconButton>
       </Box>
 
-      <Box
-        px={1}
-        py={0.5}>
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-          modifiers={[restrictToVerticalAxis]}>
-          <SortableContext
-            items={itemIds}
-            strategy={verticalListSortingStrategy}>
+      <Box px={1} py={0.5}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis]}>
+          <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
             {items.map((item, index) => (
               <SortableItem
                 key={item.id}
@@ -364,20 +353,13 @@ const SortableGroup = React.memo(function SortableGroup({
         </DndContext>
 
         {items.length === 0 && !adding && (
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ display: 'block', py: 0.5 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', py: 0.5 }}>
             No tasks yet.
           </Typography>
         )}
 
         {adding ? (
-          <Box
-            display="flex"
-            alignItems="center"
-            gap={1}
-            py={0.5}>
+          <Box display="flex" alignItems="center" gap={1} py={0.5}>
             <TextField
               fullWidth
               size="small"
@@ -385,30 +367,20 @@ const SortableGroup = React.memo(function SortableGroup({
               value={newItemText}
               onChange={(e): void => setNewItemText(e.target.value)}
               onKeyDown={(e): void => {
-                if (e.key === 'Enter') commitNewItem();
+                if (e.key === 'Enter') void commitNewItem();
                 if (e.key === 'Escape') setAdding(false);
               }}
               inputProps={{ 'aria-label': 'New task text' }}
             />
-            <Button
-              size="small"
-              variant="contained"
-              onClick={commitNewItem}
-              disabled={!newItemText.trim()}>
+            <Button size="small" variant="contained" onClick={(): void => void commitNewItem()} disabled={!newItemText.trim() || addingItem}>
               Add
             </Button>
-            <Button
-              size="small"
-              onClick={(): void => setAdding(false)}>
+            <Button size="small" onClick={(): void => setAdding(false)} disabled={addingItem}>
               Cancel
             </Button>
           </Box>
         ) : (
-          <Button
-            size="small"
-            startIcon={<AddIcon />}
-            onClick={(): void => setAdding(true)}
-            sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
+          <Button size="small" startIcon={<AddIcon />} onClick={(): void => setAdding(true)} sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
             Add task
           </Button>
         )}
@@ -425,20 +397,30 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const {
+    tabs,
+    activeTabId,
     groups,
     items,
     loading,
+    loadError,
     generating,
     editing,
     streamingContent,
     lastEditSummary,
+    toolLog,
+    lastToolLog,
     loadChecklist,
+    createTab,
+    renameTab,
+    deleteTab,
+    switchTab,
     createGroup,
     renameGroup,
     deleteGroup,
     reorderGroup,
     addItem,
     updateItem,
+    toggleItem,
     deleteItem,
     reorderItem,
     generateChecklist,
@@ -458,6 +440,11 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
   const [renamingGroup, setRenamingGroup] = useState<ChecklistGroup | null>(null);
   const [groupForm, setGroupForm] = useState({ title: '' });
   const [deletingGroup, setDeletingGroup] = useState<ChecklistGroup | null>(null);
+  const [pendingAction, setPendingAction] = useState<'create' | 'edit' | 'rename' | 'delete' | null>(null);
+  const [tabDialog, setTabDialog] = useState<'create' | 'rename' | null>(null);
+  const [tabName, setTabName] = useState('');
+  const [deletingTab, setDeletingTab] = useState<ChecklistTab | null>(null);
+  const [tabActionPending, setTabActionPending] = useState(false);
 
   useEffect(() => {
     void loadChecklist(topic.id);
@@ -473,6 +460,7 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
   };
 
   const handleGroupDragEnd = (event: DragEndEvent): void => {
+    if (editing) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const fromIndex = groupIds.indexOf(String(active.id));
@@ -481,12 +469,16 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
     void reorderGroup(fromIndex, toIndex);
   };
 
-  const commitNewList = (): void => {
+  const commitNewList = async (): Promise<void> => {
     const trimmed = newListTitle.trim();
-    if (!trimmed) return;
-    void createGroup(topic.id, trimmed);
-    setNewListTitle('');
-    setCreatingList(false);
+    if (!trimmed || pendingAction || editing) return;
+    setPendingAction('create');
+    const created = await createGroup(topic.id, trimmed);
+    setPendingAction(null);
+    if (created) {
+      setNewListTitle('');
+      setCreatingList(false);
+    }
   };
 
   const openItemEdit = (item: ChecklistItem): void => {
@@ -494,12 +486,14 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
     setItemForm({ content: item.content, details: item.details ?? '' });
   };
 
-  const saveItemEdit = (): void => {
+  const saveItemEdit = async (): Promise<void> => {
     if (!editingItem) return;
     const content = itemForm.content.trim();
-    if (!content) return;
-    void updateItem(editingItem.id, { content, details: itemForm.details.trim() || undefined });
-    setEditingItem(null);
+    if (!content || pendingAction || editing) return;
+    setPendingAction('edit');
+    const updated = await updateItem(editingItem.id, { content, details: itemForm.details.trim() || undefined });
+    setPendingAction(null);
+    if (updated) setEditingItem(null);
   };
 
   const openGroupRename = (group: ChecklistGroup): void => {
@@ -507,12 +501,14 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
     setGroupForm({ title: group.title });
   };
 
-  const saveGroupRename = (): void => {
+  const saveGroupRename = async (): Promise<void> => {
     if (!renamingGroup) return;
     const title = groupForm.title.trim();
-    if (!title) return;
-    void renameGroup(renamingGroup.id, title);
-    setRenamingGroup(null);
+    if (!title || pendingAction || editing) return;
+    setPendingAction('rename');
+    const renamed = await renameGroup(renamingGroup.id, title);
+    setPendingAction(null);
+    if (renamed) setRenamingGroup(null);
   };
 
   const requestDeleteGroup = (groupId: string): void => {
@@ -520,43 +516,129 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
     if (group) setDeletingGroup(group);
   };
 
-  const confirmDeleteGroup = (): void => {
-    if (!deletingGroup) return;
-    void deleteGroup(deletingGroup.id);
-    setDeletingGroup(null);
+  const confirmDeleteGroup = async (): Promise<void> => {
+    if (!deletingGroup || pendingAction || editing) return;
+    setPendingAction('delete');
+    const deleted = await deleteGroup(deletingGroup.id);
+    setPendingAction(null);
+    if (deleted) setDeletingGroup(null);
+  };
+
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
+
+  const openRenameTab = (): void => {
+    if (!activeTab) return;
+    setTabName(activeTab.name);
+    setTabDialog('rename');
+  };
+
+  const saveTab = async (): Promise<void> => {
+    const name = tabName.trim();
+    if (!name || tabActionPending) return;
+    setTabActionPending(true);
+    const succeeded = tabDialog === 'create' ? Boolean(await createTab(topic.id, name)) : activeTab ? await renameTab(activeTab.id, name) : false;
+    setTabActionPending(false);
+    if (succeeded) {
+      setTabDialog(null);
+      setTabName('');
+    }
+  };
+
+  const confirmDeleteTab = async (): Promise<void> => {
+    if (!deletingTab || tabActionPending) return;
+    setTabActionPending(true);
+    const deleted = await deleteTab(deletingTab.id);
+    setTabActionPending(false);
+    if (deleted) setDeletingTab(null);
   };
 
   if (loading) {
     return (
-      <Box
-        display="flex"
-        alignItems="center"
-        justifyContent="center"
-        height="100%">
+      <Box display="flex" alignItems="center" justifyContent="center" height="100%">
         <CircularProgress />
       </Box>
     );
   }
 
+  if (loadError) {
+    return (
+      <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" gap={2} height="100%" px={2} textAlign="center">
+        <Typography variant="h6">Couldn&apos;t load checklist</Typography>
+        <Typography variant="body2" color="text.secondary">
+          {loadError}
+        </Typography>
+        <Button variant="contained" onClick={(): void => void loadChecklist(topic.id)}>
+          Retry
+        </Button>
+      </Box>
+    );
+  }
+
   return (
-    <Box
-      display="flex"
-      flexDirection="column"
-      height="100%"
-      overflow="hidden">
+    <Box display="flex" flexDirection="column" height="100%" overflow="hidden">
       <Box
-        flexGrow={1}
-        minHeight={0}
-        overflow="auto"
-        px={{ xs: 1.5, md: 2 }}
-        py={1.5}>
-        <Box sx={{ maxWidth: 720, mx: 'auto' }}>
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          borderBottom: 1,
+          borderColor: 'divider',
+          px: { xs: 0.5, md: 1.5 },
+          minHeight: 44,
+        }}
+      >
+        <Tabs
+          value={activeTabId ?? false}
+          onChange={(_event, tabId: string): void => void switchTab(tabId)}
+          variant="scrollable"
+          scrollButtons="auto"
+          aria-label="Checklist tabs"
+          sx={{ flexGrow: 1, minWidth: 0, minHeight: 44, '& .MuiTab-root': { minHeight: 44, textTransform: 'none' } }}
+        >
+          {tabs.map((tab) => (
+            <Tab key={tab.id} value={tab.id} label={tab.name} disabled={editing || generating} />
+          ))}
+        </Tabs>
+        <Tooltip title="Create tab">
+          <span>
+            <IconButton
+              size="small"
+              aria-label="Create tab"
+              disabled={editing || generating}
+              onClick={(): void => {
+                setTabName('');
+                setTabDialog('create');
+              }}
+            >
+              <AddIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title="Rename active tab">
+          <span>
+            <IconButton size="small" aria-label="Rename active tab" disabled={!activeTab || editing || generating} onClick={openRenameTab}>
+              <EditOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title={tabs.length <= 1 ? 'At least one tab is required' : 'Delete active tab'}>
+          <span>
+            <IconButton
+              size="small"
+              aria-label="Delete active tab"
+              disabled={!activeTab || tabs.length <= 1 || editing || generating}
+              onClick={(): void => setDeletingTab(activeTab)}
+            >
+              <DeleteOutlineIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Box>
+      <Box flexGrow={1} minHeight={0} overflow="auto" px={{ xs: 1.5, md: 2 }} py={1.5}>
+        <Box aria-busy={editing} sx={{ maxWidth: 720, mx: 'auto', pointerEvents: editing ? 'none' : 'auto', opacity: editing ? 0.65 : 1 }}>
           {generating ? (
             <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
               <CircularProgress />
-              <Typography
-                variant="body2"
-                color="text.secondary">
+              <Typography variant="body2" color="text.secondary">
                 Generating your checklist…
               </Typography>
             </Box>
@@ -569,18 +651,14 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
                 alignItems: 'center',
                 gap: 2,
                 textAlign: 'center',
-              }}>
+              }}
+            >
               <FormatListBulletedIcon sx={{ fontSize: 48, color: 'primary.main' }} />
-              <Typography
-                variant="h6"
-                fontWeight="bold">
+              <Typography variant="h6" fontWeight="bold">
                 Create a checklist
               </Typography>
-              <Typography
-                variant="body2"
-                color="text.secondary">
-                Describe what you need a checklist for, and the AI will generate organized sections and tasks you can
-                both edit.
+              <Typography variant="body2" color="text.secondary">
+                Describe what you need a checklist for, and the AI will generate organized sections and tasks you can both edit.
               </Typography>
               <TextField
                 fullWidth
@@ -598,23 +676,14 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
                 inputProps={{ 'aria-label': 'Checklist prompt' }}
                 sx={{ maxWidth: 480 }}
               />
-              <Button
-                variant="contained"
-                onClick={handleGenerate}
-                disabled={!prompt.trim()}>
+              <Button variant="contained" onClick={handleGenerate} disabled={!prompt.trim()}>
                 Generate checklist
               </Button>
             </Box>
           ) : (
             <>
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleGroupDragEnd}
-                modifiers={[restrictToVerticalAxis]}>
-                <SortableContext
-                  items={groupIds}
-                  strategy={verticalListSortingStrategy}>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGroupDragEnd} modifiers={[restrictToVerticalAxis]}>
+                <SortableContext items={groupIds} strategy={verticalListSortingStrategy}>
                   {groups.map((group, groupIndex) => (
                     <SortableGroup
                       key={group.id}
@@ -624,11 +693,11 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
                       groupIndex={groupIndex}
                       groupCount={groups.length}
                       onToggleItem={(item): void => {
-                        void updateItem(item.id, { checked: !item.checked });
+                        void toggleItem(item.id);
                       }}
                       onEditItem={openItemEdit}
                       onDeleteItem={(itemId): void => void deleteItem(itemId)}
-                      onAddItem={(groupId, content): void => void addItem(groupId, content)}
+                      onAddItem={async (groupId, content): Promise<boolean> => Boolean(await addItem(groupId, content))}
                       onRenameGroup={openGroupRename}
                       onDeleteGroup={requestDeleteGroup}
                       onReorderItems={(groupId, from, to): void => void reorderItem(groupId, from, to)}
@@ -639,11 +708,7 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
               </DndContext>
 
               {creatingList ? (
-                <Box
-                  display="flex"
-                  alignItems="center"
-                  gap={1}
-                  mb={2}>
+                <Box display="flex" alignItems="center" gap={1} mb={2}>
                   <TextField
                     fullWidth
                     size="small"
@@ -651,7 +716,7 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
                     value={newListTitle}
                     onChange={(e): void => setNewListTitle(e.target.value)}
                     onKeyDown={(e): void => {
-                      if (e.key === 'Enter') commitNewList();
+                      if (e.key === 'Enter') void commitNewList();
                       if (e.key === 'Escape') setCreatingList(false);
                     }}
                     inputProps={{ 'aria-label': 'New list title' }}
@@ -659,13 +724,12 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
                   <Button
                     size="small"
                     variant="contained"
-                    onClick={commitNewList}
-                    disabled={!newListTitle.trim()}>
+                    onClick={(): void => void commitNewList()}
+                    disabled={!newListTitle.trim() || pendingAction === 'create' || editing}
+                  >
                     Add
                   </Button>
-                  <Button
-                    size="small"
-                    onClick={(): void => setCreatingList(false)}>
+                  <Button size="small" onClick={(): void => setCreatingList(false)} disabled={pendingAction === 'create'}>
                     Cancel
                   </Button>
                 </Box>
@@ -674,7 +738,8 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
                   variant="outlined"
                   startIcon={<AddIcon />}
                   onClick={(): void => setCreatingList(true)}
-                  sx={{ textTransform: 'none', mt: 0.5 }}>
+                  sx={{ textTransform: 'none', mt: 0.5 }}
+                >
                   Create new list
                 </Button>
               )}
@@ -687,6 +752,8 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
         editing={editing}
         streamingContent={streamingContent}
         lastEditSummary={lastEditSummary}
+        toolLog={toolLog}
+        lastToolLog={lastToolLog}
         canEdit={canEdit}
         onSend={(content): void => {
           void applyLlmEdit(topic.id, content);
@@ -695,10 +762,68 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
       />
 
       <Dialog
-        open={Boolean(editingItem)}
-        onClose={(): void => setEditingItem(null)}
+        open={tabDialog !== null}
+        onClose={(): void => {
+          if (!tabActionPending) setTabDialog(null);
+        }}
         fullWidth
-        maxWidth="sm">
+        maxWidth="xs"
+      >
+        <DialogTitle>{tabDialog === 'create' ? 'Create tab' : 'Rename tab'}</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Tab name"
+            margin="dense"
+            value={tabName}
+            onChange={(event): void => setTabName(event.target.value)}
+            onKeyDown={(event): void => {
+              if (event.key === 'Enter') void saveTab();
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={(): void => setTabDialog(null)} disabled={tabActionPending}>
+            Cancel
+          </Button>
+          <Button onClick={(): void => void saveTab()} variant="contained" disabled={!tabName.trim() || tabActionPending}>
+            {tabDialog === 'create' ? 'Create' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deletingTab)}
+        onClose={(): void => {
+          if (!tabActionPending) setDeletingTab(null);
+        }}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Delete tab</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Delete &quot;{deletingTab?.name}&quot; and all of its lists, tasks, and AI edit history? This cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={(): void => setDeletingTab(null)} disabled={tabActionPending}>
+            Cancel
+          </Button>
+          <Button onClick={(): void => void confirmDeleteTab()} variant="contained" color="error" disabled={tabActionPending}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(editingItem)}
+        onClose={(): void => {
+          if (pendingAction !== 'edit') setEditingItem(null);
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>Edit task</DialogTitle>
         <DialogContent>
           <TextField
@@ -719,11 +844,14 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={(): void => setEditingItem(null)}>Cancel</Button>
+          <Button onClick={(): void => setEditingItem(null)} disabled={pendingAction === 'edit'}>
+            Cancel
+          </Button>
           <Button
-            onClick={saveItemEdit}
+            onClick={(): void => void saveItemEdit()}
             variant="contained"
-            disabled={!itemForm.content.trim()}>
+            disabled={!itemForm.content.trim() || pendingAction === 'edit' || editing}
+          >
             Save
           </Button>
         </DialogActions>
@@ -731,9 +859,12 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
 
       <Dialog
         open={Boolean(renamingGroup)}
-        onClose={(): void => setRenamingGroup(null)}
+        onClose={(): void => {
+          if (pendingAction !== 'rename') setRenamingGroup(null);
+        }}
         fullWidth
-        maxWidth="sm">
+        maxWidth="sm"
+      >
         <DialogTitle>Rename list</DialogTitle>
         <DialogContent>
           <TextField
@@ -745,11 +876,14 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={(): void => setRenamingGroup(null)}>Cancel</Button>
+          <Button onClick={(): void => setRenamingGroup(null)} disabled={pendingAction === 'rename'}>
+            Cancel
+          </Button>
           <Button
-            onClick={saveGroupRename}
+            onClick={(): void => void saveGroupRename()}
             variant="contained"
-            disabled={!groupForm.title.trim()}>
+            disabled={!groupForm.title.trim() || pendingAction === 'rename' || editing}
+          >
             Save
           </Button>
         </DialogActions>
@@ -757,9 +891,12 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
 
       <Dialog
         open={Boolean(deletingGroup)}
-        onClose={(): void => setDeletingGroup(null)}
+        onClose={(): void => {
+          if (pendingAction !== 'delete') setDeletingGroup(null);
+        }}
         fullWidth
-        maxWidth="sm">
+        maxWidth="sm"
+      >
         <DialogTitle>Delete list</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -768,11 +905,10 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={(): void => setDeletingGroup(null)}>Cancel</Button>
-          <Button
-            onClick={confirmDeleteGroup}
-            variant="contained"
-            color="error">
+          <Button onClick={(): void => setDeletingGroup(null)} disabled={pendingAction === 'delete' || editing}>
+            Cancel
+          </Button>
+          <Button onClick={(): void => void confirmDeleteGroup()} variant="contained" color="error" disabled={pendingAction === 'delete'}>
             Delete
           </Button>
         </DialogActions>
