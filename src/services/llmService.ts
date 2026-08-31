@@ -77,6 +77,9 @@ export interface LlmDebugPayload {
  */
 export interface LlmRequestOptions {
   includeCustomInstructions?: boolean;
+  toolChoice?: 'auto' | 'required' | 'none';
+  /** Disable native thinking mode for every iteration of a tool loop. */
+  disableThinking?: boolean;
 }
 
 export const TOOL_RESULT_PREVIEW_LIMIT = 500;
@@ -174,6 +177,7 @@ interface LlmPayload {
   stream: boolean;
   stream_options?: { include_usage: boolean };
   tools?: LlmTool[];
+  tool_choice?: 'auto' | 'required' | 'none';
   thinking?: { type: 'enabled' | 'disabled' };
   reasoning_effort?: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   max_tokens?: number;
@@ -558,6 +562,8 @@ const AnthropicAdapter: IMessageAdapter = {
       ...(payload.thinking && { thinking: payload.thinking }),
       ...(payload.reasoning_effort && { output_config: { effort: payload.reasoning_effort } }),
       ...(payload.tools && payload.tools.length > 0 && { tools: toAnthropicTools(payload.tools) }),
+      ...(payload.tool_choice === 'required' && { tool_choice: { type: 'any' } }),
+      ...(payload.tool_choice === 'none' && { tool_choice: { type: 'none' } }),
     });
   },
 
@@ -594,9 +600,7 @@ const AnthropicAdapter: IMessageAdapter = {
       promptTokens: d.usage.input_tokens,
       completionTokens: d.usage.output_tokens,
       promptTokensDetails:
-        cacheRead != null || cacheCreation != null
-          ? { cached_tokens: cacheRead, cache_creation_tokens: cacheCreation }
-          : undefined,
+        cacheRead != null || cacheCreation != null ? { cached_tokens: cacheRead, cache_creation_tokens: cacheCreation } : undefined,
       toolCalls,
       finishReason: d.stop_reason,
       responseId: d.id,
@@ -751,7 +755,16 @@ function buildPayload(
   const chatStoreReasoningEffort = useChatStore.getState().reasoningEffort;
   const resolvedReasoningEffort = resolvedModel.reasoningEffort != null ? resolvedModel.reasoningEffort : chatStoreReasoningEffort;
   const chatStoreThinkingMode = useChatStore.getState().thinkingMode;
-  const resolvedThinkingMode = resolvedModel.thinkingToggle != null ? resolvedModel.thinkingToggle : chatStoreThinkingMode;
+  const defaultThinkingMode = resolvedModel.thinkingToggle != null ? resolvedModel.thinkingToggle : chatStoreThinkingMode;
+  // Forcing a tool call (checklist edits) is incompatible with native-thinking
+  // models — DeepSeek rejects `tool_choice: 'required'` while thinking is on, and it
+  // defaults to thinking even when no `thinking` field is sent. Disabling thinking
+  // must persist for the whole tool loop, or DeepSeek errors that `reasoning_content`
+  // was not passed back once a later iteration re-enables thinking.
+  const forceToolCall = options?.toolChoice === 'required';
+  const disableThinking = options?.disableThinking === true || forceToolCall;
+  const usesNativeThinking = resolvedModel.supportsThinking && resolvedModel.reasoningEffort === undefined;
+  const resolvedThinkingMode = disableThinking && usesNativeThinking ? 'disabled' : defaultThinkingMode;
 
   const payloadOverrides = getPayloadOverrides(providerConfig);
 
@@ -773,6 +786,7 @@ function buildPayload(
     ...(webSearch && { thinking: { type: 'disabled' } }),
     ...payloadOverrides,
     ...(resolvedModel.supportsTools && finalTools.length > 0 && { tools: finalTools }),
+    ...(resolvedModel.supportsTools && finalTools.length > 0 && options?.toolChoice && { tool_choice: options.toolChoice }),
     ...(resolvedModel.maxTokensOverride != null && { max_tokens: resolvedModel.maxTokensOverride }),
   };
 
@@ -872,11 +886,7 @@ export async function generateMinimaxMusic(prompt: string, lyrics = '', signal?:
   return { audioHex };
 }
 
-export async function generateMinimaxSpeech(
-  text: string,
-  voiceId: string,
-  signal?: AbortSignal,
-): Promise<{ audioHex: string }> {
+export async function generateMinimaxSpeech(text: string, voiceId: string, signal?: AbortSignal): Promise<{ audioHex: string }> {
   const url = 'https://api.minimax.io/v1/t2a_v2';
   const minimaxProvider = useProviderStore.getState().providers.find((p) => p.id === 'builtin-minimax');
   const key = minimaxProvider ? getProviderApiKey(minimaxProvider) : '';
@@ -1310,12 +1320,13 @@ export async function orchestrateLlmLoop(
   onToken?: (token: string) => void,
   onReasoning?: (token: string) => void,
   onScratchpadUpdate?: (content: string, action: 'append' | 'replace') => Promise<void>,
-  onExecuteTool?: (toolName: string, args: string) => Promise<string>,
+  onExecuteTool?: (toolName: string, args: string, iteration: number) => Promise<string>,
   onToolLog?: (log: string) => void,
   tools: LlmTool[] = [SCRATCHPAD_TOOL],
   webSearch?: boolean,
   signal?: AbortSignal,
   options?: LlmRequestOptions,
+  cacheToolResults = true,
 ): Promise<OrchestrateResult> {
   const { model: resolvedModel } = resolveModelAndProvider(model);
   const llmContext = [...messages];
@@ -1327,6 +1338,7 @@ export async function orchestrateLlmLoop(
   let totalSearchCount = 0;
   let finalContent = '';
   let lastResult: LlmResult | null = null;
+  let exhaustedWithPendingToolCalls = false;
   const toolLoopTrace: ToolLoopIteration[] = [];
 
   while (loopCount < MAX_TOOL_LOOP_ITERATIONS) {
@@ -1335,9 +1347,12 @@ export async function orchestrateLlmLoop(
     // in one round-trip. A fresh cache each iteration ensures state changes between
     // iterations are not masked by a stale result.
     const toolResultCache = new Map<string, string>();
+    // Force tool choice only on the first iteration; subsequent turns fall back to
+    // auto so the model can conclude with a plain text summary once it is done.
+    const iterationOptions = loopCount === 1 ? options : options?.toolChoice ? { ...options, toolChoice: undefined } : options;
     const result = resolvedModel.streaming
-      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, tools, webSearch, signal, options)
-      : await askLlm(resolvedModel, temperature, llmContext, tools, webSearch, signal, options);
+      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, tools, webSearch, signal, iterationOptions)
+      : await askLlm(resolvedModel, temperature, llmContext, tools, webSearch, signal, iterationOptions);
 
     if (!resolvedModel.streaming && result.reasoning && onReasoning) {
       onReasoning(result.reasoning);
@@ -1394,13 +1409,13 @@ export async function orchestrateLlmLoop(
           toolResult = tc.function.arguments;
         } else if (!isScratchpad && onExecuteTool) {
           const cacheKey = `${tc.function.name}:${tc.function.arguments}`;
-          const cached = toolResultCache.get(cacheKey);
+          const cached = cacheToolResults ? toolResultCache.get(cacheKey) : undefined;
           if (cached !== undefined) {
             toolResult = cached;
           } else {
             try {
-              toolResult = await onExecuteTool(tc.function.name, tc.function.arguments);
-              toolResultCache.set(cacheKey, toolResult);
+              toolResult = await onExecuteTool(tc.function.name, tc.function.arguments, loopCount);
+              if (cacheToolResults) toolResultCache.set(cacheKey, toolResult);
             } catch (e) {
               toolResult = `Error executing tool: ${e instanceof Error ? e.message : String(e)}`;
             }
@@ -1414,7 +1429,10 @@ export async function orchestrateLlmLoop(
         }
 
         if (onToolLog && !isAskUser) {
-          const summary = toolResult.length > TOOL_RESULT_PREVIEW_LIMIT ? toolResult.slice(0, TOOL_RESULT_PREVIEW_LIMIT) + '... *(display truncated — full content sent to LLM)*' : toolResult;
+          const summary =
+            toolResult.length > TOOL_RESULT_PREVIEW_LIMIT
+              ? toolResult.slice(0, TOOL_RESULT_PREVIEW_LIMIT) + '... *(display truncated — full content sent to LLM)*'
+              : toolResult;
           onToolLog(`**Tool Result**: \`${tc.function.name}\`\n> ${summary.replace(/\n/g, '\n> ')}\n\n`);
         }
 
@@ -1431,7 +1449,10 @@ export async function orchestrateLlmLoop(
       // If we've hit the iteration cap, break out to avoid an infinite loop.
       // The fallback below will fire a final tool-free call so the model can
       // synthesise a text answer from all the context accumulated so far.
-      if (loopCount >= MAX_TOOL_LOOP_ITERATIONS) break;
+      if (loopCount >= MAX_TOOL_LOOP_ITERATIONS) {
+        exhaustedWithPendingToolCalls = true;
+        break;
+      }
 
       continue;
     }
@@ -1439,12 +1460,10 @@ export async function orchestrateLlmLoop(
   }
 
   // ── Forced final call ────────────────────────────────────────────────────────
-  // If the loop exhausted its budget and the last response had no text content
-  // (i.e. only tool calls), make one more tool-free request so the model is
-  // required to produce a human-readable answer rather than silently returning
-  // an empty response.
-  if (!finalContent.trim() && lastResult?.toolCalls && lastResult.toolCalls.length > 0) {
-    console.warn('[orchestrateLlmLoop] Loop exhausted with no text output — firing forced final call without tools.');
+  // If the loop exhausted its budget with pending tool calls, make one more
+  // tool-free request so partial text is not presented as a completed answer.
+  if (exhaustedWithPendingToolCalls) {
+    console.warn('[orchestrateLlmLoop] Loop exhausted with pending tools — firing forced final call without tools.');
     const finalResult = resolvedModel.streaming
       ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, undefined, false, signal, options)
       : await askLlm(resolvedModel, temperature, llmContext, undefined, false, signal, options);
@@ -1455,6 +1474,8 @@ export async function orchestrateLlmLoop(
 
     totalPromptTokens += finalResult.promptTokens;
     totalCompletionTokens += finalResult.completionTokens;
+    totalCachedTokens += finalResult.promptTokensDetails?.cached_tokens ?? finalResult.cacheReadTokens ?? 0;
+    totalCacheCreationTokens += finalResult.promptTokensDetails?.cache_creation_tokens ?? finalResult.cacheCreationTokens ?? 0;
     totalSearchCount += finalResult.searchCount;
     finalContent = finalResult.content;
     lastResult = finalResult;

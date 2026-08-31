@@ -198,7 +198,7 @@ describe('orchestrateLlmLoop — tool calls', () => {
 
     const result = await orchestrateLlmLoop(model, 0.7, [user('What did I say earlier?')], undefined, undefined, undefined, onExecuteTool);
 
-    expect(onExecuteTool).toHaveBeenCalledWith('read_messages', '{"messages":[{"messageId":"abc"}]}');
+    expect(onExecuteTool).toHaveBeenCalledWith('read_messages', '{"messages":[{"messageId":"abc"}]}', 1);
     expect(result.finalContent).toBe('Final answer after tool result');
     expect(result.toolLoopTrace).toHaveLength(1);
     expect(result.toolLoopTrace[0].toolResults[0]).toEqual({
@@ -257,6 +257,70 @@ describe('orchestrateLlmLoop — tool calls', () => {
     expect(result.totalCachedTokens).toBe(100);
     expect(result.totalPromptTokens).toBe(21);
     expect(result.totalCompletionTokens).toBe(9);
+  });
+
+  it('keeps thinking disabled across the whole tool loop when disableThinking is set', async () => {
+    const thinkingModel = createUserChatModel({ supportsThinking: true, streaming: false, supportsTools: true });
+    mockProviderGetState.mockReturnValue({
+      models: [thinkingModel],
+      getAvailableModels: (): UserChatModel[] => [thinkingModel],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-1',
+          model: thinkingModel.apiModelId,
+          choices: [
+            {
+              finish_reason: 'tool_calls',
+              message: {
+                content: '',
+                tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'read_messages', arguments: '{}' } }],
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 3 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'resp-2',
+          model: thinkingModel.apiModelId,
+          choices: [{ finish_reason: 'stop', message: { content: 'done' } }],
+          usage: { prompt_tokens: 11, completion_tokens: 6 },
+        }),
+      );
+
+    const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('result'));
+
+    await orchestrateLlmLoop(
+      thinkingModel,
+      0.7,
+      [user('Hi')],
+      undefined,
+      undefined,
+      undefined,
+      onExecuteTool,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { toolChoice: 'required', disableThinking: true },
+    );
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    const secondBody = JSON.parse(String(mockFetch.mock.calls[1][1]?.body)) as Record<string, unknown>;
+    expect(firstBody.thinking).toEqual({ type: 'disabled' });
+    expect(firstBody.tool_choice).toBe('required');
+    expect(secondBody.thinking).toEqual({ type: 'disabled' });
+    expect(secondBody.tool_choice).toBeUndefined();
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 
   it('caches duplicate tool calls within a single iteration', async () => {
@@ -1191,7 +1255,9 @@ describe('buildPayload — thinking and webSearch', () => {
       body: new ReadableStream({
         start(controller): void {
           controller.enqueue(
-            new TextEncoder().encode('data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n'),
+            new TextEncoder().encode(
+              'data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n',
+            ),
           );
           controller.close();
         },
@@ -1199,9 +1265,20 @@ describe('buildPayload — thinking and webSearch', () => {
     } as unknown as Response);
 
     const { orchestrateLlmLoop } = await import('../llmService');
-    await orchestrateLlmLoop(model, 0.7, [user('Hi')], () => {
-      /* noop */
-    }, undefined, undefined, undefined, undefined, [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }], true);
+    await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('Hi')],
+      () => {
+        /* noop */
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }],
+      true,
+    );
 
     const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
     expect(body.thinking).toEqual({ type: 'disabled' });
@@ -1223,7 +1300,9 @@ describe('buildPayload — thinking and webSearch', () => {
       body: new ReadableStream({
         start(controller): void {
           controller.enqueue(
-            new TextEncoder().encode('data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n'),
+            new TextEncoder().encode(
+              'data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n',
+            ),
           );
           controller.close();
         },
@@ -1237,6 +1316,54 @@ describe('buildPayload — thinking and webSearch', () => {
 
     const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
     expect(body.thinking).toEqual({ type: 'enabled' });
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+
+  it('disables thinking and forces tool_choice when toolChoice is required', async () => {
+    const model = createUserChatModel({ thinkingToggle: 'enabled', streaming: true, supportsTools: true, supportsThinking: true });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({
+        start(controller): void {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n',
+            ),
+          );
+          controller.close();
+        },
+      }),
+    } as unknown as Response);
+
+    const { orchestrateLlmLoop } = await import('../llmService');
+    await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('Hi')],
+      () => {
+        /* noop */
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }],
+      undefined,
+      undefined,
+      { toolChoice: 'required' },
+    );
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.thinking).toEqual({ type: 'disabled' });
+    expect(body.tool_choice).toBe('required');
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 });
@@ -1318,9 +1445,16 @@ describe('buildPayload — Anthropic adapter output_config', () => {
     } as unknown as Response);
 
     const { askLlmStream } = await import('../llmService');
-    await askLlmStream(model, 0.7, [user('Hi')], () => {
-      /* noop */
-    }, undefined, [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }]);
+    await askLlmStream(
+      model,
+      0.7,
+      [user('Hi')],
+      () => {
+        /* noop */
+      },
+      undefined,
+      [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }],
+    );
 
     const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
     expect(body.output_config).toEqual({ effort: 'high' });
@@ -1356,9 +1490,16 @@ describe('buildPayload — Anthropic adapter output_config', () => {
     } as unknown as Response);
 
     const { askLlmStream } = await import('../llmService');
-    await askLlmStream(model, 0.7, [user('Hi')], () => {
-      /* noop */
-    }, undefined, [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }]);
+    await askLlmStream(
+      model,
+      0.7,
+      [user('Hi')],
+      () => {
+        /* noop */
+      },
+      undefined,
+      [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }],
+    );
 
     const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
     expect(body.output_config).toEqual({ effort: 'none' });
@@ -1493,7 +1634,11 @@ describe('resolveModelAndProvider — fallback and error paths', () => {
       ok: true,
       body: new ReadableStream({
         start(controller): void {
-          controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n'));
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n',
+            ),
+          );
           controller.close();
         },
       }),
@@ -1568,7 +1713,9 @@ describe('buildPayload — Anthropic max_tokens default', () => {
       body: new ReadableStream({
         start(controller): void {
           controller.enqueue(
-            new TextEncoder().encode('event: message_start\ndata: {"type":"message_start","message":{"id":"x","model":"t","usage":{"input_tokens":1,"output_tokens":1}}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n'),
+            new TextEncoder().encode(
+              'event: message_start\ndata: {"type":"message_start","message":{"id":"x","model":"t","usage":{"input_tokens":1,"output_tokens":1}}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n',
+            ),
           );
           controller.close();
         },
@@ -1600,7 +1747,9 @@ describe('buildPayload — Anthropic max_tokens default', () => {
       body: new ReadableStream({
         start(controller): void {
           controller.enqueue(
-            new TextEncoder().encode('event: message_start\ndata: {"type":"message_start","message":{"id":"x","model":"t","usage":{"input_tokens":1,"output_tokens":1}}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n'),
+            new TextEncoder().encode(
+              'event: message_start\ndata: {"type":"message_start","message":{"id":"x","model":"t","usage":{"input_tokens":1,"output_tokens":1}}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n',
+            ),
           );
           controller.close();
         },
@@ -1894,7 +2043,7 @@ describe('askLlm — temperature resolution', () => {
     expect(body.temperature).toBe(1.0);
   });
 
-it('uses forced temperature in streaming requests (orchestrateLlmLoop)', async () => {
+  it('uses forced temperature in streaming requests (orchestrateLlmLoop)', async () => {
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
 
@@ -1944,10 +2093,7 @@ describe('generateMinimaxImage', () => {
     const result = await generateMinimaxImage('a cute cat');
 
     expect(result.base64).toBe('base64-image-data-here');
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('image_generation'),
-      expect.objectContaining({ method: 'POST' }),
-    );
+    expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('image_generation'), expect.objectContaining({ method: 'POST' }));
   });
 
   it('throws when API returns an error', async () => {
@@ -1991,10 +2137,7 @@ describe('generateMinimaxMusic', () => {
     const result = await generateMinimaxMusic('jazz melody', 'lyrics here');
 
     expect(result.audioHex).toBe('deadbeef1234');
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('music'),
-      expect.objectContaining({ method: 'POST' }),
-    );
+    expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('music'), expect.objectContaining({ method: 'POST' }));
   });
 
   it('throws when API returns an error', async () => {
