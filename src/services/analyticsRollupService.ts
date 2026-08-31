@@ -101,7 +101,7 @@ function mergeSnapshots(existing: AnalyticsSnapshot, incoming: AnalyticsSnapshot
     mergedLatency.length = MAX_LATENCY_SAMPLES;
   }
 
-  const mergedProviderStats: Record<string, { cost: number; tokens: number; messageCount: number }> = { ...existing.providerStats ?? {} };
+  const mergedProviderStats: Record<string, { cost: number; tokens: number; messageCount: number }> = { ...(existing.providerStats ?? {}) };
   for (const [key, val] of Object.entries(incoming.providerStats ?? {})) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     mergedProviderStats[key] = mergedProviderStats[key] ?? { cost: 0, tokens: 0, messageCount: 0 };
@@ -110,7 +110,7 @@ function mergeSnapshots(existing: AnalyticsSnapshot, incoming: AnalyticsSnapshot
     mergedProviderStats[key].messageCount += val.messageCount;
   }
 
-  const mergedToolStats: Record<string, { calls: number; successCount: number; errors: string[] }> = { ...existing.toolStats ?? {} };
+  const mergedToolStats: Record<string, { calls: number; successCount: number; errors: string[] }> = { ...(existing.toolStats ?? {}) };
   for (const [key, val] of Object.entries(incoming.toolStats ?? {})) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     mergedToolStats[key] = mergedToolStats[key] ?? { calls: 0, successCount: 0, errors: [] };
@@ -159,13 +159,13 @@ function createEmptySnapshot(date: string): PopulatedSnapshot {
 async function runRollup(): Promise<void> {
   const { marker, lastId } = await getRollupState();
 
-  const messages = marker
-    ? await athenaDb.messages.where('created').aboveOrEqual(marker).toArray()
-    : await athenaDb.messages.toArray();
+  const messages = marker ? await athenaDb.messages.where('created').aboveOrEqual(marker).toArray() : await athenaDb.messages.toArray();
+  const operationUsages = marker
+    ? await athenaDb.llmOperationUsages.where('created').aboveOrEqual(marker).toArray()
+    : await athenaDb.llmOperationUsages.toArray();
+  const records = [...messages, ...operationUsages];
 
-  const filtered = marker
-    ? messages.filter((m) => !(m.created === marker && lastId !== '' && m.id <= lastId))
-    : messages;
+  const filtered = marker ? records.filter((record) => !(record.created === marker && lastId !== '' && record.id <= lastId)) : records;
 
   if (filtered.length === 0) return;
 
@@ -174,11 +174,11 @@ async function runRollup(): Promise<void> {
 
   const groupedByDate = new Map<string, PopulatedSnapshot>();
 
-  for (const m of filtered) {
-    const date = getDateString(m.created);
-    if (m.created > latestCreated || (m.created === latestCreated && m.id > latestId)) {
-      latestCreated = m.created;
-      latestId = m.id;
+  for (const record of filtered) {
+    const date = getDateString(record.created);
+    if (record.created > latestCreated || (record.created === latestCreated && record.id > latestId)) {
+      latestCreated = record.created;
+      latestId = record.id;
     }
 
     let snap = groupedByDate.get(date);
@@ -188,29 +188,29 @@ async function runRollup(): Promise<void> {
     }
 
     snap.messageCount++;
-    if (m.failed) snap.failedCount++;
-    snap.promptTokens += m.promptTokens;
-    snap.completionTokens += m.completionTokens;
-    snap.cost += m.totalCost;
+    if (record.failed) snap.failedCount++;
+    snap.promptTokens += record.promptTokens;
+    snap.completionTokens += record.completionTokens;
+    snap.cost += record.totalCost;
 
-    if (m.latencyMs != null && m.latencyMs > 0) {
-      snap.latencySamples.push(m.latencyMs);
+    if (record.latencyMs != null && record.latencyMs > 0) {
+      snap.latencySamples.push(record.latencyMs);
       if (snap.latencySamples.length > MAX_LATENCY_SAMPLES) {
         snap.latencySamples.length = MAX_LATENCY_SAMPLES;
       }
     }
 
-    const providerName = resolveProviderName(m.model);
+    const providerName = resolveProviderName(record.model);
     if (providerName !== null) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const pStat = snap.providerStats[providerName] ?? { cost: 0, tokens: 0, messageCount: 0 };
-      pStat.cost += m.totalCost;
-      pStat.tokens += m.promptTokens + m.completionTokens;
+      pStat.cost += record.totalCost;
+      pStat.tokens += record.promptTokens + record.completionTokens;
       pStat.messageCount++;
       snap.providerStats[providerName] = pStat;
     }
 
-    const toolUsage = parseToolUsage(m.rawResponse);
+    const toolUsage = parseToolUsage(record.rawResponse);
     for (const [toolName, stats] of Object.entries(toolUsage)) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const existing = snap.toolStats[toolName] ?? { calls: 0, successCount: 0, errors: [] as string[] };
@@ -262,11 +262,7 @@ export async function rebuildAnalyticsOwnership(): Promise<void> {
 
     // 1. Correct ownership: zero cost/cache on user messages (assistant owns them).
     await athenaDb.messages
-      .filter(
-        (m) =>
-          m.type === 'user' &&
-          (m.totalCost !== 0 || m.cachedTokens !== undefined || m.cacheCreationTokens !== undefined),
-      )
+      .filter((m) => m.type === 'user' && (m.totalCost !== 0 || m.cachedTokens !== undefined || m.cacheCreationTokens !== undefined))
       .modify((m) => {
         m.totalCost = 0;
         m.cachedTokens = 0;

@@ -56,7 +56,7 @@ const emptyModelForm = (providerId: string): Omit<UserChatModel, 'id'> => ({
   supportsTools: true,
   supportsVision: false,
   supportsFiles: false,
-    supportsThinking: false,
+  supportsThinking: false,
   contextWindow: 128_000,
   forceTemperature: null,
   enforceAlternatingRoles: false,
@@ -372,6 +372,7 @@ const ProviderSettingsForm: React.FC<ProviderSettingsFormProps> = ({ provider, o
         fullWidth
         value={apiKeyInput}
         onChange={(e): void => setApiKeyInput(e.target.value)}
+        helperText="Stored locally with recoverable obfuscation, not encryption. Avoid saving keys on shared devices."
         sx={{ mb: 1.5 }}
       />
 
@@ -491,12 +492,7 @@ const ProviderCardComponent: React.FC<ProviderCardProps> = ({ provider, balanceL
           <Typography variant="h6">{provider.name}</Typography>
           <Chip label={provider.messageFormat} size="small" variant="outlined" sx={{ fontSize: '0.65rem' }} />
           {hasKey ? (
-            <Chip
-              label="Key set"
-              color="success"
-              variant="outlined"
-              size="small"
-            />
+            <Chip label="Key set" color="success" variant="outlined" size="small" />
           ) : (
             <Chip label="No key" color="warning" variant="outlined" size="small" />
           )}
@@ -744,6 +740,7 @@ const AddProviderCard: React.FC = () => {
             fullWidth
             value={apiKeyInput}
             onChange={(e): void => setApiKeyInput(e.target.value)}
+            helperText="Stored locally with recoverable obfuscation, not encryption. Avoid saving keys on shared devices."
             sx={{ mb: 1.5 }}
           />
 

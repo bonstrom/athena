@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type, unused-imports/no-unused-vars, @typescript-eslint/no-non-null-assertion */
-import type { AnalyticsSnapshot, Message } from '../../database/AthenaDb';
+import type { AnalyticsSnapshot, LlmOperationUsage, Message } from '../../database/AthenaDb';
 
 const mockMessagesToArray = jest.fn<Promise<Message[]>, []>();
+const mockOperationUsagesToArray = jest.fn<Promise<LlmOperationUsage[]>, []>();
 const mockWhereAboveOrEqual = jest.fn<{ toArray: () => Promise<Message[]> }, [string]>();
 const mockWhereCreated = jest.fn<{ aboveOrEqual: (marker: string) => { toArray: () => Promise<Message[]> } }, [string]>();
 
@@ -34,6 +35,14 @@ jest.mock('../../database/AthenaDb', () => ({
       },
       filter: () => ({ modify: (mutator: (m: Message) => void): Promise<void> => mockMessagesModify(mutator) }),
     },
+    llmOperationUsages: {
+      toArray: (): Promise<LlmOperationUsage[]> => mockOperationUsagesToArray(),
+      where: (_field: string): { aboveOrEqual: (_marker: string) => { toArray: () => Promise<LlmOperationUsage[]> } } => ({
+        aboveOrEqual: (_marker: string): { toArray: () => Promise<LlmOperationUsage[]> } => ({
+          toArray: (): Promise<LlmOperationUsage[]> => mockOperationUsagesToArray(),
+        }),
+      }),
+    },
     analyticsSnapshots: {
       get: (date: string): Promise<AnalyticsSnapshot | undefined> => mockSnapshotGet(date),
       put: (snap: AnalyticsSnapshot): Promise<string> => mockSnapshotPut(snap),
@@ -51,8 +60,7 @@ jest.mock('../../database/AthenaDb', () => ({
       get: (id: string): Promise<{ id: string; value: unknown } | undefined> => mockUserSettingsGet(id),
       put: (setting: { id: string; value: unknown }): Promise<string> => mockUserSettingsPut(setting),
     },
-    transaction: (mode: string, tables: unknown[], scope: () => Promise<unknown>): Promise<unknown> =>
-      mockTransaction(mode, tables, scope),
+    transaction: (mode: string, tables: unknown[], scope: () => Promise<unknown>): Promise<unknown> => mockTransaction(mode, tables, scope),
   },
   AnalyticsSnapshot: {} as unknown,
 }));
@@ -75,9 +83,16 @@ const localStorageBackup = { ...localStorage };
 beforeEach(() => {
   jest.clearAllMocks();
   localStorage.clear();
-  Object.keys(localStorageBackup).forEach((k) => { try { localStorage.removeItem(k); } catch { /* noop */ } });
+  Object.keys(localStorageBackup).forEach((k) => {
+    try {
+      localStorage.removeItem(k);
+    } catch {
+      /* noop */
+    }
+  });
   userSettingsStore.clear();
   mockMessagesToArray.mockResolvedValue([]);
+  mockOperationUsagesToArray.mockResolvedValue([]);
   mockWhereAboveOrEqual.mockReturnValue({ toArray: (): Promise<Message[]> => mockMessagesToArray() });
   mockWhereCreated.mockReturnValue({ aboveOrEqual: (marker: string) => ({ toArray: (): Promise<Message[]> => mockMessagesToArray() }) });
   mockSnapshotGet.mockResolvedValue(undefined);
@@ -167,10 +182,7 @@ describe('rollupAnalytics', () => {
     setRollupMarker('2026-01-01T10:00:00.000Z');
     userSettingsStore.set('analyticsRollupLastId', 'a');
 
-    const msgs = [
-      makeMsg({ id: 'a', created: '2026-01-01T10:00:00.000Z' }),
-      makeMsg({ id: 'b', created: '2026-01-02T10:00:00.000Z' }),
-    ];
+    const msgs = [makeMsg({ id: 'a', created: '2026-01-01T10:00:00.000Z' }), makeMsg({ id: 'b', created: '2026-01-02T10:00:00.000Z' })];
     mockMessagesToArray.mockResolvedValue(msgs);
 
     await rollupAnalytics();
@@ -187,10 +199,7 @@ describe('rollupAnalytics', () => {
     setRollupMarker('2026-01-01T12:00:00.000Z');
     userSettingsStore.set('analyticsRollupLastId', 'msg-dup');
 
-    const msgs = [
-      makeMsg({ id: 'msg-dup', created: '2026-01-01T12:00:00.000Z' }),
-      makeMsg({ id: 'msg-new', created: '2026-01-01T12:00:00.000Z' }),
-    ];
+    const msgs = [makeMsg({ id: 'msg-dup', created: '2026-01-01T12:00:00.000Z' }), makeMsg({ id: 'msg-new', created: '2026-01-01T12:00:00.000Z' })];
     mockMessagesToArray.mockResolvedValue(msgs);
 
     await rollupAnalytics();
@@ -211,9 +220,9 @@ describe('rollupAnalytics', () => {
       failedCount: 1,
       promptTokens: 100,
       completionTokens: 50,
-      cost: 0.10,
+      cost: 0.1,
       latencySamples: [100, 200],
-      providerStats: { OpenAI: { cost: 0.10, tokens: 150, messageCount: 3 } },
+      providerStats: { OpenAI: { cost: 0.1, tokens: 150, messageCount: 3 } },
       toolStats: { scratchpad: { calls: 2, successCount: 2, errors: [] } },
     };
     mockSnapshotGet.mockResolvedValue(existing);
@@ -231,7 +240,7 @@ describe('rollupAnalytics', () => {
     expect(merged.cost).toBeCloseTo(0.15);
     expect(merged.latencySamples).toEqual([100, 200]);
     expect(merged.providerStats).toEqual({
-      OpenAI: { cost: 0.10, tokens: 150, messageCount: 3 },
+      OpenAI: { cost: 0.1, tokens: 150, messageCount: 3 },
     });
   });
 
@@ -277,9 +286,7 @@ describe('rollupAnalytics', () => {
     };
     mockSnapshotGet.mockResolvedValue(existing);
 
-    const msgs = Array.from({ length: 20 }, (_, i) =>
-      makeMsg({ id: `lat-${i}`, created: '2026-01-01T14:00:00.000Z', latencyMs: 500 + i })
-    );
+    const msgs = Array.from({ length: 20 }, (_, i) => makeMsg({ id: `lat-${i}`, created: '2026-01-01T14:00:00.000Z', latencyMs: 500 + i }));
     mockMessagesToArray.mockResolvedValue(msgs);
 
     await rollupAnalytics();
@@ -364,7 +371,7 @@ describe('rollupAnalytics', () => {
     const msgs = [
       makeMsg({ id: 'a', created: '2026-01-01T10:00:00.000Z', totalCost: 0.05 }),
       makeMsg({ id: 'b', created: '2026-01-01T11:00:00.000Z', totalCost: 0.03 }),
-      makeMsg({ id: 'c', created: '2026-01-02T10:00:00.000Z', totalCost: 0.10 }),
+      makeMsg({ id: 'c', created: '2026-01-02T10:00:00.000Z', totalCost: 0.1 }),
     ];
     mockMessagesToArray.mockResolvedValue(msgs);
 
@@ -376,7 +383,7 @@ describe('rollupAnalytics', () => {
     expect(day1.date).toBe('2026-01-01');
     expect(day1.cost).toBeCloseTo(0.08);
     expect(day2.date).toBe('2026-01-02');
-    expect(day2.cost).toBeCloseTo(0.10);
+    expect(day2.cost).toBeCloseTo(0.1);
   });
 
   it('handles empty message list on first run', async () => {

@@ -28,6 +28,13 @@ import { useTheme, alpha } from '@mui/material/styles';
 import DOMPurify from 'dompurify';
 import { useAuthStore } from '../store/AuthStore';
 
+interface MermaidApi {
+  initialize: (config: { startOnLoad: boolean; theme: string; securityLevel: string }) => void;
+  render: (id: string, definition: string) => Promise<{ svg: string }>;
+}
+
+const svgSanitizer = DOMPurify as unknown as { sanitize: (svg: string, config: DOMPurify.Config) => string };
+
 SyntaxHighlighter.registerLanguage('javascript', javascript);
 SyntaxHighlighter.registerLanguage('js', javascript);
 SyntaxHighlighter.registerLanguage('typescript', typescript);
@@ -101,11 +108,11 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
         color: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.5)'),
         '&:hover': {
           color: (theme) => (theme.palette.mode === 'dark' ? 'white' : 'black'),
-          backgroundColor: (theme) =>
-            theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+          backgroundColor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
         },
         zIndex: 1,
-      }}>
+      }}
+    >
       {copied ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
     </IconButton>
   );
@@ -131,7 +138,8 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
 
     const renderDiagram = async (): Promise<void> => {
       try {
-        const { default: mermaid } = await import('mermaid');
+        const mermaidModule = (await import('mermaid')) as unknown as { default: MermaidApi };
+        const mermaid = mermaidModule.default;
         mermaid.initialize({
           startOnLoad: false,
           theme: themeMode === 'dark' ? 'dark' : 'default',
@@ -177,7 +185,8 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
           color: 'error.contrastText',
           fontSize: '0.875rem',
           fontFamily: 'monospace',
-        }}>
+        }}
+      >
         {error}
       </Box>
     );
@@ -317,7 +326,7 @@ const SVG_SANITIZE_CONFIG: DOMPurify.Config = {
 };
 
 function sanitizeSvg(svg: string): string {
-  return DOMPurify.sanitize(svg, SVG_SANITIZE_CONFIG);
+  return svgSanitizer.sanitize(svg, SVG_SANITIZE_CONFIG);
 }
 
 type SvgBackground = 'light' | 'dark' | 'transparent';
@@ -347,29 +356,19 @@ const SvgDiagram: React.FC<SvgDiagramProps> = ({ children, onEditSvg }) => {
   return (
     <Box sx={{ my: 2 }}>
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-        <ToggleButtonGroup
-          value={background}
-          exclusive
-          size="small"
-          onChange={handleBackgroundChange}>
+        <ToggleButtonGroup value={background} exclusive size="small" onChange={handleBackgroundChange}>
           <Tooltip title="Light background">
-            <ToggleButton
-              value="light"
-              aria-label="Light background">
+            <ToggleButton value="light" aria-label="Light background">
               <LightMode fontSize="small" />
             </ToggleButton>
           </Tooltip>
           <Tooltip title="Dark background">
-            <ToggleButton
-              value="dark"
-              aria-label="Dark background">
+            <ToggleButton value="dark" aria-label="Dark background">
               <DarkMode fontSize="small" />
             </ToggleButton>
           </Tooltip>
           <Tooltip title="Transparent background">
-            <ToggleButton
-              value="transparent"
-              aria-label="Transparent background">
+            <ToggleButton value="transparent" aria-label="Transparent background">
               <CheckBoxOutlineBlank fontSize="small" />
             </ToggleButton>
           </Tooltip>
@@ -383,10 +382,10 @@ const SvgDiagram: React.FC<SvgDiagramProps> = ({ children, onEditSvg }) => {
               sx={{
                 color: 'text.secondary',
                 '&:hover': {
-                  bgcolor: (theme) =>
-                    theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                  bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
                 },
-              }}>
+              }}
+            >
               <Edit fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -443,9 +442,7 @@ function isClosingFence(marker: FenceMarker, open: FenceMarker): boolean {
  * starting with a digit still renders correctly.
  */
 function escapeCurrencyInProse(text: string): string {
-  return text.replace(/(`+)[\s\S]*?\1|(?<![$\\])\$(?=\d)/g, (match: string, backticks: string | undefined): string =>
-    backticks ? match : '\\$',
-  );
+  return text.replace(/(`+)[\s\S]*?\1|(?<![$\\])\$(?=\d)/g, (match: string, backticks: string | undefined): string => (backticks ? match : '\\$'));
 }
 
 /**
@@ -528,40 +525,28 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
   const markdownComponents: Components = useMemo(
     () => ({
       p: ({ children }) => (
-        <Typography
-          variant="body2"
-          sx={{ lineHeight: 1.4, mb: 1, fontSize: `${fontSize}px` }}
-          component="p">
+        <Typography variant="body2" sx={{ lineHeight: 1.4, mb: 1, fontSize: `${fontSize}px` }} component="p">
           {children}
         </Typography>
       ),
       h1: ({ children }) => (
-        <Typography
-          variant="h5"
-          sx={{ fontWeight: 'bold', mt: 2, mb: 1, fontSize: `${fontSize * 1.5}px` }}>
+        <Typography variant="h5" sx={{ fontWeight: 'bold', mt: 2, mb: 1, fontSize: `${fontSize * 1.5}px` }}>
           {children}
         </Typography>
       ),
       h2: ({ children }) => (
-        <Typography
-          variant="h6"
-          sx={{ fontWeight: 'bold', mt: 1.5, mb: 1, fontSize: `${fontSize * 1.3}px` }}>
+        <Typography variant="h6" sx={{ fontWeight: 'bold', mt: 1.5, mb: 1, fontSize: `${fontSize * 1.3}px` }}>
           {children}
         </Typography>
       ),
       h3: ({ children }) => (
-        <Typography
-          variant="subtitle1"
-          sx={{ fontWeight: 'bold', mt: 1, mb: 0.5, fontSize: `${fontSize * 1.1}px` }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mt: 1, mb: 0.5, fontSize: `${fontSize * 1.1}px` }}>
           {children}
         </Typography>
       ),
       li: ({ children }) => (
         <li style={{ marginBottom: '0.25em', lineHeight: 1.4, fontSize: `${fontSize}px` }}>
-          <Typography
-            variant="body2"
-            component="span"
-            sx={{ fontSize: 'inherit' }}>
+          <Typography variant="body2" component="span" sx={{ fontSize: 'inherit' }}>
             {children}
           </Typography>
         </li>
@@ -582,9 +567,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
         }
         if (language === 'svg' && !disableSvg) {
           return (
-            <SvgDiagram
-              key={codeString}
-              onEditSvg={onEditSvg}>
+            <SvgDiagram key={codeString} onEditSvg={onEditSvg}>
               {codeString}
             </SvgDiagram>
           );
@@ -597,8 +580,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
           prolog: { ...oneDark.prolog, color: '#7f8ea3' },
         };
         const lightSyntaxStyle = oneLight as Record<string, CSSProperties>;
-        const syntaxStyle: Record<string, CSSProperties> =
-          theme.palette.mode === 'dark' ? darkSyntaxStyle : lightSyntaxStyle;
+        const syntaxStyle: Record<string, CSSProperties> = theme.palette.mode === 'dark' ? darkSyntaxStyle : lightSyntaxStyle;
 
         return (
           <Box
@@ -609,7 +591,8 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
               fontSize: `${Math.max(12, fontSize - 2)}px`,
               borderRadius: 1,
               '&:hover .copy-button': { opacity: 1 },
-            }}>
+            }}
+          >
             <CopyButton text={codeString} />
             {language ? (
               <SyntaxHighlighter
@@ -622,7 +605,8 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
                   margin: 0,
                   lineHeight: '1.4',
                 }}
-                wrapLongLines={false}>
+                wrapLongLines={false}
+              >
                 {codeString}
               </SyntaxHighlighter>
             ) : (
@@ -636,7 +620,8 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
                   lineHeight: '1.4',
                   fontFamily: 'monospace',
                   backgroundColor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
-                }}>
+                }}
+              >
                 {codeString}
               </Box>
             )}
@@ -644,12 +629,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
         );
       },
 
-      code({
-        className,
-        children,
-        node: _node,
-        ...props
-      }: React.ComponentPropsWithoutRef<'code'> & { node?: unknown }): React.ReactElement {
+      code({ className, children, node: _node, ...props }: React.ComponentPropsWithoutRef<'code'> & { node?: unknown }): React.ReactElement {
         return (
           <code
             className={className}
@@ -660,7 +640,8 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
               borderRadius: 4,
               fontSize: `${Math.max(12, fontSize - 2)}px`,
             }}
-            {...props}>
+            {...props}
+          >
             {children}
           </code>
         );
@@ -671,10 +652,7 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
 
   return (
     <Box sx={{ overflowWrap: 'break-word', wordBreak: 'normal' }}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
-        components={markdownComponents}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
         {preprocessMarkdown(children)}
       </ReactMarkdown>
     </Box>

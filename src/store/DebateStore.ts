@@ -29,6 +29,31 @@ interface DebateState {
 }
 
 const DEBATE_TEMPERATURE = 1.0;
+const DEBATE_LEASE_MS = 30 * 60 * 1000;
+
+async function acquireDebateLease(topicId: string): Promise<string | null> {
+  const leaseId = `debate:${topicId}`;
+  const owner = crypto.randomUUID();
+  return athenaDb.transaction('rw', athenaDb.operationLeases, async (): Promise<string | null> => {
+    const existing = await athenaDb.operationLeases.get(leaseId);
+    if (existing && existing.expiresAt > Date.now()) return null;
+    await athenaDb.operationLeases.put({
+      id: leaseId,
+      topicId,
+      owner,
+      expiresAt: Date.now() + DEBATE_LEASE_MS,
+    });
+    return owner;
+  });
+}
+
+async function releaseDebateLease(topicId: string, owner: string): Promise<void> {
+  const leaseId = `debate:${topicId}`;
+  await athenaDb.transaction('rw', athenaDb.operationLeases, async () => {
+    const lease = await athenaDb.operationLeases.get(leaseId);
+    if (lease?.owner === owner) await athenaDb.operationLeases.delete(leaseId);
+  });
+}
 
 function buildSystemMessage(customInstructions: string): LlmMessage | null {
   const parts: string[] = [];
@@ -141,8 +166,20 @@ async function runDebatePhase(
   let accA = '';
   let accB = '';
 
-  let resultA: { content: string; promptTokens: number; completionTokens: number; promptTokensDetails?: { cached_tokens?: number; cache_creation_tokens?: number }; reasoning?: string };
-  let resultB: { content: string; promptTokens: number; completionTokens: number; promptTokensDetails?: { cached_tokens?: number; cache_creation_tokens?: number }; reasoning?: string };
+  let resultA: {
+    content: string;
+    promptTokens: number;
+    completionTokens: number;
+    promptTokensDetails?: { cached_tokens?: number; cache_creation_tokens?: number };
+    reasoning?: string;
+  };
+  let resultB: {
+    content: string;
+    promptTokens: number;
+    completionTokens: number;
+    promptTokensDetails?: { cached_tokens?: number; cache_creation_tokens?: number };
+    reasoning?: string;
+  };
 
   try {
     [resultA, resultB] = await Promise.all([
@@ -174,15 +211,24 @@ async function runDebatePhase(
       ),
     ]);
   } catch (err) {
-    await Promise.all([
-      updateMessage(msgIdA, { failed: true }),
-      updateMessage(msgIdB, { failed: true }),
-    ]);
+    await Promise.all([updateMessage(msgIdA, { failed: true }), updateMessage(msgIdB, { failed: true })]);
     throw err;
   }
 
-  const costA = calculateCostUSD(debateModelA, resultA.promptTokens, resultA.completionTokens, resultA.promptTokensDetails, getPeakMultiplier(debateModelA));
-  const costB = calculateCostUSD(debateModelB, resultB.promptTokens, resultB.completionTokens, resultB.promptTokensDetails, getPeakMultiplier(debateModelB));
+  const costA = calculateCostUSD(
+    debateModelA,
+    resultA.promptTokens,
+    resultA.completionTokens,
+    resultA.promptTokensDetails,
+    getPeakMultiplier(debateModelA),
+  );
+  const costB = calculateCostUSD(
+    debateModelB,
+    resultB.promptTokens,
+    resultB.completionTokens,
+    resultB.promptTokensDetails,
+    getPeakMultiplier(debateModelB),
+  );
 
   await Promise.all([
     updateMessage(msgIdA, {
@@ -250,48 +296,54 @@ export const useDebateStore = create<DebateState>((set, get) => ({
     const { debateModelA, debateModelB } = get();
     if (!debateModelA || !debateModelB) return;
 
+    const leaseOwner = await acquireDebateLease(topicId);
+    if (!leaseOwner) {
+      useNotificationStore.getState().addNotification('Debate already running', 'Another tab is updating this debate.');
+      return;
+    }
+
     const controller = new AbortController();
-    set({ debateSending: true, abortController: controller, streamingContentA: '', streamingContentB: '', streamingConsensus: '' });
-
-    const now = new Date().toISOString();
-    const baseMessages = (msgs: LlmMessage[]): LlmMessage[] => {
-      const instructions = useAuthStore.getState().customInstructions;
-      const systemMsg = buildSystemMessage(instructions);
-      return systemMsg ? [systemMsg, ...msgs] : msgs;
-    };
-
-    const userMessageId = crypto.randomUUID();
-    const userMessage: Message = {
-      id: userMessageId,
-      topicId,
-      forkId: 'main',
-      type: 'user',
-      content: question.trim(),
-      created: now,
-      isDeleted: false,
-      includeInContext: false,
-      failed: false,
-      promptTokens: 0,
-      completionTokens: 0,
-      totalCost: 0,
-    };
-    await persistMessage(userMessage);
-
-    // Update topic store so UI sees the new message immediately
-    useTopicStore.setState((s) => ({
-      topics: s.topics.map((t) => (t.id === topicId ? { ...t, updatedOn: now } : t)),
-    }));
-
-    const runPhase = (
-      phase: DebatePhase,
-      messagesA: LlmMessage[],
-      messagesB: LlmMessage[],
-      parentIdA: string,
-      parentIdB: string,
-    ): Promise<{ msgIdA: string; msgIdB: string; contentA: string; contentB: string }> =>
-      runDebatePhase(phase, messagesA, messagesB, parentIdA, parentIdB, debateModelA, debateModelB, topicId, controller, set);
-
     try {
+      set({ debateSending: true, abortController: controller, streamingContentA: '', streamingContentB: '', streamingConsensus: '' });
+
+      const now = new Date().toISOString();
+      const baseMessages = (msgs: LlmMessage[]): LlmMessage[] => {
+        const instructions = useAuthStore.getState().customInstructions;
+        const systemMsg = buildSystemMessage(instructions);
+        return systemMsg ? [systemMsg, ...msgs] : msgs;
+      };
+
+      const userMessageId = crypto.randomUUID();
+      const userMessage: Message = {
+        id: userMessageId,
+        topicId,
+        forkId: 'main',
+        type: 'user',
+        content: question.trim(),
+        created: now,
+        isDeleted: false,
+        includeInContext: false,
+        failed: false,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalCost: 0,
+      };
+      await persistMessage(userMessage);
+
+      // Update topic store so UI sees the new message immediately
+      useTopicStore.setState((s) => ({
+        topics: s.topics.map((t) => (t.id === topicId ? { ...t, updatedOn: now } : t)),
+      }));
+
+      const runPhase = (
+        phase: DebatePhase,
+        messagesA: LlmMessage[],
+        messagesB: LlmMessage[],
+        parentIdA: string,
+        parentIdB: string,
+      ): Promise<{ msgIdA: string; msgIdB: string; contentA: string; contentB: string }> =>
+        runDebatePhase(phase, messagesA, messagesB, parentIdA, parentIdB, debateModelA, debateModelB, topicId, controller, set);
+
       // Refresh messages so the user message is visible immediately
       await refreshDebateMessages(topicId);
 
@@ -415,6 +467,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       useNotificationStore.getState().addNotification('Debate failed', message);
     } finally {
       set({ debateSending: false, currentPhase: 'idle', abortController: null });
+      await releaseDebateLease(topicId, leaseOwner);
     }
   },
 
@@ -424,85 +477,91 @@ export const useDebateStore = create<DebateState>((set, get) => ({
     const { debateModelA, debateModelB } = get();
     if (!debateModelA || !debateModelB) return;
 
-    // Load all messages for this topic's last round
-    const allMessages = await athenaDb.messages
-      .where('topicId')
-      .equals(topicId)
-      .and((m) => m.forkId === 'main' && !m.isDeleted)
-      .sortBy('created');
-    const userMessages = allMessages.filter((m) => m.type === 'user');
-    if (userMessages.length === 0) return;
-
-    const lastUserMsg = userMessages[userMessages.length - 1];
-    const question = lastUserMsg.content;
-    const userMessageId = lastUserMsg.id;
-
-    // Get assistant messages for this round (after the last user message)
-    const lastUserIdx = allMessages.findIndex((m) => m.id === lastUserMsg.id);
-    const roundMessages = allMessages.slice(lastUserIdx + 1).filter((m) => m.type === 'assistant');
-
-    // Helpers to check phase completion
-    const phaseMessages = (phase: DebatePhase): Message[] => roundMessages.filter((m) => m.debatePhase === phase && m.content.trim() !== '');
-    const isPairedDone = (phase: DebatePhase): boolean => {
-      const msgs = phaseMessages(phase);
-      return msgs.some((m) => m.debateSide === 'left') && msgs.some((m) => m.debateSide === 'right');
-    };
-
-    const answerDone = isPairedDone('answer');
-    const reviewDone = isPairedDone('review');
-    const finalDone = isPairedDone('final');
-    const consensusDone = phaseMessages('consensus').length > 0;
-
-    if (answerDone && reviewDone && finalDone && consensusDone) return;
-
-    // Delete messages from the first incomplete phase onward (dependent phases are invalid)
-    const allPhases: DebatePhase[] = ['answer', 'review', 'final', 'consensus'];
-    const doneFlags = [answerDone, reviewDone, finalDone, consensusDone];
-    const firstIncomplete = doneFlags.indexOf(false);
-    const phasesToClean = new Set<string>(allPhases.slice(firstIncomplete));
-    const msgsToDelete = roundMessages.filter((m) => m.debatePhase != null && phasesToClean.has(m.debatePhase));
-    await Promise.all(msgsToDelete.map((m) => athenaDb.messages.delete(m.id)));
+    const leaseOwner = await acquireDebateLease(topicId);
+    if (!leaseOwner) {
+      useNotificationStore.getState().addNotification('Debate already running', 'Another tab is updating this debate.');
+      return;
+    }
 
     const controller = new AbortController();
-    set({
-      debateSending: true,
-      abortController: controller,
-      streamingContentA: '',
-      streamingContentB: '',
-      streamingConsensus: '',
-    });
-
-    const baseMessages = (msgs: LlmMessage[]): LlmMessage[] => {
-      const instructions = useAuthStore.getState().customInstructions;
-      const systemMsg = buildSystemMessage(instructions);
-      return systemMsg ? [systemMsg, ...msgs] : msgs;
-    };
-
-    const runPhase = (
-      phase: DebatePhase,
-      msgsA: LlmMessage[],
-      msgsB: LlmMessage[],
-      parentA: string,
-      parentB: string,
-    ): Promise<{ msgIdA: string; msgIdB: string; contentA: string; contentB: string }> =>
-      runDebatePhase(phase, msgsA, msgsB, parentA, parentB, debateModelA, debateModelB, topicId, controller, set);
-
-    // Extract data from completed phases
-    const answerLeft = phaseMessages('answer').find((m) => m.debateSide === 'left');
-    const answerRight = phaseMessages('answer').find((m) => m.debateSide === 'right');
-    const reviewLeft = phaseMessages('review').find((m) => m.debateSide === 'left');
-    const reviewRight = phaseMessages('review').find((m) => m.debateSide === 'right');
-
-    let answerA = answerLeft?.content ?? '';
-    let answerB = answerRight?.content ?? '';
-    let answerIdA = answerLeft?.id ?? userMessageId;
-    let answerIdB = answerRight?.id ?? userMessageId;
-    let reviewForA = reviewRight?.content ?? ''; // B reviewed A
-    let reviewForB = reviewLeft?.content ?? ''; // A reviewed B
-    let reviewIdA = reviewLeft?.id ?? answerIdA;
-    let reviewIdB = reviewRight?.id ?? answerIdB;
-
     try {
+      // Load all messages for this topic's last round
+      const allMessages = await athenaDb.messages
+        .where('topicId')
+        .equals(topicId)
+        .and((m) => m.forkId === 'main' && !m.isDeleted)
+        .sortBy('created');
+      const userMessages = allMessages.filter((m) => m.type === 'user');
+      if (userMessages.length === 0) return;
+
+      const lastUserMsg = userMessages[userMessages.length - 1];
+      const question = lastUserMsg.content;
+      const userMessageId = lastUserMsg.id;
+
+      // Get assistant messages for this round (after the last user message)
+      const lastUserIdx = allMessages.findIndex((m) => m.id === lastUserMsg.id);
+      const roundMessages = allMessages.slice(lastUserIdx + 1).filter((m) => m.type === 'assistant');
+
+      // Helpers to check phase completion
+      const phaseMessages = (phase: DebatePhase): Message[] => roundMessages.filter((m) => m.debatePhase === phase && m.content.trim() !== '');
+      const isPairedDone = (phase: DebatePhase): boolean => {
+        const msgs = phaseMessages(phase);
+        return msgs.some((m) => m.debateSide === 'left') && msgs.some((m) => m.debateSide === 'right');
+      };
+
+      const answerDone = isPairedDone('answer');
+      const reviewDone = isPairedDone('review');
+      const finalDone = isPairedDone('final');
+      const consensusDone = phaseMessages('consensus').length > 0;
+
+      if (answerDone && reviewDone && finalDone && consensusDone) return;
+
+      // Delete messages from the first incomplete phase onward (dependent phases are invalid)
+      const allPhases: DebatePhase[] = ['answer', 'review', 'final', 'consensus'];
+      const doneFlags = [answerDone, reviewDone, finalDone, consensusDone];
+      const firstIncomplete = doneFlags.indexOf(false);
+      const phasesToClean = new Set<string>(allPhases.slice(firstIncomplete));
+      const msgsToDelete = roundMessages.filter((m) => m.debatePhase != null && phasesToClean.has(m.debatePhase));
+      await Promise.all(msgsToDelete.map((m) => athenaDb.messages.delete(m.id)));
+
+      set({
+        debateSending: true,
+        abortController: controller,
+        streamingContentA: '',
+        streamingContentB: '',
+        streamingConsensus: '',
+      });
+
+      const baseMessages = (msgs: LlmMessage[]): LlmMessage[] => {
+        const instructions = useAuthStore.getState().customInstructions;
+        const systemMsg = buildSystemMessage(instructions);
+        return systemMsg ? [systemMsg, ...msgs] : msgs;
+      };
+
+      const runPhase = (
+        phase: DebatePhase,
+        msgsA: LlmMessage[],
+        msgsB: LlmMessage[],
+        parentA: string,
+        parentB: string,
+      ): Promise<{ msgIdA: string; msgIdB: string; contentA: string; contentB: string }> =>
+        runDebatePhase(phase, msgsA, msgsB, parentA, parentB, debateModelA, debateModelB, topicId, controller, set);
+
+      // Extract data from completed phases
+      const answerLeft = phaseMessages('answer').find((m) => m.debateSide === 'left');
+      const answerRight = phaseMessages('answer').find((m) => m.debateSide === 'right');
+      const reviewLeft = phaseMessages('review').find((m) => m.debateSide === 'left');
+      const reviewRight = phaseMessages('review').find((m) => m.debateSide === 'right');
+
+      let answerA = answerLeft?.content ?? '';
+      let answerB = answerRight?.content ?? '';
+      let answerIdA = answerLeft?.id ?? userMessageId;
+      let answerIdB = answerRight?.id ?? userMessageId;
+      let reviewForA = reviewRight?.content ?? ''; // B reviewed A
+      let reviewForB = reviewLeft?.content ?? ''; // A reviewed B
+      let reviewIdA = reviewLeft?.id ?? answerIdA;
+      let reviewIdB = reviewRight?.id ?? answerIdB;
+
       await refreshDebateMessages(topicId);
 
       if (!answerDone) {
@@ -620,6 +679,7 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       useNotificationStore.getState().addNotification('Debate continuation failed', message);
     } finally {
       set({ debateSending: false, currentPhase: 'idle', abortController: null });
+      await releaseDebateLease(topicId, leaseOwner);
     }
   },
 

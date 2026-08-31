@@ -1,8 +1,9 @@
-import type { Message, Topic } from '../../database/AthenaDb';
+import type { Message, OperationLease, Topic } from '../../database/AthenaDb';
 import { createMessage } from '../../testUtils';
 
 // ---- shared mutable state for DB ----
 const mockMessages: Message[] = [];
+const mockOperationLeases = new Map<string, OperationLease>();
 
 // ---- mock fns ----
 const mockMessagesAdd = jest.fn<Promise<string>, [Message]>().mockResolvedValue('id');
@@ -26,7 +27,9 @@ jest.mock('../../database/AthenaDb', () => ({
       add: (msg: Message): Promise<string> => mockMessagesAdd(msg),
       update: (id: string, patch: Partial<Message>): Promise<number> => mockMessagesUpdate(id, patch),
       delete: (id: string): Promise<undefined> => mockMessagesDelete(id),
-      where: (_field: string): { equals: (topicId: string) => { and: (pred: (m: Message) => boolean) => { sortBy: (_sortField: string) => Promise<Message[]> } } } => ({
+      where: (
+        _field: string,
+      ): { equals: (topicId: string) => { and: (pred: (m: Message) => boolean) => { sortBy: (_sortField: string) => Promise<Message[]> } } } => ({
         equals: (topicId: string): { and: (pred: (m: Message) => boolean) => { sortBy: (_sortField: string) => Promise<Message[]> } } => ({
           and: (pred: (m: Message) => boolean): { sortBy: (_sortField: string) => Promise<Message[]> } => ({
             sortBy: (_sortField: string): Promise<Message[]> => Promise.resolve(mockMessages.filter((m) => m.topicId === topicId).filter(pred)),
@@ -37,6 +40,18 @@ jest.mock('../../database/AthenaDb', () => ({
     topics: {
       update: (id: string, patch: Partial<Topic>): Promise<number> => mockTopicsUpdate(id, patch),
     },
+    operationLeases: {
+      get: (id: string): Promise<OperationLease | undefined> => Promise.resolve(mockOperationLeases.get(id)),
+      put: (lease: OperationLease): Promise<string> => {
+        mockOperationLeases.set(lease.id, lease);
+        return Promise.resolve(lease.id);
+      },
+      delete: (id: string): Promise<void> => {
+        mockOperationLeases.delete(id);
+        return Promise.resolve();
+      },
+    },
+    transaction: async (_mode: string, _table: unknown, callback: () => Promise<void>): Promise<void> => callback(),
   },
 }));
 
@@ -112,7 +127,6 @@ function makeStreamResult(content: string): {
 const modelA = { id: 'model-a', apiModelId: 'api-a', label: 'Model A' };
 const modelB = { id: 'model-b', apiModelId: 'api-b', label: 'Model B' };
 
-
 // ---- import store after mocks ----
 import { useDebateStore } from '../DebateStore';
 
@@ -133,6 +147,7 @@ function resetStore(): void {
 beforeEach(() => {
   jest.clearAllMocks();
   mockMessages.splice(0, mockMessages.length);
+  mockOperationLeases.clear();
   mockMessagesAdd.mockResolvedValue('id');
   mockMessagesUpdate.mockResolvedValue(1);
   mockMessagesDelete.mockResolvedValue(undefined);
@@ -365,12 +380,24 @@ describe('DebateStore – continueDebate', () => {
     useDebateStore.setState({ debateModelA: modelA, debateModelB: modelB });
 
     mockMessages.push(createMessage({ id: 'user-1', type: 'user', content: 'question', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'ans-l', debatePhase: 'answer', debateSide: 'left', content: 'answer A', type: 'assistant', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'ans-r', debatePhase: 'answer', debateSide: 'right', content: 'answer B', type: 'assistant', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'rev-l', debatePhase: 'review', debateSide: 'left', content: 'review A', type: 'assistant', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'rev-r', debatePhase: 'review', debateSide: 'right', content: 'review B', type: 'assistant', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'fin-l', debatePhase: 'final', debateSide: 'left', content: 'final A', type: 'assistant', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'fin-r', debatePhase: 'final', debateSide: 'right', content: 'final B', type: 'assistant', topicId: 'topic-1' }));
+    mockMessages.push(
+      createMessage({ id: 'ans-l', debatePhase: 'answer', debateSide: 'left', content: 'answer A', type: 'assistant', topicId: 'topic-1' }),
+    );
+    mockMessages.push(
+      createMessage({ id: 'ans-r', debatePhase: 'answer', debateSide: 'right', content: 'answer B', type: 'assistant', topicId: 'topic-1' }),
+    );
+    mockMessages.push(
+      createMessage({ id: 'rev-l', debatePhase: 'review', debateSide: 'left', content: 'review A', type: 'assistant', topicId: 'topic-1' }),
+    );
+    mockMessages.push(
+      createMessage({ id: 'rev-r', debatePhase: 'review', debateSide: 'right', content: 'review B', type: 'assistant', topicId: 'topic-1' }),
+    );
+    mockMessages.push(
+      createMessage({ id: 'fin-l', debatePhase: 'final', debateSide: 'left', content: 'final A', type: 'assistant', topicId: 'topic-1' }),
+    );
+    mockMessages.push(
+      createMessage({ id: 'fin-r', debatePhase: 'final', debateSide: 'right', content: 'final B', type: 'assistant', topicId: 'topic-1' }),
+    );
     mockMessages.push(createMessage({ id: 'cons', debatePhase: 'consensus', content: 'consensus text', type: 'assistant', topicId: 'topic-1' }));
 
     await useDebateStore.getState().continueDebate('topic-1');
@@ -382,10 +409,18 @@ describe('DebateStore – continueDebate', () => {
     useDebateStore.setState({ debateModelA: modelA, debateModelB: modelB });
 
     mockMessages.push(createMessage({ id: 'user-1', type: 'user', content: 'question', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'ans-l', debatePhase: 'answer', debateSide: 'left', content: 'answer A', type: 'assistant', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'ans-r', debatePhase: 'answer', debateSide: 'right', content: 'answer B', type: 'assistant', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'rev-l', debatePhase: 'review', debateSide: 'left', content: 'review A', type: 'assistant', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'rev-r', debatePhase: 'review', debateSide: 'right', content: 'review B', type: 'assistant', topicId: 'topic-1' }));
+    mockMessages.push(
+      createMessage({ id: 'ans-l', debatePhase: 'answer', debateSide: 'left', content: 'answer A', type: 'assistant', topicId: 'topic-1' }),
+    );
+    mockMessages.push(
+      createMessage({ id: 'ans-r', debatePhase: 'answer', debateSide: 'right', content: 'answer B', type: 'assistant', topicId: 'topic-1' }),
+    );
+    mockMessages.push(
+      createMessage({ id: 'rev-l', debatePhase: 'review', debateSide: 'left', content: 'review A', type: 'assistant', topicId: 'topic-1' }),
+    );
+    mockMessages.push(
+      createMessage({ id: 'rev-r', debatePhase: 'review', debateSide: 'right', content: 'review B', type: 'assistant', topicId: 'topic-1' }),
+    );
     // final and consensus are missing
 
     mockMessagesAdd.mockImplementation((msg: Message): Promise<string> => {
@@ -411,10 +446,18 @@ describe('DebateStore – continueDebate', () => {
     const staleA = createMessage({ id: 'stale-a', debatePhase: 'final', debateSide: 'left', content: '', type: 'assistant', topicId: 'topic-1' });
     const staleB = createMessage({ id: 'stale-b', debatePhase: 'final', debateSide: 'right', content: '', type: 'assistant', topicId: 'topic-1' });
     mockMessages.push(createMessage({ id: 'user-1', type: 'user', content: 'question', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'ans-l', debatePhase: 'answer', debateSide: 'left', content: 'answer A', type: 'assistant', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'ans-r', debatePhase: 'answer', debateSide: 'right', content: 'answer B', type: 'assistant', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'rev-l', debatePhase: 'review', debateSide: 'left', content: 'review A', type: 'assistant', topicId: 'topic-1' }));
-    mockMessages.push(createMessage({ id: 'rev-r', debatePhase: 'review', debateSide: 'right', content: 'review B', type: 'assistant', topicId: 'topic-1' }));
+    mockMessages.push(
+      createMessage({ id: 'ans-l', debatePhase: 'answer', debateSide: 'left', content: 'answer A', type: 'assistant', topicId: 'topic-1' }),
+    );
+    mockMessages.push(
+      createMessage({ id: 'ans-r', debatePhase: 'answer', debateSide: 'right', content: 'answer B', type: 'assistant', topicId: 'topic-1' }),
+    );
+    mockMessages.push(
+      createMessage({ id: 'rev-l', debatePhase: 'review', debateSide: 'left', content: 'review A', type: 'assistant', topicId: 'topic-1' }),
+    );
+    mockMessages.push(
+      createMessage({ id: 'rev-r', debatePhase: 'review', debateSide: 'right', content: 'review B', type: 'assistant', topicId: 'topic-1' }),
+    );
     mockMessages.push(staleA);
     mockMessages.push(staleB);
 

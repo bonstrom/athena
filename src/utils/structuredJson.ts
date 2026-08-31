@@ -55,7 +55,7 @@ export function parseChecklistGroups(content: string): ParsedChecklistGroup[] | 
   const parsed = parseJsonObject(content);
   if (!parsed) return null;
 
-  const groups = parsed.groups ?? parsed.lists;
+  const groups = parsed.groups;
   if (!Array.isArray(groups)) return null;
 
   const result: ParsedChecklistGroup[] = [];
@@ -63,26 +63,17 @@ export function parseChecklistGroups(content: string): ParsedChecklistGroup[] | 
     if (typeof g !== 'object' || g === null) return null;
     const record = g as Record<string, unknown>;
     const title = typeof record.title === 'string' ? record.title.trim() : '';
-    const rawItems = record.items ?? record.tasks;
+    if (!title) return null;
+    const rawItems = record.items;
     if (!Array.isArray(rawItems)) return null;
 
     const items: { content: string; details?: string }[] = [];
     for (const it of rawItems) {
-      if (typeof it === 'string') {
-        const content = it.trim();
-        if (!content) return null;
-        items.push({ content });
-        continue;
-      }
       if (typeof it !== 'object' || it === null) return null;
       const itemRecord = it as Record<string, unknown>;
-      const content =
-        typeof itemRecord.content === 'string'
-          ? itemRecord.content.trim()
-          : typeof itemRecord.text === 'string'
-            ? itemRecord.text.trim()
-            : '';
+      const content = typeof itemRecord.content === 'string' ? itemRecord.content.trim() : '';
       if (!content) return null;
+      if (itemRecord.details !== undefined && typeof itemRecord.details !== 'string') return null;
       const details = typeof itemRecord.details === 'string' ? itemRecord.details.trim() : undefined;
       items.push({ content, ...(details ? { details } : {}) });
     }

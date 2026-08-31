@@ -13,24 +13,11 @@ import {
   Button,
   TextField,
 } from '@mui/material';
+import type { TabProps } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import EditIcon from '@mui/icons-material/Edit';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import type { DragEndEvent } from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  horizontalListSortingStrategy,
-} from '@dnd-kit/sortable';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, useSortable, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
 import { useTopicStore } from '../store/TopicStore';
@@ -38,34 +25,73 @@ import { useChatStore } from '../store/ChatStore';
 import { useAuthStore } from '../store/AuthStore';
 import type { Fork } from '../database/AthenaDb';
 
+type DragIdentifier = string | number;
+
+interface TypedDragEndEvent {
+  active: { id: DragIdentifier };
+  over: { id: DragIdentifier } | null;
+}
+
+interface SortableResult {
+  attributes: React.AriaAttributes;
+  listeners: {
+    onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
+    onPointerDown?: React.PointerEventHandler<HTMLElement>;
+    onTouchStart?: React.TouchEventHandler<HTMLElement>;
+  };
+  setNodeRef: (node: HTMLElement | null) => void;
+  transform: unknown;
+  transition: string | undefined;
+  isDragging: boolean;
+}
+
+interface DndContextProps {
+  children: React.ReactNode;
+  sensors: unknown;
+  collisionDetection: unknown;
+  onDragEnd: (event: TypedDragEndEvent) => void;
+  modifiers: unknown[];
+}
+
+interface SortableContextProps {
+  children: React.ReactNode;
+  items: string[];
+  strategy: unknown;
+}
+
+const typedUseSortable = useSortable as unknown as (options: { id: string }) => SortableResult;
+const typedUseSensor = useSensor as unknown as (sensor: unknown, options: Record<string, unknown>) => unknown;
+const typedUseSensors = useSensors as unknown as (...sensors: unknown[]) => unknown;
+const TypedDndContext = DndContext as unknown as React.ComponentType<DndContextProps>;
+const TypedSortableContext = SortableContext as unknown as React.ComponentType<SortableContextProps>;
+const pointerSensor = PointerSensor as unknown;
+const touchSensor = TouchSensor as unknown;
+const keyboardSensor = KeyboardSensor as unknown;
+const keyboardCoordinates = sortableKeyboardCoordinates as unknown;
+const centerCollisionDetection = closestCenter as unknown;
+const horizontalAxisModifier = restrictToHorizontalAxis as unknown;
+const horizontalStrategy = horizontalListSortingStrategy as unknown;
+const transformToString = (CSS as unknown as { Transform: { toString: (transform: unknown) => string | undefined } }).Transform.toString;
+
 interface ForkTabsProps {
   topicId: string;
   collapsed?: boolean;
 }
 
-interface SortableForkTabProps {
+interface SortableForkTabProps extends Omit<TabProps, 'children' | 'label' | 'onDelete'> {
   fork: Fork;
   onRename: (forkId: string, name: string) => void;
   onDelete: (forkId: string) => void;
   chatFontSize: number;
   canRename: boolean;
   canDelete: boolean;
-  [key: string]: unknown;
 }
 
-const SortableForkTab: React.FC<SortableForkTabProps> = ({
-  fork,
-  onRename,
-  onDelete,
-  chatFontSize,
-  canRename,
-  canDelete,
-  ...muiProps
-}) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: fork.id });
+const SortableForkTab: React.FC<SortableForkTabProps> = ({ fork, onRename, onDelete, chatFontSize, canRename, canDelete, ...muiProps }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = typedUseSortable({ id: fork.id });
 
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: transformToString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 100 : undefined,
@@ -146,14 +172,14 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId, collapsed = false }) => {
   const topic = useMemo(() => topics.find((t) => t.id === topicId), [topics, topicId]);
   const forkIds = useMemo(() => topic?.forks?.map((f) => f.id) ?? [], [topic?.forks]);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  const sensors = typedUseSensors(
+    typedUseSensor(pointerSensor, { activationConstraint: { distance: 5 } }),
+    typedUseSensor(touchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    typedUseSensor(keyboardSensor, { coordinateGetter: keyboardCoordinates }),
   );
 
   const handleDragEnd = useCallback(
-    (event: DragEndEvent): void => {
+    (event: TypedDragEndEvent): void => {
       const { active, over } = event;
       if (!over || active.id === over.id) return;
 
@@ -236,20 +262,14 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId, collapsed = false }) => {
           backdropFilter: 'blur(8px)',
         }}
       >
-        <DndContext
+        <TypedDndContext
           sensors={sensors}
-          collisionDetection={closestCenter}
+          collisionDetection={centerCollisionDetection}
           onDragEnd={handleDragEnd}
-          modifiers={[restrictToHorizontalAxis]}
+          modifiers={[horizontalAxisModifier]}
         >
-          <SortableContext items={forkIds} strategy={horizontalListSortingStrategy}>
-            <Tabs
-              value={activeForkId}
-              onChange={handleChange}
-              variant="scrollable"
-              scrollButtons="auto"
-              sx={{ minHeight: { xs: 36, md: 48 } }}
-            >
+          <TypedSortableContext items={forkIds} strategy={horizontalStrategy}>
+            <Tabs value={activeForkId} onChange={handleChange} variant="scrollable" scrollButtons="auto" sx={{ minHeight: { xs: 36, md: 48 } }}>
               {topic.forks?.map((fork) => (
                 <SortableForkTab
                   key={fork.id}
@@ -263,8 +283,8 @@ const ForkTabs: React.FC<ForkTabsProps> = ({ topicId, collapsed = false }) => {
                 />
               ))}
             </Tabs>
-          </SortableContext>
-        </DndContext>
+          </TypedSortableContext>
+        </TypedDndContext>
       </Box>
 
       <Dialog open={Boolean(forkToDelete)} onClose={(): void => setForkToDelete(null)}>
