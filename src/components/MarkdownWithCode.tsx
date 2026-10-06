@@ -436,13 +436,42 @@ function isClosingFence(marker: FenceMarker, open: FenceMarker): boolean {
 /**
  * Escapes $ signs that appear to be currency markers (followed by a digit)
  * so remark-math doesn't misinterpret them as inline math delimiters.
- * Inline code spans (`...`) are left untouched because a backslash there is
- * a literal, not an escape. A $ that is part of a $$ display-math delimiter
- * or already escaped is also left alone, so display math like $$2x = 4$$
- * starting with a digit still renders correctly.
+ *
+ * A `$` followed by a digit is ambiguous: `$5` is currency, but `$3\pi$` is
+ * inline math that happens to start with a digit. To disambiguate, valid
+ * inline math spans (and inline code spans) are located first and their `$`
+ * signs are exempted from escaping. Only the remaining digit-leading `$`
+ * signs are treated as currency.
+ *
+ * A `$` that is part of a $$ display-math delimiter or already escaped is left
+ * alone, so display math like $$2x = 4$$ starting with a digit still renders.
  */
 function escapeCurrencyInProse(text: string): string {
-  return text.replace(/(`+)[\s\S]*?\1|(?<![$\\])\$(?=\d)/g, (match: string, backticks: string | undefined): string => (backticks ? match : '\\$'));
+  // Matches inline code spans (`...`) and valid `$...$` inline math spans.
+  // Inline math must open with a non-space/non-$ char and close with a
+  // non-space/non-backslash char, mirroring remark-math's rules.
+  const spanPattern = /(`+)[\s\S]*?\1|\$(?![\s$])(?:\\.|[^\\$])*?(?<![\s\\])\$/g;
+  const protectedIndexes = new Set<number>();
+
+  let span: RegExpExecArray | null;
+  while ((span = spanPattern.exec(text)) !== null) {
+    for (let i = span.index; i < span.index + span[0].length; i++) {
+      protectedIndexes.add(i);
+    }
+  }
+
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const isCurrencyDollar =
+      char === '$' &&
+      text[i - 1] !== '$' &&
+      text[i - 1] !== '\\' &&
+      !protectedIndexes.has(i) &&
+      /\d/.test(text[i + 1]);
+    result += isCurrencyDollar ? '\\$' : char;
+  }
+  return result;
 }
 
 /**

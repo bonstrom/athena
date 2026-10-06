@@ -89,6 +89,24 @@ describe('MarkdownWithCode — preprocessing', () => {
       const out = preprocess('$$2x + 3 = 7$$');
       expect(out).toContain('$$2x');
     });
+
+    it('preserves inline math that starts with a digit', () => {
+      expect(preprocess('~$3 \\times 10^{46}$ joules')).toContain('$3 \\times 10^{46}$');
+      expect(preprocess('~$3 \\times 10^{46}$ joules')).not.toContain('\\$3');
+    });
+
+    it('preserves a digit-leading inline math span even with currency elsewhere', () => {
+      const out = preprocess('Costs $5, and the value is $10^{58}$ neutrinos.');
+      expect(out).toContain('\\$5');
+      expect(out).toContain('$10^{58}$');
+      expect(out).not.toContain('\\$10^{58}');
+    });
+
+    it('still escapes trailing currency that has no closing delimiter', () => {
+      const out = preprocess('It costs $5 and $10.50');
+      expect(out).toContain('\\$5');
+      expect(out).toContain('\\$10.50');
+    });
   });
 
   describe('fence balancing (#2, #3)', () => {

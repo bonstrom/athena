@@ -291,11 +291,11 @@ Normal paragraph text after.`;
     expect(root.textContent).not.toMatch(/\\\$/);
   });
 
-  it('escapes dollar-digit but may break rare math starting with a digit', () => {
+  it('preserves inline math that starts with a digit', () => {
     render(<MarkdownWithCode>{'$2x + 3y = 5$'}</MarkdownWithCode>);
     const root = screen.getByTestId('markdown-root');
     expect(root).toBeInTheDocument();
-    expect(root.textContent).toMatch(/\\\$/);
+    expect(root.textContent).not.toMatch(/\\\$/);
   });
 
   it('preserves $$ display math delimiters when the equation starts with a digit', () => {
