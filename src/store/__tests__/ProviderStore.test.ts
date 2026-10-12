@@ -851,7 +851,7 @@ describe('ProviderStore migrations', () => {
       .map((m) => m.id);
 
     const deepseekIdx = builtinIds.indexOf('builtin-deepseek-v4-flash');
-    const gptIdx = builtinIds.indexOf('builtin-gpt-5-6-sol');
+    const gptIdx = builtinIds.indexOf('builtin-gpt-6-1-sol');
     expect(deepseekIdx).toBeLessThan(gptIdx);
   });
 

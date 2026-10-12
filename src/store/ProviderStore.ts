@@ -145,6 +145,10 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
       safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-deepseek-v4-pro');
     } else if (selected === 'builtin-gemini-3-flash') {
       safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-gemini-3-7-flash');
+    } else if (selected === 'builtin-gpt-5-6-sol' || selected === 'builtin-gpt-5-6-terra') {
+      safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-gpt-6-1-sol');
+    } else if (selected === 'builtin-gpt-5-6-luna') {
+      safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-gpt-6-luna');
     }
 
     const existingModelIds = new Set(models.map((m) => m.id));
@@ -191,12 +195,20 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
         next.supportsThinking = def.supportsThinking;
         updated = true;
       }
+      if (m.supportsTools !== def.supportsTools) {
+        next.supportsTools = def.supportsTools;
+        updated = true;
+      }
       if (m.supportsTemperature !== def.supportsTemperature) {
         next.supportsTemperature = def.supportsTemperature;
         updated = true;
       }
       if (m.reasoningEffort !== def.reasoningEffort) {
         next.reasoningEffort = def.reasoningEffort;
+        updated = true;
+      }
+      if (JSON.stringify(m.reasoningEfforts ?? null) !== JSON.stringify(def.reasoningEfforts ?? null)) {
+        next.reasoningEfforts = def.reasoningEfforts;
         updated = true;
       }
 

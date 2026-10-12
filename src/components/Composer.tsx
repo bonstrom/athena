@@ -63,10 +63,20 @@ import { formatCost } from '../utils/currency';
 import { ENGLISH_VOICES } from '../constants/voices';
 import { Attachment } from '../database/AthenaDb';
 import { useNotificationStore } from '../store/NotificationStore';
+import { ReasoningEffort, getReasoningEfforts } from '../types/provider';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const SUGGESTION_DEBOUNCE_MS = 500;
 const VOICE_SILENCE_TIMEOUT_MS = 2000;
+
+const REASONING_EFFORT_OPTIONS: { value: ReasoningEffort; label: string; title: string }[] = [
+  { value: 'none', label: 'None', title: 'No reasoning' },
+  { value: 'low', label: 'Low', title: 'Low Effort' },
+  { value: 'medium', label: 'Med', title: 'Medium Effort' },
+  { value: 'high', label: 'High', title: 'High Effort (Default)' },
+  { value: 'xhigh', label: 'X-Hi', title: 'Extra High Effort' },
+  { value: 'max', label: 'Max', title: 'Max Effort (Best reasoning)' },
+];
 
 const MUSIC_TEMPLATE = `Genre:
 Mood:
@@ -137,6 +147,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   const topicStore = useTopicStore();
   const selectedModel = useChatStore((s) => s.selectedModel);
   const setSelectedModel = useChatStore((s) => s.setSelectedModel);
+  const storedReasoningEffort = useChatStore((s) => s.reasoningEffort);
+  const effortOptions = REASONING_EFFORT_OPTIONS.filter((o) => {
+    const efforts = getReasoningEfforts(selectedModel);
+    return !efforts || efforts.includes(o.value);
+  });
+  const currentEffort = effortOptions.some((o) => o.value === storedReasoningEffort)
+    ? storedReasoningEffort ?? 'high'
+    : effortOptions[0]?.value ?? 'high';
   const temperature = useChatStore((s) => s.temperature);
   const setTemperature = useChatStore((s) => s.setTemperature);
   const currentTopicId = useChatStore((s) => s.currentTopicId);
@@ -829,9 +847,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
 
               {selectedModel.reasoningEffort == null && (
                 <MuiToggleButtonGroup
-                  value={useChatStore.getState().reasoningEffort ?? 'high'}
+                  value={currentEffort}
                   exclusive
-                  onChange={(_, value: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null): void => {
+                  onChange={(_, value: ReasoningEffort | null): void => {
                     if (value !== null) useChatStore.getState().setReasoningEffort(value);
                   }}
                   size="small"
@@ -858,36 +876,13 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                     },
                   }}
                 >
-                  <MuiToggleButton value="none">
-                    <Tooltip title="No reasoning" disableTouchListener={isMobile}>
-                      <span>None</span>
-                    </Tooltip>
-                  </MuiToggleButton>
-                  <MuiToggleButton value="low">
-                    <Tooltip title="Low Effort" disableTouchListener={isMobile}>
-                      <span>Low</span>
-                    </Tooltip>
-                  </MuiToggleButton>
-                  <MuiToggleButton value="medium">
-                    <Tooltip title="Medium Effort" disableTouchListener={isMobile}>
-                      <span>Med</span>
-                    </Tooltip>
-                  </MuiToggleButton>
-                  <MuiToggleButton value="high">
-                    <Tooltip title="High Effort (Default)" disableTouchListener={isMobile}>
-                      <span>High</span>
-                    </Tooltip>
-                  </MuiToggleButton>
-                  <MuiToggleButton value="xhigh">
-                    <Tooltip title="Extra High Effort" disableTouchListener={isMobile}>
-                      <span>X-Hi</span>
-                    </Tooltip>
-                  </MuiToggleButton>
-                  <MuiToggleButton value="max">
-                    <Tooltip title="Max Effort (Best reasoning)" disableTouchListener={isMobile}>
-                      <span>Max</span>
-                    </Tooltip>
-                  </MuiToggleButton>
+                  {effortOptions.map((option) => (
+                    <MuiToggleButton key={option.value} value={option.value}>
+                      <Tooltip title={option.title} disableTouchListener={isMobile}>
+                        <span>{option.label}</span>
+                      </Tooltip>
+                    </MuiToggleButton>
+                  ))}
                 </MuiToggleButtonGroup>
               )}
             </Box>

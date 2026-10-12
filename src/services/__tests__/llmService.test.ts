@@ -1140,9 +1140,9 @@ describe('buildPayload — reasoning_effort and tools', () => {
     mockEstimateTokens.mockReturnValue({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
   });
 
-  it('forces reasoning_effort to "none" for GPT-5.6 models when tools are present', async () => {
+  it('forces reasoning_effort to "none" for GPT-6 models when tools are present', async () => {
     const model = createUserChatModel({
-      apiModelId: 'gpt-5.6-luna',
+      apiModelId: 'gpt-6-luna',
       reasoningEffort: 'high',
       streaming: true,
     });
@@ -1167,7 +1167,62 @@ describe('buildPayload — reasoning_effort and tools', () => {
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 
-  it('sends reasoning_effort for non-GPT-5.6 models with tools when configured', async () => {
+  it('omits function tools for GPT-6.1 Sol (Chat Completions does not support them) and keeps a supported effort', async () => {
+    const model = createUserChatModel({
+      apiModelId: 'gpt-6.1-sol',
+      supportsTools: false,
+      reasoningEffort: 'high',
+      streaming: true,
+    });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({ ok: true, body: streamResponse() } as unknown as Response);
+
+    const { orchestrateLlmLoop } = await import('../llmService');
+    await orchestrateLlmLoop(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.tools).toBeUndefined();
+    expect(body.reasoning_effort).toBe('high');
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+
+  it('clamps reasoning_effort "none" to a supported level for GPT-6.1 Sol without tools', async () => {
+    const model = createUserChatModel({
+      apiModelId: 'gpt-6.1-sol',
+      reasoningEffort: 'none',
+      streaming: true,
+    });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({ ok: true, body: streamResponse() } as unknown as Response);
+
+    const { askLlmStream } = await import('../llmService');
+    await askLlmStream(model, 0.7, [user('Hi')], () => {
+      /* noop */
+    });
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.reasoning_effort).toBe('low');
+    expect(body.tools).toBeUndefined();
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+
+  it('sends reasoning_effort for non-GPT-6 models with tools when configured', async () => {
     const model = createUserChatModel({
       apiModelId: 'deepseek-v4-flash',
       reasoningEffort: 'high',
@@ -1420,7 +1475,7 @@ describe('buildPayload — Anthropic adapter output_config', () => {
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 
-  it('sends output_config.effort for non-GPT-5.6 models with tools in Anthropic requests when configured', async () => {
+  it('sends output_config.effort for non-GPT-6 models with tools in Anthropic requests when configured', async () => {
     const model = createUserChatModel({ reasoningEffort: 'high', streaming: true });
     mockProviderGetState.mockReturnValue({
       models: [model],
@@ -1461,9 +1516,9 @@ describe('buildPayload — Anthropic adapter output_config', () => {
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 
-  it('forces output_config.effort to none for GPT-5.6 models with tools in Anthropic requests', async () => {
+  it('forces output_config.effort to none for GPT-6 models with tools in Anthropic requests', async () => {
     const model = createUserChatModel({
-      apiModelId: 'gpt-5.6-luna',
+      apiModelId: 'gpt-6-luna',
       reasoningEffort: 'high',
       streaming: true,
     });

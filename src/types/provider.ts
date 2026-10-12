@@ -2,6 +2,8 @@ import { SecurityUtils } from '../utils/security';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface LlmProvider {
   id: string;
   name: string;
@@ -40,7 +42,12 @@ export interface UserChatModel {
   /** For models that support toggling thinking mode natively. */
   thinkingToggle?: 'enabled' | 'disabled' | null;
   /** For models that support configurable thinking effort (e.g. 'high', 'max', 'low', 'medium'). */
-  reasoningEffort?: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+  reasoningEffort?: ReasoningEffort | null;
+  /**
+   * Reasoning effort levels accepted by the model, in ascending order. When set, the UI only
+   * offers these values and requests are clamped to them (e.g. GPT-6.1 Sol rejects 'none').
+   */
+  reasoningEfforts?: ReasoningEffort[];
   /** Override max_tokens in the payload (null = provider/model default). */
   maxTokensOverride: number | null;
   /** Whether this model was shipped as a built-in default. */
@@ -194,61 +201,38 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     enabled: true,
   },
   {
-    id: 'builtin-gpt-5-6-sol',
-    label: 'GPT-5.6 Sol',
-    apiModelId: 'gpt-5.6-sol',
+    id: 'builtin-gpt-6-1-sol',
+    label: 'GPT-6.1 Sol',
+    apiModelId: 'gpt-6.1-sol',
     providerId: 'builtin-openai',
-    input: 5,
-    cachedInput: 0.5,
-    output: 30,
-    streaming: true,
-    supportsTemperature: false,
-    supportsTools: true,
-    supportsVision: true,
-    supportsFiles: true,
-    supportsThinking: true,
-    thinkingToggle: null,
-    reasoningEffort: null,
-    thinkingParseMode: 'api-native',
-    contextWindow: 1_050_000,
-    forceTemperature: null,
-    enforceAlternatingRoles: false,
-    maxTokensOverride: null,
-    isBuiltIn: true,
-    enabled: true,
-  },
-  {
-    id: 'builtin-gpt-5-6-terra',
-    label: 'GPT-5.6 Terra',
-    apiModelId: 'gpt-5.6-terra',
-    providerId: 'builtin-openai',
-    input: 2.5,
-    cachedInput: 0.25,
-    output: 15,
-    streaming: true,
-    supportsTemperature: false,
-    supportsTools: true,
-    supportsVision: true,
-    supportsFiles: true,
-    supportsThinking: true,
-    thinkingToggle: null,
-    reasoningEffort: null,
-    thinkingParseMode: 'api-native',
-    contextWindow: 1_050_000,
-    forceTemperature: null,
-    enforceAlternatingRoles: false,
-    maxTokensOverride: null,
-    isBuiltIn: true,
-    enabled: true,
-  },
-  {
-    id: 'builtin-gpt-5-6-luna',
-    label: 'GPT-5.6 Luna',
-    apiModelId: 'gpt-5.6-luna',
-    providerId: 'builtin-openai',
-    input: 1,
+    input: 2,
     cachedInput: 0.1,
-    output: 6,
+    output: 10,
+    streaming: true,
+    supportsTemperature: false,
+    supportsTools: false,
+    supportsVision: true,
+    supportsFiles: true,
+    supportsThinking: true,
+    thinkingToggle: null,
+    reasoningEffort: null,
+    reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+    thinkingParseMode: 'api-native',
+    contextWindow: 1_050_000,
+    forceTemperature: null,
+    enforceAlternatingRoles: false,
+    maxTokensOverride: null,
+    isBuiltIn: true,
+    enabled: true,
+  },
+  {
+    id: 'builtin-gpt-6-luna',
+    label: 'GPT-6 Luna',
+    apiModelId: 'gpt-6-luna',
+    providerId: 'builtin-openai',
+    input: 0.1,
+    cachedInput: 0.005,
+    output: 0.5,
     streaming: true,
     supportsTemperature: false,
     supportsTools: true,
@@ -257,6 +241,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     supportsThinking: true,
     thinkingToggle: null,
     reasoningEffort: null,
+    reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
     thinkingParseMode: 'api-native',
     contextWindow: 1_050_000,
     forceTemperature: null,
@@ -526,3 +511,13 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     enabled: true,
   },
 ];
+
+/**
+ * Resolves the reasoning effort levels a model accepts, falling back to the shipped
+ * built-in definition when a persisted model predates the `reasoningEfforts` field.
+ */
+export function getReasoningEfforts(model: Pick<UserChatModel, 'id' | 'apiModelId' | 'reasoningEfforts'>): ReasoningEffort[] | undefined {
+  if (model.reasoningEfforts) return model.reasoningEfforts;
+  const def = DEFAULT_MODELS.find((m) => m.id === model.id || m.apiModelId === model.apiModelId);
+  return def?.reasoningEfforts;
+}

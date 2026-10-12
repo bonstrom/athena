@@ -2,7 +2,7 @@ import { calculateCostUSD, ChatModel } from '../components/ModelSelector';
 import { useAuthStore } from '../store/AuthStore';
 import { useProviderStore } from '../store/ProviderStore';
 import { useChatStore } from '../store/ChatStore';
-import { getApiKey as getProviderApiKey, getPayloadOverrides, LlmProvider } from '../types/provider';
+import { getApiKey as getProviderApiKey, getPayloadOverrides, getReasoningEfforts, LlmProvider } from '../types/provider';
 import { estimateTokens } from './estimateTokens';
 import { RAG_CONTENT_LIMIT } from '../constants';
 
@@ -768,6 +768,8 @@ function buildPayload(
 
   const payloadOverrides = getPayloadOverrides(providerConfig);
 
+  const toolsIncluded = resolvedModel.supportsTools && finalTools.length > 0;
+
   const payload: LlmPayload = {
     model: resolvedModel.apiModelId,
     messages: finalMessages.map((m) => ({
@@ -785,20 +787,28 @@ function buildPayload(
     ...(resolvedThinkingMode && !webSearch && { thinking: { type: resolvedThinkingMode } }),
     ...(webSearch && { thinking: { type: 'disabled' } }),
     ...payloadOverrides,
-    ...(resolvedModel.supportsTools && finalTools.length > 0 && { tools: finalTools }),
-    ...(resolvedModel.supportsTools && finalTools.length > 0 && options?.toolChoice && { tool_choice: options.toolChoice }),
+    ...(toolsIncluded && { tools: finalTools }),
+    ...(toolsIncluded && options?.toolChoice && { tool_choice: options.toolChoice }),
     ...(resolvedModel.maxTokensOverride != null && { max_tokens: resolvedModel.maxTokensOverride }),
   };
 
-  if (finalTools.length > 0) {
-    const isGpt56 = resolvedModel.apiModelId.startsWith('gpt-5.6');
-    if (isGpt56) {
+  const supportedEfforts = getReasoningEfforts(resolvedModel);
+  const effectiveReasoningEffort =
+    resolvedReasoningEffort && supportedEfforts && !supportedEfforts.includes(resolvedReasoningEffort)
+      ? supportedEfforts[0]
+      : resolvedReasoningEffort;
+
+  if (toolsIncluded) {
+    // On /v1/chat/completions, GPT-6 models only accept function tools when reasoning is
+    // disabled. Models that reject 'none' (e.g. GPT-6.1 Sol) don't support tools here at all,
+    // so they ship with supportsTools: false and never reach this branch.
+    if (resolvedModel.apiModelId.startsWith('gpt-6')) {
       payload.reasoning_effort = 'none';
-    } else if (resolvedReasoningEffort) {
-      payload.reasoning_effort = resolvedReasoningEffort;
+    } else if (effectiveReasoningEffort) {
+      payload.reasoning_effort = effectiveReasoningEffort;
     }
-  } else if (resolvedReasoningEffort) {
-    payload.reasoning_effort = resolvedReasoningEffort;
+  } else if (effectiveReasoningEffort) {
+    payload.reasoning_effort = effectiveReasoningEffort;
   }
 
   return payload;
