@@ -218,6 +218,10 @@ import { useChecklistStore } from '../ChecklistStore';
 let uuidCounter = 0;
 
 describe('ChecklistStore', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   beforeEach(() => {
     mockGroupsDb = [];
     mockItemsDb = [];
@@ -526,6 +530,7 @@ describe('ChecklistStore', () => {
     });
 
     it('notifies when the model returns invalid JSON', async () => {
+      jest.spyOn(console, 'error').mockImplementation((): void => undefined);
       mockAskLlm.mockResolvedValue({ content: 'not json' });
 
       await useChecklistStore.getState().generateChecklist('t1', 'Plan');
@@ -832,6 +837,7 @@ describe('ChecklistStore', () => {
     });
 
     it('does not edit when the model lacks tool support', async () => {
+      jest.spyOn(console, 'error').mockImplementation((): void => undefined);
       mockGetSelectedModel.mockReturnValue(createUserChatModel({ supportsTools: false }));
 
       await useChecklistStore.getState().applyLlmEdit('t1', 'Add a task');
@@ -841,6 +847,7 @@ describe('ChecklistStore', () => {
     });
 
     it('stops editing in finally even on error', async () => {
+      jest.spyOn(console, 'error').mockImplementation((): void => undefined);
       mockOrchestrateLlmLoop.mockRejectedValue(new Error('boom'));
 
       await useChecklistStore.getState().applyLlmEdit('t1', 'Do something');
