@@ -3,7 +3,9 @@
 const mockAuthGetState = jest.fn(() => ({}));
 const mockProviderGetState = jest.fn(() => ({}));
 
-jest.mock('../../store/AuthStore', () => ({ useAuthStore: { getState: (): ReturnType<typeof mockAuthGetState> => mockAuthGetState() } }));
+jest.mock('../../store/AuthStore', () => ({
+  useAuthStore: { getState: (): ReturnType<typeof mockAuthGetState> => mockAuthGetState() },
+}));
 jest.mock('../../store/ProviderStore', () => ({
   useProviderStore: { getState: (): ReturnType<typeof mockProviderGetState> => mockProviderGetState() },
 }));
@@ -13,9 +15,8 @@ jest.mock('../../components/ModelSelector', () => ({
 }));
 jest.mock('../estimateTokens', () => ({ estimateTokens: jest.fn() }));
 jest.mock('../embeddingWorkerFactory', () => ({ createEmbeddingWorker: jest.fn() }));
-jest.mock('../llmWorkerFactory', () => ({ createLlmWorker: jest.fn() }));
 
-import { filterMessagesForModel, LlmMessage, orchestrateLlmLoop } from '../llmService';
+import { askLlm, askLlmStream, filterMessagesForModel, LlmMessage, orchestrateLlmLoop } from '../llmService';
 import { calculateCostUSD } from '../../components/ModelSelector';
 import { estimateTokens } from '../estimateTokens';
 import { LlmProvider, UserChatModel } from '../../types/provider';
@@ -29,6 +30,232 @@ const mockCalculateCostUSD = calculateCostUSD as jest.MockedFunction<typeof calc
 const system = (content: string): LlmMessage => ({ role: 'system', content });
 const user = (content: string): LlmMessage => ({ role: 'user', content });
 const asst = (content: string): LlmMessage => ({ role: 'assistant', content });
+
+describe('GPT-6.1 Sol Responses API', () => {
+  const model = createUserChatModel({
+    apiModelId: 'gpt-6.1-sol',
+    supportsTools: true,
+    streaming: false,
+    reasoningEffort: 'high',
+  });
+  const provider: LlmProvider = {
+    id: model.providerId,
+    name: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1/chat/completions',
+    messageFormat: 'openai',
+    apiKeyEncrypted: '',
+    supportsWebSearch: false,
+    requiresReasoningFallback: false,
+    payloadOverridesJson: '',
+    isBuiltIn: true,
+  };
+  const tool = {
+    type: 'function' as const,
+    function: { name: 'edit_item', parameters: { type: 'object', properties: {} } },
+  };
+  const reasoning = { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'opaque' };
+  const call = { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'edit_item', arguments: '{}' };
+  const finalOutput = [{ type: 'message', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text: 'Updated.' }] }];
+  const response = (output: unknown[]): Record<string, unknown> => ({
+    id: 'resp_1',
+    model: model.apiModelId,
+    status: 'completed',
+    output,
+    usage: {
+      input_tokens: 10,
+      output_tokens: 5,
+      input_tokens_details: { cached_tokens: 2 },
+      output_tokens_details: { reasoning_tokens: 3 },
+    },
+  });
+  let mockFetch: jest.MockedFunction<typeof fetch>;
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    mockEstimateTokens.mockReturnValue({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+    mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 16000 });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+    mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    globalThis.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const streamedResponse = (events: unknown[]): Response => {
+    const text = events.map((event) => `event: ignored\ndata: ${JSON.stringify(event)}\n\n`).join('');
+    return {
+      ok: true,
+      body: new ReadableStream<Uint8Array>({
+        start(controller): void {
+          controller.enqueue(new TextEncoder().encode(text.slice(0, 37)));
+          controller.enqueue(new TextEncoder().encode(text.slice(37)));
+          controller.close();
+        },
+      }),
+    } as Response;
+  };
+
+  it('replays encrypted reasoning and function results without disabling reasoning', async () => {
+    mockEstimateTokens.mockReturnValue({ promptTokens: 100000, completionTokens: 0, totalTokens: 100000 });
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: (): Promise<unknown> => Promise.resolve(response([reasoning, call])),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: (): Promise<unknown> => Promise.resolve(response(finalOutput)),
+      } as Response);
+    const execute = jest.fn((): Promise<string> => Promise.resolve('success'));
+    const result = await orchestrateLlmLoop(
+      model,
+      0.2,
+      [user('Check the task')],
+      undefined,
+      undefined,
+      undefined,
+      execute,
+      undefined,
+      [tool],
+      false,
+      undefined,
+      { toolChoice: 'required' },
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(1, 'https://api.openai.com/v1/responses', expect.anything());
+    const first: unknown = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
+    expect(first).toMatchObject({
+      store: false,
+      reasoning: { effort: 'high' },
+      tool_choice: 'required',
+      tools: [{ type: 'function', name: 'edit_item', strict: false }],
+    });
+    expect(first).not.toHaveProperty('messages');
+    expect(first).not.toHaveProperty('reasoning_effort');
+    const second: unknown = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
+    expect(second).toMatchObject({
+      input: [user('Check the task'), reasoning, call, { type: 'function_call_output', call_id: 'call_1', output: 'success' }],
+    });
+    expect(execute).toHaveBeenCalledWith('edit_item', '{}', 1);
+    expect(result.finalContent).toBe('Updated.');
+    expect(result.totalPromptTokens).toBe(20);
+    expect(result.totalCompletionTokens).toBe(10);
+  });
+
+  it('streams text and reasoning and executes completed function calls once', async () => {
+    const streamingModel = { ...model, streaming: true };
+    mockProviderGetState.mockReturnValue({
+      models: [streamingModel],
+      getAvailableModels: (): UserChatModel[] => [streamingModel],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+    mockFetch
+      .mockResolvedValueOnce(
+        streamedResponse([
+          { type: 'response.reasoning_summary_text.delta', delta: 'Plan' },
+          { type: 'response.output_item.added', output_index: 1, item: { ...call, arguments: '' } },
+          { type: 'response.function_call_arguments.delta', output_index: 1, delta: '{}' },
+          { type: 'response.output_item.done', output_index: 1, item: call },
+          {
+            type: 'response.completed',
+            response: response([{ ...reasoning, summary: [{ type: 'summary_text', text: 'Plan' }] }, call]),
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        streamedResponse([
+          { type: 'response.output_text.delta', delta: 'Updated.' },
+          { type: 'response.completed', response: response(finalOutput) },
+        ]),
+      );
+    const onToken = jest.fn((token: string): void => {
+      void token;
+    });
+    const onReasoning = jest.fn((token: string): void => {
+      void token;
+    });
+    const execute = jest.fn((): Promise<string> => Promise.resolve('success'));
+    const result = await orchestrateLlmLoop(streamingModel, 0.2, [user('Check')], onToken, onReasoning, undefined, execute, undefined, [tool]);
+    expect(onToken).toHaveBeenCalledTimes(1);
+    expect(onToken).toHaveBeenCalledWith('Updated.');
+    expect(onReasoning).toHaveBeenCalledWith('Plan');
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(result.finalContent).toBe('Updated.');
+    expect(result.totalCachedTokens).toBe(4);
+    expect(result.lastResult.completionTokensDetails).toEqual({ reasoning_tokens: 3 });
+    const second: unknown = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
+    expect(second).toMatchObject({
+      input: [
+        user('Check'),
+        expect.objectContaining({ encrypted_content: 'opaque' }),
+        call,
+        { type: 'function_call_output', call_id: 'call_1', output: 'success' },
+      ],
+    });
+  });
+
+  it('converts images and output limits and preserves custom instructions', async () => {
+    mockAuthGetState.mockReturnValue({ customInstructions: 'Be concise.', maxContextTokens: 16000 });
+    const limitedModel = { ...model, maxTokensOverride: 5000 };
+    mockProviderGetState.mockReturnValue({
+      models: [limitedModel],
+      getAvailableModels: (): UserChatModel[] => [limitedModel],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> => Promise.resolve(response(finalOutput)),
+    } as Response);
+    await askLlm(limitedModel, 0.2, [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,abc' } },
+        ],
+      },
+    ]);
+    const body: unknown = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
+    expect(body).toMatchObject({
+      max_output_tokens: 5000,
+      input: [
+        system('Be concise.'),
+        {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: 'Inspect' },
+            { type: 'input_image', image_url: 'data:image/png;base64,abc' },
+          ],
+        },
+      ],
+    });
+    expect(body).not.toHaveProperty('stream_options');
+    expect(body).not.toHaveProperty('thinking');
+  });
+
+  it('rejects a failed response stream', async () => {
+    mockFetch.mockResolvedValueOnce(streamedResponse([{ type: 'response.failed', response: { error: { message: 'Tool request failed' } } }]));
+    await expect(askLlmStream(model, 0.2, [user('Check')])).rejects.toThrow('Tool request failed');
+  });
+
+  it('rejects a truncated stream before tool execution', async () => {
+    mockFetch.mockResolvedValueOnce(streamedResponse([{ type: 'response.output_item.done', item: call }]));
+    await expect(askLlmStream(model, 0.2, [user('Check')])).rejects.toThrow('stream ended before a complete response');
+  });
+
+  it('rejects incomplete function calls', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: (): Promise<unknown> => Promise.resolve({ ...response([call]), status: 'incomplete' }),
+    } as Response);
+    await expect(askLlm(model, 0.2, [user('Check')], [tool])).rejects.toThrow('incomplete function call');
+  });
+});
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
@@ -648,7 +875,10 @@ describe('orchestrateLlmLoop — tool calls', () => {
                   {
                     id: 'call-ask-user',
                     type: 'function',
-                    function: { name: 'ask_user', arguments: '{"question":"Could you clarify?","context":"Need details."}' },
+                    function: {
+                      name: 'ask_user',
+                      arguments: '{"question":"Could you clarify?","context":"Need details."}',
+                    },
                   },
                 ],
               },
@@ -947,7 +1177,9 @@ describe('askLlm — non-streaming API calls', () => {
     const { askLlm } = await import('../llmService');
     await askLlm(model, 0.7, [user('Hi')]);
 
-    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as { messages: { role: string; content: string | null }[] };
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as {
+      messages: { role: string; content: string | null }[];
+    };
     expect(body.messages[0]).toEqual({ role: 'system', content: 'Be concise.' });
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
@@ -969,7 +1201,9 @@ describe('askLlm — non-streaming API calls', () => {
     const { askLlm } = await import('../llmService');
     await askLlm(model, 0.7, [user('Hi')], undefined, undefined, undefined, { includeCustomInstructions: false });
 
-    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as { messages: { role: string; content: string | null }[] };
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as {
+      messages: { role: string; content: string | null }[];
+    };
     expect(body.messages[0]).toEqual({ role: 'user', content: 'Hi' });
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
@@ -1123,12 +1357,14 @@ describe('buildPayload — reasoning_effort and tools', () => {
     isBuiltIn: false,
   };
 
-  const streamResponse = (): ReadableStream<Uint8Array> =>
+  const streamResponse = (responses = false): ReadableStream<Uint8Array> =>
     new ReadableStream({
       start(controller): void {
         controller.enqueue(
           new TextEncoder().encode(
-            'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n',
+            responses
+              ? 'data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"ok"}]}],"usage":{"input_tokens":1,"output_tokens":1}}}\n\n'
+              : 'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n',
           ),
         );
         controller.close();
@@ -1167,7 +1403,7 @@ describe('buildPayload — reasoning_effort and tools', () => {
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 
-  it('omits function tools for GPT-6.1 Sol (Chat Completions does not support them) and keeps a supported effort', async () => {
+  it('omits function tools when disabled for Sol and keeps a supported Responses effort', async () => {
     const model = createUserChatModel({
       apiModelId: 'gpt-6.1-sol',
       supportsTools: false,
@@ -1182,7 +1418,7 @@ describe('buildPayload — reasoning_effort and tools', () => {
 
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
-    mockFetch.mockResolvedValueOnce({ ok: true, body: streamResponse() } as unknown as Response);
+    mockFetch.mockResolvedValueOnce({ ok: true, body: streamResponse(true) } as unknown as Response);
 
     const { orchestrateLlmLoop } = await import('../llmService');
     await orchestrateLlmLoop(model, 0.7, [user('Hi')], () => {
@@ -1191,7 +1427,7 @@ describe('buildPayload — reasoning_effort and tools', () => {
 
     const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
     expect(body.tools).toBeUndefined();
-    expect(body.reasoning_effort).toBe('high');
+    expect(body.reasoning).toMatchObject({ effort: 'high' });
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 
@@ -1209,7 +1445,7 @@ describe('buildPayload — reasoning_effort and tools', () => {
 
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
-    mockFetch.mockResolvedValueOnce({ ok: true, body: streamResponse() } as unknown as Response);
+    mockFetch.mockResolvedValueOnce({ ok: true, body: streamResponse(true) } as unknown as Response);
 
     const { askLlmStream } = await import('../llmService');
     await askLlmStream(model, 0.7, [user('Hi')], () => {
@@ -1217,7 +1453,7 @@ describe('buildPayload — reasoning_effort and tools', () => {
     });
 
     const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
-    expect(body.reasoning_effort).toBe('low');
+    expect(body.reasoning).toMatchObject({ effort: 'low' });
     expect(body.tools).toBeUndefined();
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
@@ -1375,7 +1611,12 @@ describe('buildPayload — thinking and webSearch', () => {
   });
 
   it('disables thinking and forces tool_choice when toolChoice is required', async () => {
-    const model = createUserChatModel({ thinkingToggle: 'enabled', streaming: true, supportsTools: true, supportsThinking: true });
+    const model = createUserChatModel({
+      thinkingToggle: 'enabled',
+      streaming: true,
+      supportsTools: true,
+      supportsThinking: true,
+    });
     mockProviderGetState.mockReturnValue({
       models: [model],
       getAvailableModels: (): UserChatModel[] => [model],
@@ -1594,7 +1835,10 @@ describe('Anthropic streaming — tool_use after thinking block', () => {
     const dataLine = (obj: unknown): string => `data: ${JSON.stringify(obj)}`;
     const sse = [
       'event: message_start',
-      dataLine({ type: 'message_start', message: { id: 'msg_1', model: 'mini-max', usage: { input_tokens: 20, output_tokens: 0 } } }),
+      dataLine({
+        type: 'message_start',
+        message: { id: 'msg_1', model: 'mini-max', usage: { input_tokens: 20, output_tokens: 0 } },
+      }),
       '',
       'event: content_block_start',
       dataLine({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
@@ -1606,7 +1850,11 @@ describe('Anthropic streaming — tool_use after thinking block', () => {
       dataLine({ type: 'content_block_stop', index: 0 }),
       '',
       'event: content_block_start',
-      dataLine({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'toolu_1', name: 'read_messages' } }),
+      dataLine({
+        type: 'content_block_start',
+        index: 1,
+        content_block: { type: 'tool_use', id: 'toolu_1', name: 'read_messages' },
+      }),
       '',
       'event: content_block_delta',
       dataLine({

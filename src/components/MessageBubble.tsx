@@ -402,25 +402,36 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   return (
     <Paper
       sx={{
-        p: 2,
-        pl: message.type === 'user' ? { xs: 2, sm: 6 } : undefined,
+        p: { xs: 1.5, sm: 2 },
         width: '100%',
-        borderRadius: 3,
-        border: message.failed ? (theme): string => `1px solid ${theme.palette.error.main}` : 'none',
-        borderLeft: !message.failed && message.type === 'assistant' ? (theme): string => `3px solid ${isClarification ? theme.palette.warning.main : theme.palette.primary.main}` : undefined,
+        minWidth: 0,
+        boxShadow: 'none',
+        backgroundImage: 'none',
+        borderRadius: 2,
+        border: (theme): string => {
+          if (message.failed) return `1px solid ${theme.palette.error.main}`;
+          if (message.type === 'assistant') return `1px solid ${alpha(theme.palette.primary.main, 0.22)}`;
+          if (message.type === 'user') return `1px solid ${theme.palette.divider}`;
+          return '1px solid transparent';
+        },
+        borderLeft: !message.failed && isClarification ? (theme): string => `3px solid ${theme.palette.warning.main}` : undefined,
         bgcolor: (theme): string | undefined => {
           if (message.failed) return alpha(theme.palette.error.main, 0.1);
-          if (message.type === 'assistant') return theme.palette.assistant.main;
+          if (message.type === 'user') return theme.palette.background.paper;
+          if (message.type === 'assistant') return alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.14 : 0.07);
           if (message.type === 'aiNote') return theme.palette.aiNote.main;
           return undefined;
         },
         color: (theme): string | undefined => {
           if (message.failed) return theme.palette.text.primary;
-          if (message.type === 'assistant') return theme.palette.assistant.contrastText;
+          if (message.type === 'assistant') return theme.palette.text.primary;
           if (message.type === 'aiNote') return theme.palette.aiNote.contrastText;
           return undefined;
         },
         '&:hover .message-actions': {
+          opacity: 1,
+        },
+        '&:focus-within .message-actions': {
           opacity: 1,
         },
       }}
@@ -444,17 +455,29 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   '&:hover': { opacity: 0.7 },
                 }}
               >
-                <Typography variant="subtitle2" color="text.secondary" sx={{ transition: 'color 0.2s', display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography
+                  variant="subtitle2"
+                  sx={{
+                    color: (theme): string =>
+                      message.type === 'assistant' && !isClarification && !message.failed
+                        ? theme.palette.mode === 'dark'
+                          ? theme.palette.primary.light
+                          : theme.palette.primary.dark
+                        : theme.palette.text.secondary,
+                    transition: 'color 0.2s',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                  }}
+                >
                   {isClarification && <LiveHelpIcon sx={{ fontSize: 15, color: 'warning.main' }} />}
                   {isClarification ? 'Question for you' : message.type === 'user' ? userName : getModelLabel(message.model)}
                 </Typography>
-                {message.type !== 'user' &&
-                  isDeepSeekPeakHours() &&
-                  getModelProviderId(message.model) === 'builtin-deepseek' && (
-                    <Tooltip title="DeepSeek peak hours — 2x pricing">
-                      <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
-                    </Tooltip>
-                  )}
+                {message.type !== 'user' && isDeepSeekPeakHours() && getModelProviderId(message.model) === 'builtin-deepseek' && (
+                  <Tooltip title="DeepSeek peak hours — 2x pricing">
+                    <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                  </Tooltip>
+                )}
               </ButtonBase>
               <Popover
                 open={Boolean(infoAnchorEl)}
@@ -755,9 +778,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       handleMenuClose();
                     }}
                   >
-                    <ListItemIcon>
-                      {isSpeaking ? <StopCircleIcon fontSize="small" /> : <VolumeUpIcon fontSize="small" />}
-                    </ListItemIcon>
+                    <ListItemIcon>{isSpeaking ? <StopCircleIcon fontSize="small" /> : <VolumeUpIcon fontSize="small" />}</ListItemIcon>
                     <ListItemText>{isSpeaking ? 'Stop speech' : 'Read aloud'}</ListItemText>
                   </MenuItem>
                 )}
@@ -806,14 +827,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
 
         <Box sx={{ overflowX: 'auto', fontSize: `${chatFontSize}px` }}>
           {message.type === 'aiNote' ? (
-            <Typography variant="body2" fontStyle="italic" color="text.secondary" sx={{ fontSize: 'inherit', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography
+              variant="body2"
+              fontStyle="italic"
+              color="text.secondary"
+              sx={{ fontSize: 'inherit', display: 'flex', alignItems: 'center', gap: 0.5 }}
+            >
               {getModelLabel(message.model)}
               {isDeepSeekPeakHours() && getModelProviderId(message.model) === 'builtin-deepseek' && (
                 <Tooltip title="DeepSeek peak hours — 2x pricing">
                   <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
                 </Tooltip>
-              )}
-              {' '}stored a hidden note here.
+              )}{' '}
+              stored a hidden note here.
             </Typography>
           ) : (
             <>
@@ -865,7 +891,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       {isExpanded ? 'Show less' : 'Show more'}
                     </Button>
                   )}
-                  {isLong && !isExpanded && !showRaw &&
+                  {isLong &&
+                    !isExpanded &&
+                    !showRaw &&
                     contentTypes.map((type) => (
                       <Tooltip key={type} title={CONTENT_TYPE_LABELS[type]} disableTouchListener={isMobile}>
                         {CONTENT_TYPE_ICONS[type]}

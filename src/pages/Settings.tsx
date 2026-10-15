@@ -11,7 +11,6 @@ import {
   MenuItem,
   Switch,
   FormControlLabel,
-  LinearProgress,
   Tabs,
   Tab,
   Stack,
@@ -19,11 +18,7 @@ import {
   useTheme,
 } from '@mui/material';
 import {
-  CheckCircle as CheckCircleIcon,
   Add as AddIcon,
-  CloudDownload as DownloadIcon,
-  Delete as DeleteIcon,
-  Close as CloseIcon,
   Person as PersonIcon,
   Cloud as CloudIcon,
   AutoAwesome as AutoAwesomeIcon,
@@ -34,17 +29,16 @@ import {
 import { useAuthStore } from '../store/AuthStore';
 import { BackupService } from '../services/backupService';
 import { useBackupStore } from '../store/BackupStore';
-import { llmSuggestionService, LlmProgress } from '../services/llmSuggestionService';
 import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
 import { useProviderStore } from '../store/ProviderStore';
-import { getApiKey as getProviderApiKey } from '../types/provider';
+import { DEFAULT_PROVIDERS, getApiKey as getProviderApiKey } from '../types/provider';
 import { DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from '../constants';
 import { formatCost, CurrencyCode } from '../utils/currency';
 import { ENGLISH_VOICES } from '../constants/voices';
 import ThemeSelector from '../components/ThemeSelector';
 import ImportDialog from '../components/ImportDialog';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { ProviderCard, AddProviderCard } from '../components/ProviderCard';
+import { ProviderCard } from '../components/ProviderCard';
 import Analytics from '../components/Analytics';
 import DatabaseHealth from '../components/DatabaseHealth';
 import { PredefinedPrompt } from '../database/AthenaDb';
@@ -100,15 +94,10 @@ const Settings: React.FC = () => {
     addPredefinedPrompt,
     updatePredefinedPrompt,
     deletePredefinedPrompt,
-    llmSuggestionEnabled,
     replyPredictionEnabled,
     replyPredictionModel,
-    llmModelSelected,
-    llmModelDownloadStatus,
-    setLlmSuggestionEnabled,
     setReplyPredictionEnabled,
     setReplyPredictionModel,
-    setLlmModelSelected,
     topicPreloadCount,
     setTopicPreloadCount,
     messageTruncateChars,
@@ -143,9 +132,6 @@ const Settings: React.FC = () => {
 
   const { providers } = useProviderStore();
 
-  const currentModelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
-  const status = llmModelDownloadStatus[currentModelId] ?? 'not_downloaded';
-
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
   const [scratchpadRulesInput, setScratchpadRulesInput] = useState(scratchpadRules);
@@ -163,58 +149,9 @@ const Settings: React.FC = () => {
 
   const { status: backupStatus, lastBackupTime, backupMode, setStatus: setBackupStatus, setLastBackupTime, setBackupMode } = useBackupStore();
 
-  const [llmProgress, setLlmProgress] = useState<LlmProgress | null>(null);
-  const [isDeletingModel, setIsDeletingModel] = useState(false);
   const isBrave = typeof (navigator as unknown as Record<string, unknown>).brave !== 'undefined';
   const isFsSupported = 'showSaveFilePicker' in window;
   const isOpfsSupported = 'storage' in navigator && 'getDirectory' in navigator.storage;
-
-  useEffect(() => {
-    llmSuggestionService.setOnProgress((progress) => {
-      setLlmProgress(progress);
-    });
-    return () => {
-      llmSuggestionService.setOnProgress(() => {
-        /* no-op */
-      });
-    };
-  }, []);
-
-  const handleDownloadModel = (): void => {
-    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
-    llmSuggestionService.loadModel(modelId, true);
-  };
-
-  const performDeleteModel = async (modelId: string): Promise<void> => {
-    setIsDeletingModel(true);
-    try {
-      await llmSuggestionService.deleteModel(modelId);
-      setLlmProgress(null);
-    } catch (error) {
-      console.error('Failed to delete model:', error);
-    } finally {
-      setIsDeletingModel(false);
-    }
-  };
-
-  const handleDeleteModel = (): void => {
-    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
-    setConfirmAction({
-      title: 'Delete downloaded model',
-      message: `Delete downloaded model "${modelId}" from local cache?`,
-      confirmLabel: 'Delete',
-      destructive: true,
-      onConfirm: (): void => {
-        void performDeleteModel(modelId);
-      },
-    });
-  };
-
-  const handleResetDownload = (): void => {
-    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
-    llmSuggestionService.resetDownload(modelId);
-    setLlmProgress(null);
-  };
 
   useEffect(() => {
     setUserNameInput(userName);
@@ -418,23 +355,22 @@ const Settings: React.FC = () => {
       }}
     >
       <Paper
-        elevation={4}
+        elevation={0}
         sx={{
-          borderRadius: 3,
+          borderRadius: 0,
           display: 'flex',
           flexDirection: 'column',
           height: '100%',
           overflow: 'hidden',
-          bgcolor: (theme) => theme.palette.background.paper,
-          border: '1px solid',
-          borderColor: 'divider',
+          bgcolor: 'transparent',
         }}
       >
         <Tabs
           value={activeTab}
           onChange={(_, newValue): void => setActiveTab(newValue as number)}
-          variant={isMobile ? 'scrollable' : 'standard'}
-          scrollButtons={isMobile ? 'auto' : false}
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
           sx={{
             minHeight: { xs: 48, sm: 64 },
             height: { xs: 48, sm: 64 },
@@ -453,9 +389,9 @@ const Settings: React.FC = () => {
               minHeight: { xs: 48, sm: 64 },
               height: { xs: 48, sm: 64 },
               fontSize: { xs: '0.7rem', sm: '0.8rem' },
-              fontWeight: 'bold',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
+              fontWeight: 600,
+              textTransform: 'none',
+              letterSpacing: 0,
               px: { xs: 1, sm: 2 },
             },
           }}
@@ -539,7 +475,12 @@ const Settings: React.FC = () => {
                   </FormControl>
                   <FormControl fullWidth size="small">
                     <InputLabel>Chat Font Size</InputLabel>
-                    <Select value={chatFontSize} label="Chat Font Size" onChange={(e): void => setChatFontSize(e.target.value as number)} inputProps={{ 'data-testid': 'chat-font-size-select' } as React.InputHTMLAttributes<HTMLInputElement>}>
+                    <Select
+                      value={chatFontSize}
+                      label="Chat Font Size"
+                      onChange={(e): void => setChatFontSize(e.target.value as number)}
+                      inputProps={{ 'data-testid': 'chat-font-size-select' } as React.InputHTMLAttributes<HTMLInputElement>}
+                    >
                       <MenuItem value={12}>Small (12px)</MenuItem>
                       <MenuItem value={14}>Compact (14px)</MenuItem>
                       <MenuItem value={16}>Standard (16px)</MenuItem>
@@ -665,14 +606,11 @@ const Settings: React.FC = () => {
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
                 LLM Providers
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Each provider has its own API key and models. Add an OpenAI-compatible endpoint, Anthropic, or any custom provider (Ollama, Azure,
-                LiteLLM…).
-              </Typography>
-              {providers.map((p) => (
-                <ProviderCard key={p.id} provider={p} balanceLabel={getProviderBalanceLabel(p.id)} />
-              ))}
-              <AddProviderCard />
+              {providers
+                .filter((provider) => DEFAULT_PROVIDERS.some((predefined) => predefined.id === provider.id))
+                .map((p) => (
+                  <ProviderCard key={p.id} provider={p} balanceLabel={getProviderBalanceLabel(p.id)} />
+                ))}
             </Box>
           </TabPanel>
 
@@ -686,7 +624,12 @@ const Settings: React.FC = () => {
                 <Stack spacing={2}>
                   <FormControl fullWidth size="small">
                     <InputLabel>Max Context Tokens</InputLabel>
-                    <Select value={maxContextTokens} label="Max Context Tokens" onChange={(e): void => setMaxContextTokens(e.target.value as number)} inputProps={{ 'data-testid': 'max-context-tokens-select' } as React.InputHTMLAttributes<HTMLInputElement>}>
+                    <Select
+                      value={maxContextTokens}
+                      label="Max Context Tokens"
+                      onChange={(e): void => setMaxContextTokens(e.target.value as number)}
+                      inputProps={{ 'data-testid': 'max-context-tokens-select' } as React.InputHTMLAttributes<HTMLInputElement>}
+                    >
                       <MenuItem value={4000}>4k — Minimal (cheap)</MenuItem>
                       <MenuItem value={8000}>8k — Compact</MenuItem>
                       <MenuItem value={16000}>16k — Default</MenuItem>
@@ -760,14 +703,15 @@ const Settings: React.FC = () => {
                     <>
                       {summaryStats != null ? (
                         <Typography variant="caption" color="text.secondary" sx={{ ml: 4, mt: 0.5, display: 'block' }}>
-                          {summaryStats.count === 0 ? 'No summaries generated yet.' : (String(summaryStats.count) + ' summaries generated | Total cost: ' + formatCost(summaryStats.totalCost, currency, 3))}
+                          {summaryStats.count === 0
+                            ? 'No summaries generated yet.'
+                            : String(summaryStats.count) + ' summaries generated | Total cost: ' + formatCost(summaryStats.totalCost, currency, 3)}
                         </Typography>
                       ) : null}
                       <FormControl fullWidth size="small" sx={{ mt: 1, ml: 4, width: 'calc(100% - 32px)' }}>
                         <InputLabel>Summary Model</InputLabel>
                         <Select value={summaryModel} label="Summary Model" onChange={(e): void => setSummaryModel(e.target.value)}>
                           <MenuItem value="same">Same as active chat model</MenuItem>
-                          <MenuItem value="local">Local LLM (browser model)</MenuItem>
                         </Select>
                       </FormControl>
                     </>
@@ -791,7 +735,6 @@ const Settings: React.FC = () => {
                       <InputLabel>Prediction Model</InputLabel>
                       <Select value={replyPredictionModel} label="Prediction Model" onChange={(e): void => setReplyPredictionModel(e.target.value)}>
                         <MenuItem value="same">Same as active chat model</MenuItem>
-                        <MenuItem value="local">Local LLM (browser model)</MenuItem>
                       </Select>
                     </FormControl>
                   )}
@@ -800,96 +743,9 @@ const Settings: React.FC = () => {
 
               <Box>
                 <Typography variant="h6" gutterBottom sx={{ borderBottom: '1px solid', borderColor: 'divider', pb: 1, mb: 2, fontWeight: 'bold' }}>
-                  Local Browser Model
+                  Additional Features
                 </Typography>
-                <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-                  A small model that runs entirely on your device. No API key required.
-                </Typography>
-
-                <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-                  <InputLabel>Model</InputLabel>
-                  <Select
-                    value={llmModelSelected}
-                    label="Model"
-                    onChange={(e): void => setLlmModelSelected(e.target.value as 'qwen3.5-0.8b' | 'qwen3.5-2b')}
-                    inputProps={{ 'data-testid': 'local-model-select' } as React.InputHTMLAttributes<HTMLInputElement>}
-                  >
-                    <MenuItem value="qwen3.5-0.8b">Qwen3.5 0.8B (Recommended • ~500MB)</MenuItem>
-                    <MenuItem value="qwen3.5-2b">Qwen3.5 2B (~1.5GB)</MenuItem>
-                  </Select>
-                </FormControl>
-
-                <Box
-                  sx={{
-                    p: 2,
-                    borderRadius: 1,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'),
-                    mb: 3,
-                  }}
-                >
-                  <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
-                    <Typography variant="body2" component="div">
-                      {status === 'downloaded' ? (
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <CheckCircleIcon color="success" />
-                          Model Downloaded
-                        </Box>
-                      ) : status === 'downloading' ? (
-                        'Downloading Model...'
-                      ) : (
-                        'Model not downloaded'
-                      )}
-                    </Typography>
-                    <Box display="flex" gap={1}>
-                      {status === 'downloading' && (
-                        <Button variant="outlined" size="small" color="error" startIcon={<CloseIcon />} onClick={handleResetDownload}>
-                          Cancel
-                        </Button>
-                      )}
-                      {status === 'downloaded' && (
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          color="error"
-                          startIcon={<DeleteIcon />}
-                          disabled={isDeletingModel}
-                          onClick={(): void => {
-                            handleDeleteModel();
-                          }}
-                        >
-                          Delete
-                        </Button>
-                      )}
-                      <Button variant="outlined" size="small" startIcon={<DownloadIcon />} disabled={isDeletingModel} onClick={handleDownloadModel}>
-                        {status === 'downloaded' ? 'Update' : 'Download'}
-                      </Button>
-                    </Box>
-                  </Box>
-                  {llmProgress && status === 'downloading' && (
-                    <Box sx={{ width: '100%', mt: 2 }}>
-                      <LinearProgress variant="determinate" value={llmProgress.progress} />
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                        {llmProgress.progress.toFixed(1)}% ({Math.round(llmProgress.loaded / 1024 / 1024)}MB)
-                      </Typography>
-                    </Box>
-                  )}
-                </Box>
-
                 <Stack spacing={1}>
-                  <FormControlLabel
-                    control={<Switch checked={llmSuggestionEnabled} onChange={(e): void => setLlmSuggestionEnabled(e.target.checked)} size="small" />}
-                    label={
-                      <Box>
-                        <Typography variant="body2">Type-ahead Suggestions</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Word prediction while you type.
-                        </Typography>
-                      </Box>
-                    }
-                    sx={{ alignItems: 'flex-start' }}
-                  />
                   <FormControlLabel
                     control={<Switch checked={ragEnabled} onChange={(e): void => setRagEnabled(e.target.checked)} size="small" />}
                     label={
@@ -1250,7 +1106,12 @@ const Settings: React.FC = () => {
                             </Box>
                             <FormControl fullWidth size="small">
                               <InputLabel>Frequency</InputLabel>
-                              <Select value={backupInterval} label="Frequency" onChange={(e): void => setBackupInterval(e.target.value as number)} inputProps={{ 'data-testid': 'backup-frequency-select' } as React.InputHTMLAttributes<HTMLInputElement>}>
+                              <Select
+                                value={backupInterval}
+                                label="Frequency"
+                                onChange={(e): void => setBackupInterval(e.target.value as number)}
+                                inputProps={{ 'data-testid': 'backup-frequency-select' } as React.InputHTMLAttributes<HTMLInputElement>}
+                              >
                                 <MenuItem value={1}>1 Minute</MenuItem>
                                 <MenuItem value={5}>5 Minutes</MenuItem>
                                 <MenuItem value={30}>30 Minutes</MenuItem>

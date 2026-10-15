@@ -176,7 +176,7 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
 
   for (const t of topics) {
     if (t.scratchpad) stats.topicsWithScratchpad++;
-    stats.totalForks += (t.forks?.length ?? 0);
+    stats.totalForks += t.forks?.length ?? 0;
     if (t.mode === 'debate') stats.debateTopicCount++;
   }
 
@@ -187,7 +187,6 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
     aiSummaryEnabled: auth.aiSummaryEnabled ? 'ON' : 'OFF',
     summaryModel: auth.summaryModel,
     replyPredictionEnabled: auth.replyPredictionEnabled ? 'ON' : 'OFF',
-    llmSuggestionEnabled: auth.llmSuggestionEnabled ? 'ON' : 'OFF',
     ragEnabled: auth.ragEnabled ? 'ON' : 'OFF',
     ttsEnabled: auth.ttsEnabled ? 'ON' : 'OFF',
     maxContextTokens: String(auth.maxContextTokens),
@@ -232,10 +231,7 @@ export async function computeTrends(days: number): Promise<TrendRow[]> {
   return computeTrendsRange(days);
 }
 
-export async function computeTrendsRange(
-  maxDaysOrFrom?: number | string,
-  toDate?: string,
-): Promise<TrendRow[]> {
+export async function computeTrendsRange(maxDaysOrFrom?: number | string, toDate?: string): Promise<TrendRow[]> {
   const snapshots = await athenaDb.analyticsSnapshots.orderBy('date').reverse().toArray();
 
   let filtered: typeof snapshots;
@@ -257,9 +253,7 @@ export async function computeTrendsRange(
   }
 
   // Ensure ascending order for chart display
-  const sorted = filtered.length > 0 && filtered[0]?.date > (filtered[filtered.length - 1]?.date ?? '')
-    ? filtered.reverse()
-    : filtered;
+  const sorted = filtered.length > 0 && filtered[0]?.date > (filtered[filtered.length - 1]?.date ?? '') ? filtered.reverse() : filtered;
 
   return sorted.map((snap) => {
     const latencies = [...(snap.latencySamples ?? [])].sort((a, b) => a - b);
@@ -487,7 +481,36 @@ export interface CombinedStats {
 
 export function getCombinedStats(local?: AnalyticsStats): CombinedStats {
   return {
-    local: local ?? { summaryGeneratedCount: 0, summaryTotalCost: 0, summaryTotalReadCount: 0, summaryUniqueReadCount: 0, totalMessages: 0, messagesByType: {}, messagesByModel: {}, failedMessageCount: 0, totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCacheCreationTokens: 0, totalCost: 0, messageSizeDistribution: {}, userMessageSizeDistribution: {}, assistantMessageSizeDistribution: {}, totalAttachments: 0, totalWebSearches: 0, topicsWithScratchpad: 0, totalForks: 0, debateTopicCount: 0, messagesWithReasoning: 0, totalEmbeddings: 0, totalLatencyMs: 0, latencyCount: 0, firstMessageAt: null, lastMessageAt: null, features: {} },
+    local: local ?? {
+      summaryGeneratedCount: 0,
+      summaryTotalCost: 0,
+      summaryTotalReadCount: 0,
+      summaryUniqueReadCount: 0,
+      totalMessages: 0,
+      messagesByType: {},
+      messagesByModel: {},
+      failedMessageCount: 0,
+      totalPromptTokens: 0,
+      totalCompletionTokens: 0,
+      totalCachedTokens: 0,
+      totalCacheCreationTokens: 0,
+      totalCost: 0,
+      messageSizeDistribution: {},
+      userMessageSizeDistribution: {},
+      assistantMessageSizeDistribution: {},
+      totalAttachments: 0,
+      totalWebSearches: 0,
+      topicsWithScratchpad: 0,
+      totalForks: 0,
+      debateTopicCount: 0,
+      messagesWithReasoning: 0,
+      totalEmbeddings: 0,
+      totalLatencyMs: 0,
+      latencyCount: 0,
+      firstMessageAt: null,
+      lastMessageAt: null,
+      features: {},
+    },
     imported: getImportedSourcesRaw(),
   };
 }

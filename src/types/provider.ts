@@ -210,7 +210,7 @@ export const DEFAULT_MODELS: UserChatModel[] = [
     output: 10,
     streaming: true,
     supportsTemperature: false,
-    supportsTools: false,
+    supportsTools: true,
     supportsVision: true,
     supportsFiles: true,
     supportsThinking: true,

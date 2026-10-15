@@ -25,17 +25,12 @@ export const SidebarHeader = (): JSX.Element => {
             src={`${process.env.PUBLIC_URL}/icons/android-chrome-192x192.png`}
             alt="Athena Icon"
             sx={{
-              width: 32,
-              height: 32,
-              transition: 'transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.4s ease',
-              '&:hover': {
-                transform: 'scale(1.15) rotate(-8deg)',
-                filter: 'drop-shadow(0 0 8px rgba(187, 134, 252, 0.5))',
-              },
+              width: 28,
+              height: 28,
             }}
           />
 
-          <Typography variant="h6" noWrap sx={{ fontSize: 32, fontWeight: 'bold' }}>
+          <Typography variant="h6" noWrap sx={{ fontSize: 24, fontWeight: 600 }}>
             Athena
           </Typography>
         </Box>

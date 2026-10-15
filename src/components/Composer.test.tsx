@@ -6,7 +6,6 @@ import { useProviderStore } from '../store/ProviderStore';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
 import { useNotificationStore } from '../store/NotificationStore';
-import { llmSuggestionService } from '../services/llmSuggestionService';
 import { UserChatModel, LlmProvider } from '../types/provider';
 import { Topic, Message, Attachment } from '../database/AthenaDb';
 import { useUiStore } from '../store/UiStore';
@@ -40,13 +39,6 @@ jest.mock('../store/TopicStore', () => ({
 jest.mock('../store/NotificationStore', () => ({
   useNotificationStore: jest.fn(),
 }));
-jest.mock('../services/llmSuggestionService', () => ({
-  llmSuggestionService: {
-    loadModel: jest.fn(),
-    cancelSuggestion: jest.fn(),
-    getSuggestion: jest.fn(),
-  },
-}));
 jest.mock('../store/ChatStore', () => ({
   useChatStore: Object.assign(jest.fn(), { getState: jest.fn() }),
 }));
@@ -60,9 +52,6 @@ interface AuthStoreSlice {
   chatFontSize: number;
   setChatFontSize: (size: number) => void;
   predefinedPrompts: { id: string; name: string; content: string }[];
-  llmSuggestionEnabled: boolean;
-  llmModelSelected: 'qwen3.5-0.8b' | 'qwen3.5-2b';
-  llmModelDownloadStatus: Record<string, 'not_downloaded' | 'downloading' | 'downloaded' | undefined>;
   defaultMaxContextMessages: number;
   showCameraButton: 'auto' | 'always' | 'never';
   ttsEnabled: boolean;
@@ -123,7 +112,6 @@ const mockUseChatStore = useChatStore as unknown as UseChatStoreMock;
 const mockUseTopicStore = useTopicStore as unknown as jest.Mock<TopicStoreSlice>;
 const mockUseNotificationStore = useNotificationStore as unknown as jest.Mock<NotificationStoreSlice>;
 const mockUseUiStore = useUiStore as unknown as jest.Mock & { getState: jest.Mock };
-const mockSuggestionService = llmSuggestionService as jest.Mocked<typeof llmSuggestionService>;
 
 class MockFileReader {
   public result: string | ArrayBuffer | null = null;
@@ -250,9 +238,6 @@ describe('Composer', () => {
       chatFontSize: 16,
       setChatFontSize: jest.fn(),
       predefinedPrompts: [{ id: 'prompt-1', name: 'System Prompt', content: 'Prompt content' }],
-      llmSuggestionEnabled: false,
-      llmModelSelected: 'qwen3.5-0.8b',
-      llmModelDownloadStatus: {},
       defaultMaxContextMessages: 10,
       showCameraButton: 'never',
       ttsEnabled: false,
@@ -329,11 +314,52 @@ describe('Composer', () => {
     mockUseNotificationStore.mockReturnValue(notificationStore);
     selectorize(mockUseUiStore, { currentlySpeakingMessageId: null, isMobile: false });
     mockUseUiStore.getState.mockReturnValue({ setCurrentlySpeakingMessageId: jest.fn() });
-    mockSuggestionService.getSuggestion.mockResolvedValue('');
   });
 
   afterEach(() => {
     consoleErrorSpy.mockRestore();
+  });
+
+  it('moves all controls together when the minimum input width no longer fits', () => {
+    const originalObserver = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
+    let resizeCallback: ResizeObserverCallback | undefined;
+    const disconnectObserver = jest.fn((): void => undefined);
+    const observer: ResizeObserver = {
+      observe: jest.fn((): void => undefined),
+      unobserve: jest.fn((): void => undefined),
+      disconnect: disconnectObserver,
+    };
+    const observerConstructor = jest.fn<ResizeObserver, [ResizeObserverCallback]>().mockImplementation((callback): ResizeObserver => {
+      resizeCallback = callback;
+      return observer;
+    });
+    Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: observerConstructor });
+    const rowWidth = jest.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(655);
+    const controlWidth = jest.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(160);
+
+    try {
+      const { container, unmount } = render(<Composer sending={false} onSend={onSend} isMobile={false} />);
+      const row = container.querySelector('[data-layout]');
+      expect(row).toHaveAttribute('data-layout', 'stacked');
+
+      rowWidth.mockReturnValue(656);
+      act((): void => resizeCallback?.([], observer));
+      expect(row).toHaveAttribute('data-layout', 'inline');
+      expect(row).toHaveStyle({ gridTemplateColumns: 'auto minmax(320px, 1fr) auto' });
+
+      controlWidth.mockReturnValue(180);
+      act((): void => resizeCallback?.([], observer));
+      expect(row).toHaveAttribute('data-layout', 'stacked');
+      expect(screen.getByRole('toolbar', { name: 'Message tools' })).toBeVisible();
+
+      unmount();
+      expect(disconnectObserver).toHaveBeenCalled();
+    } finally {
+      rowWidth.mockRestore();
+      controlWidth.mockRestore();
+      if (originalObserver) Object.defineProperty(globalThis, 'ResizeObserver', originalObserver);
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver');
+    }
   });
 
   it('sends the composed message and clears the input', () => {
@@ -464,7 +490,7 @@ describe('Composer', () => {
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
     // Open the settings menu
-    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
 
     // Verify "Temperature Presets" is NOT in the document
     expect(screen.queryByText('Temperature Presets')).not.toBeInTheDocument();
@@ -480,7 +506,7 @@ describe('Composer', () => {
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
     // Open the settings menu
-    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
 
     // Verify "Temperature Presets" is in the document
     expect(screen.getByText('Temperature Presets')).toBeInTheDocument();
@@ -520,7 +546,7 @@ describe('Composer', () => {
     }
 
     expect(onSend).not.toHaveBeenCalled();
-    expect((screen.getByPlaceholderText<HTMLInputElement>('Message...') ).value).toBe('Hello');
+    expect(screen.getByPlaceholderText<HTMLInputElement>('Message...').value).toBe('Hello');
   });
 
   it('accumulates final results and does not send while recording', () => {
@@ -547,7 +573,7 @@ describe('Composer', () => {
     }
 
     expect(onSend).not.toHaveBeenCalled();
-    expect((screen.getByPlaceholderText<HTMLInputElement>('Message...') ).value).toBe('Hello world');
+    expect(screen.getByPlaceholderText<HTMLInputElement>('Message...').value).toBe('Hello world');
   });
 
   it('fills input with final transcript on recognition end without auto-sending', () => {
@@ -570,7 +596,7 @@ describe('Composer', () => {
     }
 
     expect(onSend).not.toHaveBeenCalled();
-    expect((screen.getByPlaceholderText<HTMLInputElement>('Message...') ).value).toBe('Hello world');
+    expect(screen.getByPlaceholderText<HTMLInputElement>('Message...').value).toBe('Hello world');
   });
 
   it('does not populate input from whitespace-only speech', () => {
@@ -592,7 +618,7 @@ describe('Composer', () => {
     }
 
     expect(onSend).not.toHaveBeenCalled();
-    expect((screen.getByPlaceholderText<HTMLInputElement>('Message...') ).value).toBe('');
+    expect(screen.getByPlaceholderText<HTMLInputElement>('Message...').value).toBe('');
   });
 
   it('stops recording after a silence timeout and fills input without sending', () => {
@@ -622,7 +648,7 @@ describe('Composer', () => {
     }
 
     expect(onSend).not.toHaveBeenCalled();
-    expect((screen.getByPlaceholderText<HTMLInputElement>('Message...') ).value).toBe('Hello world');
+    expect(screen.getByPlaceholderText<HTMLInputElement>('Message...').value).toBe('Hello world');
 
     jest.useRealTimers();
   });
@@ -767,7 +793,8 @@ describe('Composer', () => {
   it('opens Inspect dialog when Inspect button is clicked', () => {
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tools' }));
     fireEvent.click(screen.getByRole('button', { name: 'Inspect the full LLM context payload' }));
 
     expect(screen.getByText('Topic Context Dialog')).toBeInTheDocument();
@@ -776,7 +803,8 @@ describe('Composer', () => {
   it('opens Scratchpad dialog when Scratchpad button is clicked', () => {
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tools' }));
     fireEvent.click(screen.getByRole('button', { name: 'View AI persistent memory' }));
 
     expect(screen.getByText('Scratchpad Dialog')).toBeInTheDocument();
@@ -785,7 +813,8 @@ describe('Composer', () => {
   it('changes chat width when width button is clicked', () => {
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
     fireEvent.click(screen.getByRole('button', { name: 'Extra Wide (1500px)' }));
 
     expect(authStore.setChatWidth).toHaveBeenCalledWith('xl');
@@ -794,8 +823,11 @@ describe('Composer', () => {
   it('changes font size when font size button is clicked', () => {
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
-    fireEvent.click(screen.getByText('18'));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+    expect(screen.getByText('Font Size')).toBeVisible();
+    expect(screen.getByText('Active Model')).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '18' }));
 
     expect(authStore.setChatFontSize).toHaveBeenCalledWith(18);
   });
@@ -833,7 +865,7 @@ describe('Composer', () => {
 
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
 
     expect(screen.getByText('Thinking & Effort')).toBeInTheDocument();
     expect(screen.getByText('On')).toBeInTheDocument();
@@ -855,7 +887,7 @@ describe('Composer', () => {
 
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
 
     expect(screen.getByText('High')).toBeInTheDocument();
     expect(screen.getByText('Max')).toBeInTheDocument();
@@ -867,7 +899,8 @@ describe('Composer', () => {
 
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tools' }));
 
     await waitFor(() => {
       expect(screen.getByText('TTS Voice')).toBeInTheDocument();
@@ -880,7 +913,8 @@ describe('Composer', () => {
 
     render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Adjust parameters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tools' }));
 
     const inspectButton = screen.getByRole('button', { name: 'Inspect the full LLM context payload' });
     expect(inspectButton).toBeDisabled();
@@ -892,7 +926,7 @@ describe('Composer', () => {
 
     const { container } = render(<Composer sending={false} onSend={onSend} isMobile={false} />);
 
-    const cameraInput = container.querySelector('input[type="file"][capture]') ;
+    const cameraInput = container.querySelector('input[type="file"][capture]');
     expect(cameraInput).not.toBeNull();
 
     const clickSpy = jest.spyOn(HTMLInputElement.prototype, 'click');
@@ -904,7 +938,7 @@ describe('Composer', () => {
     clickSpy.mockRestore();
   });
 
-it('stops sending when stop button is clicked', async () => {
+  it('stops sending when stop button is clicked', async () => {
     chatStore.stopSending.mockResolvedValue('draft content');
     selectorize(mockUseChatStore, chatStore);
 

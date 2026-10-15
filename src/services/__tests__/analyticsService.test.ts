@@ -16,7 +16,6 @@ jest.mock('../../store/AuthStore', () => ({
       aiSummaryEnabled: false,
       summaryModel: 'test',
       replyPredictionEnabled: false,
-      llmSuggestionEnabled: false,
       ragEnabled: false,
       ttsEnabled: false,
       maxContextTokens: 128000,
@@ -39,7 +38,9 @@ jest.mock('../../database/AthenaDb', () => ({
       reverse: () => ({
         sortBy: (): Promise<AnalyticsSnapshot[]> => mockSnapshotToArray(),
       }),
-      orderBy: (): { reverse: () => { limit: (n: number) => { toArray: () => Promise<AnalyticsSnapshot[]> }; toArray: () => Promise<AnalyticsSnapshot[]> } } => ({
+      orderBy: (): {
+        reverse: () => { limit: (n: number) => { toArray: () => Promise<AnalyticsSnapshot[]> }; toArray: () => Promise<AnalyticsSnapshot[]> };
+      } => ({
         reverse: () => ({
           limit: (_n: number) => ({
             toArray: (): Promise<AnalyticsSnapshot[]> => mockReverseLimitToArray(),
@@ -80,8 +81,8 @@ beforeEach(() => {
   mockSnapshots = [];
   mockSnapshotToArray.mockImplementation((): Promise<AnalyticsSnapshot[]> => Promise.resolve([...mockSnapshots]));
   mockReverseLimitToArray.mockImplementation((): Promise<AnalyticsSnapshot[]> => Promise.resolve([...mockSnapshots].reverse()));
-  mockSnapshotGet.mockImplementation((date: string): Promise<AnalyticsSnapshot | undefined> =>
-    Promise.resolve(mockSnapshots.find((s) => s.date === date))
+  mockSnapshotGet.mockImplementation(
+    (date: string): Promise<AnalyticsSnapshot | undefined> => Promise.resolve(mockSnapshots.find((s) => s.date === date)),
   );
   mockMessagesToArray.mockResolvedValue([]);
   mockModels.length = 0;
@@ -95,7 +96,7 @@ function makeSnapshot(overrides: Partial<AnalyticsSnapshot> = {}): AnalyticsSnap
     failedCount: 1,
     promptTokens: 1000,
     completionTokens: 500,
-    cost: 0.50,
+    cost: 0.5,
     latencySamples: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000],
     providerStats: {},
     toolStats: {},
@@ -124,8 +125,24 @@ function makeMsg(overrides: Partial<Message> = {}): Message {
 describe('computeTrends', () => {
   it('returns trend rows from snapshots', async () => {
     mockSnapshots = [
-      makeSnapshot({ date: '2026-01-01', messageCount: 5, cost: 0.25, promptTokens: 500, completionTokens: 250, failedCount: 1, latencySamples: [100, 200] }),
-      makeSnapshot({ date: '2026-01-02', messageCount: 10, cost: 0.50, promptTokens: 1000, completionTokens: 500, failedCount: 0, latencySamples: [150, 250, 350] }),
+      makeSnapshot({
+        date: '2026-01-01',
+        messageCount: 5,
+        cost: 0.25,
+        promptTokens: 500,
+        completionTokens: 250,
+        failedCount: 1,
+        latencySamples: [100, 200],
+      }),
+      makeSnapshot({
+        date: '2026-01-02',
+        messageCount: 10,
+        cost: 0.5,
+        promptTokens: 1000,
+        completionTokens: 500,
+        failedCount: 0,
+        latencySamples: [150, 250, 350],
+      }),
     ];
 
     const trends = await computeTrends(7);
@@ -194,14 +211,14 @@ describe('computeProviderBreakdown', () => {
       makeSnapshot({
         date: '2026-01-01',
         providerStats: {
-          OpenAI: { cost: 0.50, tokens: 1000, messageCount: 5 },
-          DeepSeek: { cost: 0.20, tokens: 500, messageCount: 3 },
+          OpenAI: { cost: 0.5, tokens: 1000, messageCount: 5 },
+          DeepSeek: { cost: 0.2, tokens: 500, messageCount: 3 },
         },
       }),
       makeSnapshot({
         date: '2026-01-02',
         providerStats: {
-          OpenAI: { cost: 0.30, tokens: 600, messageCount: 3 },
+          OpenAI: { cost: 0.3, tokens: 600, messageCount: 3 },
         },
       }),
     ];
@@ -209,11 +226,11 @@ describe('computeProviderBreakdown', () => {
     const result = await computeProviderBreakdown();
     expect(result).toHaveLength(2);
     expect(result[0].provider).toBe('OpenAI');
-    expect(result[0].cost).toBe(0.80);
+    expect(result[0].cost).toBe(0.8);
     expect(result[0].messages).toBe(8);
     expect(result[0].tokens).toBe(1600);
     expect(result[1].provider).toBe('DeepSeek');
-    expect(result[1].cost).toBe(0.20);
+    expect(result[1].cost).toBe(0.2);
   });
 
   it('falls back to message scan when no snapshots', async () => {
@@ -268,9 +285,7 @@ describe('computeToolUsageBreakdown', () => {
         },
       ],
     });
-    mockMessagesToArray.mockResolvedValue([
-      makeMsg({ rawResponse: debugPayload }),
-    ]);
+    mockMessagesToArray.mockResolvedValue([makeMsg({ rawResponse: debugPayload })]);
 
     const result = await computeToolUsageBreakdown();
     expect(result).toHaveLength(1);
@@ -313,7 +328,9 @@ describe('exportAnalytics / importAnalytics backward compatibility', () => {
     // eslint-disable-next-line @typescript-eslint/unbound-method
     const removeChildSpy = jest.spyOn(document.body, 'removeChild').mockImplementation(jest.fn());
     const clickSpy = jest.fn();
-    const createElementSpy = jest.spyOn(document, 'createElement').mockReturnValue({ href: '', download: '', click: clickSpy } as unknown as HTMLElement);
+    const createElementSpy = jest
+      .spyOn(document, 'createElement')
+      .mockReturnValue({ href: '', download: '', click: clickSpy } as unknown as HTMLElement);
 
     await exportAnalytics('test-user');
 

@@ -25,8 +25,8 @@ interface AuthStoreSlice {
   ragEnabled: boolean;
   maxContextTokens: number;
   messageRetrievalEnabled: boolean;
-  llmModelSelected: 'qwen3.5-0.8b' | 'qwen3.5-2b';
-  llmModelDownloadStatus: Record<string, 'not_downloaded' | 'downloading' | 'downloaded' | undefined>;
+  summaryModel: string;
+  replyPredictionModel: string;
   contextWindowRatio: number;
   predefinedPrompts: { id: string; name: string; content: string }[];
   setBackupInterval: (minutes: number) => void;
@@ -37,8 +37,6 @@ interface AuthStoreSlice {
   updatePredefinedPrompt: (prompt: { id: string; name: string; content: string }) => void;
   deletePredefinedPrompt: (id: string) => void;
   setRagEnabled: (enabled: boolean) => void;
-  setLlmModelSelected: (model: 'qwen3.5-0.8b' | 'qwen3.5-2b') => void;
-  setLlmModelDownloadStatus: (modelId: string, status: 'not_downloaded' | 'downloading' | 'downloaded') => void;
   setContextWindowRatio: (ratio: number) => void;
   clearAuth: () => void;
 }
@@ -178,24 +176,23 @@ describe('AuthStore', () => {
     logSpy.mockRestore();
   });
 
-  it('setLlmModelDownloadStatus updates state and persists to localStorage', () => {
+  it('migrates local model preferences and removes obsolete inference settings', () => {
+    localStorage.setItem('summaryModel', 'local');
+    localStorage.setItem('replyPredictionModel', 'local');
+    localStorage.setItem('llmSuggestionEnabled', 'true');
+    localStorage.setItem('llmModelSelected', 'qwen3.5-2b');
+    localStorage.setItem('llmModelDownloadStatus', 'invalid legacy JSON');
+    localStorage.setItem('ragEnabled', 'true');
     const store = loadAuthStore();
 
-    store.getState().setLlmModelDownloadStatus('qwen3.5-2b', 'downloading');
-
-    expect(store.getState().llmModelDownloadStatus['qwen3.5-2b']).toBe('downloading');
-    expect(localStorage.getItem('llmModelDownloadStatus')).toBe('{"qwen3.5-2b":"downloading"}');
-  });
-
-  it('setLlmModelDownloadStatus merges with existing status', () => {
-    const store = loadAuthStore();
-
-    store.getState().setLlmModelDownloadStatus('model-a', 'downloaded');
-    store.getState().setLlmModelDownloadStatus('model-b', 'downloading');
-
-    const status = store.getState().llmModelDownloadStatus;
-    expect(status['model-a']).toBe('downloaded');
-    expect(status['model-b']).toBe('downloading');
+    expect(store.getState().summaryModel).toBe('same');
+    expect(store.getState().replyPredictionModel).toBe('same');
+    expect(store.getState().ragEnabled).toBe(true);
+    expect(localStorage.getItem('summaryModel')).toBe('same');
+    expect(localStorage.getItem('replyPredictionModel')).toBe('same');
+    expect(localStorage.getItem('llmSuggestionEnabled')).toBeNull();
+    expect(localStorage.getItem('llmModelSelected')).toBeNull();
+    expect(localStorage.getItem('llmModelDownloadStatus')).toBeNull();
   });
 
   it('setContextWindowRatio clamps values below 0.1 to 0.1', () => {
@@ -225,12 +222,13 @@ describe('AuthStore', () => {
     expect(localStorage.getItem('contextWindowRatio')).toBe('0.75');
   });
 
-  it('setLlmModelSelected persists to localStorage', () => {
+  it('preserves existing API model preferences', () => {
+    localStorage.setItem('summaryModel', 'same');
+    localStorage.setItem('replyPredictionModel', 'api-model');
     const store = loadAuthStore();
 
-    store.getState().setLlmModelSelected('qwen3.5-2b');
-
-    expect(store.getState().llmModelSelected).toBe('qwen3.5-2b');
-    expect(localStorage.getItem('llmModelSelected')).toBe('qwen3.5-2b');
+    expect(store.getState().summaryModel).toBe('same');
+    expect(store.getState().replyPredictionModel).toBe('api-model');
+    expect(localStorage.getItem('replyPredictionModel')).toBe('api-model');
   });
 });

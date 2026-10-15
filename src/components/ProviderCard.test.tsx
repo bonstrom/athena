@@ -1,347 +1,93 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { AddProviderCard, ProviderCard } from './ProviderCard';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { ProviderCard } from './ProviderCard';
 import { useProviderStore } from '../store/ProviderStore';
 import { useAuthStore } from '../store/AuthStore';
-import { encodeApiKey, LlmProvider, UserChatModel } from '../types/provider';
-import { createLlmProvider, createUserChatModel, selectorize } from '../testUtils';
-
-type ProviderHandler = (provider: LlmProvider) => void;
-type ProviderIdHandler = (providerId: string) => void;
-type ModelHandler = (model: UserChatModel) => void;
-type ModelIdHandler = (modelId: string) => void;
+import { DEFAULT_MODELS, DEFAULT_PROVIDERS, encodeApiKey, LlmProvider, UserChatModel } from '../types/provider';
+import { createUserChatModel, selectorize } from '../testUtils';
 
 interface ProviderStoreSlice {
   models: UserChatModel[];
-  addProvider: (provider: LlmProvider) => void;
-  deleteProvider: (providerId: string) => void;
-  updateProvider: (provider: LlmProvider) => void;
-  addModel: (model: UserChatModel) => void;
-  updateModel: (model: UserChatModel) => void;
+  setProviderKey: jest.Mock<void, [string, string]>;
+  updateModel: jest.Mock<void, [UserChatModel]>;
 }
 
-type ProviderStoreHookMock = jest.Mock<ProviderStoreSlice> & {
-  getState: jest.Mock<{
-    updateModel: (model: UserChatModel) => void;
-    deleteModel: (modelId: string) => void;
-  }>;
-};
+jest.mock('../store/ProviderStore', () => ({ useProviderStore: jest.fn() }));
+jest.mock('../store/AuthStore', () => ({ useAuthStore: jest.fn() }));
 
-jest.mock('../store/ProviderStore', () => ({
-  useProviderStore: Object.assign(jest.fn(), { getState: jest.fn() }),
-}));
-
-jest.mock('../store/AuthStore', () => ({
-  useAuthStore: jest.fn(),
-}));
-
-const mockUseProviderStore = useProviderStore as unknown as ProviderStoreHookMock;
+const mockUseProviderStore = useProviderStore as unknown as jest.Mock<ProviderStoreSlice>;
 const mockUseAuthStore = useAuthStore as unknown as jest.Mock<{ currency: string }>;
 
+describe('ProviderCard', () => {
+  let state: ProviderStoreSlice;
+  let provider: LlmProvider;
 
-describe('ProviderCard and AddProviderCard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-
-    Object.defineProperty(globalThis, 'crypto', {
-      writable: true,
-      value: {
-        randomUUID: jest.fn((): string => 'provider-uuid'),
-      },
-    });
-
-    selectorize(mockUseAuthStore, { currency: 'SEK' });
-
-    mockUseProviderStore.mockReturnValue({
-      models: [],
-      addProvider: jest.fn(),
-      deleteProvider: jest.fn(),
-      updateProvider: jest.fn(),
-      addModel: jest.fn(),
-      updateModel: jest.fn(),
-    });
-
-    mockUseProviderStore.getState.mockReturnValue({
-      updateModel: jest.fn(),
-      deleteModel: jest.fn(),
-    });
+    provider = { ...DEFAULT_PROVIDERS[0], apiKeyEncrypted: '' };
+    state = {
+      models: DEFAULT_MODELS.map((model) => ({ ...model })),
+      setProviderKey: jest.fn<ReturnType<ProviderStoreSlice['setProviderKey']>, [string, string]>(),
+      updateModel: jest.fn<ReturnType<ProviderStoreSlice['updateModel']>, [UserChatModel]>(),
+    };
+    mockUseProviderStore.mockReturnValue(state);
+    selectorize(mockUseAuthStore, { currency: 'USD' });
   });
 
-  it('adds a custom provider from AddProviderCard form', async () => {
-    const addProvider: jest.MockedFunction<ProviderHandler> = jest.fn();
-    mockUseProviderStore.mockReturnValue({
-      models: [],
-      addProvider,
-      deleteProvider: jest.fn(),
-      updateProvider: jest.fn(),
-      addModel: jest.fn(),
-      updateModel: jest.fn(),
-    });
+  it('shows predefined models without provider or model editors', () => {
+    state.models.push(createUserChatModel({ id: 'custom-model', providerId: provider.id, label: 'Custom model' }));
+    render(<ProviderCard provider={provider} balanceLabel="$12.34" />);
 
-    render(<AddProviderCard />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Add Custom Provider' }));
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Custom API' } });
-    fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'https://custom.example.com/v1/chat/completions' } });
-    fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'secret-key' } });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Add Provider' }));
-
-    await waitFor(() => {
-      expect(addProvider).toHaveBeenCalledTimes(1);
-    });
-
-    const added = addProvider.mock.calls[0][0];
-    expect(added.id).toBe('provider-uuid');
-    expect(added.name).toBe('Custom API');
-    expect(added.baseUrl).toBe('https://custom.example.com/v1/chat/completions');
-    expect(added.messageFormat).toBe('openai');
-    expect(added.apiKeyEncrypted).not.toBe('secret-key');
-    expect(added.apiKeyEncrypted.length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: provider.name })).toBeInTheDocument();
+    expect(screen.getByText('No key')).toBeInTheDocument();
+    expect(screen.getByText('Balance: $12.34')).toBeInTheDocument();
+    for (const model of DEFAULT_MODELS.filter((entry) => entry.providerId === provider.id)) {
+      expect(screen.getByRole('checkbox', { name: model.label })).toBeChecked();
+    }
+    expect(screen.queryByText('Custom model')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Base URL')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /add|edit|delete (model|provider)/i })).not.toBeInTheDocument();
   });
 
-  it('resets add provider form on cancel and shows JSON validation errors', () => {
-    render(<AddProviderCard />);
+  it('saves a trimmed API key only on explicit save', () => {
+    render(<ProviderCard provider={provider} />);
+    const input = screen.getByLabelText(`${provider.name} API key`);
+    expect(input).toHaveAttribute('type', 'password');
+    expect(screen.getByRole('button', { name: `Save ${provider.name} API key` })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add Custom Provider' }));
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Discarded Provider' } });
-    fireEvent.click(screen.getByText('ADVANCED'));
-    fireEvent.change(screen.getByLabelText('Payload Overrides (JSON)'), { target: { value: '{invalid' } });
+    fireEvent.change(input, { target: { value: '  test-key  ' } });
+    expect(state.setProviderKey).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: `Save ${provider.name} API key` }));
 
-    expect(screen.getByText('Invalid JSON')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add Provider' })).toBeDisabled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Add Custom Provider' }));
-
-    expect(screen.getByLabelText('Name')).toHaveValue('');
-    expect(screen.queryByText('Invalid JSON')).not.toBeInTheDocument();
+    expect(state.setProviderKey).toHaveBeenCalledWith(provider.id, 'test-key');
   });
 
-  it('renders provider model list, provider chips, and model status chips', () => {
-    mockUseProviderStore.mockReturnValue({
-      models: [
-        createUserChatModel({ providerId: 'provider-1',
-          label: 'Model One',
-          supportsVision: true,
-          enforceAlternatingRoles: true,
-          forceTemperature: 0.4,
-          input: 1,
-          output: 2,
-        }),
-      ],
-      addProvider: jest.fn(),
-      deleteProvider: jest.fn(),
-      updateProvider: jest.fn(),
-      addModel: jest.fn(),
-      updateModel: jest.fn(),
-    });
-
-    render(
-      <ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One', apiKeyEncrypted: encodeApiKey('secret-key'), supportsWebSearch: true })} balanceLabel="123.45" />,
-    );
-
-    expect(screen.getByText('Provider One')).toBeInTheDocument();
+  it('removes an existing API key without changing model preferences', () => {
+    provider.apiKeyEncrypted = encodeApiKey('test-key');
+    render(<ProviderCard provider={provider} />);
     expect(screen.getByText('Key set')).toBeInTheDocument();
-    expect(screen.getByText('Web Search')).toBeInTheDocument();
-    expect(screen.getByText('Balance: 123.45')).toBeInTheDocument();
-    expect(screen.getByText('Model One')).toBeInTheDocument();
-    expect(screen.getByText('Tools')).toBeInTheDocument();
-    expect(screen.getByText('Vision')).toBeInTheDocument();
-    expect(screen.getByText('Alt-roles')).toBeInTheDocument();
-    expect(screen.getByText('T=0.4')).toBeInTheDocument();
-    expect(screen.getByText('10 kr | 20 kr /1M')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: `Remove ${provider.name} API key` }));
+
+    expect(state.setProviderKey).toHaveBeenCalledWith(provider.id, '');
+    expect(screen.getByLabelText(`${provider.name} API key`)).toHaveValue('');
+    expect(state.updateModel).not.toHaveBeenCalled();
   });
 
-  it('updates provider settings with advanced options and a new API key', async () => {
-    const updateProvider: jest.MockedFunction<ProviderHandler> = jest.fn();
-    mockUseProviderStore.mockReturnValue({
-      models: [],
-      addProvider: jest.fn(),
-      deleteProvider: jest.fn(),
-      updateProvider,
-      addModel: jest.fn(),
-      updateModel: jest.fn(),
-    });
-
-    const { container } = render(
-      <ProviderCard
-        provider={createLlmProvider({
-          id: 'provider-1',
-          name: 'Provider One',
-          apiKeyEncrypted: encodeApiKey('old-key'),
-          payloadOverridesJson: '',
-        })}
-      />,
-    );
-
-    const buttons = container.querySelectorAll<HTMLButtonElement>('button');
-    fireEvent.click(buttons[0]);
-
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Updated Provider' } });
-    fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'https://updated.example.com/v1/chat/completions' } });
-    fireEvent.change(screen.getByLabelText('API Key (leave blank to keep current)'), { target: { value: 'new-secret' } });
-    fireEvent.click(screen.getByText('ADVANCED'));
-    fireEvent.click(screen.getByLabelText('Supports $web_search builtin (Moonshot-style)'));
-    fireEvent.click(screen.getByLabelText('Requires reasoning_content fallback in assistant messages'));
-    fireEvent.change(screen.getByLabelText('Payload Overrides (JSON)'), { target: { value: '{"max_tokens":4096}' } });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-
-    await waitFor(() => {
-      expect(updateProvider).toHaveBeenCalledTimes(1);
-    });
-
-    const updatedProvider = updateProvider.mock.calls[0][0];
-    expect(updatedProvider).toMatchObject({
-      id: 'provider-1',
-      name: 'Updated Provider',
-      baseUrl: 'https://updated.example.com/v1/chat/completions',
-      supportsWebSearch: true,
-      requiresReasoningFallback: true,
-      payloadOverridesJson: '{"max_tokens":4096}',
-    });
-    expect(updatedProvider.apiKeyEncrypted).toBeTruthy();
-    expect(updatedProvider.apiKeyEncrypted).not.toBe('new-secret');
-    expect(screen.queryByText('Provider Settings')).not.toBeInTheDocument();
+  it('reflects saved API key changes', () => {
+    const { rerender } = render(<ProviderCard provider={provider} />);
+    rerender(<ProviderCard provider={{ ...provider, apiKeyEncrypted: encodeApiKey('replacement-key') }} />);
+    expect(screen.getByLabelText(`${provider.name} API key`)).toHaveValue('replacement-key');
+    expect(screen.getByText('Key set')).toBeInTheDocument();
   });
 
-  it('toggles and deletes a model via store state handlers', async () => {
-    const updateModel: jest.MockedFunction<ModelHandler> = jest.fn();
-    const deleteModel: jest.MockedFunction<ModelIdHandler> = jest.fn();
+  it.each([true, false])('toggles an initially enabled=%s model without changing its definition', (enabled) => {
+    const model = state.models.find((entry) => entry.providerId === provider.id);
+    if (!model) throw new Error('Expected a predefined model');
+    model.enabled = enabled;
+    render(<ProviderCard provider={provider} />);
 
-    mockUseProviderStore.mockReturnValue({
-      models: [createUserChatModel({ providerId: 'provider-1', id: 'model-1', label: 'Model One' })],
-      addProvider: jest.fn(),
-      deleteProvider: jest.fn(),
-      updateProvider: jest.fn(),
-      addModel: jest.fn(),
-      updateModel: jest.fn(),
-    });
-    mockUseProviderStore.getState.mockReturnValue({
-      updateModel,
-      deleteModel,
-    });
+    fireEvent.click(screen.getByRole('checkbox', { name: model.label }));
 
-    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One' })} />);
-
-    fireEvent.click(screen.getAllByRole('checkbox')[0]);
-    expect(updateModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'model-1', enabled: false }));
-
-    const buttons = container.querySelectorAll<HTMLButtonElement>('button');
-    fireEvent.click(buttons[3]);
-
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
-
-    expect(deleteModel).toHaveBeenCalledWith('model-1');
-  });
-
-  it('adds a model with advanced overrides', async () => {
-    const addModel: jest.MockedFunction<ModelHandler> = jest.fn();
-    mockUseProviderStore.mockReturnValue({
-      models: [],
-      addProvider: jest.fn(),
-      deleteProvider: jest.fn(),
-      updateProvider: jest.fn(),
-      addModel,
-      updateModel: jest.fn(),
-    });
-
-    render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One' })} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Add Model' }));
-    fireEvent.change(screen.getByLabelText('Display Label'), { target: { value: 'Reasoner' } });
-    fireEvent.change(screen.getByLabelText('API Model ID'), { target: { value: 'reasoner-v1' } });
-    fireEvent.click(screen.getByText('BEHAVIORAL OVERRIDES'));
-    fireEvent.click(screen.getByLabelText('Enforce alternating roles (required for DeepSeek Reasoner)'));
-    fireEvent.change(screen.getByLabelText('Force Temperature'), { target: { value: '0.6' } });
-    fireEvent.change(screen.getByLabelText('Max Tokens Override'), { target: { value: '4096' } });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Add Model' }));
-
-    await waitFor(() => {
-      expect(addModel).toHaveBeenCalledTimes(1);
-    });
-
-    expect(addModel).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'provider-uuid',
-        label: 'Reasoner',
-        apiModelId: 'reasoner-v1',
-        providerId: 'provider-1',
-        forceTemperature: 0.6,
-        maxTokensOverride: 4096,
-        enforceAlternatingRoles: true,
-      }),
-    );
-    expect(screen.queryByText('Edit Model')).not.toBeInTheDocument();
-  });
-
-  it('edits an existing model including tag-based thinking settings', async () => {
-    const updateModel: jest.MockedFunction<ModelHandler> = jest.fn();
-    mockUseProviderStore.mockReturnValue({
-      models: [
-        createUserChatModel({ providerId: 'provider-1',
-          id: 'model-1',
-          label: 'Model One',
-          supportsThinking: true,
-          thinkingParseMode: 'tag-based',
-          thinkingOpenTag: '<reasoning>',
-          thinkingCloseTag: '</reasoning>',
-        }),
-      ],
-      addProvider: jest.fn(),
-      deleteProvider: jest.fn(),
-      updateProvider: jest.fn(),
-      addModel: jest.fn(),
-      updateModel,
-    });
-
-    render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One' })} />);
-
-    fireEvent.click(screen.getByLabelText('Edit model'));
-
-    fireEvent.click(screen.getByText('BEHAVIORAL OVERRIDES'));
-    fireEvent.change(screen.getByLabelText('Display Label'), { target: { value: 'Model Two' } });
-    fireEvent.change(screen.getByLabelText('Open Tag'), { target: { value: '<thinker>' } });
-    fireEvent.change(screen.getByLabelText('Close Tag'), { target: { value: '</thinker>' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-
-    await waitFor(() => {
-      expect(updateModel).toHaveBeenCalledTimes(1);
-    });
-
-    expect(updateModel).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'model-1',
-        label: 'Model Two',
-        thinkingParseMode: 'tag-based',
-        thinkingOpenTag: '<thinker>',
-        thinkingCloseTag: '</thinker>',
-      }),
-    );
-  });
-
-  it('deletes provider after confirmation', async () => {
-    const deleteProvider: jest.MockedFunction<ProviderIdHandler> = jest.fn();
-
-    mockUseProviderStore.mockReturnValue({
-      models: [],
-      addProvider: jest.fn(),
-      deleteProvider,
-      updateProvider: jest.fn(),
-      addModel: jest.fn(),
-      updateModel: jest.fn(),
-    });
-
-    const { container } = render(<ProviderCard provider={createLlmProvider({ id: 'provider-1', name: 'Provider One' })} />);
-
-    const buttons = container.querySelectorAll<HTMLButtonElement>('button');
-    fireEvent.click(buttons[1]);
-
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
-
-    expect(deleteProvider).toHaveBeenCalledWith('provider-1');
+    expect(state.updateModel).toHaveBeenCalledWith({ ...model, enabled: !enabled });
+    expect(state.setProviderKey).not.toHaveBeenCalled();
   });
 });

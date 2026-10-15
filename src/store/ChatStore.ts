@@ -19,7 +19,6 @@ import {
 } from '../services/llmService';
 import { generateImage, generateMusic, speakText } from '../services/mediaService';
 import { stripMarkdown } from '../utils/stripMarkdown';
-import { llmSuggestionService } from '../services/llmSuggestionService';
 import { Message, Attachment, Topic } from '../database/AthenaDb';
 import { athenaDb } from '../database/AthenaDb';
 import { BackupService } from '../services/backupService';
@@ -28,7 +27,17 @@ import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 import { useCuratorStore } from './CuratorStore';
 
-import { LATEX_INSTRUCTIONS, SVG_INSTRUCTIONS, SVG_EDIT_INSTRUCTIONS, SCRATCHPAD_LIMIT, SHORTENED_ID_LENGTH, SHORT_SCRATCHPAD_RULES, ASK_USER_INSTRUCTIONS, MESSAGE_RETRIEVAL_INSTRUCTIONS, CURATOR_SYSTEM_PROMPT } from '../constants';
+import {
+  LATEX_INSTRUCTIONS,
+  SVG_INSTRUCTIONS,
+  SVG_EDIT_INSTRUCTIONS,
+  SCRATCHPAD_LIMIT,
+  SHORTENED_ID_LENGTH,
+  SHORT_SCRATCHPAD_RULES,
+  ASK_USER_INSTRUCTIONS,
+  MESSAGE_RETRIEVAL_INSTRUCTIONS,
+  CURATOR_SYSTEM_PROMPT,
+} from '../constants';
 import { normalizeSvgDocument, replaceSvgBlockInMessage } from '../utils/svgEdit';
 import { parseStringArray } from '../utils/structuredJson';
 
@@ -289,7 +298,6 @@ function pruneMessagesCache(
   return result;
 }
 
-// Mutex-like summarization gate — llmSuggestionService has a single completion slot
 // so concurrent calls would overwrite each other's resolve callback and hang.
 let summarizeBusy = false;
 const summarizePending: (() => void)[] = [];
@@ -395,27 +403,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const existingContext = await topicStoreState.getTopicContext(topicId, undefined, userMessagePreview?.trim());
     const entries: ContextEntry[] = [];
 
-  // System: Custom instructions (prepended first, same as buildPayload in llmService)
-  if (customInstructions) {
-    entries.push({ message: { role: 'system', content: customInstructions }, sourceLabel: 'Custom Instructions' });
-  }
+    // System: Custom instructions (prepended first, same as buildPayload in llmService)
+    if (customInstructions) {
+      entries.push({ message: { role: 'system', content: customInstructions }, sourceLabel: 'Custom Instructions' });
+    }
 
-  // Shared system prompts — identical to what sendMessageStream actually sends
-  const systemEntries = await assembleChatSystemEntries({
-    topic,
-    selectedModel,
-    webSearchEnabled,
-    supportsWebSearch: !!selectedProvider?.supportsWebSearch,
-    askUserEnabled: authStoreState.askUserEnabled,
-    messageRetrievalEnabled: authStoreState.messageRetrievalEnabled,
-    svgGenerationEnabled: authStoreState.svgGenerationEnabled,
-    scratchpadRulesTemplate,
-    predefinedPrompts: authStoreState.predefinedPrompts,
-    selectedPromptIds: topic?.selectedPromptIds ?? [],
-  });
-  for (const e of systemEntries) {
-    entries.push({ message: { role: 'system', content: e.content }, sourceLabel: e.sourceLabel });
-  }
+    // Shared system prompts — identical to what sendMessageStream actually sends
+    const systemEntries = await assembleChatSystemEntries({
+      topic,
+      selectedModel,
+      webSearchEnabled,
+      supportsWebSearch: !!selectedProvider?.supportsWebSearch,
+      askUserEnabled: authStoreState.askUserEnabled,
+      messageRetrievalEnabled: authStoreState.messageRetrievalEnabled,
+      svgGenerationEnabled: authStoreState.svgGenerationEnabled,
+      scratchpadRulesTemplate,
+      predefinedPrompts: authStoreState.predefinedPrompts,
+      selectedPromptIds: topic?.selectedPromptIds ?? [],
+    });
+    for (const e of systemEntries) {
+      entries.push({ message: { role: 'system', content: e.content }, sourceLabel: e.sourceLabel });
+    }
 
     // Conversation messages
     for (const m of existingContext) {
@@ -568,27 +576,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         webSearchEnabled: false,
       };
     });
-    },
+  },
 
-    refreshTopicMessages: async (topicId: string): Promise<void> => {
-      const topic = useTopicStore.getState().topics.find((t) => t.id === topicId);
-      const activeForkId = topic?.activeForkId ?? 'main';
-      const all = await athenaDb.messages
-        .where('topicId')
-        .equals(topicId)
-        .and((m) => m.forkId === activeForkId)
-        .sortBy('created');
-      set((state) => {
-        touchTopic(topicId);
-        const protectedIds = new Set<string>([topicId]);
-        if (state.streaming) protectedIds.add(state.streaming.topicId);
-        return {
-          messagesByTopic: pruneMessagesCache({ ...state.messagesByTopic, [topicId]: all }, protectedIds),
-        };
-      });
-    },
+  refreshTopicMessages: async (topicId: string): Promise<void> => {
+    const topic = useTopicStore.getState().topics.find((t) => t.id === topicId);
+    const activeForkId = topic?.activeForkId ?? 'main';
+    const all = await athenaDb.messages
+      .where('topicId')
+      .equals(topicId)
+      .and((m) => m.forkId === activeForkId)
+      .sortBy('created');
+    set((state) => {
+      touchTopic(topicId);
+      const protectedIds = new Set<string>([topicId]);
+      if (state.streaming) protectedIds.add(state.streaming.topicId);
+      return {
+        messagesByTopic: pruneMessagesCache({ ...state.messagesByTopic, [topicId]: all }, protectedIds),
+      };
+    });
+  },
 
-    updateMessageContext: async (id, include): Promise<void> => {
+  updateMessageContext: async (id, include): Promise<void> => {
     await athenaDb.messages.update(id, { includeInContext: include });
 
     const { currentTopicId, messagesByTopic } = get();
@@ -610,7 +618,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         .generateEmbedding(message.content)
         .then((vector) => athenaDb.messages.update(message.id, { embedding: vector }))
         .catch((err: unknown) => {
-          console.warn('[ChatStore] Failed to generate embedding for message', message.id.slice(0, 8), '— message will not appear in RAG results:', err);
+          console.warn(
+            '[ChatStore] Failed to generate embedding for message',
+            message.id.slice(0, 8),
+            '— message will not appear in RAG results:',
+            err,
+          );
         });
     }
 
@@ -1122,9 +1135,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (now - lastContentRenderTime > RENDER_THROTTLE_MS) {
           const displayContent =
             currentContentPrefix +
-            streamedContent
-              .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
-              .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '');
+            streamedContent.replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '').replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '');
           set({
             streaming: { topicId, assistantMessageId: currentAssistantId, content: displayContent, reasoning: streamedThinking.trim() },
           });
@@ -1139,7 +1150,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const now = Date.now();
         if (now - lastThinkingRenderTime > RENDER_THROTTLE_MS) {
           set({
-            streaming: { topicId, assistantMessageId: currentAssistantId, content: currentContentPrefix + streamedContent, reasoning: streamedThinking.trim() },
+            streaming: {
+              topicId,
+              assistantMessageId: currentAssistantId,
+              content: currentContentPrefix + streamedContent,
+              reasoning: streamedThinking.trim(),
+            },
           });
           lastThinkingRenderTime = now;
         }
@@ -1148,7 +1164,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const onToolLogCallback = (log: string): void => {
         streamedThinking += log;
         set({
-          streaming: { topicId, assistantMessageId: currentAssistantId, content: currentContentPrefix + streamedContent, reasoning: streamedThinking.trim() },
+          streaming: {
+            topicId,
+            assistantMessageId: currentAssistantId,
+            content: currentContentPrefix + streamedContent,
+            reasoning: streamedThinking.trim(),
+          },
         });
       };
 
@@ -1407,7 +1428,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         totalCachedTokens > 0 || totalCacheCreationTokens > 0
           ? { cached_tokens: totalCachedTokens, cache_creation_tokens: totalCacheCreationTokens }
           : undefined;
-      const finalTotalCost = calculateCostUSD(effectiveModel, totalPromptTokens, totalCompletionTokens, promptTokensDetails, getPeakMultiplier(effectiveModel));
+      const finalTotalCost = calculateCostUSD(
+        effectiveModel,
+        totalPromptTokens,
+        totalCompletionTokens,
+        promptTokensDetails,
+        getPeakMultiplier(effectiveModel),
+      );
 
       const debugPayload: LlmDebugPayload = {
         rawContent: lastResult.rawContent,
@@ -1487,7 +1514,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             .generateEmbedding(content)
             .then((vector) => athenaDb.messages.update(id, { embedding: vector }))
             .catch((err: unknown) => {
-              console.warn('[ChatStore] Failed to generate embedding for assistant response', id.slice(0, 8), '— message will not appear in RAG results:', err);
+              console.warn(
+                '[ChatStore] Failed to generate embedding for assistant response',
+                id.slice(0, 8),
+                '— message will not appear in RAG results:',
+                err,
+              );
             });
         }
       }
@@ -1541,7 +1573,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         void (async (): Promise<void> => {
           try {
             const suggestionContext: LlmMessage[] =
-              replyPredictionModel === 'same'
+              replyPredictionModel === 'same' || replyPredictionModel === 'local'
                 ? [
                     ...llmContext,
                     { role: 'assistant', content: finalAssistantContent },
@@ -1561,43 +1593,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                     },
                   ];
 
-            let suggestions: string[] | null = null;
+            const targetModel =
+              replyPredictionModel === 'same' || replyPredictionModel === 'local'
+                ? selectedModel
+                : (useProviderStore.getState().models.find((m) => m.id === replyPredictionModel || m.apiModelId === replyPredictionModel) ??
+                  selectedModel);
+            const result = await askLlm(targetModel, 0.7, suggestionContext, undefined, undefined, undefined, { includeCustomInstructions: false });
+            const raw = result.content.trim();
+            const suggestions = parseStringArray(raw)?.slice(0, 3) ?? null;
 
-            if (replyPredictionModel === 'local') {
-              // Use local LLM via llmSuggestionService with a full instruct prompt
-              const prompt =
-                `<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n` +
-                `<|im_start|>user\nConversation summary:\nUser: ${content.slice(-300)}\nAssistant: ${finalAssistantContent.slice(-300)}\n\n` +
-                `List exactly 3 short follow-up questions the user might ask next. Reply with ONLY a JSON array of 3 strings, e.g. ["Q1","Q2","Q3"].<|im_end|>\n` +
-                `<|im_start|>assistant\n<think>\n</think>\n`;
-              const raw = await (llmSuggestionService.getCompletion as (p: string, t: number) => Promise<string>)(prompt, 150);
-              if (raw.trim()) {
-                suggestions = parseStringArray(raw)?.slice(0, 3) ?? null;
-                if (!suggestions) {
-                  const lines = raw
-                    .split(/\n|\d+[.)]/)
-                    .map((s) => s.trim().replace(/^["']|["']$/g, ''))
-                    .filter((s) => s.length > 5)
-                    .slice(0, 3);
-                  if (lines.length > 0) suggestions = lines;
-                }
-              }
-            } else {
-              const targetModel =
-                replyPredictionModel === 'same'
-                  ? selectedModel
-                  : (useProviderStore.getState().models.find((m) => m.id === replyPredictionModel || m.apiModelId === replyPredictionModel) ??
-                    selectedModel);
-              const result = await askLlm(targetModel, 0.7, suggestionContext, undefined, undefined, undefined, { includeCustomInstructions: false });
-              const raw = result.content.trim();
-              suggestions = parseStringArray(raw)?.slice(0, 3) ?? null;
-
-              // ── Verification: Reply prediction ──
-              if (!suggestions) console.warn('[verify:replies] Failed to parse JSON array from response:', raw.slice(0, 200));
-              else if (suggestions.length === 0)
-                console.warn('[verify:replies] Parsed JSON but got 0 suggestions:', raw.slice(0, 200));
-              else if (suggestions.length < 3) console.warn('[verify:replies] Expected 3 suggestions, got %d', suggestions.length);
-            }
+            if (!suggestions) console.warn('[verify:replies] Failed to parse JSON array from response:', raw.slice(0, 200));
+            else if (suggestions.length === 0) console.warn('[verify:replies] Parsed JSON but got 0 suggestions:', raw.slice(0, 200));
+            else if (suggestions.length < 3) console.warn('[verify:replies] Expected 3 suggestions, got %d', suggestions.length);
 
             if (suggestions && suggestions.length > 0) {
               set({ pendingSuggestions: suggestions, isSuggestionsLoading: false });
@@ -1739,23 +1746,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   _runSummarize: async (messageId: string, content: string, contextMessages?: LlmMessage[]): Promise<void> => {
-    const { llmModelSelected, llmModelDownloadStatus, summaryModel } = useAuthStore.getState();
-    const isLocal = summaryModel === 'local';
     const { selectedModel } = get();
-    const useCacheContext = !isLocal && contextMessages != null;
-
-    if (isLocal) {
-      const localModelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
-      if (llmModelDownloadStatus[localModelId] !== 'downloaded') {
-        useNotificationStore.getState().addNotification('Local LLM model not downloaded. Please go to Settings to download it.', 'warning');
-        set((state) => {
-          const next = new Set(state.summarizingMessageIds);
-          next.delete(messageId);
-          return { summarizingMessageIds: next };
-        });
-        return;
-      }
-    }
 
     try {
       // Always read from DB to get full content — message.content in context may be truncated
@@ -1765,27 +1756,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const safeContent = fullContent.length > SUMMARY_INPUT_MAX ? fullContent.slice(0, SUMMARY_INPUT_MAX) + '... (truncated)' : fullContent;
 
       const summaryWordLimit = Math.max(15, Math.min(60, Math.floor(fullContent.length / 15)));
-      let summaryTokens = 0;
-      let summaryCost = 0;
-
-      let rawSummary: string;
-
-      if (isLocal) {
-        // Pre-fill the assistant turn with an empty <think> block to force Qwen3
-        // into non-thinking mode, skipping the reasoning phase entirely.
-        const prompt =
-          `<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n` +
-          `<|im_start|>user\nProvide a short summary (about ${summaryWordLimit} words) of the following text:\n\n${safeContent}<|im_end|>\n` +
-          `<|im_start|>assistant\n<think>\n</think>\n`;
-        rawSummary = await llmSuggestionService.getCompletion(prompt, 50);
-        // Strip Qwen3 <think>...</think> reasoning blocks from the output
-        rawSummary = rawSummary
-          .replace(/<think>[\s\S]*?<\/think>/gi, '')
-          .replace(/<think>[\s\S]*/gi, '')
-          .trim();
-      } else {
-        const cloudModel = selectedModel;
-        const messages: LlmMessage[] = useCacheContext
+      const messages: LlmMessage[] =
+        contextMessages != null
           ? [
               ...contextMessages,
               { role: 'user', content: `Summarize your last reply in about ${summaryWordLimit} words. Just the summary, no explanation.` },
@@ -1794,23 +1766,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               { role: 'system', content: `Reply with a short summary of about ${summaryWordLimit} words. No explanation, just the summary.` },
               { role: 'user', content: `Summarize this:\n\n${safeContent}` },
             ];
-        const result = await askLlm(cloudModel, 0.3, messages, undefined, undefined, undefined, { includeCustomInstructions: false });
-        rawSummary = result.content;
-        summaryTokens = result.promptTokens + result.completionTokens;
-        summaryCost = calculateCostUSD(cloudModel, result.promptTokens, result.completionTokens, result.promptTokensDetails, getPeakMultiplier(cloudModel));
+      const result = await askLlm(selectedModel, 0.3, messages, undefined, undefined, undefined, { includeCustomInstructions: false });
+      const rawSummary = result.content;
+      const summaryTokens = result.promptTokens + result.completionTokens;
+      const summaryCost = calculateCostUSD(
+        selectedModel,
+        result.promptTokens,
+        result.completionTokens,
+        result.promptTokensDetails,
+        getPeakMultiplier(selectedModel),
+      );
 
-        // ── Verification: Summary generation ──
-        if (!rawSummary.trim()) console.warn('[verify:summary] Cloud summary returned empty for message:', messageId);
-        else if (rawSummary.trim().split(/\s+/).length > summaryWordLimit * 2)
-          console.warn(
-            '[verify:summary] Summary too long (%d words, limit was %d):',
-            rawSummary.trim().split(/\s+/).length,
-            summaryWordLimit,
-            rawSummary,
-          );
-
-      }
-
+      // ── Verification: Summary generation ──
+      if (!rawSummary.trim()) console.warn('[verify:summary] Cloud summary returned empty for message:', messageId);
+      else if (rawSummary.trim().split(/\s+/).length > summaryWordLimit * 2)
+        console.warn(
+          '[verify:summary] Summary too long (%d words, limit was %d):',
+          rawSummary.trim().split(/\s+/).length,
+          summaryWordLimit,
+          rawSummary,
+        );
       if (rawSummary.trim()) {
         const cleanSummary = rawSummary
           .trim()
@@ -1838,7 +1813,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             failedSummaryMessageIds: nextFailed,
             messagesByTopic: {
               ...messagesByTopic,
-              [currentTopicId]: (messagesByTopic[currentTopicId] ?? []).map((m) => (m.id === messageId ? { ...m, summary: cleanSummary, summaryTokens, summaryCost } : m)),
+              [currentTopicId]: (messagesByTopic[currentTopicId] ?? []).map((m) =>
+                m.id === messageId ? { ...m, summary: cleanSummary, summaryTokens, summaryCost } : m,
+              ),
             },
           };
         });

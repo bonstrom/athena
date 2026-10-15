@@ -153,27 +153,27 @@ export const Sidebar = (): JSX.Element => {
 
       <Box px={2} pb={2}>
         <Button
-          variant="outlined"
+          variant="text"
           fullWidth
           startIcon={<SettingsIcon />}
           onClick={(): void => {
             if (isMobile) closeDrawer();
             void navigate(`/settings`);
           }}
-          sx={{ mb: 1 }}
+          sx={{ mb: 1, justifyContent: 'flex-start', color: 'text.secondary' }}
         >
           Settings
         </Button>
 
         <Button
           variant="text"
-          color="error"
+          color="inherit"
           fullWidth
           startIcon={<LogoutIcon />}
           onClick={(): void => {
             setConfirmLogoutOpen(true);
           }}
-          sx={{ mb: 1 }}
+          sx={{ mb: 1, justifyContent: 'flex-start', color: 'text.secondary' }}
         >
           Logout
         </Button>

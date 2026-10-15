@@ -463,12 +463,7 @@ function escapeCurrencyInProse(text: string): string {
   let result = '';
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
-    const isCurrencyDollar =
-      char === '$' &&
-      text[i - 1] !== '$' &&
-      text[i - 1] !== '\\' &&
-      !protectedIndexes.has(i) &&
-      /\d/.test(text[i + 1]);
+    const isCurrencyDollar = char === '$' && text[i - 1] !== '$' && text[i - 1] !== '\\' && !protectedIndexes.has(i) && /\d/.test(text[i + 1]);
     result += isCurrencyDollar ? '\\$' : char;
   }
   return result;
@@ -658,6 +653,15 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
         );
       },
 
+      table({ children: tableChildren }): React.ReactElement {
+        return (
+          <Box role="region" aria-label="Table" tabIndex={0} sx={{ maxWidth: '100%', overflowX: 'auto', my: 2 }}>
+            <Box component="table" sx={{ borderCollapse: 'collapse', width: '100%', minWidth: 320 }}>
+              {tableChildren}
+            </Box>
+          </Box>
+        );
+      },
       code({ className, children, node: _node, ...props }: React.ComponentPropsWithoutRef<'code'> & { node?: unknown }): React.ReactElement {
         return (
           <code
@@ -680,7 +684,19 @@ const MarkdownWithCode: React.FC<MarkdownProps> = memo(function MarkdownWithCode
   );
 
   return (
-    <Box sx={{ overflowWrap: 'break-word', wordBreak: 'normal' }}>
+    <Box
+      sx={{
+        minWidth: 0,
+        overflowWrap: 'break-word',
+        wordBreak: 'normal',
+        '& th, & td': { px: 1.5, py: 1, textAlign: 'left', verticalAlign: 'top', borderBottom: 1, borderColor: 'divider' },
+        '& th': {
+          fontWeight: 600,
+          bgcolor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.16 : 0.08),
+        },
+        '& tr:last-child td': { borderBottom: 0 },
+      }}
+    >
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
         {preprocessMarkdown(children)}
       </ReactMarkdown>

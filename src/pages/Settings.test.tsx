@@ -1,13 +1,13 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import Settings from './Settings';
 import { useAuthStore } from '../store/AuthStore';
 import { useProviderStore } from '../store/ProviderStore';
 import { useBackupStore } from '../store/BackupStore';
 import { BackupService } from '../services/backupService';
-import { llmSuggestionService } from '../services/llmSuggestionService';
 import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
 import { BackupMode, BackupStatus } from '../store/BackupStore';
+import { DEFAULT_PROVIDERS } from '../types/provider';
 
 interface PredefinedPrompt {
   id: string;
@@ -32,15 +32,10 @@ interface AuthState {
   addPredefinedPrompt: jest.MockedFunction<(prompt: PredefinedPrompt) => void>;
   updatePredefinedPrompt: jest.MockedFunction<(prompt: PredefinedPrompt) => void>;
   deletePredefinedPrompt: jest.MockedFunction<(id: string) => void>;
-  llmSuggestionEnabled: boolean;
   replyPredictionEnabled: boolean;
   replyPredictionModel: string;
-  llmModelSelected: 'qwen3.5-0.8b' | 'qwen3.5-2b';
-  llmModelDownloadStatus: Record<string, 'not_downloaded' | 'downloading' | 'downloaded' | undefined>;
-  setLlmSuggestionEnabled: jest.MockedFunction<(enabled: boolean) => void>;
   setReplyPredictionEnabled: jest.MockedFunction<(enabled: boolean) => void>;
   setReplyPredictionModel: jest.MockedFunction<(model: string) => void>;
-  setLlmModelSelected: jest.MockedFunction<(model: 'qwen3.5-0.8b' | 'qwen3.5-2b') => void>;
   topicPreloadCount: number;
   setTopicPreloadCount: jest.MockedFunction<(count: number) => void>;
   messageTruncateChars: number;
@@ -94,7 +89,6 @@ jest.mock('../components/ThemeSelector', () => ({
 
 jest.mock('../components/ProviderCard', () => ({
   ProviderCard: ({ provider }: { provider: { name: string } }): React.ReactElement => <div>{provider.name}</div>,
-  AddProviderCard: (): React.ReactElement => <div>Add Provider Card</div>,
 }));
 
 jest.mock('../components/ImportDialog', () => ({
@@ -125,15 +119,6 @@ jest.mock('../services/backupService', () => ({
   },
 }));
 
-jest.mock('../services/llmSuggestionService', () => ({
-  llmSuggestionService: {
-    setOnProgress: jest.fn(),
-    loadModel: jest.fn(),
-    deleteModel: jest.fn(),
-    resetDownload: jest.fn(),
-  },
-}));
-
 jest.mock('../services/llmService', () => ({
   getMoonshotBalance: jest.fn(),
   getDeepSeekBalance: jest.fn(),
@@ -151,12 +136,6 @@ const mockUseAuthStore = useAuthStore as unknown as jest.Mock<AuthState>;
 const mockUseProviderStore = useProviderStore as unknown as jest.Mock;
 const mockUseBackupStore = useBackupStore as unknown as jest.Mock<BackupStoreState>;
 const mockBackupService = BackupService as unknown as MockedBackupService;
-const mockLlmSuggestionService = llmSuggestionService as unknown as {
-  setOnProgress: jest.Mock;
-  loadModel: jest.Mock;
-  deleteModel: jest.Mock;
-  resetDownload: jest.Mock;
-};
 const mockGetMoonshotBalance = getMoonshotBalance as jest.MockedFunction<typeof getMoonshotBalance>;
 const mockGetDeepSeekBalance = getDeepSeekBalance as jest.MockedFunction<typeof getDeepSeekBalance>;
 
@@ -178,15 +157,10 @@ function buildAuthState(): AuthState {
     addPredefinedPrompt: jest.fn(),
     updatePredefinedPrompt: jest.fn(),
     deletePredefinedPrompt: jest.fn(),
-    llmSuggestionEnabled: false,
     replyPredictionEnabled: false,
     replyPredictionModel: 'same',
-    llmModelSelected: 'qwen3.5-0.8b',
-    llmModelDownloadStatus: {},
-    setLlmSuggestionEnabled: jest.fn(),
     setReplyPredictionEnabled: jest.fn(),
     setReplyPredictionModel: jest.fn(),
-    setLlmModelSelected: jest.fn(),
     topicPreloadCount: 5,
     setTopicPreloadCount: jest.fn(),
     messageTruncateChars: 500,
@@ -284,7 +258,6 @@ describe('Settings page', () => {
     mockBackupService.getInternalBackupFile.mockResolvedValue(null);
     mockGetMoonshotBalance.mockResolvedValue(null);
     mockGetDeepSeekBalance.mockResolvedValue(null);
-    mockLlmSuggestionService.setOnProgress.mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -335,58 +308,6 @@ describe('Settings page', () => {
     expect(added.id).toBe('prompt-uuid');
     expect(added.name).toBe('Code style');
     expect(added.content).toBe('Prefer concise TypeScript.');
-  });
-
-  it('handleDownloadModel calls loadModel with correct model id', () => {
-    const authState = buildAuthState();
-    mockUseAuthStore.mockReturnValue(authState);
-    const loadModelSpy = jest.spyOn(llmSuggestionService, 'loadModel').mockImplementation(jest.fn());
-
-    render(<Settings />);
-
-    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
-
-    fireEvent.click(screen.getByRole('button', { name: /download/i }));
-
-    expect(loadModelSpy).toHaveBeenCalledWith('onnx-community/Qwen3.5-0.8B-ONNX', true);
-    loadModelSpy.mockRestore();
-  });
-
-  it('handleDeleteModel shows confirm dialog and calls deleteModel', async () => {
-    const authState = buildAuthState();
-    authState.llmModelDownloadStatus = { 'onnx-community/Qwen3.5-0.8B-ONNX': 'downloaded' };
-    mockUseAuthStore.mockReturnValue(authState);
-    const deleteModelSpy = jest.spyOn(llmSuggestionService, 'deleteModel').mockResolvedValue();
-
-    render(<Settings />);
-
-    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
-
-    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
-
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
-
-    await waitFor(() => {
-      expect(deleteModelSpy).toHaveBeenCalledWith('onnx-community/Qwen3.5-0.8B-ONNX');
-    });
-    deleteModelSpy.mockRestore();
-  });
-
-  it('handleResetDownload calls resetDownload and clears progress', () => {
-    const authState = buildAuthState();
-    authState.llmModelDownloadStatus = { 'onnx-community/Qwen3.5-0.8B-ONNX': 'downloading' };
-    mockUseAuthStore.mockReturnValue(authState);
-    const resetDownloadSpy = jest.spyOn(llmSuggestionService, 'resetDownload').mockImplementation(jest.fn());
-
-    render(<Settings />);
-
-    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
-
-    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
-
-    expect(resetDownloadSpy).toHaveBeenCalledWith('onnx-community/Qwen3.5-0.8B-ONNX');
-    resetDownloadSpy.mockRestore();
   });
 
   it('shows summary model dropdown when aiSummaryEnabled is true', () => {
@@ -513,9 +434,7 @@ describe('Settings page', () => {
     const authState = buildAuthState();
     mockUseAuthStore.mockReturnValue(authState);
     mockUseProviderStore.mockReturnValue({
-      providers: [
-        { id: 'builtin-minimax', name: 'MiniMax', apiKeyEncrypted: 'some-key' },
-      ],
+      providers: [{ id: 'builtin-minimax', name: 'MiniMax', apiKeyEncrypted: 'some-key' }],
     });
 
     render(<Settings />);
@@ -530,9 +449,7 @@ describe('Settings page', () => {
     authState.ttsEnabled = true;
     mockUseAuthStore.mockReturnValue(authState);
     mockUseProviderStore.mockReturnValue({
-      providers: [
-        { id: 'builtin-minimax', name: 'MiniMax', apiKeyEncrypted: 'some-key' },
-      ],
+      providers: [{ id: 'builtin-minimax', name: 'MiniMax', apiKeyEncrypted: 'some-key' }],
     });
 
     render(<Settings />);
@@ -545,9 +462,7 @@ describe('Settings page', () => {
     authState.ttsEnabled = true;
     mockUseAuthStore.mockReturnValue(authState);
     mockUseProviderStore.mockReturnValue({
-      providers: [
-        { id: 'builtin-minimax', name: 'MiniMax', apiKeyEncrypted: 'some-key' },
-      ],
+      providers: [{ id: 'builtin-minimax', name: 'MiniMax', apiKeyEncrypted: 'some-key' }],
     });
 
     render(<Settings />);
@@ -567,20 +482,25 @@ describe('Settings page', () => {
 
   // ── Tab 1: Providers ──
 
-  it('renders provider cards and add provider card', () => {
+  it('renders only predefined provider cards without custom provider controls', () => {
+    mockUseProviderStore.mockReturnValue({
+      providers: [
+        { ...DEFAULT_PROVIDERS[0], apiKeyEncrypted: '' },
+        { ...DEFAULT_PROVIDERS[0], id: 'custom-provider', name: 'Custom Provider', isBuiltIn: false, apiKeyEncrypted: '' },
+      ],
+    });
     render(<Settings />);
 
     fireEvent.click(screen.getByRole('tab', { name: /providers/i }));
 
-    expect(screen.getByText('Provider A')).toBeInTheDocument();
-    expect(screen.getByText('Add Provider Card')).toBeInTheDocument();
+    expect(screen.getByText('OpenAI')).toBeInTheDocument();
+    expect(screen.queryByText('Custom Provider')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /add.*provider/i })).not.toBeInTheDocument();
   });
 
   it('fetches and displays Moonshot balance', async () => {
     mockUseProviderStore.mockReturnValue({
-      providers: [
-        { id: 'builtin-moonshot', name: 'Moonshot', apiKeyEncrypted: 'some-key' },
-      ],
+      providers: [{ id: 'builtin-moonshot', name: 'Moonshot', apiKeyEncrypted: 'some-key' }],
     });
     mockGetMoonshotBalance.mockResolvedValue({ available_balance: 5.0 } as { available_balance: number });
 
@@ -595,9 +515,7 @@ describe('Settings page', () => {
 
   it('fetches and displays DeepSeek balance', async () => {
     mockUseProviderStore.mockReturnValue({
-      providers: [
-        { id: 'builtin-deepseek', name: 'DeepSeek', apiKeyEncrypted: 'some-key' },
-      ],
+      providers: [{ id: 'builtin-deepseek', name: 'DeepSeek', apiKeyEncrypted: 'some-key' }],
     });
     mockGetDeepSeekBalance.mockResolvedValue({ balance: 100, currency: 'CNY' } as { balance: number; currency: string });
 
@@ -683,10 +601,9 @@ describe('Settings page', () => {
     expect(authState.setReplyPredictionEnabled).toHaveBeenCalledWith(true);
   });
 
-  it('RAG and type-ahead toggles call their setters', () => {
+  it('keeps the RAG toggle without local type-ahead controls', () => {
     const authState = buildAuthState();
     authState.ragEnabled = false;
-    authState.llmSuggestionEnabled = false;
     mockUseAuthStore.mockReturnValue(authState);
 
     render(<Settings />);
@@ -694,79 +611,19 @@ describe('Settings page', () => {
     fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
 
     fireEvent.click(screen.getByLabelText(/semantic search/i));
-    fireEvent.click(screen.getByLabelText(/type-ahead suggestions/i));
 
     expect(authState.setRagEnabled).toHaveBeenCalledWith(true);
-    expect(authState.setLlmSuggestionEnabled).toHaveBeenCalledWith(true);
+    expect(screen.queryByLabelText(/type-ahead suggestions/i)).not.toBeInTheDocument();
   });
 
-  it('model dropdown calls setLlmModelSelected on change', () => {
-    const authState = buildAuthState();
-    mockUseAuthStore.mockReturnValue(authState);
+  it('does not offer local model downloads', () => {
     render(<Settings />);
 
     fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
 
-    const select = getComboboxByLabel('Model');
-
-    fireEvent.mouseDown(select);
-    fireEvent.click(screen.getByRole('option', { name: /Qwen3.5 2B/ }));
-
-    expect(authState.setLlmModelSelected).toHaveBeenCalledWith('qwen3.5-2b');
-  });
-
-  it('shows "Model Downloaded" badge and Update button', () => {
-    const authState = buildAuthState();
-    authState.llmModelDownloadStatus = { 'onnx-community/Qwen3.5-0.8B-ONNX': 'downloaded' };
-    mockUseAuthStore.mockReturnValue(authState);
-
-    render(<Settings />);
-
-    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
-
-    expect(screen.getByText('Model Downloaded')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /update/i })).toBeInTheDocument();
-  });
-
-  it('shows "Downloading Model..." text when downloading', () => {
-    const authState = buildAuthState();
-    authState.llmModelDownloadStatus = { 'onnx-community/Qwen3.5-0.8B-ONNX': 'downloading' };
-    mockUseAuthStore.mockReturnValue(authState);
-
-    render(<Settings />);
-
-    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
-
-    expect(screen.getByText('Downloading Model...')).toBeInTheDocument();
-  });
-
-  it('shows progress information when llmProgress is set while downloading', () => {
-    const authState = buildAuthState();
-    authState.llmModelDownloadStatus = { 'onnx-community/Qwen3.5-0.8B-ONNX': 'downloading' };
-    mockUseAuthStore.mockReturnValue(authState);
-
-    render(<Settings />);
-
-    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
-
-    const setOnProgressMock = mockLlmSuggestionService.setOnProgress;
-    type ProgressCallback = (progress: { progress: number; loaded: number; total: number }) => void;
-    const onProgressCalls = setOnProgressMock.mock.calls as [ProgressCallback][];
-    const onProgressCallback = onProgressCalls[0]?.[0];
-    expect(onProgressCallback).toBeDefined();
-    act(() => {
-      onProgressCallback({ progress: 42.5, loaded: 100 * 1024 * 1024, total: 235 * 1024 * 1024 });
-    });
-
-    expect(screen.getByText(/42.5%/)).toBeInTheDocument();
-  });
-
-  it('shows "Model not downloaded" by default', () => {
-    render(<Settings />);
-
-    fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
-
-    expect(screen.getByText('Model not downloaded')).toBeInTheDocument();
+    expect(screen.queryByText('Local Browser Model')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /download/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('local-model-select')).not.toBeInTheDocument();
   });
 
   // ── Tab 3: Prompts & Data ──

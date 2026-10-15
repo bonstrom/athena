@@ -129,6 +129,12 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
   const palette = mode === 'light' ? preset.light : preset.dark;
 
   return createTheme({
+    typography: {
+      button: { fontWeight: 600, letterSpacing: 0 },
+      body1: { lineHeight: 1.65, letterSpacing: 0 },
+      body2: { lineHeight: 1.6, letterSpacing: 0 },
+      h6: { fontWeight: 600, letterSpacing: 0 },
+    },
     palette: {
       mode,
       primary: {
@@ -159,6 +165,10 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
     components: {
       MuiCssBaseline: {
         styleOverrides: {
+          body: {
+            '--scrollbar-track': mode === 'dark' ? '#121212' : '#f5f5f5',
+            '--scrollbar-thumb': mode === 'dark' ? '#606060' : '#b0b0b0',
+          },
           a: {
             color: palette.primary,
             textDecoration: 'underline',
@@ -175,9 +185,8 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
         styleOverrides: {
           root: {
             textTransform: 'none',
-            borderRadius: 12,
-            fontWeight: 'bold',
-            textShadow: mode === 'dark' ? '0px 0px 2px rgba(0, 0, 0, 0.8)' : 'none',
+            borderRadius: 8,
+            fontWeight: 600,
           },
           contained: {
             boxShadow: 'none',
@@ -190,21 +199,21 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
       MuiIconButton: {
         styleOverrides: {
           root: {
-            borderRadius: 12,
+            borderRadius: 8,
           },
         },
       },
       MuiPaper: {
         styleOverrides: {
           root: {
-            borderRadius: 16,
+            borderRadius: 8,
           },
         },
       },
       MuiOutlinedInput: {
         styleOverrides: {
           root: {
-            borderRadius: 12,
+            borderRadius: 8,
           },
         },
       },

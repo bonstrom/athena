@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Box,
   IconButton,
   TextField,
   Menu,
+  Popover,
   MenuItem,
   Tooltip,
   ListSubheader,
@@ -22,7 +23,6 @@ import {
   Chip,
   InputAdornment,
   InputLabel,
-  CircularProgress,
 } from '@mui/material';
 import { Theme } from '@mui/material/styles';
 import SendIcon from '@mui/icons-material/Send';
@@ -54,7 +54,6 @@ import TopicContextDialog from './TopicContextDialog';
 import ScratchpadDialog from './ScratchpadDialog';
 import { useAuthStore } from '../store/AuthStore';
 import { useProviderStore } from '../store/ProviderStore';
-import { llmSuggestionService } from '../services/llmSuggestionService';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
 import { useUiStore } from '../store/UiStore';
@@ -66,8 +65,8 @@ import { useNotificationStore } from '../store/NotificationStore';
 import { ReasoningEffort, getReasoningEfforts } from '../types/provider';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const SUGGESTION_DEBOUNCE_MS = 500;
 const VOICE_SILENCE_TIMEOUT_MS = 2000;
+const MIN_INLINE_INPUT_WIDTH = 320;
 
 const REASONING_EFFORT_OPTIONS: { value: ReasoningEffort; label: string; title: string }[] = [
   { value: 'none', label: 'None', title: 'No reasoning' },
@@ -138,6 +137,10 @@ const WaveformIndicator: React.FC = () => (
 
 const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCollapsed = false, onToggleForks }) => {
   const textFieldRef = useRef<HTMLInputElement>(null);
+  const composerRowRef = useRef<HTMLDivElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const sendControlsRef = useRef<HTMLDivElement>(null);
+  const [controlsInline, setControlsInline] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const questionRef = useRef('');
@@ -153,8 +156,8 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
     return !efforts || efforts.includes(o.value);
   });
   const currentEffort = effortOptions.some((o) => o.value === storedReasoningEffort)
-    ? storedReasoningEffort ?? 'high'
-    : effortOptions[0]?.value ?? 'high';
+    ? (storedReasoningEffort ?? 'high')
+    : (effortOptions[0]?.value ?? 'high');
   const temperature = useChatStore((s) => s.temperature);
   const setTemperature = useChatStore((s) => s.setTemperature);
   const currentTopicId = useChatStore((s) => s.currentTopicId);
@@ -176,9 +179,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
     chatFontSize,
     setChatFontSize,
     predefinedPrompts,
-    llmSuggestionEnabled,
-    llmModelSelected,
-    llmModelDownloadStatus,
     defaultMaxContextMessages,
     showCameraButton,
     ttsEnabled,
@@ -189,6 +189,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   const { getAvailableModels, providers } = useProviderStore();
   const currentlySpeakingMessageId = useUiStore((s) => s.currentlySpeakingMessageId);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [parameterTab, setParameterTab] = useState(0);
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showScratchpadDialog, setShowScratchpadDialog] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -199,9 +200,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   const [promptAnchorEl, setPromptAnchorEl] = useState<null | HTMLElement>(null);
   const [inputValue, setInputValue] = useState('');
   const [isListening, setIsListening] = useState(false);
-  const [suggestion, setSuggestion] = useState('');
-  const [isSuggesting, setIsSuggesting] = useState(false);
-  const suggestionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const topic = topicStore.topics.find((t) => t.id === currentTopicId);
   const hasSelectedPrompt = (topic?.selectedPromptIds?.length ?? 0) > 0;
@@ -210,6 +208,32 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   const hasMiniMaxKey = providers.some((p) => p.id === 'builtin-minimax' && !!p.apiKeyEncrypted);
   const hasWebSearchProvider = providers.some((p) => p.supportsWebSearch && !!p.apiKeyEncrypted);
   const openTempMenu = Boolean(anchorEl);
+
+  useEffect(() => {
+    const row = composerRowRef.current;
+    const actions = actionsRef.current;
+    const sendControls = sendControlsRef.current;
+    if (!row || !actions || !sendControls || typeof ResizeObserver === 'undefined') return;
+
+    const updateLayout = (): void => {
+      const requiredWidth = actions.scrollWidth + sendControls.scrollWidth + MIN_INLINE_INPUT_WIDTH + 16;
+      setControlsInline(row.clientWidth >= requiredWidth);
+    };
+    let frameId = 0;
+    const scheduleLayout = (): void => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(updateLayout);
+    };
+    const observer = new ResizeObserver(scheduleLayout);
+    observer.observe(row);
+    observer.observe(actions);
+    observer.observe(sendControls);
+    updateLayout();
+    return (): void => {
+      observer.disconnect();
+      cancelAnimationFrame(frameId);
+    };
+  }, []);
 
   useEffect(() => {
     if (availableModels.length === 0) return;
@@ -345,7 +369,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
       resolvePendingQuestion(answer);
       questionRef.current = '';
       setInputValue('');
-      setSuggestion('');
       return;
     }
 
@@ -505,85 +528,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
     setLocalMaxContext(null);
   }, [currentTopicId]);
 
-  // Load model into memory if enabled
-  useEffect(() => {
-    const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
-    const status = llmModelDownloadStatus[modelId] ?? 'not_downloaded';
-
-    if (llmSuggestionEnabled && status === 'downloaded') {
-      llmSuggestionService.loadModel(modelId, true, true);
-    }
-  }, [llmSuggestionEnabled, llmModelSelected, llmModelDownloadStatus]);
-
-  const fetchSuggestion = useCallback(
-    async (text: string) => {
-      const modelId: string = llmModelSelected === 'qwen3.5-2b' ? 'onnx-community/Qwen3.5-2B-ONNX' : 'onnx-community/Qwen3.5-0.8B-ONNX';
-      if (!llmSuggestionEnabled || llmModelDownloadStatus[modelId] !== 'downloaded' || !text.trim()) {
-        setSuggestion('');
-        return;
-      }
-
-      const currentMessages = currentTopicId ? (useChatStore.getState().messagesByTopic[currentTopicId] ?? []) : [];
-      const lastAssistantMessage = [...currentMessages].reverse().find((message) => message.type === 'assistant' && !message.isDeleted);
-
-      setIsSuggesting(true);
-      try {
-        const result = await llmSuggestionService.getSuggestion(text, lastAssistantMessage?.content);
-        if (result && result.length > 0) {
-          const cleaned = result.replace(/^\n+/, '');
-          const firstLine = cleaned.split('\n')[0];
-          setSuggestion(firstLine);
-        } else {
-          setSuggestion('');
-        }
-      } catch (err) {
-        console.error('Suggestion error:', err);
-        setSuggestion('');
-      } finally {
-        setIsSuggesting(false);
-      }
-    },
-    [currentTopicId, llmSuggestionEnabled, llmModelDownloadStatus, llmModelSelected],
-  );
-
-  useEffect(() => {
-    if (suggestionTimeoutRef.current) {
-      clearTimeout(suggestionTimeoutRef.current);
-    }
-
-    llmSuggestionService.cancelSuggestion();
-
-    if (!inputValue.trim()) {
-      setSuggestion('');
-      return;
-    }
-
-    // Only fetch suggestion if the user has typed a space or newline (finished a word)
-    if (!inputValue.endsWith(' ') && !inputValue.endsWith('\n')) {
-      setSuggestion('');
-      return;
-    }
-
-    suggestionTimeoutRef.current = setTimeout(() => {
-      fetchSuggestion(inputValue).catch(console.error);
-    }, SUGGESTION_DEBOUNCE_MS);
-
-    return () => {
-      if (suggestionTimeoutRef.current) {
-        clearTimeout(suggestionTimeoutRef.current);
-      }
-    };
-  }, [inputValue, fetchSuggestion]);
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
-    if (e.key === 'Tab' && suggestion) {
-      e.preventDefault();
-      const newValue = inputValue + suggestion;
-      setInputValue(newValue);
-      questionRef.current = newValue;
-      setSuggestion('');
-    }
-
     if (!isMobile && e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       handleSend();
       e.preventDefault();
@@ -603,7 +548,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
         backgroundColor: (theme) => alpha(theme.palette.background.default, 0.85),
         backdropFilter: 'blur(12px)',
         borderTop: (theme) => `1px solid ${theme.palette.divider}`,
-        boxShadow: (theme) => (theme.palette.mode === 'dark' ? '0 -4px 16px rgba(0,0,0,0.4)' : '0 -4px 16px rgba(0,0,0,0.05)'),
+        boxShadow: 'none',
         position: 'relative',
         flexShrink: 0,
         zIndex: 10,
@@ -622,15 +567,22 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
         alignItems="stretch"
         gap={1}
       >
-        <Menu
+        <Popover
           anchorEl={anchorEl}
           open={openTempMenu}
           onClose={handleTempClose}
           transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
           anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
           PaperProps={{
+            role: 'dialog',
+            'aria-label': 'Chat settings',
             sx: {
-              minWidth: 260,
+              width: 480,
+              maxWidth: 'calc(100vw - 32px)',
+              height: 'min(640px, calc(100dvh - 48px))',
+              maxHeight: 'min(640px, calc(100dvh - 48px))',
+              overflowY: 'auto',
+              scrollbarGutter: 'stable',
               mt: -1,
               border: (theme) => `1px solid ${theme.palette.divider}`,
               boxShadow: (theme) => (theme.palette.mode === 'dark' ? '0 8px 32px rgba(0,0,0,0.4)' : '0 8px 32px rgba(0,0,0,0.1)'),
@@ -638,69 +590,26 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
             },
           }}
         >
-          <ListSubheader
+          <Tabs
+            value={parameterTab}
+            onChange={(_, value: number): void => setParameterTab(value)}
+            variant="fullWidth"
+            aria-label="Chat settings"
             sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
+              borderBottom: 1,
+              borderColor: 'divider',
+              position: 'sticky',
+              top: 0,
+              bgcolor: 'background.paper',
+              zIndex: 1,
+              '& .MuiTab-root': { minWidth: 0, px: 1, fontSize: '0.75rem', textTransform: 'none' },
             }}
           >
-            Active Model
-          </ListSubheader>
-          <Box sx={{ px: 2, pb: 1 }}>
-            <FormControl fullWidth size="small">
-              <Select
-                value={selectedModel.id}
-                onChange={(e: SelectChangeEvent): void => {
-                  const selected = availableModels.find((m) => m.id === e.target.value);
-                  if (selected) setSelectedModel(selected);
-                }}
-                sx={{
-                  fontSize: '0.85rem',
-                  '& .MuiSelect-select': {
-                    py: 1,
-                  },
-                }}
-                renderValue={(selected): React.ReactNode => {
-                  const model = availableModels.find((m) => m.id === selected);
-                  if (!model) return selected;
-                  return (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      {isDeepSeekPeakHours() && model.providerId === 'builtin-deepseek' && (
-                        <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
-                      )}
-                      {model.label}
-                    </Box>
-                  );
-                }}
-              >
-                {availableModels.map((m) => (
-                  <MenuItem key={m.id} value={m.id}>
-                    <Box display="flex" justifyContent="space-between" width="100%" alignItems="center" gap={2}>
-                      <Typography variant="body2" sx={{ lineHeight: 1.2 }}>{m.label}</Typography>
-                      <Box display="flex" alignItems="center" gap={0.5} flexShrink={0} whiteSpace="nowrap">
-                        {isDeepSeekPeakHours() && m.providerId === 'builtin-deepseek' && (
-                          <Tooltip title="DeepSeek peak hours — 2x pricing">
-                            <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main', display: 'flex' }} />
-                          </Tooltip>
-                        )}
-                        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
-                          {`${formatCost(m.input, currency, 0)} | ${formatCost(m.output, currency, 0)} / 1M`}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-
-          <Divider sx={{ my: 1, opacity: 0.6 }} />
-
-          {selectedModel.forceTemperature == null && (
+            <Tab id="chat-settings-tab-0" aria-controls="chat-settings-panel-0" label="Generation" />
+            <Tab id="chat-settings-tab-1" aria-controls="chat-settings-panel-1" label="Appearance" />
+            <Tab id="chat-settings-tab-2" aria-controls="chat-settings-panel-2" label="Tools" />
+          </Tabs>
+          <Box role="tabpanel" id="chat-settings-panel-0" aria-labelledby="chat-settings-tab-0" hidden={parameterTab !== 0}>
             <ListSubheader
               sx={{
                 lineHeight: '36px',
@@ -711,23 +620,353 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                 bgcolor: 'transparent',
               }}
             >
-              Temperature Presets
-              {!selectedModel.supportsTemperature && (
-                <Box component="span" sx={{ color: 'error.main', ml: 1 }}>
-                  (Not supported)
-                </Box>
-              )}
+              Active Model
             </ListSubheader>
-          )}
-          {selectedModel.forceTemperature == null && (
+            <Box sx={{ px: 2, pb: 1 }}>
+              <FormControl fullWidth size="small">
+                <Select
+                  value={selectedModel.id}
+                  onChange={(e: SelectChangeEvent): void => {
+                    const selected = availableModels.find((m) => m.id === e.target.value);
+                    if (selected) setSelectedModel(selected);
+                  }}
+                  sx={{
+                    fontSize: '0.85rem',
+                    '& .MuiSelect-select': {
+                      py: 1,
+                    },
+                  }}
+                  renderValue={(selected): React.ReactNode => {
+                    const model = availableModels.find((m) => m.id === selected);
+                    if (!model) return selected;
+                    return (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {isDeepSeekPeakHours() && model.providerId === 'builtin-deepseek' && (
+                          <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                        )}
+                        {model.label}
+                      </Box>
+                    );
+                  }}
+                >
+                  {availableModels.map((m) => (
+                    <MenuItem key={m.id} value={m.id}>
+                      <Box display="flex" justifyContent="space-between" width="100%" alignItems="center" gap={2}>
+                        <Typography variant="body2" sx={{ lineHeight: 1.2 }}>
+                          {m.label}
+                        </Typography>
+                        <Box display="flex" alignItems="center" gap={0.5} flexShrink={0} whiteSpace="nowrap">
+                          {isDeepSeekPeakHours() && m.providerId === 'builtin-deepseek' && (
+                            <Tooltip title="DeepSeek peak hours — 2x pricing">
+                              <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main', display: 'flex' }} />
+                            </Tooltip>
+                          )}
+                          <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
+                            {`${formatCost(m.input, currency, 0)} | ${formatCost(m.output, currency, 0)} / 1M`}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+
+            <Divider sx={{ my: 1, opacity: 0.6 }} />
+
+            {selectedModel.forceTemperature == null && (
+              <ListSubheader
+                sx={{
+                  lineHeight: '36px',
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  bgcolor: 'transparent',
+                }}
+              >
+                Temperature Presets
+                {!selectedModel.supportsTemperature && (
+                  <Box component="span" sx={{ color: 'text.secondary', ml: 1 }}>
+                    (Not supported)
+                  </Box>
+                )}
+              </ListSubheader>
+            )}
+            {selectedModel.forceTemperature == null && (
+              <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center', opacity: selectedModel.supportsTemperature ? 1 : 0.45 }}>
+                <MuiToggleButtonGroup
+                  value={temperature}
+                  exclusive
+                  onChange={(_, value: number | null): void => {
+                    if (value !== null) handleTempSelect(value);
+                  }}
+                  disabled={!selectedModel.supportsTemperature}
+                  size="small"
+                  fullWidth
+                  sx={{
+                    bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                    p: 0.5,
+                    '& .MuiToggleButton-root': {
+                      border: 'none',
+                      borderRadius: '8px !important',
+                      mx: 0.25,
+                      px: 1,
+                      py: 0.5,
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      color: 'text.secondary',
+                      '&.Mui-selected': {
+                        bgcolor: 'primary.main',
+                        color: 'primary.contrastText',
+                        '&:hover': {
+                          bgcolor: 'primary.dark',
+                        },
+                      },
+                    },
+                  }}
+                >
+                  <MuiToggleButton value={0.0}>
+                    <Tooltip title="Coding / Math (0.0)" disableTouchListener={isMobile}>
+                      <CodeIcon fontSize="small" />
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value={1.0}>
+                    <Tooltip title="Data Analysis (1.0)" disableTouchListener={isMobile}>
+                      <AnalyticsIcon fontSize="small" />
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value={1.3}>
+                    <Tooltip title="General Chat (1.3)" disableTouchListener={isMobile}>
+                      <ForumIcon fontSize="small" />
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value={1.5}>
+                    <Tooltip title="Creative Writing (1.5)" disableTouchListener={isMobile}>
+                      <AutoAwesomeIcon fontSize="small" />
+                    </Tooltip>
+                  </MuiToggleButton>
+                </MuiToggleButtonGroup>
+              </Box>
+            )}
+            {selectedModel.forceTemperature == null && <Divider sx={{ my: 1, opacity: 0.6 }} />}
+
+            {selectedModel.supportsThinking && (selectedModel.thinkingToggle == null || selectedModel.reasoningEffort == null) && (
+              <ListSubheader
+                sx={{
+                  lineHeight: '36px',
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  bgcolor: 'transparent',
+                }}
+              >
+                Thinking & Effort
+              </ListSubheader>
+            )}
+            {selectedModel.supportsThinking && (selectedModel.thinkingToggle == null || selectedModel.reasoningEffort == null) && (
+              <Box
+                sx={{
+                  px: 2,
+                  pb: 1,
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr)',
+                  gap: 1,
+                }}
+              >
+                {selectedModel.thinkingToggle == null && (
+                  <MuiToggleButtonGroup
+                    value={useChatStore.getState().thinkingMode ?? 'enabled'}
+                    exclusive
+                    onChange={(_, value: 'enabled' | 'disabled' | null): void => {
+                      if (value !== null) useChatStore.getState().setThinkingMode(value);
+                    }}
+                    size="small"
+                    fullWidth
+                    sx={{
+                      bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                      p: 0.5,
+                      '& .MuiToggleButton-root': {
+                        border: 'none',
+                        borderRadius: '8px !important',
+                        mx: 0.25,
+                        px: 1,
+                        py: 0.5,
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        color: 'text.secondary',
+                        '&.Mui-selected': {
+                          bgcolor: 'primary.main',
+                          color: 'primary.contrastText',
+                          '&:hover': {
+                            bgcolor: 'primary.dark',
+                          },
+                        },
+                      },
+                    }}
+                  >
+                    <MuiToggleButton value="enabled">
+                      <Tooltip title="Thinking Enabled" disableTouchListener={isMobile}>
+                        <span>On</span>
+                      </Tooltip>
+                    </MuiToggleButton>
+                    <MuiToggleButton value="disabled">
+                      <Tooltip title="Thinking Disabled" disableTouchListener={isMobile}>
+                        <span>Off</span>
+                      </Tooltip>
+                    </MuiToggleButton>
+                  </MuiToggleButtonGroup>
+                )}
+
+                {selectedModel.reasoningEffort == null && (
+                  <MuiToggleButtonGroup
+                    value={currentEffort}
+                    exclusive
+                    onChange={(_, value: ReasoningEffort | null): void => {
+                      if (value !== null) useChatStore.getState().setReasoningEffort(value);
+                    }}
+                    size="small"
+                    fullWidth
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                      gap: 0.5,
+                      bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                      p: 0.5,
+                      '& .MuiToggleButton-root': {
+                        border: 'none',
+                        borderRadius: '8px !important',
+                        mx: 0.25,
+                        px: 1,
+                        py: 0.5,
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        color: 'text.secondary',
+                        '&.Mui-selected': {
+                          bgcolor: 'primary.main',
+                          color: 'primary.contrastText',
+                          '&:hover': {
+                            bgcolor: 'primary.dark',
+                          },
+                        },
+                      },
+                    }}
+                  >
+                    {effortOptions.map((option) => (
+                      <MuiToggleButton key={option.value} value={option.value}>
+                        <Tooltip title={option.title} disableTouchListener={isMobile}>
+                          <span>{option.label}</span>
+                        </Tooltip>
+                      </MuiToggleButton>
+                    ))}
+                  </MuiToggleButtonGroup>
+                )}
+              </Box>
+            )}
+            {selectedModel.supportsThinking && (selectedModel.thinkingToggle == null || selectedModel.reasoningEffort == null) && (
+              <Divider sx={{ my: 1, opacity: 0.6 }} />
+            )}
+          </Box>
+          <Box role="tabpanel" id="chat-settings-panel-1" aria-labelledby="chat-settings-tab-1" hidden={parameterTab !== 1}>
+            {!isMobile && (
+              <ListSubheader
+                sx={{
+                  lineHeight: '36px',
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  bgcolor: 'transparent',
+                }}
+              >
+                Layout Width
+              </ListSubheader>
+            )}
+
+            {!isMobile && (
+              <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
+                <MuiToggleButtonGroup
+                  value={chatWidth}
+                  exclusive
+                  onChange={(_, value: 'sm' | 'md' | 'lg' | 'xl' | 'full' | null): void => {
+                    if (value) setChatWidth(value);
+                  }}
+                  size="small"
+                  fullWidth
+                  sx={{
+                    bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                    p: 0.5,
+                    '& .MuiToggleButton-root': {
+                      border: 'none',
+                      borderRadius: '8px !important',
+                      mx: 0.25,
+                      px: 1.5,
+                      py: 0.5,
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      color: 'text.secondary',
+                      '&.Mui-selected': {
+                        bgcolor: 'primary.main',
+                        color: 'primary.contrastText',
+                        '&:hover': {
+                          bgcolor: 'primary.dark',
+                        },
+                      },
+                    },
+                  }}
+                >
+                  <MuiToggleButton value="sm">
+                    <Tooltip title="Compact (600px)" disableTouchListener={isMobile}>
+                      <span>S</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value="md">
+                    <Tooltip title="Standard (900px)" disableTouchListener={isMobile}>
+                      <span>M</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value="lg">
+                    <Tooltip title="Wide (1200px)" disableTouchListener={isMobile}>
+                      <span>L</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value="xl">
+                    <Tooltip title="Extra Wide (1500px)" disableTouchListener={isMobile}>
+                      <span>XL</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                  <MuiToggleButton value="full">
+                    <Tooltip title="Full Width" disableTouchListener={isMobile}>
+                      <span>Full</span>
+                    </Tooltip>
+                  </MuiToggleButton>
+                </MuiToggleButtonGroup>
+              </Box>
+            )}
+
+            <Divider sx={{ my: 1, opacity: 0.6 }} />
+
+            <ListSubheader
+              sx={{
+                lineHeight: '36px',
+                fontWeight: 'bold',
+                fontSize: '0.75rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                bgcolor: 'transparent',
+              }}
+            >
+              Font Size
+            </ListSubheader>
+
             <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
               <MuiToggleButtonGroup
-                value={temperature}
+                value={chatFontSize}
                 exclusive
                 onChange={(_, value: number | null): void => {
-                  if (value !== null) handleTempSelect(value);
+                  if (value) setChatFontSize(value);
                 }}
-                disabled={!selectedModel.supportsTemperature}
                 size="small"
                 fullWidth
                 sx={{
@@ -752,32 +991,17 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                   },
                 }}
               >
-                <MuiToggleButton value={0.0}>
-                  <Tooltip title="Coding / Math (0.0)" disableTouchListener={isMobile}>
-                    <CodeIcon fontSize="small" />
-                  </Tooltip>
-                </MuiToggleButton>
-                <MuiToggleButton value={1.0}>
-                  <Tooltip title="Data Analysis (1.0)" disableTouchListener={isMobile}>
-                    <AnalyticsIcon fontSize="small" />
-                  </Tooltip>
-                </MuiToggleButton>
-                <MuiToggleButton value={1.3}>
-                  <Tooltip title="General Chat (1.3)" disableTouchListener={isMobile}>
-                    <ForumIcon fontSize="small" />
-                  </Tooltip>
-                </MuiToggleButton>
-                <MuiToggleButton value={1.5}>
-                  <Tooltip title="Creative Writing (1.5)" disableTouchListener={isMobile}>
-                    <AutoAwesomeIcon fontSize="small" />
-                  </Tooltip>
-                </MuiToggleButton>
+                {[12, 14, 16, 18, 20, 24].map((size) => (
+                  <MuiToggleButton key={size} value={size}>
+                    {size}
+                  </MuiToggleButton>
+                ))}
               </MuiToggleButtonGroup>
             </Box>
-          )}
-          {selectedModel.forceTemperature == null && <Divider sx={{ my: 1, opacity: 0.6 }} />}
 
-          {selectedModel.supportsThinking && (selectedModel.thinkingToggle == null || selectedModel.reasoningEffort == null) && (
+            <Divider sx={{ my: 1, opacity: 0.6 }} />
+          </Box>
+          <Box hidden={parameterTab !== 0}>
             <ListSubheader
               sx={{
                 lineHeight: '36px',
@@ -788,447 +1012,204 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                 bgcolor: 'transparent',
               }}
             >
-              Thinking & Effort
+              Context Limit
             </ListSubheader>
-          )}
-          {selectedModel.supportsThinking && (selectedModel.thinkingToggle == null || selectedModel.reasoningEffort == null) && (
+            <Box sx={{ px: 3, py: 1 }}>
+              <Box display="flex" justifyContent="space-between" mb={1}>
+                <Typography variant="caption" color="text.secondary">
+                  Recent messages:{' '}
+                  {localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? defaultMaxContextMessages}
+                </Typography>
+              </Box>
+              <Slider
+                value={localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? defaultMaxContextMessages}
+                min={1}
+                max={50}
+                step={1}
+                onChange={(_, value): void => {
+                  setLocalMaxContext(value);
+                }}
+                onChangeCommitted={(_, value): void => {
+                  if (currentTopicId) {
+                    void topicStore.updateTopicMaxContextMessages(currentTopicId, value);
+                    setLocalMaxContext(null);
+                  }
+                }}
+                valueLabelDisplay="auto"
+                size="small"
+              />
+            </Box>
+
+            <Divider sx={{ my: 1, opacity: 0.6 }} />
+          </Box>
+          <Box role="tabpanel" id="chat-settings-panel-2" aria-labelledby="chat-settings-tab-2" hidden={parameterTab !== 2}>
+            <ListSubheader
+              sx={{
+                lineHeight: '36px',
+                fontWeight: 'bold',
+                fontSize: '0.75rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                bgcolor: 'transparent',
+              }}
+            >
+              Chat Tools
+            </ListSubheader>
+
             <Box
               sx={{
-                px: 2,
-                pb: 1,
                 display: 'grid',
-                gridTemplateColumns: selectedModel.thinkingToggle == null && selectedModel.reasoningEffort == null ? '1fr 1fr' : '1fr',
+                gridTemplateColumns: '1fr 1fr',
                 gap: 1,
+                px: 2,
+                pb: 2,
+                pt: 1,
               }}
             >
-              {selectedModel.thinkingToggle == null && (
-                <MuiToggleButtonGroup
-                  value={useChatStore.getState().thinkingMode ?? 'enabled'}
-                  exclusive
-                  onChange={(_, value: 'enabled' | 'disabled' | null): void => {
-                    if (value !== null) useChatStore.getState().setThinkingMode(value);
+              <Tooltip title="Inspect the full LLM context payload">
+                <IconButton
+                  onClick={(): void => {
+                    setShowContextDialog(true);
+                    handleTempClose();
                   }}
-                  size="small"
-                  fullWidth
+                  disabled={!currentTopicId}
                   sx={{
-                    bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
-                    p: 0.5,
-                    '& .MuiToggleButton-root': {
-                      border: 'none',
-                      borderRadius: '8px !important',
-                      mx: 0.25,
-                      px: 1,
-                      py: 0.5,
-                      fontSize: '0.75rem',
-                      fontWeight: 'bold',
-                      color: 'text.secondary',
-                      '&.Mui-selected': {
-                        bgcolor: 'primary.main',
-                        color: 'primary.contrastText',
-                        '&:hover': {
-                          bgcolor: 'primary.dark',
-                        },
-                      },
-                    },
+                    borderRadius: 2,
+                    flexDirection: 'column',
+                    gap: 0.5,
+                    py: 1,
+                    border: (theme) => `1px solid ${theme.palette.divider}`,
                   }}
                 >
-                  <MuiToggleButton value="enabled">
-                    <Tooltip title="Thinking Enabled" disableTouchListener={isMobile}>
-                      <span>On</span>
-                    </Tooltip>
-                  </MuiToggleButton>
-                  <MuiToggleButton value="disabled">
-                    <Tooltip title="Thinking Disabled" disableTouchListener={isMobile}>
-                      <span>Off</span>
-                    </Tooltip>
-                  </MuiToggleButton>
-                </MuiToggleButtonGroup>
+                  <MenuBookOutlinedIcon fontSize="small" />
+                  <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
+                    Inspect
+                  </Typography>
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title="View AI persistent memory">
+                <IconButton
+                  onClick={(): void => {
+                    setShowScratchpadDialog(true);
+                    handleTempClose();
+                  }}
+                  disabled={!currentTopicId}
+                  sx={{
+                    borderRadius: 2,
+                    flexDirection: 'column',
+                    gap: 0.5,
+                    py: 1,
+                    border: (theme) => `1px solid ${theme.palette.divider}`,
+                  }}
+                >
+                  <EditNoteIcon fontSize="small" />
+                  <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
+                    Scratchpad
+                  </Typography>
+                </IconButton>
+              </Tooltip>
+
+              {hasMiniMaxKey && (
+                <Tooltip title={imageGenerationEnabled ? 'Image Gen: Active' : 'Image Gen: Inactive'}>
+                  <IconButton
+                    onClick={(): void => {
+                      const nextState = !imageGenerationEnabled;
+                      if (nextState) {
+                        setWebSearchEnabled(false);
+                        setMusicGenerationEnabled(false);
+                        if (!inputValue.trim() || inputValue === MUSIC_TEMPLATE) setInputValue(IMAGE_TEMPLATE);
+                      } else if (inputValue === IMAGE_TEMPLATE) {
+                        setInputValue('');
+                      }
+                      setImageGenerationEnabled(nextState);
+                    }}
+                    disabled={sending}
+                    aria-pressed={imageGenerationEnabled}
+                    sx={{
+                      borderRadius: 2,
+                      flexDirection: 'column',
+                      gap: 0.5,
+                      py: 1,
+                      border: (theme) => `1px solid ${imageGenerationEnabled ? alpha(theme.palette.secondary.main, 0.5) : theme.palette.divider}`,
+                      bgcolor: (theme) => (imageGenerationEnabled ? alpha(theme.palette.secondary.main, 0.08) : 'transparent'),
+                      color: imageGenerationEnabled ? 'secondary.main' : 'text.secondary',
+                    }}
+                  >
+                    <BrushIcon fontSize="small" />
+                    <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
+                      Images
+                    </Typography>
+                  </IconButton>
+                </Tooltip>
               )}
 
-              {selectedModel.reasoningEffort == null && (
-                <MuiToggleButtonGroup
-                  value={currentEffort}
-                  exclusive
-                  onChange={(_, value: ReasoningEffort | null): void => {
-                    if (value !== null) useChatStore.getState().setReasoningEffort(value);
-                  }}
-                  size="small"
-                  fullWidth
-                  sx={{
-                    bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
-                    p: 0.5,
-                    '& .MuiToggleButton-root': {
-                      border: 'none',
-                      borderRadius: '8px !important',
-                      mx: 0.25,
-                      px: 1,
-                      py: 0.5,
-                      fontSize: '0.75rem',
-                      fontWeight: 'bold',
-                      color: 'text.secondary',
-                      '&.Mui-selected': {
-                        bgcolor: 'primary.main',
-                        color: 'primary.contrastText',
-                        '&:hover': {
-                          bgcolor: 'primary.dark',
-                        },
-                      },
-                    },
-                  }}
-                >
-                  {effortOptions.map((option) => (
-                    <MuiToggleButton key={option.value} value={option.value}>
-                      <Tooltip title={option.title} disableTouchListener={isMobile}>
-                        <span>{option.label}</span>
-                      </Tooltip>
-                    </MuiToggleButton>
-                  ))}
-                </MuiToggleButtonGroup>
+              {hasMiniMaxKey && (
+                <Tooltip title={musicGenerationEnabled ? 'Music Gen: Active' : 'Music Gen: Inactive'}>
+                  <IconButton
+                    onClick={(): void => {
+                      const nextState = !musicGenerationEnabled;
+                      if (nextState) {
+                        setWebSearchEnabled(false);
+                        setImageGenerationEnabled(false);
+                        if (!inputValue.trim() || inputValue === IMAGE_TEMPLATE) setInputValue(MUSIC_TEMPLATE);
+                      } else if (inputValue === MUSIC_TEMPLATE) {
+                        setInputValue('');
+                      }
+                      setMusicGenerationEnabled(nextState);
+                    }}
+                    disabled={sending}
+                    aria-pressed={musicGenerationEnabled}
+                    sx={{
+                      borderRadius: 2,
+                      flexDirection: 'column',
+                      gap: 0.5,
+                      py: 1,
+                      border: (theme) => `1px solid ${musicGenerationEnabled ? alpha(theme.palette.secondary.main, 0.5) : theme.palette.divider}`,
+                      bgcolor: (theme) => (musicGenerationEnabled ? alpha(theme.palette.secondary.main, 0.08) : 'transparent'),
+                      color: musicGenerationEnabled ? 'secondary.main' : 'text.secondary',
+                    }}
+                  >
+                    <MusicNoteIcon fontSize="small" />
+                    <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
+                      Music
+                    </Typography>
+                  </IconButton>
+                </Tooltip>
               )}
             </Box>
-          )}
-          {selectedModel.supportsThinking && (selectedModel.thinkingToggle == null || selectedModel.reasoningEffort == null) && (
-            <Divider sx={{ my: 1, opacity: 0.6 }} />
-          )}
 
-          {!isMobile && (
-            <ListSubheader
-              sx={{
-                lineHeight: '36px',
-                fontWeight: 'bold',
-                fontSize: '0.75rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                bgcolor: 'transparent',
-              }}
-            >
-              Layout Width
-            </ListSubheader>
-          )}
-
-          {!isMobile && (
-            <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
-              <MuiToggleButtonGroup
-                value={chatWidth}
-                exclusive
-                onChange={(_, value: 'sm' | 'md' | 'lg' | 'xl' | 'full' | null): void => {
-                  if (value) setChatWidth(value);
-                }}
-                size="small"
-                fullWidth
+            {ttsEnabled && <Divider sx={{ my: 1, opacity: 0.6 }} />}
+            {ttsEnabled && (
+              <ListSubheader
                 sx={{
-                  bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
-                  p: 0.5,
-                  '& .MuiToggleButton-root': {
-                    border: 'none',
-                    borderRadius: '8px !important',
-                    mx: 0.25,
-                    px: 1.5,
-                    py: 0.5,
-                    fontSize: '0.75rem',
-                    fontWeight: 'bold',
-                    color: 'text.secondary',
-                    '&.Mui-selected': {
-                      bgcolor: 'primary.main',
-                      color: 'primary.contrastText',
-                      '&:hover': {
-                        bgcolor: 'primary.dark',
-                      },
-                    },
-                  },
-                }}
-              >
-                <MuiToggleButton value="sm">
-                  <Tooltip title="Compact (600px)" disableTouchListener={isMobile}>
-                    <span>S</span>
-                  </Tooltip>
-                </MuiToggleButton>
-                <MuiToggleButton value="md">
-                  <Tooltip title="Standard (900px)" disableTouchListener={isMobile}>
-                    <span>M</span>
-                  </Tooltip>
-                </MuiToggleButton>
-                <MuiToggleButton value="lg">
-                  <Tooltip title="Wide (1200px)" disableTouchListener={isMobile}>
-                    <span>L</span>
-                  </Tooltip>
-                </MuiToggleButton>
-                <MuiToggleButton value="xl">
-                  <Tooltip title="Extra Wide (1500px)" disableTouchListener={isMobile}>
-                    <span>XL</span>
-                  </Tooltip>
-                </MuiToggleButton>
-                <MuiToggleButton value="full">
-                  <Tooltip title="Full Width" disableTouchListener={isMobile}>
-                    <span>Full</span>
-                  </Tooltip>
-                </MuiToggleButton>
-              </MuiToggleButtonGroup>
-            </Box>
-          )}
-
-          <Divider sx={{ my: 1, opacity: 0.6 }} />
-
-          <ListSubheader
-            sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
-            }}
-          >
-            Font Size
-          </ListSubheader>
-
-          <Box sx={{ px: 2, pb: 1, display: 'flex', justifyContent: 'center' }}>
-            <MuiToggleButtonGroup
-              value={chatFontSize}
-              exclusive
-              onChange={(_, value: number | null): void => {
-                if (value) setChatFontSize(value);
-              }}
-              size="small"
-              fullWidth
-              sx={{
-                bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
-                p: 0.5,
-                '& .MuiToggleButton-root': {
-                  border: 'none',
-                  borderRadius: '8px !important',
-                  mx: 0.25,
-                  px: 1,
-                  py: 0.5,
-                  fontSize: '0.75rem',
+                  lineHeight: '36px',
                   fontWeight: 'bold',
-                  color: 'text.secondary',
-                  '&.Mui-selected': {
-                    bgcolor: 'primary.main',
-                    color: 'primary.contrastText',
-                    '&:hover': {
-                      bgcolor: 'primary.dark',
-                    },
-                  },
-                },
-              }}
-            >
-              {[12, 14, 16, 18, 20, 24].map((size) => (
-                <MuiToggleButton key={size} value={size}>
-                  {size}
-                </MuiToggleButton>
-              ))}
-            </MuiToggleButtonGroup>
-          </Box>
-
-          <Divider sx={{ my: 1, opacity: 0.6 }} />
-
-          <ListSubheader
-            sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
-            }}
-          >
-            Context Limit
-          </ListSubheader>
-          <Box sx={{ px: 3, py: 1 }}>
-            <Box display="flex" justifyContent="space-between" mb={1}>
-              <Typography variant="caption" color="text.secondary">
-                Recent messages:{' '}
-                {localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? defaultMaxContextMessages}
-              </Typography>
-            </Box>
-            <Slider
-              value={localMaxContext ?? topicStore.topics.find((t) => t.id === currentTopicId)?.maxContextMessages ?? defaultMaxContextMessages}
-              min={1}
-              max={50}
-              step={1}
-              onChange={(_, value): void => {
-                setLocalMaxContext(value);
-              }}
-              onChangeCommitted={(_, value): void => {
-                if (currentTopicId) {
-                  void topicStore.updateTopicMaxContextMessages(currentTopicId, value);
-                  setLocalMaxContext(null);
-                }
-              }}
-              valueLabelDisplay="auto"
-              size="small"
-            />
-          </Box>
-
-          <Divider sx={{ my: 1, opacity: 0.6 }} />
-
-          <ListSubheader
-            sx={{
-              lineHeight: '36px',
-              fontWeight: 'bold',
-              fontSize: '0.75rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              bgcolor: 'transparent',
-            }}
-          >
-            Chat Tools
-          </ListSubheader>
-
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 1,
-              px: 2,
-              pb: 2,
-              pt: 1,
-            }}
-          >
-            <Tooltip title="Inspect the full LLM context payload">
-              <IconButton
-                onClick={(): void => {
-                  setShowContextDialog(true);
-                  handleTempClose();
-                }}
-                disabled={!currentTopicId}
-                sx={{
-                  borderRadius: 2,
-                  flexDirection: 'column',
-                  gap: 0.5,
-                  py: 1,
-                  border: (theme) => `1px solid ${theme.palette.divider}`,
+                  fontSize: '0.75rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  bgcolor: 'transparent',
                 }}
               >
-                <MenuBookOutlinedIcon fontSize="small" />
-                <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
-                  Inspect
-                </Typography>
-              </IconButton>
-            </Tooltip>
-
-            <Tooltip title="View AI persistent memory">
-              <IconButton
-                onClick={(): void => {
-                  setShowScratchpadDialog(true);
-                  handleTempClose();
-                }}
-                disabled={!currentTopicId}
-                sx={{
-                  borderRadius: 2,
-                  flexDirection: 'column',
-                  gap: 0.5,
-                  py: 1,
-                  border: (theme) => `1px solid ${theme.palette.divider}`,
-                }}
-              >
-                <EditNoteIcon fontSize="small" />
-                <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
-                  Scratchpad
-                </Typography>
-              </IconButton>
-            </Tooltip>
-
-            {hasMiniMaxKey && (
-              <Tooltip title={imageGenerationEnabled ? 'Image Gen: Active' : 'Image Gen: Inactive'}>
-                <IconButton
-                  onClick={(): void => {
-                    const nextState = !imageGenerationEnabled;
-                    if (nextState) {
-                      setWebSearchEnabled(false);
-                      setMusicGenerationEnabled(false);
-                      if (!inputValue.trim() || inputValue === MUSIC_TEMPLATE) setInputValue(IMAGE_TEMPLATE);
-                    } else if (inputValue === IMAGE_TEMPLATE) {
-                      setInputValue('');
-                    }
-                    setImageGenerationEnabled(nextState);
-                  }}
-                  disabled={sending}
-                  aria-pressed={imageGenerationEnabled}
-                  sx={{
-                    borderRadius: 2,
-                    flexDirection: 'column',
-                    gap: 0.5,
-                    py: 1,
-                    border: (theme) => `1px solid ${imageGenerationEnabled ? alpha(theme.palette.secondary.main, 0.5) : theme.palette.divider}`,
-                    bgcolor: (theme) => (imageGenerationEnabled ? alpha(theme.palette.secondary.main, 0.08) : 'transparent'),
-                    color: imageGenerationEnabled ? 'secondary.main' : 'text.secondary',
-                  }}
-                >
-                  <BrushIcon fontSize="small" />
-                  <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
-                    Images
-                  </Typography>
-                </IconButton>
-              </Tooltip>
+                TTS Voice
+              </ListSubheader>
             )}
-
-            {hasMiniMaxKey && (
-              <Tooltip title={musicGenerationEnabled ? 'Music Gen: Active' : 'Music Gen: Inactive'}>
-                <IconButton
-                  onClick={(): void => {
-                    const nextState = !musicGenerationEnabled;
-                    if (nextState) {
-                      setWebSearchEnabled(false);
-                      setImageGenerationEnabled(false);
-                      if (!inputValue.trim() || inputValue === IMAGE_TEMPLATE) setInputValue(MUSIC_TEMPLATE);
-                    } else if (inputValue === MUSIC_TEMPLATE) {
-                      setInputValue('');
-                    }
-                    setMusicGenerationEnabled(nextState);
-                  }}
-                  disabled={sending}
-                  aria-pressed={musicGenerationEnabled}
-                  sx={{
-                    borderRadius: 2,
-                    flexDirection: 'column',
-                    gap: 0.5,
-                    py: 1,
-                    border: (theme) => `1px solid ${musicGenerationEnabled ? alpha(theme.palette.secondary.main, 0.5) : theme.palette.divider}`,
-                    bgcolor: (theme) => (musicGenerationEnabled ? alpha(theme.palette.secondary.main, 0.08) : 'transparent'),
-                    color: musicGenerationEnabled ? 'secondary.main' : 'text.secondary',
-                  }}
-                >
-                  <MusicNoteIcon fontSize="small" />
-                  <Typography variant="caption" sx={{ fontSize: '0.65rem', fontWeight: 600 }}>
-                    Music
-                  </Typography>
-                </IconButton>
-              </Tooltip>
+            {ttsEnabled && (
+              <Box sx={{ px: 2, pb: 2 }}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Voice</InputLabel>
+                  <Select value={ttsVoiceId} label="Voice" onChange={(e: SelectChangeEvent): void => setTtsVoiceId(e.target.value)}>
+                    {ENGLISH_VOICES.map((voice) => (
+                      <MenuItem key={voice.id} value={voice.id}>
+                        {voice.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
             )}
           </Box>
-
-          {ttsEnabled && <Divider sx={{ my: 1, opacity: 0.6 }} />}
-          {ttsEnabled && (
-            <ListSubheader
-              sx={{
-                lineHeight: '36px',
-                fontWeight: 'bold',
-                fontSize: '0.75rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                bgcolor: 'transparent',
-              }}
-            >
-              TTS Voice
-            </ListSubheader>
-          )}
-          {ttsEnabled && (
-            <Box sx={{ px: 2, pb: 2 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Voice</InputLabel>
-                <Select value={ttsVoiceId} label="Voice" onChange={(e: SelectChangeEvent): void => setTtsVoiceId(e.target.value)}>
-                  {ENGLISH_VOICES.map((voice) => (
-                    <MenuItem key={voice.id} value={voice.id}>
-                      {voice.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Box>
-          )}
-        </Menu>
+        </Popover>
 
         {currentTopicId && showContextDialog && (
           <TopicContextDialog
@@ -1341,14 +1322,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
         </Box>
 
         <Box
+          ref={composerRowRef}
+          data-layout={controlsInline ? 'inline' : 'stacked'}
           sx={{
             width: '100%',
-            display: 'flex',
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            alignItems: isExpanded ? 'flex-end' : 'center',
-            columnGap: { xs: 0.5, md: 1 },
-            rowGap: 0,
+            display: 'grid',
+            gridTemplateColumns: controlsInline ? `auto minmax(${MIN_INLINE_INPUT_WIDTH}px, 1fr) auto` : 'minmax(0, 1fr) auto',
+            alignItems: 'center',
+            gap: 1,
           }}
         >
           {/* Left Actions (Icons) */}
@@ -1356,185 +1337,194 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
             sx={{
               display: 'flex',
               alignItems: 'center',
-              order: { xs: 2, md: 1 },
+              gridRow: controlsInline ? 1 : 2,
+              gridColumn: 1,
+              minWidth: 0,
+              overflowX: 'auto',
               flexShrink: 0,
               gap: 0,
               mb: { xs: 0, md: 0.25 },
               pl: 0,
-              width: { xs: 'auto', md: 220 },
-              justifyContent: { xs: 'flex-start', md: 'flex-end' },
+              width: 'max-content',
+              maxWidth: '100%',
+              justifyContent: 'flex-start',
               flexGrow: { xs: 1, md: 0 },
             }}
           >
-            {(topic?.forks?.length ?? 0) > 1 && onToggleForks && (
-              <Tooltip title={`${forksCollapsed ? 'Show' : 'Hide'} forks (${topic?.forks?.length ?? 0})`} disableTouchListener={isMobile}>
-                <IconButton
-                  onClick={onToggleForks}
-                  disabled={sending}
-                  color={!forksCollapsed ? 'primary' : 'default'}
-                  aria-label="Toggle fork tabs"
-                  sx={{ position: 'relative' }}
-                >
-                  <AccountTreeIcon />
-                  <Box
-                    component="span"
-                    sx={{
-                      position: 'absolute',
-                      top: '1px',
-                      right: '1px',
-                      minWidth: 14,
-                      height: 14,
-                      borderRadius: '50%',
-                      bgcolor: !forksCollapsed ? 'primary.main' : 'text.secondary',
-                      color: 'background.paper',
-                      fontSize: '0.55rem',
-                      fontWeight: 'bold',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      px: '2px',
-                      lineHeight: 1,
-                    }}
-                  >
-                    {topic?.forks?.length}
-                  </Box>
-                </IconButton>
-              </Tooltip>
-            )}
-            <Tooltip title="Parameters" disableTouchListener={isMobile}>
-              <span>
-                <IconButton
-                  onClick={handleTempClick}
-                  disabled={sending}
-                  color={topic?.maxContextMessages !== undefined ? 'primary' : 'default'}
-                  aria-label="Adjust parameters"
-                >
-                  <TuneIcon />
-                </IconButton>
-              </span>
-            </Tooltip>
-
-            <Tooltip title="Attach File" disableTouchListener={isMobile}>
-              <span>
-                <IconButton onClick={(): void => fileInputRef.current?.click()} disabled={sending} aria-label="Attach file">
-                  <AttachFileIcon />
-                </IconButton>
-              </span>
-            </Tooltip>
-
-            {(showCameraButton === 'always' || (showCameraButton === 'auto' && isMobile)) && (
-              <Tooltip title="Camera" disableTouchListener={isMobile}>
-                <span>
+            <Box ref={actionsRef} role="toolbar" aria-label="Message tools" sx={{ display: 'flex', width: 'max-content', flexShrink: 0 }}>
+              {(topic?.forks?.length ?? 0) > 1 && onToggleForks && (
+                <Tooltip title={`${forksCollapsed ? 'Show' : 'Hide'} forks (${topic?.forks?.length ?? 0})`} disableTouchListener={isMobile}>
                   <IconButton
-                    onClick={(): void => cameraInputRef.current?.click()}
+                    onClick={onToggleForks}
                     disabled={sending}
-                    aria-label="Camera">
-                    <PhotoCameraIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            )}
-
-            {hasMiniMaxKey && (
-              <Tooltip title={`Auto-Read (${autoReadEnabled ? 'On' : 'Off'})`} disableTouchListener={isMobile}>
-                <span>
-                  <IconButton
-                    onClick={(): void => setAutoReadEnabled(!autoReadEnabled)}
-                    disabled={!ttsEnabled || sending}
-                    color={autoReadEnabled ? 'primary' : 'default'}
-                    aria-label="Toggle Auto-Read"
-                    aria-pressed={autoReadEnabled}
+                    color={!forksCollapsed ? 'primary' : 'default'}
+                    aria-label="Toggle fork tabs"
+                    sx={{ position: 'relative' }}
                   >
-                    <VolumeUpIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            )}
-
-            {hasWebSearchProvider && (
-              <Tooltip title={`Web Search (${webSearchEnabled ? 'Enabled' : 'Disabled'})`} disableTouchListener={isMobile}>
-                <span>
-                  <IconButton
-                    onClick={(): void => {
-                      const nextState = !webSearchEnabled;
-                      if (nextState) {
-                        setImageGenerationEnabled(false);
-                        setMusicGenerationEnabled(false);
-                      }
-                      setWebSearchEnabled(nextState);
-                    }}
-                    disabled={sending}
-                    color={webSearchEnabled ? 'primary' : 'default'}
-                    aria-label="Toggle Web Search"
-                    aria-pressed={webSearchEnabled}
-                  >
-                    <LanguageIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
-            )}
-
-            <Tooltip title="Predefined Prompts" disableTouchListener={isMobile}>
-              <span>
-                <IconButton onClick={handlePromptClick} disabled={sending || predefinedPrompts.length === 0} aria-label="Predefined Prompts" color={hasSelectedPrompt ? 'primary' : 'default'}>
-                  <PsychologyIcon />
-                </IconButton>
-              </span>
-            </Tooltip>
-
-            <Menu
-              anchorEl={promptAnchorEl}
-              open={Boolean(promptAnchorEl)}
-              onClose={handlePromptClose}
-              PaperProps={{
-                sx: {
-                  minWidth: 200,
-                  maxHeight: 400,
-                  mt: -1,
-                },
-              }}
-            >
-              <ListSubheader sx={{ bgcolor: 'transparent', fontWeight: 'bold' }}>Predefined Prompts</ListSubheader>
-              {predefinedPrompts.map((prompt) => {
-                const isSelected = topic?.selectedPromptIds?.includes(prompt.id) ?? false;
-                return (
-                  <MenuItem
-                    key={prompt.id}
-                    onClick={(): void => {
-                      if (!currentTopicId) return;
-                      const currentIds = topic?.selectedPromptIds ?? [];
-                      const newIds = isSelected ? currentIds.filter((id) => id !== prompt.id) : [...currentIds, prompt.id];
-                      void topicStore.updateTopicPromptSelection(currentTopicId, newIds);
-                    }}
-                  >
-                    <ListItemText primary={prompt.name} />
+                    <AccountTreeIcon />
                     <Box
+                      component="span"
                       sx={{
-                        ml: 2,
-                        width: 8,
-                        height: 8,
+                        position: 'absolute',
+                        top: '1px',
+                        right: '1px',
+                        minWidth: 14,
+                        height: 14,
                         borderRadius: '50%',
-                        bgcolor: isSelected ? 'primary.main' : 'transparent',
-                        border: (theme) => `1px solid ${isSelected ? 'primary.main' : theme.palette.divider}`,
+                        bgcolor: !forksCollapsed ? 'primary.main' : 'text.secondary',
+                        color: 'background.paper',
+                        fontSize: '0.55rem',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        px: '2px',
+                        lineHeight: 1,
                       }}
-                    />
-                  </MenuItem>
-                );
-              })}
-              {predefinedPrompts.length === 0 && (
-                <MenuItem disabled>
-                  <Typography variant="body2">No predefined prompts. Add some in settings.</Typography>
-                </MenuItem>
+                    >
+                      {topic?.forks?.length}
+                    </Box>
+                  </IconButton>
+                </Tooltip>
               )}
-            </Menu>
+              <Tooltip title="Chat settings" disableTouchListener={isMobile}>
+                <span>
+                  <IconButton
+                    onClick={handleTempClick}
+                    disabled={sending}
+                    color={topic?.maxContextMessages !== undefined ? 'primary' : 'default'}
+                    aria-label="Chat settings"
+                  >
+                    <TuneIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+
+              <Tooltip title="Attach File" disableTouchListener={isMobile}>
+                <span>
+                  <IconButton onClick={(): void => fileInputRef.current?.click()} disabled={sending} aria-label="Attach file">
+                    <AttachFileIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+
+              {(showCameraButton === 'always' || (showCameraButton === 'auto' && isMobile)) && (
+                <Tooltip title="Camera" disableTouchListener={isMobile}>
+                  <span>
+                    <IconButton onClick={(): void => cameraInputRef.current?.click()} disabled={sending} aria-label="Camera">
+                      <PhotoCameraIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
+
+              {hasMiniMaxKey && (
+                <Tooltip title={`Auto-Read (${autoReadEnabled ? 'On' : 'Off'})`} disableTouchListener={isMobile}>
+                  <span>
+                    <IconButton
+                      onClick={(): void => setAutoReadEnabled(!autoReadEnabled)}
+                      disabled={!ttsEnabled || sending}
+                      color={autoReadEnabled ? 'primary' : 'default'}
+                      aria-label="Toggle Auto-Read"
+                      aria-pressed={autoReadEnabled}
+                    >
+                      <VolumeUpIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
+
+              {hasWebSearchProvider && (
+                <Tooltip title={`Web Search (${webSearchEnabled ? 'Enabled' : 'Disabled'})`} disableTouchListener={isMobile}>
+                  <span>
+                    <IconButton
+                      onClick={(): void => {
+                        const nextState = !webSearchEnabled;
+                        if (nextState) {
+                          setImageGenerationEnabled(false);
+                          setMusicGenerationEnabled(false);
+                        }
+                        setWebSearchEnabled(nextState);
+                      }}
+                      disabled={sending}
+                      color={webSearchEnabled ? 'primary' : 'default'}
+                      aria-label="Toggle Web Search"
+                      aria-pressed={webSearchEnabled}
+                    >
+                      <LanguageIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
+
+              <Tooltip title="Predefined Prompts" disableTouchListener={isMobile}>
+                <span>
+                  <IconButton
+                    onClick={handlePromptClick}
+                    disabled={sending || predefinedPrompts.length === 0}
+                    aria-label="Predefined Prompts"
+                    color={hasSelectedPrompt ? 'primary' : 'default'}
+                  >
+                    <PsychologyIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+
+              <Menu
+                anchorEl={promptAnchorEl}
+                open={Boolean(promptAnchorEl)}
+                onClose={handlePromptClose}
+                PaperProps={{
+                  sx: {
+                    minWidth: 200,
+                    maxHeight: 400,
+                    mt: -1,
+                  },
+                }}
+              >
+                <ListSubheader sx={{ bgcolor: 'transparent', fontWeight: 'bold' }}>Predefined Prompts</ListSubheader>
+                {predefinedPrompts.map((prompt) => {
+                  const isSelected = topic?.selectedPromptIds?.includes(prompt.id) ?? false;
+                  return (
+                    <MenuItem
+                      key={prompt.id}
+                      onClick={(): void => {
+                        if (!currentTopicId) return;
+                        const currentIds = topic?.selectedPromptIds ?? [];
+                        const newIds = isSelected ? currentIds.filter((id) => id !== prompt.id) : [...currentIds, prompt.id];
+                        void topicStore.updateTopicPromptSelection(currentTopicId, newIds);
+                      }}
+                    >
+                      <ListItemText primary={prompt.name} />
+                      <Box
+                        sx={{
+                          ml: 2,
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          bgcolor: isSelected ? 'primary.main' : 'transparent',
+                          border: (theme) => `1px solid ${isSelected ? 'primary.main' : theme.palette.divider}`,
+                        }}
+                      />
+                    </MenuItem>
+                  );
+                })}
+                {predefinedPrompts.length === 0 && (
+                  <MenuItem disabled>
+                    <Typography variant="body2">No predefined prompts. Add some in settings.</Typography>
+                  </MenuItem>
+                )}
+              </Menu>
+            </Box>
           </Box>
 
           {/* Center (Input Field) */}
           <Box
             sx={{
-              flexGrow: { xs: 0, md: 1 },
-              width: { xs: '100%', md: 'auto' },
-              order: { xs: 1, md: 2 },
+              width: '100%',
+              minWidth: 0,
+              gridRow: 1,
+              gridColumn: controlsInline ? 2 : '1 / -1',
               display: 'flex',
               flexDirection: 'column',
               mb: 0,
@@ -1601,14 +1591,13 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
               sx={{
                 position: 'relative',
                 width: '100%',
-                borderRadius: 3,
-                backgroundColor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                borderRadius: 2,
+                backgroundColor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.06 : 0.025),
                 '&:hover': {
-                  backgroundColor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
+                  backgroundColor: (theme) => alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.09 : 0.045),
                 },
               }}
             >
-              {/* Suggestion overlay moved to InputProps */}
               <TextField
                 fullWidth
                 multiline
@@ -1620,79 +1609,10 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                 onChange={(e): void => {
                   setInputValue(e.target.value);
                   questionRef.current = e.target.value;
-                  setSuggestion(''); // Clear suggestion immediately on change
                 }}
                 onKeyDown={handleKeyDown}
                 disabled={sending && !pendingUserQuestion}
                 InputProps={{
-                  startAdornment: suggestion ? (
-                    <Box
-                      sx={{
-                        position: 'absolute',
-                        top: '1px',
-                        left: '1px',
-                        right: '1px',
-                        bottom: '1px',
-                        pt: '6px',
-                        pb: '6px',
-                        pl: '14px',
-                        pr: '50px',
-                        pointerEvents: 'none',
-                        whiteSpace: 'pre-wrap',
-                        overflowWrap: 'break-word',
-                        wordBreak: 'normal',
-                        fontSize: `${chatFontSize}px !important`,
-                        fontFamily: 'var(--font-family, inherit)',
-                        color: 'transparent',
-                        lineHeight: '1.5 !important',
-                        overflow: 'hidden',
-                        display: 'block',
-                        zIndex: 1,
-                      }}
-                    >
-                      <span>{inputValue}</span>
-                      <Box
-                        component="span"
-                        onClick={(e: React.MouseEvent): void => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          const newValue = inputValue + suggestion;
-                          setInputValue(newValue);
-                          questionRef.current = newValue;
-                          setSuggestion('');
-                          setTimeout(() => {
-                            if (textFieldRef.current) {
-                              textFieldRef.current.focus();
-                              const length = newValue.length;
-                              textFieldRef.current.setSelectionRange(length, length);
-                            }
-                          }, 0);
-                        }}
-                        sx={{
-                          color: 'rgba(128, 128, 128, 0.5)',
-                          pointerEvents: 'auto',
-                          cursor: 'pointer',
-                          '&:hover': { color: 'rgba(128, 128, 128, 0.8)' },
-                        }}
-                      >
-                        {suggestion}
-                        <Typography
-                          component="span"
-                          variant="caption"
-                          sx={{
-                            ml: 1,
-                            bgcolor: 'rgba(128, 128, 128, 0.1)',
-                            px: 0.5,
-                            borderRadius: 0.5,
-                            fontSize: '0.6rem',
-                            verticalAlign: 'middle',
-                          }}
-                        >
-                          {isMobile ? 'Tap to apply' : 'Tab'}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  ) : undefined,
                   endAdornment: (
                     <InputAdornment
                       position="end"
@@ -1705,7 +1625,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                         gap: 0.5,
                       }}
                     >
-                      {isSuggesting && <CircularProgress size={16} sx={{ mr: 1 }} />}
                       <Tooltip title={isExpanded ? 'Collapse' : 'Expand'} disableTouchListener={isMobile}>
                         <span>
                           <IconButton
@@ -1731,7 +1650,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                 }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
-                    borderRadius: 3,
+                    borderRadius: 2,
                     paddingTop: '6px !important',
                     paddingBottom: '6px !important',
                     fontSize: `${chatFontSize}px !important`,
@@ -1739,7 +1658,17 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                     backgroundColor: 'transparent',
                     transition: 'background-color 0.2s',
                     '& fieldset': {
-                      borderColor: (theme: Theme) => alpha(theme.palette.divider, 0.5),
+                      borderColor: (theme: Theme) => alpha(theme.palette.primary.main, 0.4),
+                    },
+                    '&:hover fieldset': {
+                      borderColor: (theme: Theme) => alpha(theme.palette.primary.main, 0.7),
+                    },
+                    '&.Mui-focused': {
+                      boxShadow: (theme: Theme) => `0 0 0 3px ${alpha(theme.palette.primary.main, 0.12)}`,
+                      '& fieldset': { borderColor: 'primary.main' },
+                    },
+                    '&.Mui-disabled fieldset': {
+                      borderColor: 'action.disabledBackground',
                     },
                   },
                   '& .MuiInputBase-input': {
@@ -1762,13 +1691,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
 
           {/* Right (Send Button) */}
           <Box
+            ref={sendControlsRef}
             sx={{
-              order: 3,
+              gridRow: controlsInline ? 1 : 2,
+              gridColumn: controlsInline ? 3 : 2,
               flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
-              width: { xs: 'auto', md: 220 },
-              justifyContent: { xs: 'flex-end', md: 'flex-start' },
+              justifyContent: 'flex-end',
             }}
           >
             {currentlySpeakingMessageId && (

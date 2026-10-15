@@ -74,7 +74,7 @@ const ChatLayout: React.FC = () => {
             flexDirection: 'column',
           }}
         >
-          {isMobile && !drawerOpen && (
+          {!drawerOpen && (
             <Box
               sx={{
                 display: 'flex',
@@ -84,7 +84,6 @@ const ChatLayout: React.FC = () => {
                 bgcolor: (theme) => alpha(theme.palette.background.default, 0.85),
                 backdropFilter: 'blur(12px)',
                 borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
-                boxShadow: (theme) => (theme.palette.mode === 'dark' ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.05)'),
                 flexShrink: 0,
                 position: 'relative',
                 zIndex: 10,
@@ -97,6 +96,7 @@ const ChatLayout: React.FC = () => {
                 <Box
                   sx={{
                     ml: 0.5,
+                    flex: 1,
                     overflow: 'hidden',
                     display: 'flex',
                     flexWrap: 'wrap',
@@ -105,11 +105,20 @@ const ChatLayout: React.FC = () => {
                     minWidth: 0,
                   }}
                 >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
-                    <Typography variant="subtitle2" fontWeight="bold" noWrap sx={{ lineHeight: 1.2 }}>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 0.7fr)',
+                      alignItems: 'center',
+                      gap: 1.5,
+                      width: '100%',
+                      minWidth: 0,
+                    }}
+                  >
+                    <Typography variant="subtitle2" fontWeight={600} noWrap title={topic.name || 'New Topic'} sx={{ lineHeight: 1.2, minWidth: 0 }}>
                       {topic.name || 'New Topic'}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.3, lineHeight: 1 }}>
+                    <Typography variant="caption" color="text.secondary" noWrap title={selectedModel.label} sx={{ minWidth: 0, lineHeight: 1.4 }}>
                       {isDeepSeekPeakHours() && selectedModel.providerId === 'builtin-deepseek' && (
                         <Tooltip title="DeepSeek peak hours — 2x pricing">
                           <Box component="span" display="inline-flex" alignItems="center" gap={0.2}>

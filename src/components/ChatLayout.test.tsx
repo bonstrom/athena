@@ -93,12 +93,20 @@ describe('ChatLayout', () => {
     expect(screen.getByText('GPT-5.4 Nano')).toBeInTheDocument();
   });
 
-  it('desktop mode renders outlet and sidebar without mobile menu button', () => {
+  it('desktop mode lets users reopen a closed sidebar', () => {
     mockUseMediaQuery.mockReturnValue(false);
+    const openDrawer = jest.fn((): void => undefined);
+    mockUseUiStore.mockReturnValue({
+      drawerOpen: false,
+      openDrawer,
+      closeDrawer: jest.fn(),
+      setMobile: jest.fn(),
+    });
 
     render(<ChatLayout />);
 
-    expect(screen.queryByRole('button', { name: 'Open menu' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+    expect(openDrawer).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('outlet')).toBeInTheDocument();
   });

@@ -17,6 +17,7 @@ export interface LlmMessage {
   tool_calls?: { id: string; type: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[];
   tool_call_id?: string;
   name?: string;
+  responsesOutput?: unknown[];
 }
 
 export interface LlmResult {
@@ -38,6 +39,7 @@ export interface LlmResult {
   systemFingerprint?: string;
   cacheCreationTokens?: number;
   cacheReadTokens?: number;
+  responsesOutput?: unknown[];
 }
 
 export interface ToolLoopIteration {
@@ -355,7 +357,11 @@ interface AnthropicStreamChunk {
   index?: number;
   content_block?: { type: string; id?: string; name?: string };
   delta?: { type: string; text?: string; thinking?: string; partial_json?: string; stop_reason?: string };
-  message?: { id?: string; model?: string; usage: { input_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } };
+  message?: {
+    id?: string;
+    model?: string;
+    usage: { input_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
+  };
   usage?: { output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
 }
 
@@ -373,6 +379,7 @@ interface ParsedResponse {
   systemFingerprint?: string;
   cacheCreationTokens?: number;
   cacheReadTokens?: number;
+  responsesOutput?: unknown[];
 }
 
 interface StreamState {
@@ -390,6 +397,8 @@ interface StreamState {
   systemFingerprint?: string;
   cacheCreationTokens?: number;
   cacheReadTokens?: number;
+  responsesOutput?: unknown[];
+  streamError?: string;
 }
 
 interface AnthropicContentBlockText {
@@ -439,7 +448,11 @@ const OpenAiAdapter: IMessageAdapter = {
           content: string;
           reasoning_content?: string;
           reasoning?: string;
-          tool_calls?: { id?: string; type?: 'function' | 'builtin_function'; function: { name: string; arguments: string } }[];
+          tool_calls?: {
+            id?: string;
+            type?: 'function' | 'builtin_function';
+            function: { name: string; arguments: string };
+          }[];
         };
       }[];
       usage: {
@@ -575,8 +588,20 @@ const AnthropicAdapter: IMessageAdapter = {
       id?: string;
       model?: string;
       stop_reason?: string;
-      content: { type: string; text?: string; thinking?: string; id?: string; name?: string; input?: Record<string, unknown> }[];
-      usage: { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
+      content: {
+        type: string;
+        text?: string;
+        thinking?: string;
+        id?: string;
+        name?: string;
+        input?: Record<string, unknown>;
+      }[];
+      usage: {
+        input_tokens: number;
+        output_tokens: number;
+        cache_creation_input_tokens?: number;
+        cache_read_input_tokens?: number;
+      };
     };
     if (!Array.isArray(d.content)) {
       throw new Error('Anthropic adapter: API response is missing content array');
@@ -624,7 +649,11 @@ const AnthropicAdapter: IMessageAdapter = {
       const block = p.content_block;
       if (block?.type === 'tool_use') {
         if (!state.toolCalls) state.toolCalls = [];
-        state.toolCalls.push({ id: block.id ?? '', type: 'function', function: { name: block.name ?? '', arguments: '' } });
+        state.toolCalls.push({
+          id: block.id ?? '',
+          type: 'function',
+          function: { name: block.name ?? '', arguments: '' },
+        });
       }
     } else if (p.type === 'content_block_delta') {
       const delta = p.delta;
@@ -685,7 +714,165 @@ const AnthropicAdapter: IMessageAdapter = {
   },
 };
 
-function getAdapter(provider: LlmProvider): IMessageAdapter {
+function usesResponsesApi(provider: LlmProvider, model: ChatModel): boolean {
+  return provider.messageFormat === 'openai' && model.apiModelId === 'gpt-6.1-sol';
+}
+
+function getRequestUrl(provider: LlmProvider, model: ChatModel): string {
+  if (!usesResponsesApi(provider, model)) return provider.baseUrl;
+  const url = new URL(provider.baseUrl);
+  url.pathname = url.pathname.replace(/\/chat\/completions\/?$/, '/responses');
+  return url.toString();
+}
+
+function responsesRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function responsesItems(value: unknown): unknown[] {
+  return Array.isArray(value) ? (value as unknown[]) : [];
+}
+
+function responsesText(value: unknown, type: string): string {
+  return responsesItems(value)
+    .filter(responsesRecord)
+    .filter((part) => part.type === type)
+    .map((part) => (typeof part.text === 'string' ? part.text : typeof part.refusal === 'string' ? part.refusal : ''))
+    .join('');
+}
+
+const ResponsesAdapter: IMessageAdapter = {
+  buildBody(payload, stream): string {
+    const input: unknown[] = [];
+    for (const message of payload.messages) {
+      if (message.responsesOutput) {
+        input.push(...message.responsesOutput);
+        continue;
+      }
+      if (message.role === 'tool') {
+        input.push({ type: 'function_call_output', call_id: message.tool_call_id, output: message.content ?? '' });
+        continue;
+      }
+      if (message.content !== null) {
+        const content =
+          typeof message.content === 'string'
+            ? message.content
+            : message.content.map((part) => {
+                if (part.type === 'image_url') return { type: 'input_image', image_url: part.image_url.url };
+                if (part.type === 'text') return { type: 'input_text', text: part.text };
+                throw new Error('Unsupported Responses message content');
+              });
+        input.push({ role: message.role, content });
+      }
+      for (const call of message.tool_calls ?? []) {
+        input.push({
+          type: 'function_call',
+          call_id: call.id,
+          name: call.function.name,
+          arguments: call.function.arguments,
+        });
+      }
+    }
+    return JSON.stringify({
+      model: payload.model,
+      input,
+      stream,
+      store: false,
+      include: ['reasoning.encrypted_content'],
+      reasoning: { ...(payload.reasoning_effort && { effort: payload.reasoning_effort }), summary: 'auto' },
+      ...(payload.temperature !== undefined && { temperature: payload.temperature }),
+      ...(payload.max_tokens !== undefined && { max_output_tokens: payload.max_tokens }),
+      ...(payload.tool_choice && { tool_choice: payload.tool_choice }),
+      ...(payload.tools && {
+        tools: payload.tools.map((tool) => {
+          if (tool.type !== 'function') throw new Error('Responses adapter only supports function tools');
+          return { type: 'function', ...tool.function, strict: false };
+        }),
+      }),
+    });
+  },
+
+  parseResponse(data): ParsedResponse {
+    if (!responsesRecord(data) || !Array.isArray(data.output)) throw new Error('Responses API: missing output array');
+    if (data.status === 'failed' || data.error) {
+      const error = responsesRecord(data.error) && typeof data.error.message === 'string' ? data.error.message : 'Response failed';
+      throw new Error(`Responses API: ${error}`);
+    }
+    const output: unknown[] = responsesItems(data.output);
+    const items = output.filter(responsesRecord);
+    const toolCalls: ToolCall[] = [];
+    for (const item of items) {
+      if (item.type !== 'function_call') continue;
+      if (data.status === 'incomplete' || typeof item.call_id !== 'string' || typeof item.name !== 'string' || typeof item.arguments !== 'string') {
+        throw new Error('Responses API: incomplete function call');
+      }
+      toolCalls.push({ id: item.call_id, type: 'function', function: { name: item.name, arguments: item.arguments } });
+    }
+    const usage = responsesRecord(data.usage) ? data.usage : {};
+    const inputDetails = responsesRecord(usage.input_tokens_details) ? usage.input_tokens_details : {};
+    const outputDetails = responsesRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
+    return {
+      content: items
+        .filter((item) => item.type === 'message')
+        .map((item) => responsesText(item.content, 'output_text') || responsesText(item.content, 'refusal'))
+        .join(''),
+      reasoning: items
+        .filter((item) => item.type === 'reasoning')
+        .map((item) => responsesText(item.summary, 'summary_text'))
+        .join('\n'),
+      promptTokens: typeof usage.input_tokens === 'number' ? usage.input_tokens : 0,
+      completionTokens: typeof usage.output_tokens === 'number' ? usage.output_tokens : 0,
+      promptTokensDetails: {
+        cached_tokens: typeof inputDetails.cached_tokens === 'number' ? inputDetails.cached_tokens : 0,
+      },
+      completionTokensDetails: {
+        reasoning_tokens: typeof outputDetails.reasoning_tokens === 'number' ? outputDetails.reasoning_tokens : 0,
+      },
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      finishReason: data.status === 'incomplete' ? 'length' : toolCalls.length > 0 ? 'tool_calls' : 'stop',
+      responseId: typeof data.id === 'string' ? data.id : undefined,
+      actualModel: typeof data.model === 'string' ? data.model : undefined,
+      responsesOutput: output,
+    };
+  },
+
+  handleStreamChunk(data, state, onToken, onReasoning): void {
+    if (!responsesRecord(data)) return;
+    if (data.type === 'response.output_text.delta' && typeof data.delta === 'string') {
+      state.accumulated += data.delta;
+      onToken?.(data.delta);
+    } else if (data.type === 'response.reasoning_summary_text.delta' && typeof data.delta === 'string') {
+      state.reasoning += data.delta;
+      onReasoning?.(data.delta);
+    } else if (data.type === 'error' || data.type === 'response.failed') {
+      const response = responsesRecord(data.response) ? data.response : data;
+      const error = responsesRecord(response.error) ? response.error : data;
+      state.streamError = typeof error.message === 'string' ? error.message : 'Response failed';
+      state.done = true;
+    } else if (data.type === 'response.completed' || data.type === 'response.incomplete') {
+      try {
+        const result = ResponsesAdapter.parseResponse(data.response);
+        if (!state.accumulated && result.content) onToken?.(result.content);
+        if (!state.reasoning && result.reasoning) onReasoning?.(result.reasoning);
+        Object.assign(state, result, { accumulated: result.content, done: true });
+      } catch (error) {
+        state.streamError = error instanceof Error ? error.message : 'Invalid Responses result';
+        state.done = true;
+      }
+    }
+  },
+
+  buildAssistantContextMsg(result, provider): LlmMessage {
+    return { ...OpenAiAdapter.buildAssistantContextMsg(result, provider), responsesOutput: result.responsesOutput };
+  },
+
+  buildToolResultContextMsg(tc, toolResult): LlmMessage {
+    return OpenAiAdapter.buildToolResultContextMsg(tc, toolResult);
+  },
+};
+
+function getAdapter(provider: LlmProvider, model: ChatModel): IMessageAdapter {
+  if (usesResponsesApi(provider, model)) return ResponsesAdapter;
   return provider.messageFormat === 'anthropic' ? AnthropicAdapter : OpenAiAdapter;
 }
 
@@ -735,6 +922,8 @@ function buildPayload(
     if (promptTokens <= tokenBudget) break;
     const oldestNonSystemIndex = finalMessages.findIndex((m) => m.role !== 'system');
     if (oldestNonSystemIndex === -1) break; // all system messages — nothing safe to drop
+    if (usesResponsesApi(providerConfig, resolvedModel) && !finalMessages.slice(oldestNonSystemIndex + 1).some((message) => message.role === 'user'))
+      break;
     if (removedNonSystem >= maxRemovable) break; // preserve last 2 non-system messages
     finalMessages.splice(oldestNonSystemIndex, 1);
     removedNonSystem++;
@@ -780,6 +969,7 @@ function buildPayload(
       ...(m.tool_calls && { tool_calls: m.tool_calls }),
       ...(m.tool_call_id && { tool_call_id: m.tool_call_id }),
       ...(m.name && { name: m.name }),
+      ...(m.responsesOutput && { responsesOutput: m.responsesOutput }),
     })),
     stream,
     ...(resolvedModel.supportsTemperature && { temperature: resolvedTemperature }),
@@ -799,10 +989,7 @@ function buildPayload(
       : resolvedReasoningEffort;
 
   if (toolsIncluded) {
-    // On /v1/chat/completions, GPT-6 models only accept function tools when reasoning is
-    // disabled. Models that reject 'none' (e.g. GPT-6.1 Sol) don't support tools here at all,
-    // so they ship with supportsTools: false and never reach this branch.
-    if (resolvedModel.apiModelId.startsWith('gpt-6')) {
+    if (resolvedModel.apiModelId.startsWith('gpt-6') && !usesResponsesApi(providerConfig, resolvedModel)) {
       payload.reasoning_effort = 'none';
     } else if (effectiveReasoningEffort) {
       payload.reasoning_effort = effectiveReasoningEffort;
@@ -881,7 +1068,11 @@ export async function generateMinimaxMusic(prompt: string, lyrics = '', signal?:
     throw new Error(`Minimax Music Error ${res.status}: ${text}`);
   }
 
-  const data = (await res.json()) as { base_resp?: { status_code: number; status_msg?: string }; data?: { audio?: string }; audio?: string };
+  const data = (await res.json()) as {
+    base_resp?: { status_code: number; status_msg?: string };
+    data?: { audio?: string };
+    audio?: string;
+  };
 
   if (data.base_resp?.status_code !== 0) {
     throw new Error(`Minimax API Error: ${String(data.base_resp?.status_msg ?? 'Unknown error')}`);
@@ -1134,6 +1325,7 @@ function buildLlmResult(parsed: ParsedResponse): LlmResult {
     systemFingerprint: parsed.systemFingerprint,
     cacheCreationTokens: parsed.cacheCreationTokens,
     cacheReadTokens: parsed.cacheReadTokens,
+    responsesOutput: parsed.responsesOutput,
   };
 }
 
@@ -1148,9 +1340,9 @@ export async function askLlm(
 ): Promise<LlmResult> {
   const { provider: providerConfig, model: resolvedModel } = resolveModelAndProvider(model);
   const payload = buildPayload(model, messages, false, temperature, tools, webSearch, options);
-  const adapter = getAdapter(providerConfig);
+  const adapter = getAdapter(providerConfig, resolvedModel);
 
-  const res = await fetch(providerConfig.baseUrl, {
+  const res = await fetch(getRequestUrl(providerConfig, resolvedModel), {
     method: 'POST',
     headers: buildAuthHeaders(providerConfig),
     body: adapter.buildBody(payload, false),
@@ -1190,9 +1382,9 @@ export async function askLlmStream(
 ): Promise<LlmResult> {
   const { provider: providerConfig, model: resolvedModel } = resolveModelAndProvider(model);
   const payload = buildPayload(model, messages, true, temperature, tools, webSearch, options);
-  const adapter = getAdapter(providerConfig);
+  const adapter = getAdapter(providerConfig, resolvedModel);
 
-  const res = await fetch(providerConfig.baseUrl, {
+  const res = await fetch(getRequestUrl(providerConfig, resolvedModel), {
     method: 'POST',
     headers: buildAuthHeaders(providerConfig),
     body: adapter.buildBody(payload, true),
@@ -1277,6 +1469,11 @@ export async function askLlmStream(
     reader.releaseLock();
   }
 
+  if (state.streamError) throw new Error(`Responses API: ${state.streamError}`);
+  if (usesResponsesApi(providerConfig, resolvedModel) && !state.responsesOutput && !signal?.aborted) {
+    throw new Error('Responses API: stream ended before a complete response');
+  }
+
   // Flush any buffered partial-tag characters and reconcile split state with stream state
   if (splitter) {
     splitter.flush();
@@ -1309,6 +1506,7 @@ export async function askLlmStream(
     systemFingerprint: state.systemFingerprint,
     cacheCreationTokens: state.cacheCreationTokens,
     cacheReadTokens: state.cacheReadTokens,
+    responsesOutput: state.responsesOutput,
   });
 }
 
@@ -1394,7 +1592,7 @@ export async function orchestrateLlmLoop(
     // Handle Tool Calls Loop
     if (result.toolCalls && result.toolCalls.length > 0) {
       const providerConfig = resolveProvider(resolvedModel);
-      const adapter = getAdapter(providerConfig);
+      const adapter = getAdapter(providerConfig, resolvedModel);
 
       // Add assistant tool calls to context
       llmContext.push(adapter.buildAssistantContextMsg(result, providerConfig));
@@ -1452,7 +1650,12 @@ export async function orchestrateLlmLoop(
 
       toolLoopTrace.push({
         iteration: loopCount,
-        llmResponse: { content: result.content, reasoning: result.reasoning, toolCalls: result.toolCalls, finishReason: result.finishReason },
+        llmResponse: {
+          content: result.content,
+          reasoning: result.reasoning,
+          toolCalls: result.toolCalls,
+          finishReason: result.finishReason,
+        },
         toolResults: iterationToolResults,
       });
 

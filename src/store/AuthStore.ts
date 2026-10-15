@@ -27,11 +27,8 @@ interface AuthState {
   dateFormat: 'sv-SE' | 'en-GB' | 'en-US';
   currency: CurrencyCode;
   predefinedPrompts: PredefinedPrompt[];
-  llmSuggestionEnabled: boolean;
   replyPredictionEnabled: boolean;
   replyPredictionModel: string;
-  llmModelSelected: 'qwen3.5-0.8b' | 'qwen3.5-2b';
-  llmModelDownloadStatus: Record<string, 'not_downloaded' | 'downloading' | 'downloaded' | undefined>;
   topicPreloadCount: number;
   messageTruncateChars: number;
   ragEnabled: boolean;
@@ -58,11 +55,8 @@ interface AuthState {
   setMaxContextTokens: (tokens: number) => void;
   setContextWindowRatio: (ratio: number) => void;
   setMessageRetrievalEnabled: (enabled: boolean) => void;
-  setLlmSuggestionEnabled: (enabled: boolean) => void;
   setReplyPredictionEnabled: (enabled: boolean) => void;
   setReplyPredictionModel: (model: string) => void;
-  setLlmModelSelected: (model: 'qwen3.5-0.8b' | 'qwen3.5-2b') => void;
-  setLlmModelDownloadStatus: (modelId: string, status: 'not_downloaded' | 'downloading' | 'downloaded') => void;
   setTopicPreloadCount: (count: number) => void;
   setMessageTruncateChars: (chars: number) => void;
   clearAuth: () => void;
@@ -83,6 +77,12 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => {
+  for (const key of ['llmSuggestionEnabled', 'llmModelSelected', 'llmModelDownloadStatus']) {
+    localStorage.removeItem(key);
+  }
+  for (const key of ['summaryModel', 'replyPredictionModel']) {
+    if (localStorage.getItem(key) === 'local') localStorage.setItem(key, 'same');
+  }
   const userName = localStorage.getItem('userName') ?? '';
   const storedBackupInterval = Number(localStorage.getItem('backupInterval') ?? '30');
   const storedCustomInstructions = localStorage.getItem('customInstructions') ?? '';
@@ -94,14 +94,8 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedColorTheme = localStorage.getItem('colorTheme') ?? 'default';
   const storedDateFormat = (localStorage.getItem('dateFormat') as 'sv-SE' | 'en-GB' | 'en-US' | null) ?? 'sv-SE';
   const storedCurrency = (localStorage.getItem('currency') as CurrencyCode | null) ?? 'SEK';
-  const storedLlmSuggestionEnabled = localStorage.getItem('llmSuggestionEnabled') === 'true';
   const storedReplyPredictionEnabled = localStorage.getItem('replyPredictionEnabled') === 'true';
   const storedReplyPredictionModel = localStorage.getItem('replyPredictionModel') ?? 'same';
-  const storedLlmModelSelected = (localStorage.getItem('llmModelSelected') as 'qwen3.5-0.8b' | 'qwen3.5-2b' | null) ?? 'qwen3.5-0.8b';
-  const storedLlmModelDownloadStatus = JSON.parse(localStorage.getItem('llmModelDownloadStatus') ?? '{}') as Record<
-    string,
-    'not_downloaded' | 'downloading' | 'downloaded' | undefined
-  >;
   const storedTopicPreloadCount = Number(localStorage.getItem('topicPreloadCount') ?? '5');
   const storedMessageTruncateChars = Number(localStorage.getItem('messageTruncateChars') ?? '500');
   const storedRagEnabled = localStorage.getItem('ragEnabled') === 'true'; // default false
@@ -130,11 +124,8 @@ export const useAuthStore = create<AuthState>((set) => {
     dateFormat: storedDateFormat,
     currency: storedCurrency,
     predefinedPrompts: [],
-    llmSuggestionEnabled: storedLlmSuggestionEnabled,
     replyPredictionEnabled: storedReplyPredictionEnabled,
     replyPredictionModel: storedReplyPredictionModel,
-    llmModelSelected: storedLlmModelSelected,
-    llmModelDownloadStatus: storedLlmModelDownloadStatus,
     topicPreloadCount: storedTopicPreloadCount,
     messageTruncateChars: storedMessageTruncateChars,
     ragEnabled: storedRagEnabled,
@@ -189,11 +180,8 @@ export const useAuthStore = create<AuthState>((set) => {
         dateFormat: 'sv-SE',
         currency: 'SEK',
         predefinedPrompts: [],
-        llmSuggestionEnabled: false,
         replyPredictionEnabled: false,
         replyPredictionModel: 'same',
-        llmModelSelected: 'qwen3.5-0.8b',
-        llmModelDownloadStatus: {},
         ragEnabled: false,
         maxContextTokens: 16000,
         contextWindowRatio: 0.75,
@@ -227,10 +215,6 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.setItem('defaultMaxContextMessages', String(count));
       set({ defaultMaxContextMessages: count });
     },
-    setLlmSuggestionEnabled: (enabled: boolean): void => {
-      localStorage.setItem('llmSuggestionEnabled', String(enabled));
-      set({ llmSuggestionEnabled: enabled });
-    },
     setReplyPredictionEnabled: (enabled: boolean): void => {
       localStorage.setItem('replyPredictionEnabled', String(enabled));
       set({ replyPredictionEnabled: enabled });
@@ -238,17 +222,6 @@ export const useAuthStore = create<AuthState>((set) => {
     setReplyPredictionModel: (model: string): void => {
       localStorage.setItem('replyPredictionModel', model);
       set({ replyPredictionModel: model });
-    },
-    setLlmModelSelected: (model: 'qwen3.5-0.8b' | 'qwen3.5-2b'): void => {
-      localStorage.setItem('llmModelSelected', model);
-      set({ llmModelSelected: model });
-    },
-    setLlmModelDownloadStatus: (modelId: string, status: 'not_downloaded' | 'downloading' | 'downloaded'): void => {
-      set((state) => {
-        const newStatus = { ...state.llmModelDownloadStatus, [modelId]: status };
-        localStorage.setItem('llmModelDownloadStatus', JSON.stringify(newStatus));
-        return { llmModelDownloadStatus: newStatus };
-      });
     },
     setTopicPreloadCount: (count: number): void => {
       localStorage.setItem('topicPreloadCount', String(count));

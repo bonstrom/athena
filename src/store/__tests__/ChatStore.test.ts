@@ -144,12 +144,6 @@ jest.mock('../../services/mediaService', () => ({
   generateMusic: jest.fn<Promise<string>, [string]>(),
 }));
 
-jest.mock('../../services/llmSuggestionService', () => ({
-  llmSuggestionService: {
-    getCompletion: jest.fn<Promise<string>, [string]>(),
-  },
-}));
-
 jest.mock('../../services/embeddingService', () => ({
   embeddingService: {
     isReady: false,
@@ -178,7 +172,9 @@ jest.mock('../../database/AthenaDb', () => ({
       update: (...args: [string, Partial<Message>]): Promise<number> => mockDbUpdate(...args),
       delete: (...args: [string]): Promise<void> => mockDbDelete(...args),
       bulkDelete: (...args: [string[]]): Promise<void> => mockDbBulkDelete(...args),
-      where: (): { equals: () => { and?: () => { sortBy: (...args: [string]) => Promise<Message[]> }; sortBy: (...args: [string]) => Promise<Message[]> } } => ({
+      where: (): {
+        equals: () => { and?: () => { sortBy: (...args: [string]) => Promise<Message[]> }; sortBy: (...args: [string]) => Promise<Message[]> };
+      } => ({
         equals: (): { and?: () => { sortBy: (...args: [string]) => Promise<Message[]> }; sortBy: (...args: [string]) => Promise<Message[]> } => ({
           and: (): { sortBy: (...args: [string]) => Promise<Message[]> } => ({
             sortBy: (...args: [string]): Promise<Message[]> => mockDbSortBy(...args),
@@ -957,18 +953,14 @@ describe('ChatStore', () => {
   it('editSvgInMessage throws when the model returns no valid SVG', async () => {
     mockAskLlmStream.mockResolvedValue({ content: 'I cannot do that.' });
 
-    await expect(useChatStore.getState().editSvgInMessage('msg-svg', '<svg></svg>', 'change')).rejects.toThrow(
-      'did not return a valid SVG',
-    );
+    await expect(useChatStore.getState().editSvgInMessage('msg-svg', '<svg></svg>', 'change')).rejects.toThrow('did not return a valid SVG');
   });
 
   it('editSvgInMessage throws when the message is not found', async () => {
     mockAskLlmStream.mockResolvedValue({ content: '```svg\n<svg></svg>\n```' });
     mockDbGet.mockResolvedValue(undefined);
 
-    await expect(useChatStore.getState().editSvgInMessage('missing', '<svg></svg>', 'change')).rejects.toThrow(
-      'Message not found',
-    );
+    await expect(useChatStore.getState().editSvgInMessage('missing', '<svg></svg>', 'change')).rejects.toThrow('Message not found');
   });
 
   it('updateMessageStateOnly updates state without persisting to database', () => {
@@ -1901,15 +1893,11 @@ describe('ChatStore', () => {
     });
 
     mockDbGet.mockResolvedValue(createMessage({ id: 'msg-force', content: 'Short text' }));
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { llmSuggestionService } = require('../../services/llmSuggestionService') as {
-      llmSuggestionService: { getCompletion: jest.Mock<Promise<string>, [string, number]> };
-    };
-    llmSuggestionService.getCompletion.mockResolvedValueOnce('A concise summary of the short text.');
+    mockAskLlm.mockResolvedValueOnce({ content: 'A concise summary of the short text.', promptTokens: 10, completionTokens: 8 });
 
     await useChatStore.getState().maybeSummarize('msg-force', 'Short text', true);
 
-    expect(llmSuggestionService.getCompletion).toHaveBeenCalled();
+    expect(mockDbUpdate).toHaveBeenCalledWith('msg-force', expect.objectContaining({ summary: 'A concise summary of the short text.' }));
   });
 
   it('maybeSummarize clears previous failure state when retrying', async () => {
@@ -1933,21 +1921,17 @@ describe('ChatStore', () => {
     });
 
     mockDbGet.mockResolvedValue(createMessage({ id: 'msg-retry', content: 'A'.repeat(501) }));
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { llmSuggestionService } = require('../../services/llmSuggestionService') as {
-      llmSuggestionService: { getCompletion: jest.Mock<Promise<string>, [string, number]> };
-    };
-    llmSuggestionService.getCompletion.mockResolvedValueOnce('Summary of the long text.');
+    mockAskLlm.mockResolvedValueOnce({ content: 'Summary of the long text.', promptTokens: 10, completionTokens: 6 });
 
     await useChatStore.getState().maybeSummarize('msg-retry', 'A'.repeat(501));
 
     expect(useChatStore.getState().failedSummaryMessageIds.has('msg-retry')).toBe(false);
-    expect(llmSuggestionService.getCompletion).toHaveBeenCalled();
+    expect(mockDbUpdate).toHaveBeenCalledWith('msg-retry', expect.objectContaining({ summary: 'Summary of the long text.' }));
   });
 
   // ========== _runSummarize ==========
 
-  it('_runSummarize warns when local model is not downloaded', async () => {
+  it('_runSummarize uses the API for a legacy local setting without a downloaded model', async () => {
     mockAuthGetState.mockReturnValue({
       customInstructions: '',
       scratchpadRules: 'Rules',
@@ -1963,16 +1947,17 @@ describe('ChatStore', () => {
     });
 
     useChatStore.setState({ summarizingMessageIds: new Set() });
+    mockAskLlm.mockResolvedValueOnce({ content: 'API summary.', promptTokens: 10, completionTokens: 3 });
 
     await useChatStore.getState()._runSummarize('msg-nodl', 'Some content');
 
-    expect(mockAddNotification).toHaveBeenCalledWith(
-      'Local LLM model not downloaded. Please go to Settings to download it.',
-      'warning',
-    );
+    expect(mockAskLlm).toHaveBeenCalledWith(useChatStore.getState().selectedModel, 0.3, expect.any(Array), undefined, undefined, undefined, {
+      includeCustomInstructions: false,
+    });
+    expect(mockDbUpdate).toHaveBeenCalledWith('msg-nodl', expect.objectContaining({ summary: 'API summary.', summaryTokens: 13 }));
   });
 
-  it('_runSummarize selects Qwen3.5-2B model path when larger model is selected', async () => {
+  it('_runSummarize ignores a previously downloaded local model', async () => {
     mockAuthGetState.mockReturnValue({
       customInstructions: '',
       scratchpadRules: 'Rules',
@@ -1993,16 +1978,10 @@ describe('ChatStore', () => {
     });
 
     mockDbGet.mockResolvedValue(createMessage({ id: 'msg-qwen2b', content: 'Some moderately long content for summarization test purposes.' }));
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { llmSuggestionService } = require('../../services/llmSuggestionService') as {
-      llmSuggestionService: { getCompletion: jest.Mock<Promise<string>, [string, number]> };
-    };
-    llmSuggestionService.getCompletion.mockResolvedValueOnce('A brief summary.');
+    mockAskLlm.mockResolvedValueOnce({ content: 'A brief summary.', promptTokens: 10, completionTokens: 3 });
 
     await useChatStore.getState()._runSummarize('msg-qwen2b', 'Some moderately long content for summarization test purposes.');
 
-    expect(llmSuggestionService.getCompletion).toHaveBeenCalled();
-    expect(llmSuggestionService.getCompletion).toHaveBeenCalledWith(expect.any(String), 50);
     expect(mockDbUpdate).toHaveBeenCalledWith('msg-qwen2b', expect.objectContaining({ summary: 'A brief summary.' }));
   });
 
@@ -2058,7 +2037,10 @@ describe('ChatStore', () => {
     mockDbGet.mockResolvedValue(createMessage({ id: 'msg-context', content: 'Some content.' }));
     mockAskLlm.mockResolvedValueOnce({ content: 'Summary with context.', promptTokens: 30 });
 
-    const contextMessages = [{ role: 'user' as const, content: 'Hello' }, { role: 'assistant' as const, content: 'Hi' }];
+    const contextMessages = [
+      { role: 'user' as const, content: 'Hello' },
+      { role: 'assistant' as const, content: 'Hi' },
+    ];
 
     await useChatStore.getState()._runSummarize('msg-context', 'Some content.', contextMessages);
 
@@ -2438,14 +2420,10 @@ describe('ChatStore', () => {
     await Promise.resolve();
     await new Promise<void>((r) => setTimeout(r, 50));
 
-    expect(useChatStore.getState().pendingSuggestions).toEqual([
-      'What about TypeScript?',
-      'Can you show an example?',
-      'How does this compare?',
-    ]);
+    expect(useChatStore.getState().pendingSuggestions).toEqual(['What about TypeScript?', 'Can you show an example?', 'How does this compare?']);
   });
 
-  it('sendMessageStream handles reply prediction with local model', async () => {
+  it('sendMessageStream uses the API for legacy local reply prediction', async () => {
     mockAuthGetState.mockReturnValue({
       customInstructions: '',
       scratchpadRules: 'Rules',
@@ -2474,11 +2452,7 @@ describe('ChatStore', () => {
       },
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { llmSuggestionService } = require('../../services/llmSuggestionService') as {
-      llmSuggestionService: { getCompletion: jest.Mock<Promise<string>, [string, number]> };
-    };
-    llmSuggestionService.getCompletion.mockResolvedValueOnce('["Follow up 1", "Follow up 2", "Follow up 3"]');
+    mockAskLlm.mockResolvedValueOnce({ content: '["Follow up 1", "Follow up 2", "Follow up 3"]', promptTokens: 10, completionTokens: 20 });
 
     const sendPromise = useChatStore.getState().sendMessageStream('Test message', 'topic-1');
     await sendPromise;
@@ -2518,11 +2492,7 @@ describe('ChatStore', () => {
       },
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { llmSuggestionService } = require('../../services/llmSuggestionService') as {
-      llmSuggestionService: { getCompletion: jest.Mock<Promise<string>, [string, number]> };
-    };
-    llmSuggestionService.getCompletion.mockRejectedValueOnce(new Error('Local model error'));
+    mockAskLlm.mockRejectedValueOnce(new Error('API model error'));
 
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation((): void => undefined);
 
