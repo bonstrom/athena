@@ -219,7 +219,7 @@ describe('ProviderStore selectors', () => {
   it('getModelById returns existing model', () => {
     const model = store.getState().getModelById('builtin-deepseek-v4-flash');
     expect(model).toBeDefined();
-    expect(model?.label).toBe('DeepSeek V4 Flash');
+    expect(model?.label).toBe('DeepSeek V4.1 Flash');
   });
 
   it('getModelById returns undefined for nonexistent model', () => {
@@ -569,6 +569,8 @@ describe('ProviderStore migrations', () => {
     if (updated) {
       expect(updated.input).not.toBe(99);
       expect(updated.contextWindow).not.toBe(999);
+      expect(updated.label).toBe('DeepSeek V4.1 Flash');
+      expect(updated.supportsVision).toBe(true);
     }
   });
 

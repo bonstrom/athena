@@ -147,4 +147,26 @@ describe('DEFAULT_MODELS', () => {
     expect(kimiK31Pro.output).toBe(10.0);
     expect(kimiK31Pro.contextWindow).toBe(1_048_576);
   });
+
+  it('has off-peak DeepSeek V4.1 Flash pricing, vision, and 1M context', () => {
+    const flash = DEFAULT_MODELS.find((m) => m.id === 'builtin-deepseek-v4-flash');
+    expect(flash).toBeDefined();
+    if (!flash) { throw new Error('Expected flash to be defined'); }
+    expect(flash.input).toBe(0.15);
+    expect(flash.cachedInput).toBe(0.003);
+    expect(flash.output).toBe(0.6);
+    expect(flash.supportsVision).toBe(true);
+    expect(flash.contextWindow).toBe(1_000_000);
+  });
+
+  it('has off-peak DeepSeek V4 Pro pricing and 1M context', () => {
+    const pro = DEFAULT_MODELS.find((m) => m.id === 'builtin-deepseek-v4-pro');
+    expect(pro).toBeDefined();
+    if (!pro) { throw new Error('Expected pro to be defined'); }
+    expect(pro.input).toBe(0.66);
+    expect(pro.cachedInput).toBe(0.022);
+    expect(pro.output).toBe(1.98);
+    expect(pro.supportsVision).toBe(false);
+    expect(pro.contextWindow).toBe(1_000_000);
+  });
 });

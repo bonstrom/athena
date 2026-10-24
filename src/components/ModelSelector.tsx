@@ -15,7 +15,12 @@ function resolveModelFromSavedId(savedModelId: string | null, models: ChatModel[
 }
 
 export function isDeepSeekPeakHours(): boolean {
-  const utcHour = new Date().getUTCHours();
+  const now = new Date();
+  const utcDay = now.getUTCDay();
+  // DeepSeek peak pricing only applies Monday–Friday; weekends are always off-peak.
+  // Chinese public holidays are also off-peak but are not modelled here.
+  if (utcDay === 0 || utcDay === 6) return false;
+  const utcHour = now.getUTCHours();
   return DEEPSEEK_PEAK_HOURS_UTC.some((r) => utcHour >= r.start && utcHour < r.end);
 }
 

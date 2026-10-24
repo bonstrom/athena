@@ -177,6 +177,10 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
         next.forceTemperature = def.forceTemperature;
         updated = true;
       }
+      if (m.label !== def.label) {
+        next.label = def.label;
+        updated = true;
+      }
       if (m.input !== def.input) {
         next.input = def.input;
         updated = true;
@@ -199,6 +203,10 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
       }
       if (m.supportsTools !== def.supportsTools) {
         next.supportsTools = def.supportsTools;
+        updated = true;
+      }
+      if (m.supportsVision !== def.supportsVision) {
+        next.supportsVision = def.supportsVision;
         updated = true;
       }
       if (m.supportsTemperature !== def.supportsTemperature) {

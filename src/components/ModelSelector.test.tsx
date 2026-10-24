@@ -1,5 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import ModelSelector, { getDefaultModel, getDefaultTopicNameModel, getAvailableModels, getModelByApiId, ChatModel } from './ModelSelector';
+import ModelSelector, {
+  getDefaultModel,
+  getDefaultTopicNameModel,
+  getAvailableModels,
+  getModelByApiId,
+  getPeakMultiplier,
+  isDeepSeekPeakHours,
+  ChatModel,
+} from './ModelSelector';
 import { useProviderStore } from '../store/ProviderStore';
 import { useAuthStore } from '../store/AuthStore';
 import { createUserChatModel, createLlmProvider, selectorize } from '../testUtils';
@@ -293,5 +301,44 @@ describe('ModelSelector', () => {
 
     const found = getModelByApiId('gpt-3.5');
     expect(found).toBeUndefined();
+  });
+});
+
+describe('DeepSeek peak hours', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('is off-peak on weekends', () => {
+    jest.setSystemTime(new Date('2026-10-24T02:00:00Z')); // Saturday
+    expect(isDeepSeekPeakHours()).toBe(false);
+  });
+
+  it('is peak on a weekday inside a peak window', () => {
+    jest.setSystemTime(new Date('2026-10-26T02:00:00Z')); // Monday
+    expect(isDeepSeekPeakHours()).toBe(true);
+  });
+
+  it('is off-peak on a weekday outside the peak windows', () => {
+    jest.setSystemTime(new Date('2026-10-26T05:00:00Z')); // Monday
+    expect(isDeepSeekPeakHours()).toBe(false);
+  });
+
+  it('applies the 2x multiplier only to DeepSeek during peak hours', () => {
+    jest.setSystemTime(new Date('2026-10-26T06:00:00Z')); // Monday
+    const deepseek = createUserChatModel({ providerId: 'builtin-deepseek' });
+    const openai = createUserChatModel({ providerId: 'builtin-openai' });
+    expect(getPeakMultiplier(deepseek)).toBe(2);
+    expect(getPeakMultiplier(openai)).toBe(1);
+  });
+
+  it('does not apply the multiplier on weekends', () => {
+    jest.setSystemTime(new Date('2026-10-24T02:00:00Z')); // Saturday
+    const deepseek = createUserChatModel({ providerId: 'builtin-deepseek' });
+    expect(getPeakMultiplier(deepseek)).toBe(1);
   });
 });
