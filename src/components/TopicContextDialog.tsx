@@ -26,7 +26,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 
 import { useChatStore, ContextEntry } from '../store/ChatStore';
 import { estimateTokens } from '../services/estimateTokens';
-import { SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL, ASK_USER_TOOL, WEB_SEARCH_TOOL, FETCH_URL_TOOL } from '../services/llmService';
+import { SCRATCHPAD_TOOL, READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL, WEB_SEARCH_TOOL, FETCH_URL_TOOL } from '../services/llmService';
 import { hasWebSearchApiKey } from '../services/webSearchService';
 import { useNotificationStore } from '../store/NotificationStore';
 import { useAuthStore } from '../store/AuthStore';
@@ -46,7 +46,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
 
   const { buildFullContext, updateMessageContext, selectedModel, webSearchEnabled } = useChatStore();
   const { addNotification } = useNotificationStore();
-  const { maxContextTokens, messageRetrievalEnabled, askUserEnabled } = useAuthStore();
+  const { maxContextTokens, messageRetrievalEnabled } = useAuthStore();
 
   const effectiveBudget = useMemo(() => {
     return Math.min(maxContextTokens, Math.floor(selectedModel.contextWindow * 0.9));
@@ -76,11 +76,10 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
     if (!selectedModel.supportsTools) return 0;
     const tools = [SCRATCHPAD_TOOL];
     if (messageRetrievalEnabled) tools.push(READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL);
-    if (askUserEnabled) tools.push(ASK_USER_TOOL);
     if (webSearchEnabled && hasWebSearchApiKey()) tools.push(WEB_SEARCH_TOOL, FETCH_URL_TOOL);
     // Treat serialised tool JSON as a pseudo-message so estimateTokens can count it
     return estimateTokens([{ role: 'system', content: JSON.stringify(tools) }]).promptTokens;
-  }, [selectedModel.supportsTools, messageRetrievalEnabled, askUserEnabled, webSearchEnabled]);
+  }, [selectedModel.supportsTools, messageRetrievalEnabled, webSearchEnabled]);
 
   const totalTokenCount = useMemo(() => {
     if (entries.length === 0) return 0;

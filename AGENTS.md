@@ -179,7 +179,8 @@ Key LLM features:
 - **DeepSeek peak hours**: 2x pricing at 01:00–04:00 UTC and 06:00–10:00 UTC on weekdays, shown with a flame icon in the chat header
 - **Per-chat model memory**: `topic.modelId` stores the last model used for each topic
 - **Context window**: Managed via token estimation (`gpt-tokenizer`), RAG-aware message selection, and `maxContextMessages` per-topic limit
-- **Tool calling**: Models with `supportsTools: true` can invoke `read_messages`, `list_messages`, `ask_user`, `manage_scratchpad`, and web search tools
+- **Tool calling**: Models with `supportsTools: true` can invoke `read_messages`, `list_messages`, `manage_scratchpad`, and web search tools
+- **Clarification**: Models ask follow-up questions as ordinary assistant messages (guidance in `CLARIFICATION_INSTRUCTIONS`); there is no dedicated ask-user tool or pending-question state
 
 ### Tool Definitions (built-in)
 
@@ -189,7 +190,6 @@ Tools are defined in `ChatStore.ts` and passed to the LLM API:
 | ------------------- | ------------------------------------------------------------------------------------- |
 | `read_messages`     | Read full content of specific historical messages                                     |
 | `list_messages`     | Search/filter past messages (by content, date, model)                                 |
-| `ask_user`          | Ask the user a clarifying question (preferred over embedding questions in reply text) |
 | `update_scratchpad` | Read/write to the topic's private scratchpad for long-term memory                     |
 | `web_search`        | Search the live web via the DeepSeek Search API (client-side tool)                    |
 | `fetch_url`         | Fetch a web page as Markdown via the DeepSeek Fetch API (client-side tool)             |

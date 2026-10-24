@@ -183,7 +183,6 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
   const auth = useAuthStore.getState();
   stats.features = {
     messageRetrievalEnabled: auth.messageRetrievalEnabled ? 'ON' : 'OFF',
-    askUserEnabled: auth.askUserEnabled ? 'ON' : 'OFF',
     aiSummaryEnabled: auth.aiSummaryEnabled ? 'ON' : 'OFF',
     summaryModel: auth.summaryModel,
     replyPredictionEnabled: auth.replyPredictionEnabled ? 'ON' : 'OFF',

@@ -48,7 +48,6 @@ import MusicNoteIcon from '@mui/icons-material/MusicNote';
 import VolumeUpIcon from '@mui/icons-material/VolumeUp';
 import MicIcon from '@mui/icons-material/Mic';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { stopSpeech } from '../services/mediaService';
 import TopicContextDialog from './TopicContextDialog';
 import ScratchpadDialog from './ScratchpadDialog';
@@ -162,8 +161,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   const setTemperature = useChatStore((s) => s.setTemperature);
   const currentTopicId = useChatStore((s) => s.currentTopicId);
   const stopSending = useChatStore((s) => s.stopSending);
-  const pendingUserQuestion = useChatStore((s) => s.pendingUserQuestion);
-  const resolvePendingQuestion = useChatStore((s) => s.resolvePendingQuestion);
   const autoReadEnabled = useChatStore((s) => s.autoReadEnabled);
   const setAutoReadEnabled = useChatStore((s) => s.setAutoReadEnabled);
   const webSearchEnabled = useChatStore((s) => s.webSearchEnabled);
@@ -340,7 +337,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
       return;
     }
 
-    if (sending && !pendingUserQuestion) {
+    if (sending) {
       void handleStop();
       return;
     }
@@ -362,16 +359,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
   };
 
   const handleSend = (): void => {
-    // If the LLM is waiting for a clarification answer, resolve the pending promise instead of sending a new message
-    if (pendingUserQuestion) {
-      const answer = inputValue.trim();
-      if (!answer) return;
-      resolvePendingQuestion(answer);
-      questionRef.current = '';
-      setInputValue('');
-      return;
-    }
-
     const currentContent = inputValue;
     const updatedPages = pages.map((p, i) => (i === activePageIndex ? { ...p, content: currentContent } : p));
 
@@ -1558,41 +1545,6 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                 ))}
               </Box>
             )}
-            {pendingUserQuestion && (
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 1,
-                  mb: 1,
-                  px: 1.5,
-                  py: 1,
-                  borderRadius: 2,
-                  border: (theme): string => `1px solid ${alpha(theme.palette.primary.main, 0.4)}`,
-                  bgcolor: (theme): string =>
-                    theme.palette.mode === 'dark' ? alpha(theme.palette.primary.main, 0.12) : alpha(theme.palette.primary.main, 0.08),
-                }}
-              >
-                <HelpOutlineIcon color="primary" sx={{ fontSize: '1.25rem', mt: 0.25 }} />
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography
-                    variant="caption"
-                    color="primary"
-                    sx={{ fontWeight: 'bold', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}
-                  >
-                    Assistant needs clarification
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                    {pendingUserQuestion.question}
-                  </Typography>
-                  {pendingUserQuestion.context && (
-                    <Typography variant="caption" color="text.secondary">
-                      {pendingUserQuestion.context}
-                    </Typography>
-                  )}
-                </Box>
-              </Box>
-            )}
             <Box
               sx={{
                 position: 'relative',
@@ -1610,14 +1562,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                 inputRef={textFieldRef}
                 maxRows={isExpanded ? undefined : 10}
                 minRows={isExpanded ? (isMobile ? 15 : 30) : 1}
-                placeholder={pendingUserQuestion ? "Answer the assistant's question..." : isMobile ? 'Message...' : 'Type your message...'}
+                placeholder={isMobile ? 'Message...' : 'Type your message...'}
                 value={inputValue}
                 onChange={(e): void => {
                   setInputValue(e.target.value);
                   questionRef.current = e.target.value;
                 }}
                 onKeyDown={handleKeyDown}
-                disabled={sending && !pendingUserQuestion}
+                disabled={sending}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment
@@ -1735,7 +1687,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
             )}
             <Tooltip
               title={
-                sending && !pendingUserQuestion
+                sending
                   ? 'Stop Generation'
                   : currentlySpeakingMessageId
                     ? 'Stop Reading'
@@ -1751,7 +1703,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                 <IconButton
                   color={isListening ? 'error' : 'primary'}
                   aria-label={
-                    sending && !pendingUserQuestion
+                    sending
                       ? 'Stop Generation'
                       : currentlySpeakingMessageId
                         ? 'Stop Reading'
@@ -1781,7 +1733,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                       : {}),
                   }}
                 >
-                  {sending && !pendingUserQuestion ? (
+                  {sending ? (
                     <StopCircleIcon />
                   ) : isListening ? (
                     <MicIcon />

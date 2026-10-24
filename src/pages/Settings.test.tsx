@@ -46,8 +46,6 @@ interface AuthState {
   setMaxContextTokens: jest.MockedFunction<(tokens: number) => void>;
   messageRetrievalEnabled: boolean;
   setMessageRetrievalEnabled: jest.MockedFunction<(enabled: boolean) => void>;
-  askUserEnabled: boolean;
-  setAskUserEnabled: jest.MockedFunction<(enabled: boolean) => void>;
   aiSummaryEnabled: boolean;
   setAiSummaryEnabled: jest.MockedFunction<(enabled: boolean) => void>;
   summaryModel: string;
@@ -171,8 +169,6 @@ function buildAuthState(): AuthState {
     setMaxContextTokens: jest.fn(),
     messageRetrievalEnabled: true,
     setMessageRetrievalEnabled: jest.fn(),
-    askUserEnabled: true,
-    setAskUserEnabled: jest.fn(),
     aiSummaryEnabled: false,
     setAiSummaryEnabled: jest.fn(),
     summaryModel: 'same',
@@ -581,7 +577,6 @@ describe('Settings page', () => {
   it('AI toggles call their respective store setters', () => {
     const authState = buildAuthState();
     authState.messageRetrievalEnabled = true;
-    authState.askUserEnabled = true;
     authState.aiSummaryEnabled = false;
     authState.replyPredictionEnabled = false;
     mockUseAuthStore.mockReturnValue(authState);
@@ -591,12 +586,10 @@ describe('Settings page', () => {
     fireEvent.click(screen.getByRole('tab', { name: /ai intelligence/i }));
 
     fireEvent.click(screen.getByLabelText(/message retrieval tool/i));
-    fireEvent.click(screen.getByLabelText(/ask user tool/i));
     fireEvent.click(screen.getByLabelText(/ai message summaries/i));
     fireEvent.click(screen.getByLabelText(/reply prediction/i));
 
     expect(authState.setMessageRetrievalEnabled).toHaveBeenCalledWith(false);
-    expect(authState.setAskUserEnabled).toHaveBeenCalledWith(false);
     expect(authState.setAiSummaryEnabled).toHaveBeenCalledWith(true);
     expect(authState.setReplyPredictionEnabled).toHaveBeenCalledWith(true);
   });

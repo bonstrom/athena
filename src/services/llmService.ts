@@ -146,23 +146,6 @@ export const LIST_MESSAGES_TOOL: LlmTool = {
   },
 };
 
-export const ASK_USER_TOOL: LlmTool = {
-  type: 'function',
-  function: {
-    name: 'ask_user',
-    description:
-      'Ask the user a follow-up question when you need clarification or additional information to proceed. Use this when the available context and message history are insufficient and you cannot reasonably infer the answer. Ask at most one question per turn.',
-    parameters: {
-      type: 'object',
-      properties: {
-        question: { type: 'string', description: 'The specific question to ask the user.' },
-        context: { type: 'string', description: 'Brief explanation of why you need this information.' },
-      },
-      required: ['question'],
-    },
-  },
-};
-
 export const WEB_SEARCH_TOOL: LlmTool = {
   type: 'function',
   function: {
@@ -1621,10 +1604,9 @@ export async function orchestrateLlmLoop(
       // Add tool results to context
       for (const tc of result.toolCalls) {
         const isScratchpad = tc.function.name === 'update_scratchpad';
-        const isAskUser = tc.function.name === 'ask_user';
         let toolResult = 'Updated.';
 
-        if (onToolLog && !isAskUser) {
+        if (onToolLog) {
           onToolLog(`\n\n**Executing Tool**: \`${tc.function.name}\`\n> \`\`\`json\n> ${tc.function.arguments}\n> \`\`\`\n`);
         }
 
@@ -1649,7 +1631,7 @@ export async function orchestrateLlmLoop(
           toolResult = toolResult.slice(0, TOOL_RESULT_CHAR_LIMIT) + `\n\n[TRUNCATED: result exceeded ${TOOL_RESULT_CHAR_LIMIT} chars]`;
         }
 
-        if (onToolLog && !isAskUser) {
+        if (onToolLog) {
           const summary =
             toolResult.length > TOOL_RESULT_PREVIEW_LIMIT
               ? toolResult.slice(0, TOOL_RESULT_PREVIEW_LIMIT) + '... *(display truncated — full content sent to LLM)*'

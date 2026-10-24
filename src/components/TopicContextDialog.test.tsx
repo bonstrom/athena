@@ -46,7 +46,6 @@ const mockUseNotificationStore = useNotificationStore as unknown as jest.Mock<{
 const mockUseAuthStore = useAuthStore as unknown as jest.Mock<{
   maxContextTokens: number;
   messageRetrievalEnabled: boolean;
-  askUserEnabled: boolean;
 }>;
 const mockEstimateTokens = estimateTokens as jest.MockedFunction<typeof estimateTokens>;
 
@@ -70,7 +69,6 @@ describe('TopicContextDialog', () => {
     mockUseAuthStore.mockReturnValue({
       maxContextTokens: 16000,
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
     });
     mockUseChatStore.mockReturnValue({
       buildFullContext: (): Promise<

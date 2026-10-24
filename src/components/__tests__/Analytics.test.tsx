@@ -33,7 +33,6 @@ jest.mock('../../services/analyticsService', () => ({
       lastMessageAt: '2026-06-15T00:00:00.000Z',
       features: {
         messageRetrievalEnabled: 'ON',
-        askUserEnabled: 'OFF',
         aiSummaryEnabled: 'ON',
         summaryModel: 'gpt-4',
         replyPredictionEnabled: 'OFF',

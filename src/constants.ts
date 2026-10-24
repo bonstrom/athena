@@ -33,12 +33,7 @@ export const RAG_MAX_CHARS = 4000; // hard cap on total RAG block size injected 
 export const RAG_CONTENT_LIMIT = 800; // truncate individual messages; LLM can fetch full content via read_messages
 export const MESSAGE_RETRIEVAL_INSTRUCTIONS = `You have access to historical messages via list_messages and read_messages tools.
 IMPORTANT: Messages in your context may be truncated (marked with [TRUNCATED]). When the user asks about specific past messages, quotes, or details from earlier in the conversation, you MUST call read_messages to fetch the full content before answering. Do NOT guess or rely on truncated previews — always verify with the tool.`;
-export const ASK_USER_INSTRUCTIONS = `When information is insufficient to answer confidently, follow this decision hierarchy:
-1. If you can answer with confidence — answer directly.
-2. If the answer might exist in conversation history — use list_messages / read_messages to find it.
-3. If genuinely uncertain after searching — call the ask_user tool to request clarification with one targeted question.
-4. Never guess or produce lengthy speculation when a short clarifying question would be more helpful.
-IMPORTANT: When you need to ask the user a question, you MUST use the ask_user tool. Do NOT embed questions in your reply text. Always call ask_user instead of writing a question directly.`;
+export const CLARIFICATION_INSTRUCTIONS = `Ask a concise clarifying question only when missing information would materially change your answer. Check the relevant conversation history first when appropriate. Otherwise, proceed using a reasonable assumption and state it briefly. Do not ask unnecessary follow-up questions.`;
 
 // ── Web search & fetch (DeepSeek Search API) ─────────────────────────────────
 

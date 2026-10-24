@@ -27,7 +27,6 @@ interface AuthStoreState {
   scratchpadRules: string;
   predefinedPrompts: unknown[];
   messageRetrievalEnabled: boolean;
-  askUserEnabled: boolean;
   aiSummaryEnabled: boolean;
   replyPredictionEnabled: boolean;
   replyPredictionModel: string;
@@ -137,7 +136,6 @@ jest.mock('../../services/llmService', () => ({
   SCRATCHPAD_TOOL: { type: 'function', function: { name: 'update_scratchpad' } },
   READ_MESSAGES_TOOL: { type: 'function', function: { name: 'read_messages' } },
   LIST_MESSAGES_TOOL: { type: 'function', function: { name: 'list_messages' } },
-  ASK_USER_TOOL: { type: 'function', function: { name: 'ask_user' } },
   WEB_SEARCH_TOOL: { type: 'function', function: { name: 'web_search' } },
   FETCH_URL_TOOL: { type: 'function', function: { name: 'fetch_url' } },
 }));
@@ -219,7 +217,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: true,
-      askUserEnabled: true,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -261,7 +258,6 @@ describe('ChatStore', () => {
       sending: false,
       abortController: null,
       currentRequestMessageIds: null,
-      pendingUserQuestion: null,
       pendingSuggestions: null,
       isSuggestionsLoading: false,
       imageGenerationEnabled: false,
@@ -396,14 +392,13 @@ describe('ChatStore', () => {
     expect(assistant?.content).toBe('Hello there');
   });
 
-  it('sendMessageStream includes ask-user and retrieval instructions at runtime', async () => {
+  it('sendMessageStream includes clarification and retrieval instructions at runtime', async () => {
     jest.mocked(calculateCostUSD).mockReturnValue(1);
     mockAuthGetState.mockReturnValue({
       customInstructions: '',
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: true,
-      askUserEnabled: true,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -426,7 +421,7 @@ describe('ChatStore', () => {
 
     const llmContext = mockOrchestrateLlmLoop.mock.calls[0][2] as { role: string; content: string | unknown[] }[];
     const contents = llmContext.map((m) => (typeof m.content === 'string' ? m.content : ''));
-    expect(contents.some((c) => c.includes('decision hierarchy'))).toBe(true);
+    expect(contents.some((c) => c.includes('clarifying question'))).toBe(true);
     expect(contents.some((c) => c.includes('list_messages and read_messages tools'))).toBe(true);
   });
 
@@ -481,115 +476,55 @@ describe('ChatStore', () => {
     expect(useChatStore.getState().messagesByTopic['topic-1']).toEqual([]);
   });
 
-  it('ask_user flow sets pending question and resumes after resolvePendingQuestion', async () => {
-    type ExecuteToolCallback = (toolName: string, argsJson: string) => Promise<string>;
-
-    mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]) => {
-      const executeTool = args[6] as ExecuteToolCallback | undefined;
-      if (!executeTool) throw new Error('Expected execute tool callback');
-
-      const answer = await executeTool('ask_user', JSON.stringify({ question: 'Could you clarify?', context: 'Need details.' }));
-
-      return {
-        finalContent: `Thanks for clarifying: ${answer}`,
-        totalPromptTokens: 10,
-        totalCompletionTokens: 5,
-        totalSearchCount: 0,
-        toolLoopTrace: [],
-        lastResult: {
-          content: `Thanks for clarifying: ${answer}`,
-          rawContent: `Thanks for clarifying: ${answer}`,
-          promptTokens: 10,
-          completionTokens: 5,
-          searchCount: 0,
-        },
-      };
+  it('handles a clarifying question as an ordinary assistant reply', async () => {
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: 'Could you clarify which framework you use?',
+      totalPromptTokens: 10,
+      totalCompletionTokens: 5,
+      totalSearchCount: 0,
+      toolLoopTrace: [],
+      lastResult: {
+        content: 'Could you clarify which framework you use?',
+        rawContent: 'Could you clarify which framework you use?',
+        promptTokens: 10,
+        completionTokens: 5,
+        searchCount: 0,
+      },
     });
 
-    const sendPromise = useChatStore.getState().sendMessageStream('I need help', 'topic-1');
+    await useChatStore.getState().sendMessageStream('I need help', 'topic-1');
 
-    for (let i = 0; i < 20; i++) {
-      if (useChatStore.getState().pendingUserQuestion) break;
-      await Promise.resolve();
-    }
-
-    const pending = useChatStore.getState().pendingUserQuestion;
-    expect(pending).toBeDefined();
-    expect(pending?.question).toBe('Could you clarify?');
-
-    useChatStore.getState().resolvePendingQuestion('Here are more details');
-    await sendPromise;
-
-    expect(useChatStore.getState().pendingUserQuestion).toBeNull();
     const messages = useChatStore.getState().messagesByTopic['topic-1'] ?? [];
-    const clarification = messages.find((m) => m.isClarification);
-    expect(clarification).toBeDefined();
-    expect(clarification?.content).toBe('Could you clarify?');
-    const answerMessage = messages.find((m) => m.type === 'user' && m.content === 'Here are more details');
-    expect(answerMessage).toBeDefined();
-    const assistants = messages.filter((m) => m.type === 'assistant' && !m.isClarification);
-    expect(assistants).toHaveLength(2);
-    expect(assistants[0].content).toBe('Thanks for clarifying: Here are more details');
-    expect(assistants[1].content).toBe('');
+    expect(messages).toHaveLength(2);
+    expect(messages[0].type).toBe('user');
+    expect(messages[1].type).toBe('assistant');
+    expect(messages[1].content).toBe('Could you clarify which framework you use?');
+    expect(messages[1].isClarification).toBeUndefined();
+    expect(useChatStore.getState().sending).toBe(false);
+    expect(useChatStore.getState().streaming).toBeNull();
+    expect(useChatStore.getState().currentRequestMessageIds).toBeNull();
   });
 
-  it('interleaves ask_user question and answer at the interruption point in the final content', async () => {
-    type ExecuteToolCallback = (toolName: string, argsJson: string) => Promise<string>;
-
-    mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]) => {
-      const executeTool = args[6] as ExecuteToolCallback | undefined;
-      if (!executeTool) throw new Error('Expected execute tool callback');
-
-      const answer = await executeTool('ask_user', JSON.stringify({ question: 'Which framework do you use?', context: '' }));
-
-      return {
-        finalContent: `Let me help with that.\n\nHere's the continuation: ${answer}`,
-        totalPromptTokens: 10,
-        totalCompletionTokens: 5,
-        totalSearchCount: 0,
-        toolLoopTrace: [
-          {
-            iteration: 1,
-            llmResponse: {
-              content: 'Let me help with that.',
-              toolCalls: [
-                {
-                  id: 'call-1',
-                  type: 'function',
-                  function: { name: 'ask_user', arguments: JSON.stringify({ question: 'Which framework do you use?' }) },
-                },
-              ],
-            },
-            toolResults: [{ toolCallId: 'call-1', toolName: 'ask_user', result: answer }],
-          },
-        ],
-        lastResult: {
-          content: `Here's the continuation: ${answer}`,
-          rawContent: `Here's the continuation: ${answer}`,
-          promptTokens: 10,
-          completionTokens: 5,
-          searchCount: 0,
-        },
-      };
+  it('does not offer an ask_user tool to the model', async () => {
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: 'Sure.',
+      totalPromptTokens: 10,
+      totalCompletionTokens: 5,
+      totalSearchCount: 0,
+      toolLoopTrace: [],
+      lastResult: {
+        content: 'Sure.',
+        rawContent: 'Sure.',
+        promptTokens: 10,
+        completionTokens: 5,
+        searchCount: 0,
+      },
     });
 
-    const sendPromise = useChatStore.getState().sendMessageStream('I need help', 'topic-1');
+    await useChatStore.getState().sendMessageStream('Hello', 'topic-1');
 
-    for (let i = 0; i < 20; i++) {
-      if (useChatStore.getState().pendingUserQuestion) break;
-      await Promise.resolve();
-    }
-
-    useChatStore.getState().resolvePendingQuestion('React');
-    await sendPromise;
-
-    const messages = useChatStore.getState().messagesByTopic['topic-1'] ?? [];
-    const clarification = messages.find((m) => m.isClarification);
-    expect(clarification?.content).toBe('Which framework do you use?');
-    const answerMessage = messages.find((m) => m.type === 'user' && m.content === 'React');
-    expect(answerMessage).toBeDefined();
-    const assistants = messages.filter((m) => m.type === 'assistant' && !m.isClarification);
-    expect(assistants.map((m) => m.content)).toEqual(['Let me help with that.', "Here's the continuation: React"]);
+    const tools = mockOrchestrateLlmLoop.mock.calls[0][8] as { function: { name: string } }[];
+    expect(tools.map((tool) => tool.function.name)).not.toContain('ask_user');
   });
 
   it('continuation mode appends the answer and reply into the existing assistant message without new bubbles', async () => {
@@ -1275,28 +1210,6 @@ describe('ChatStore', () => {
     expect(useChatStore.getState().isSuggestionsLoading).toBe(false);
   });
 
-  it('resolvePendingQuestion resolves pending user question and clears it', () => {
-    const mockResolve = jest.fn();
-    useChatStore.setState({
-      pendingUserQuestion: {
-        question: 'What is your name?',
-        context: 'User context',
-        resolve: mockResolve,
-        reject: jest.fn(),
-      },
-    });
-
-    useChatStore.getState().resolvePendingQuestion('My name is AI');
-
-    expect(mockResolve).toHaveBeenCalledWith('My name is AI');
-    expect(useChatStore.getState().pendingUserQuestion).toBeNull();
-  });
-
-  it('resolvePendingQuestion is a no-op when there is no pending question', () => {
-    useChatStore.setState({ pendingUserQuestion: null });
-    expect(() => useChatStore.getState().resolvePendingQuestion('Answer')).not.toThrow();
-  });
-
   it('setWebSearchEnabled, setImageGenerationEnabled, setMusicGenerationEnabled update feature flags', () => {
     useChatStore.getState().setWebSearchEnabled(true);
     expect(useChatStore.getState().webSearchEnabled).toBe(true);
@@ -1362,81 +1275,6 @@ describe('ChatStore', () => {
     warnSpy.mockRestore();
   });
 
-  it('ask_user pending question times out and clears pending state', async () => {
-    jest.useFakeTimers();
-
-    type ExecuteToolCallback = (toolName: string, argsJson: string) => Promise<string>;
-    mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]) => {
-      const executeTool = args[6] as ExecuteToolCallback | undefined;
-      if (!executeTool) throw new Error('Expected execute tool callback');
-
-      const answer = await executeTool('ask_user', JSON.stringify({ question: 'Could you clarify?', context: 'Need details.' }));
-      return {
-        finalContent: `Timed answer: ${answer}`,
-        totalPromptTokens: 10,
-        totalCompletionTokens: 5,
-        totalSearchCount: 0,
-        toolLoopTrace: [],
-        lastResult: {
-          content: `Timed answer: ${answer}`,
-          rawContent: `Timed answer: ${answer}`,
-          promptTokens: 10,
-          completionTokens: 5,
-          searchCount: 0,
-        },
-      };
-    });
-
-    const sendPromise = useChatStore.getState().sendMessageStream('I need help', 'topic-1');
-
-    for (let i = 0; i < 20; i++) {
-      if (useChatStore.getState().pendingUserQuestion) break;
-      await Promise.resolve();
-    }
-
-    expect(useChatStore.getState().pendingUserQuestion).toBeDefined();
-
-    jest.advanceTimersByTime(5 * 60 * 1000 + 1);
-    await sendPromise;
-
-    expect(useChatStore.getState().pendingUserQuestion).toBeNull();
-    const assistant = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant');
-    expect(assistant?.content).toContain('did not respond in time');
-
-    jest.useRealTimers();
-  });
-
-  it('routes follow-up answer to current topic in fallback-style pending handler', async () => {
-    const originalSend = useChatStore.getState().sendMessageStream;
-    const sendSpy = jest.spyOn(useChatStore.getState(), 'sendMessageStream').mockResolvedValue();
-    const capturedTopicId = 'topic-1';
-
-    useChatStore.setState({
-      currentTopicId: 'topic-2',
-      pendingUserQuestion: {
-        question: 'Could you clarify?',
-        context: 'Fallback: model asked inline instead of using ask_user tool.',
-        resolve: (answer: string): void => {
-          useChatStore.setState({ pendingUserQuestion: null });
-          const resolvedTopicId = useChatStore.getState().currentTopicId ?? capturedTopicId;
-          void useChatStore.getState().sendMessageStream(answer, resolvedTopicId);
-        },
-        reject: (): void => {
-          useChatStore.setState({ pendingUserQuestion: null });
-        },
-      },
-    });
-
-    useChatStore.getState().resolvePendingQuestion('Use Node 20');
-    await Promise.resolve();
-
-    expect(sendSpy).toHaveBeenCalledWith('Use Node 20', 'topic-2');
-    sendSpy.mockRestore();
-    // Ensure the current Zustand state object also has the original method,
-    // since Zustand creates shallow copies on setState and the spy may leak.
-    useChatStore.getState().sendMessageStream = originalSend;
-  });
-
   it('setHighlightedMessageId sets and clears highlighted message id', () => {
     useChatStore.setState({ highlightedMessageId: null });
     useChatStore.getState().setHighlightedMessageId('msg-highlight');
@@ -1495,15 +1333,14 @@ describe('ChatStore', () => {
     expect(mockDbDelete).not.toHaveBeenCalled();
   });
 
-  // ========== inline question (no ask_user tool) must not trigger clarification ==========
+  // ========== inline clarification questions ==========
 
-  it('sendMessageStream does not set a pending question when the model answers inline without calling ask_user', async () => {
+  it('sendMessageStream preserves an inline question as ordinary assistant content', async () => {
     mockAuthGetState.mockReturnValue({
       customInstructions: '',
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: true,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1529,10 +1366,11 @@ describe('ChatStore', () => {
       },
     });
 
-    const sendPromise = useChatStore.getState().sendMessageStream('I need help with my project', 'topic-1');
-    await sendPromise;
+    await useChatStore.getState().sendMessageStream('I need help with my project', 'topic-1');
 
-    expect(useChatStore.getState().pendingUserQuestion).toBeNull();
+    const assistant = (useChatStore.getState().messagesByTopic['topic-1'] ?? []).find((m) => m.type === 'assistant');
+    expect(assistant?.content).toBe(inlineAnswer);
+    expect(useChatStore.getState().sending).toBe(false);
   });
 
   // ========== buildFullContext ==========
@@ -1543,7 +1381,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1564,7 +1401,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1583,7 +1419,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1623,7 +1458,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1655,7 +1489,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1676,7 +1509,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1691,13 +1523,12 @@ describe('ChatStore', () => {
     expect(context.some((e) => e.sourceLabel === 'Web Search Instructions')).toBe(false);
   });
 
-  it('buildFullContext includes ask user instructions when enabled', async () => {
+  it('buildFullContext includes clarification guidance by default', async () => {
     mockAuthGetState.mockReturnValue({
       customInstructions: '',
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: true,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1707,7 +1538,7 @@ describe('ChatStore', () => {
 
     const context = await useChatStore.getState().buildFullContext('topic-1');
 
-    expect(context.some((e) => e.sourceLabel === 'Ask User Instructions')).toBe(true);
+    expect(context.some((e) => e.sourceLabel === 'Clarification Guidance')).toBe(true);
   });
 
   it('buildFullContext includes message retrieval instructions when enabled', async () => {
@@ -1716,7 +1547,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [],
       messageRetrievalEnabled: true,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1756,7 +1586,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [{ id: 'prompt-1', name: 'Helpful', content: 'Be helpful' }],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1783,7 +1612,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1803,7 +1631,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1822,7 +1649,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1843,7 +1669,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1863,7 +1688,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: true,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1883,7 +1707,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1911,7 +1734,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: true,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1942,7 +1764,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1968,7 +1789,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -1996,7 +1816,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -2025,7 +1844,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -2059,7 +1877,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -2089,7 +1906,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -2118,7 +1934,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -2146,7 +1961,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
@@ -2205,15 +2019,11 @@ describe('ChatStore', () => {
     }
   });
 
-  it('fetchMessages rejects pending user question when switching topics', async () => {
-    const mockReject = jest.fn();
+  it('fetchMessages switches topics without disturbing an in-flight response on the previous topic', async () => {
     useChatStore.setState({
-      pendingUserQuestion: {
-        question: 'What about this?',
-        context: 'test',
-        resolve: jest.fn(),
-        reject: mockReject,
-      },
+      currentTopicId: 'topic-1',
+      sending: true,
+      streaming: { topicId: 'topic-1', assistantMessageId: 'a-stream', content: 'partial', reasoning: '' },
       messagesByTopic: {},
     });
 
@@ -2222,8 +2032,9 @@ describe('ChatStore', () => {
 
     await useChatStore.getState().fetchMessages('topic-3');
 
-    expect(mockReject).toHaveBeenCalled();
-    expect(useChatStore.getState().pendingUserQuestion).toBeNull();
+    expect(useChatStore.getState().currentTopicId).toBe('topic-3');
+    expect(useChatStore.getState().messagesByTopic['topic-3']).toEqual(messages);
+    expect(useChatStore.getState().streaming?.topicId).toBe('topic-1');
   });
 
   it('fetchMessages uses cached data when topic is already loaded and no fork specified', async () => {
@@ -2390,7 +2201,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: true,
       replyPredictionModel: 'same',
@@ -2434,7 +2244,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: true,
       replyPredictionModel: 'local',
@@ -2474,7 +2283,6 @@ describe('ChatStore', () => {
       scratchpadRules: 'Rules',
       predefinedPrompts: [],
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       replyPredictionEnabled: true,
       replyPredictionModel: 'local',
@@ -2637,39 +2445,6 @@ describe('ChatStore', () => {
     await useChatStore.getState().sendMessageStream('Test', '');
 
     expect(mockDbAdd).not.toHaveBeenCalled();
-  });
-
-  // ========== stopSending with pending user question ==========
-
-  it('stopSending rejects pending question when aborting', async () => {
-    const mockReject = jest.fn();
-    const abortController = new AbortController();
-
-    useChatStore.setState({
-      currentTopicId: 'topic-1',
-      abortController,
-      pendingUserQuestion: {
-        question: 'What?',
-        context: 'test',
-        resolve: jest.fn(),
-        reject: mockReject,
-      },
-      currentRequestMessageIds: {
-        userMessageId: 'u-reject',
-        assistantMessageId: 'a-reject',
-      },
-      messagesByTopic: {
-        'topic-1': [
-          createMessage({ id: 'u-reject', type: 'user', content: 'Question', topicId: 'topic-1' }),
-          createMessage({ id: 'a-reject', type: 'assistant', content: '', topicId: 'topic-1', parentMessageId: 'u-reject' }),
-        ],
-      },
-    });
-
-    await useChatStore.getState().stopSending();
-
-    expect(mockReject).toHaveBeenCalled();
-    expect(useChatStore.getState().pendingUserQuestion).toBeNull();
   });
 
   // ========== sendMessageStream retry path ==========

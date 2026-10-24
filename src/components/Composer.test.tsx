@@ -66,13 +66,6 @@ interface ProviderStoreSlice {
   hasWebSearchProvider: () => boolean;
 }
 
-interface PendingUserQuestionState {
-  question: string;
-  context: string;
-  resolve: (answer: string) => void;
-  reject: (reason?: unknown) => void;
-}
-
 interface ChatStoreSlice {
   selectedModel: UserChatModel;
   setSelectedModel: (model: UserChatModel) => void;
@@ -81,8 +74,6 @@ interface ChatStoreSlice {
   currentTopicId: string | null;
   stopSending: jest.Mock<Promise<string | null>>;
   messagesByTopic: Record<string, Message[] | undefined>;
-  pendingUserQuestion: PendingUserQuestionState | null;
-  resolvePendingQuestion: (answer: string) => void;
   webSearchEnabled: boolean;
   setWebSearchEnabled: (value: boolean) => void;
   imageGenerationEnabled: boolean;
@@ -286,8 +277,6 @@ describe('Composer', () => {
       currentTopicId: 'topic-1',
       stopSending: jest.fn((): Promise<string | null> => Promise.resolve(null)),
       messagesByTopic: { 'topic-1': [] },
-      pendingUserQuestion: null,
-      resolvePendingQuestion: jest.fn(),
       webSearchEnabled: false,
       setWebSearchEnabled: jest.fn(),
       imageGenerationEnabled: true,
@@ -372,40 +361,6 @@ describe('Composer', () => {
 
     expect(onSend).toHaveBeenCalledWith('Hello Athena', []);
     expect(screen.getByPlaceholderText('Type your message...')).toHaveValue('');
-  });
-
-  it('resolves a pending user question instead of sending a new message', () => {
-    chatStore.pendingUserQuestion = {
-      question: 'Which model should I use?',
-      context: 'Need clarification',
-      resolve: jest.fn(),
-      reject: jest.fn(),
-    };
-    selectorize(mockUseChatStore, chatStore);
-
-    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
-
-    fireEvent.change(screen.getByPlaceholderText("Answer the assistant's question..."), { target: { value: 'Use the fast one' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send Message' }));
-
-    expect(chatStore.resolvePendingQuestion).toHaveBeenCalledWith('Use the fast one');
-    expect(onSend).not.toHaveBeenCalled();
-  });
-
-  it('shows a clarification banner while a user question is pending', () => {
-    chatStore.pendingUserQuestion = {
-      question: 'Which model should I use?',
-      context: 'Need clarification',
-      resolve: jest.fn(),
-      reject: jest.fn(),
-    };
-    selectorize(mockUseChatStore, chatStore);
-
-    render(<Composer sending={false} onSend={onSend} isMobile={false} />);
-
-    expect(screen.getByText('Assistant needs clarification')).toBeInTheDocument();
-    expect(screen.getByText('Which model should I use?')).toBeInTheDocument();
-    expect(screen.getByText('Need clarification')).toBeInTheDocument();
   });
 
   it('restores the stopped content when generation is cancelled on the same topic', async () => {

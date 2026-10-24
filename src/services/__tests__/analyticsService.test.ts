@@ -12,7 +12,6 @@ jest.mock('../../store/AuthStore', () => ({
     getState: (): Record<string, unknown> => ({
       deviceId: 'test-device',
       messageRetrievalEnabled: false,
-      askUserEnabled: false,
       aiSummaryEnabled: false,
       summaryModel: 'test',
       replyPredictionEnabled: false,
