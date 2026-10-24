@@ -11,6 +11,7 @@ export interface LlmProvider {
   messageFormat: 'openai' | 'anthropic';
   /** Encrypted API key (use SecurityUtils.decode before sending). */
   apiKeyEncrypted: string;
+  /** Whether this provider's key can be used to run web search (DeepSeek Search API). */
   supportsWebSearch: boolean;
   requiresReasoningFallback: boolean;
   /** Extra payload fields merged in on every request, serialized as JSON string. */
@@ -108,7 +109,7 @@ export const DEFAULT_PROVIDERS: Omit<LlmProvider, 'apiKeyEncrypted'>[] = [
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/v1/chat/completions',
     messageFormat: 'openai',
-    supportsWebSearch: false,
+    supportsWebSearch: true,
     requiresReasoningFallback: false,
     payloadOverridesJson: '',
     isBuiltIn: true,
@@ -128,7 +129,7 @@ export const DEFAULT_PROVIDERS: Omit<LlmProvider, 'apiKeyEncrypted'>[] = [
     name: 'Moonshot',
     baseUrl: 'https://api.moonshot.ai/v1/chat/completions',
     messageFormat: 'openai',
-    supportsWebSearch: true,
+    supportsWebSearch: false,
     requiresReasoningFallback: true,
     payloadOverridesJson: '',
     isBuiltIn: true,

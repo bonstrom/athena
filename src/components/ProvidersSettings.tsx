@@ -271,7 +271,7 @@ const ProvidersSettings: React.FC = () => {
                   onChange={(e): void => setForm((f) => ({ ...f, supportsWebSearch: e.target.checked }))}
                 />
               }
-              label={<Typography variant="caption">Supports $web_search builtin (Moonshot-style)</Typography>}
+              label={<Typography variant="caption">Provides web search (uses the DeepSeek Search API)</Typography>}
             />
             <FormControlLabel
               control={

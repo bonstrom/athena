@@ -17,8 +17,9 @@ interface TopicStoreState {
 
 interface ProviderStoreState {
   models: UserChatModel[];
+  providers: LlmProvider[];
   getProviderForModel: (model: UserChatModel) => LlmProvider;
-  getFirstWebSearchModel: () => UserChatModel | undefined;
+  hasWebSearchProvider: () => boolean;
 }
 
 interface AuthStoreState {
@@ -137,6 +138,8 @@ jest.mock('../../services/llmService', () => ({
   READ_MESSAGES_TOOL: { type: 'function', function: { name: 'read_messages' } },
   LIST_MESSAGES_TOOL: { type: 'function', function: { name: 'list_messages' } },
   ASK_USER_TOOL: { type: 'function', function: { name: 'ask_user' } },
+  WEB_SEARCH_TOOL: { type: 'function', function: { name: 'web_search' } },
+  FETCH_URL_TOOL: { type: 'function', function: { name: 'fetch_url' } },
 }));
 
 jest.mock('../../services/mediaService', () => ({
@@ -226,8 +229,9 @@ describe('ChatStore', () => {
 
     mockProviderGetState.mockReturnValue({
       models: [mockDefaultModel],
+      providers: [],
       getProviderForModel: () => testProvider,
-      getFirstWebSearchModel: () => undefined,
+      hasWebSearchProvider: () => false,
     });
 
     mockGetTopicContext.mockResolvedValue([]);
@@ -1636,13 +1640,14 @@ describe('ChatStore', () => {
     }
   });
 
-  it('buildFullContext includes web search instructions when enabled and provider supports it', async () => {
-    const webSearchProvider = createLlmProvider({ supportsWebSearch: true });
+  it('buildFullContext includes web search instructions when enabled and a search key is configured', async () => {
+    const deepseekProvider = createLlmProvider({ id: 'builtin-deepseek', apiKeyEncrypted: 'deepseek-key' });
 
     mockProviderGetState.mockReturnValue({
       models: [mockDefaultModel],
-      getProviderForModel: (): LlmProvider => webSearchProvider,
-      getFirstWebSearchModel: (): UserChatModel | undefined => undefined,
+      providers: [deepseekProvider],
+      getProviderForModel: (): LlmProvider => deepseekProvider,
+      hasWebSearchProvider: (): boolean => true,
     });
 
     mockAuthGetState.mockReturnValue({
@@ -1665,7 +1670,7 @@ describe('ChatStore', () => {
     expect(context.some((e) => e.sourceLabel === 'Web Search Instructions')).toBe(true);
   });
 
-  it('buildFullContext skips web search instructions when provider does not support it', async () => {
+  it('buildFullContext skips web search instructions when no search key is configured', async () => {
     mockAuthGetState.mockReturnValue({
       customInstructions: '',
       scratchpadRules: 'Scratchpad rules with {{SCRATCHPAD_LIMIT}} limit',
@@ -1951,7 +1956,7 @@ describe('ChatStore', () => {
 
     await useChatStore.getState()._runSummarize('msg-nodl', 'Some content');
 
-    expect(mockAskLlm).toHaveBeenCalledWith(useChatStore.getState().selectedModel, 0.3, expect.any(Array), undefined, undefined, undefined, {
+    expect(mockAskLlm).toHaveBeenCalledWith(useChatStore.getState().selectedModel, 0.3, expect.any(Array), undefined, undefined, {
       includeCustomInstructions: false,
     });
     expect(mockDbUpdate).toHaveBeenCalledWith('msg-nodl', expect.objectContaining({ summary: 'API summary.', summaryTokens: 13 }));
@@ -2586,16 +2591,17 @@ describe('ChatStore', () => {
     expect(mockDbAdd).not.toHaveBeenCalled();
   });
 
-  it('sendMessageStream switches to web search model when enabled', async () => {
-    const webSearchModel: UserChatModel = createUserChatModel({ id: 'web-search-model', apiModelId: 'web-search-model' });
+  it('sendMessageStream keeps the selected model and registers search tools when enabled', async () => {
+    const deepseekProvider = createLlmProvider({ id: 'builtin-deepseek', apiKeyEncrypted: 'deepseek-key' });
 
     mockProviderGetState.mockReturnValue({
-      models: [mockDefaultModel, webSearchModel],
-      getProviderForModel: (): LlmProvider => testProvider,
-      getFirstWebSearchModel: (): UserChatModel | undefined => webSearchModel,
+      models: [mockDefaultModel],
+      providers: [deepseekProvider],
+      getProviderForModel: (): LlmProvider => deepseekProvider,
+      hasWebSearchProvider: (): boolean => true,
     });
 
-    useChatStore.setState({ webSearchEnabled: true });
+    useChatStore.setState({ webSearchEnabled: true, selectedModel: mockDefaultModel });
 
     mockOrchestrateLlmLoop.mockResolvedValue({
       finalContent: 'Searched web answer',
@@ -2614,19 +2620,11 @@ describe('ChatStore', () => {
 
     await useChatStore.getState().sendMessageStream('What is the weather?', 'topic-1');
 
-    expect(mockOrchestrateLlmLoop).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'web-search-model' }),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-    );
+    const call = mockOrchestrateLlmLoop.mock.calls[0];
+    expect(call[0]).toEqual(expect.objectContaining({ id: mockDefaultModel.id }));
+    const tools = call[8] as { function: { name: string } }[];
+    expect(tools.map((t) => t.function.name)).toEqual(expect.arrayContaining(['web_search', 'fetch_url']));
+    expect(mockUpdateTopicModelId).toHaveBeenCalledWith('topic-1', mockDefaultModel.apiModelId);
   });
 
   it('sendMessageStream is a no-op with empty content', async () => {
@@ -2835,14 +2833,15 @@ describe('ChatStore', () => {
     expect(mockUpdateTopicModelId).toHaveBeenCalledWith('topic-1', 'api-effective-model');
   });
 
-  it('sendMessageStream persists web search model when web search is enabled', async () => {
-    const webSearchModel: UserChatModel = createUserChatModel({ id: 'uuid-web', apiModelId: 'api-web-model', label: 'Web' });
-    mockGetAvailableModels.mockReturnValue([mockDefaultModel, webSearchModel]);
+  it('sendMessageStream persists the selected model when web search is enabled', async () => {
+    const deepseekProvider = createLlmProvider({ id: 'builtin-deepseek', apiKeyEncrypted: 'deepseek-key' });
+    mockGetAvailableModels.mockReturnValue([mockDefaultModel]);
 
     mockProviderGetState.mockReturnValue({
-      models: [mockDefaultModel, webSearchModel],
-      getProviderForModel: (): LlmProvider => testProvider,
-      getFirstWebSearchModel: (): UserChatModel | undefined => webSearchModel,
+      models: [mockDefaultModel],
+      providers: [deepseekProvider],
+      getProviderForModel: (): LlmProvider => deepseekProvider,
+      hasWebSearchProvider: (): boolean => true,
     });
 
     useChatStore.setState({ webSearchEnabled: true, selectedModel: mockDefaultModel });
@@ -2864,6 +2863,6 @@ describe('ChatStore', () => {
 
     await useChatStore.getState().sendMessageStream('Search query', 'topic-1');
 
-    expect(mockUpdateTopicModelId).toHaveBeenCalledWith('topic-1', 'api-web-model');
+    expect(mockUpdateTopicModelId).toHaveBeenCalledWith('topic-1', mockDefaultModel.apiModelId);
   });
 });

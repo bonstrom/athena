@@ -789,7 +789,7 @@ describe('ChecklistStore', () => {
     it('disables tool-result caching so duplicate structural calls can be rejected', async () => {
       let cacheToolResults: unknown;
       mockOrchestrateLlmLoop.mockImplementation((...args: unknown[]): { finalContent: string } => {
-        cacheToolResults = args[12];
+        cacheToolResults = args[11];
         return { finalContent: 'Done.' };
       });
 

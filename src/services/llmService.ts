@@ -163,6 +163,38 @@ export const ASK_USER_TOOL: LlmTool = {
   },
 };
 
+export const WEB_SEARCH_TOOL: LlmTool = {
+  type: 'function',
+  function: {
+    name: 'web_search',
+    description:
+      'Search the live web and get ranked results with titles, URLs, dates, and summaries. Supports operators: "exact phrase", site:example.com, -site:example.com, -word, lang:en, after:2025, before:2026.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The search query (1-128 characters).' },
+        count: { type: 'number', description: 'How many results to return (1-10, default 5).' },
+      },
+      required: ['query'],
+    },
+  },
+};
+
+export const FETCH_URL_TOOL: LlmTool = {
+  type: 'function',
+  function: {
+    name: 'fetch_url',
+    description: 'Fetch a single web page and return its main content as Markdown. Use when a search snippet is not enough.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'The absolute HTTP(S) URL to fetch.' },
+      },
+      required: ['url'],
+    },
+  },
+};
+
 export interface LlmTool {
   type: 'function' | 'builtin_function';
   function: {
@@ -884,7 +916,6 @@ function buildPayload(
   stream: boolean,
   temperature: number,
   tools?: LlmTool[],
-  webSearch?: boolean,
   options?: LlmRequestOptions,
 ): LlmPayload {
   const { model: resolvedModel, provider: providerConfig } = resolveModelAndProvider(model);
@@ -930,15 +961,6 @@ function buildPayload(
   }
 
   const finalTools = [...(tools ?? [])];
-  if (webSearch && providerConfig.supportsWebSearch) {
-    finalTools.push({
-      type: 'builtin_function',
-      function: {
-        name: '$web_search',
-        description: "Search the internet for real-time information with Moonshot AI's built-in search.",
-      },
-    });
-  }
 
   const resolvedTemperature = resolvedModel.forceTemperature != null ? resolvedModel.forceTemperature : temperature;
   const chatStoreReasoningEffort = useChatStore.getState().reasoningEffort;
@@ -974,8 +996,7 @@ function buildPayload(
     stream,
     ...(resolvedModel.supportsTemperature && { temperature: resolvedTemperature }),
     ...(stream && { stream_options: { include_usage: true } }),
-    ...(resolvedThinkingMode && !webSearch && { thinking: { type: resolvedThinkingMode } }),
-    ...(webSearch && { thinking: { type: 'disabled' } }),
+    ...(resolvedThinkingMode && { thinking: { type: resolvedThinkingMode } }),
     ...payloadOverrides,
     ...(toolsIncluded && { tools: finalTools }),
     ...(toolsIncluded && options?.toolChoice && { tool_choice: options.toolChoice }),
@@ -1318,7 +1339,7 @@ function buildLlmResult(parsed: ParsedResponse): LlmResult {
     aiNote,
     aiNoteAction,
     toolCalls,
-    searchCount: toolCalls?.filter((tc) => tc.function.name === '$web_search').length ?? 0, // toolCalls may be undefined
+    searchCount: toolCalls?.filter((tc) => tc.function.name === 'web_search').length ?? 0, // toolCalls may be undefined
     finishReason: parsed.finishReason,
     responseId: parsed.responseId,
     actualModel: parsed.actualModel,
@@ -1334,12 +1355,11 @@ export async function askLlm(
   temperature: number,
   messages: LlmMessage[],
   tools?: LlmTool[],
-  webSearch?: boolean,
   signal?: AbortSignal,
   options?: LlmRequestOptions,
 ): Promise<LlmResult> {
   const { provider: providerConfig, model: resolvedModel } = resolveModelAndProvider(model);
-  const payload = buildPayload(model, messages, false, temperature, tools, webSearch, options);
+  const payload = buildPayload(model, messages, false, temperature, tools, options);
   const adapter = getAdapter(providerConfig, resolvedModel);
 
   const res = await fetch(getRequestUrl(providerConfig, resolvedModel), {
@@ -1376,12 +1396,11 @@ export async function askLlmStream(
   onToken?: (token: string) => void,
   onReasoning?: (token: string) => void,
   tools?: LlmTool[],
-  webSearch?: boolean,
   signal?: AbortSignal,
   options?: LlmRequestOptions,
 ): Promise<LlmResult> {
   const { provider: providerConfig, model: resolvedModel } = resolveModelAndProvider(model);
-  const payload = buildPayload(model, messages, true, temperature, tools, webSearch, options);
+  const payload = buildPayload(model, messages, true, temperature, tools, options);
   const adapter = getAdapter(providerConfig, resolvedModel);
 
   const res = await fetch(getRequestUrl(providerConfig, resolvedModel), {
@@ -1531,7 +1550,6 @@ export async function orchestrateLlmLoop(
   onExecuteTool?: (toolName: string, args: string, iteration: number) => Promise<string>,
   onToolLog?: (log: string) => void,
   tools: LlmTool[] = [SCRATCHPAD_TOOL],
-  webSearch?: boolean,
   signal?: AbortSignal,
   options?: LlmRequestOptions,
   cacheToolResults = true,
@@ -1559,8 +1577,8 @@ export async function orchestrateLlmLoop(
     // auto so the model can conclude with a plain text summary once it is done.
     const iterationOptions = loopCount === 1 ? options : options?.toolChoice ? { ...options, toolChoice: undefined } : options;
     const result = resolvedModel.streaming
-      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, tools, webSearch, signal, iterationOptions)
-      : await askLlm(resolvedModel, temperature, llmContext, tools, webSearch, signal, iterationOptions);
+      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, tools, signal, iterationOptions)
+      : await askLlm(resolvedModel, temperature, llmContext, tools, signal, iterationOptions);
 
     if (!resolvedModel.streaming && result.reasoning && onReasoning) {
       onReasoning(result.reasoning);
@@ -1602,7 +1620,6 @@ export async function orchestrateLlmLoop(
 
       // Add tool results to context
       for (const tc of result.toolCalls) {
-        const isWebSearch = tc.function.name === '$web_search';
         const isScratchpad = tc.function.name === 'update_scratchpad';
         const isAskUser = tc.function.name === 'ask_user';
         let toolResult = 'Updated.';
@@ -1611,11 +1628,7 @@ export async function orchestrateLlmLoop(
           onToolLog(`\n\n**Executing Tool**: \`${tc.function.name}\`\n> \`\`\`json\n> ${tc.function.arguments}\n> \`\`\`\n`);
         }
 
-        if (isWebSearch) {
-          // $web_search is a Moonshot builtin — echo the query back as the tool
-          // result so the API can fulfil the search and continue the response.
-          toolResult = tc.function.arguments;
-        } else if (!isScratchpad && onExecuteTool) {
+        if (!isScratchpad && onExecuteTool) {
           const cacheKey = `${tc.function.name}:${tc.function.arguments}`;
           const cached = cacheToolResults ? toolResultCache.get(cacheKey) : undefined;
           if (cached !== undefined) {
@@ -1678,8 +1691,8 @@ export async function orchestrateLlmLoop(
   if (exhaustedWithPendingToolCalls) {
     console.warn('[orchestrateLlmLoop] Loop exhausted with pending tools — firing forced final call without tools.');
     const finalResult = resolvedModel.streaming
-      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, undefined, false, signal, options)
-      : await askLlm(resolvedModel, temperature, llmContext, undefined, false, signal, options);
+      ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, undefined, signal, options)
+      : await askLlm(resolvedModel, temperature, llmContext, undefined, signal, options);
 
     if (!resolvedModel.streaming && finalResult.reasoning && onReasoning) {
       onReasoning(finalResult.reasoning);

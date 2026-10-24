@@ -975,7 +975,6 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           ],
           undefined,
           undefined,
-          undefined,
           { includeCustomInstructions: false },
         );
 
@@ -1157,7 +1156,6 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           },
           (log: string): void => set((state) => ({ toolLog: state.toolLog + log })),
           CHECKLIST_TOOLS,
-          undefined,
           editController.signal,
           { includeCustomInstructions: false, toolChoice: 'required', disableThinking: true },
           false,

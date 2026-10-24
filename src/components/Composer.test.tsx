@@ -63,6 +63,7 @@ interface ProviderStoreSlice {
   getAvailableModels: () => UserChatModel[];
   getProviderForModel: (model: UserChatModel) => LlmProvider | undefined;
   providers: LlmProvider[];
+  hasWebSearchProvider: () => boolean;
 }
 
 interface PendingUserQuestionState {
@@ -274,6 +275,7 @@ describe('Composer', () => {
       getAvailableModels: (): UserChatModel[] => [selectedModel],
       getProviderForModel: (): LlmProvider => selectedProvider,
       providers: [selectedProvider],
+      hasWebSearchProvider: (): boolean => true,
     };
 
     chatStore = {

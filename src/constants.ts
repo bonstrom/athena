@@ -40,6 +40,28 @@ export const ASK_USER_INSTRUCTIONS = `When information is insufficient to answer
 4. Never guess or produce lengthy speculation when a short clarifying question would be more helpful.
 IMPORTANT: When you need to ask the user a question, you MUST use the ask_user tool. Do NOT embed questions in your reply text. Always call ask_user instead of writing a question directly.`;
 
+// ── Web search & fetch (DeepSeek Search API) ─────────────────────────────────
+
+/** Base URL for DeepSeek's standalone Search/Fetch APIs. */
+export const DEEPSEEK_TOOLS_BASE_URL = 'https://api.deepseek.com';
+/** $0.75 per 1,000 successful Search requests. */
+export const SEARCH_COST_PER_CALL = 0.00075;
+/** $0.75 per 1,000 successful Fetch requests. */
+export const FETCH_COST_PER_CALL = 0.00075;
+export const SEARCH_DEFAULT_COUNT = 5;
+export const SEARCH_MAX_COUNT = 10;
+/** Results at or above this combined relevance/authority/freshness score are considered high quality. */
+export const SEARCH_MIN_RERANK_SCORE = 1.5;
+/** Hard cap on the model-facing search/fetch block, to protect the context window. */
+export const SEARCH_RESULT_CHAR_LIMIT = 6000;
+
+export const WEB_SEARCH_INSTRUCTIONS = `You have web search and page fetch tools.
+- Call web_search whenever the answer depends on current events, prices, releases, or anything you are not fully confident about. Do not guess.
+- The query field supports search operators: "exact phrase", site:example.com, -site:example.com, -word, lang:en, after:2025, before:2026. Combine them freely to narrow results.
+- Prefer a few specific searches over one broad one. Start with 3-5 results and only search again if the results are insufficient.
+- Use fetch_url when you need the full text of a specific page rather than a summary.
+- Cite the sources you used as Markdown links in your answer. Never invent a URL that did not come from a tool result.`;
+
 export const DEFAULT_SCRATCHPAD_RULES = `You have a private scratchpad for long-term memory (max {{SCRATCHPAD_LIMIT}} chars).
 
 **What to store proactively — act on this every reply if relevant:**

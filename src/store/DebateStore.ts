@@ -193,7 +193,6 @@ async function runDebatePhase(
         },
         undefined,
         undefined,
-        false,
         controller.signal,
       ),
       askLlmStream(
@@ -206,7 +205,6 @@ async function runDebatePhase(
         },
         undefined,
         undefined,
-        false,
         controller.signal,
       ),
     ]);
@@ -424,7 +422,6 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         },
         undefined,
         undefined,
-        false,
         controller.signal,
         { includeCustomInstructions: false },
       );
@@ -642,7 +639,6 @@ export const useDebateStore = create<DebateState>((set, get) => ({
           },
           undefined,
           undefined,
-          false,
           controller.signal,
           { includeCustomInstructions: false },
         );

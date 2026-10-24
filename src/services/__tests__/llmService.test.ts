@@ -123,7 +123,6 @@ describe('GPT-6.1 Sol Responses API', () => {
       execute,
       undefined,
       [tool],
-      false,
       undefined,
       { toolChoice: 'required' },
     );
@@ -536,7 +535,6 @@ describe('orchestrateLlmLoop — tool calls', () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       { toolChoice: 'required', disableThinking: true },
     );
 
@@ -661,7 +659,7 @@ describe('orchestrateLlmLoop — tool calls', () => {
     });
   });
 
-  it('echoes web search arguments for $web_search builtin tool calls', async () => {
+  it('executes web_search client tools and feeds the result back to the model', async () => {
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
 
@@ -678,8 +676,8 @@ describe('orchestrateLlmLoop — tool calls', () => {
                 tool_calls: [
                   {
                     id: 'call-web',
-                    type: 'builtin_function',
-                    function: { name: '$web_search', arguments: '{"query":"latest ai news"}' },
+                    type: 'function',
+                    function: { name: 'web_search', arguments: '{"query":"latest ai news","count":3}' },
                   },
                 ],
               },
@@ -704,7 +702,7 @@ describe('orchestrateLlmLoop — tool calls', () => {
         }),
       );
 
-    const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('should not be called for web search builtin'));
+    const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('WEB SEARCH RESULTS for "latest ai news"'));
 
     const result = await orchestrateLlmLoop(
       model,
@@ -715,17 +713,16 @@ describe('orchestrateLlmLoop — tool calls', () => {
       undefined,
       onExecuteTool,
       undefined,
-      [],
-      true,
+      [{ type: 'function', function: { name: 'web_search', description: 'search' } }],
     );
 
-    expect(onExecuteTool).not.toHaveBeenCalled();
+    expect(onExecuteTool).toHaveBeenCalledWith('web_search', '{"query":"latest ai news","count":3}', 1);
     expect(result.finalContent).toBe('Here are the search results summary');
     expect(result.toolLoopTrace).toHaveLength(1);
     expect(result.toolLoopTrace[0].toolResults[0]).toEqual({
       toolCallId: 'call-web',
-      toolName: '$web_search',
-      result: '{"query":"latest ai news"}',
+      toolName: 'web_search',
+      result: 'WEB SEARCH RESULTS for "latest ai news"',
     });
   });
 
@@ -1199,7 +1196,7 @@ describe('askLlm — non-streaming API calls', () => {
     } as unknown as Response);
 
     const { askLlm } = await import('../llmService');
-    await askLlm(model, 0.7, [user('Hi')], undefined, undefined, undefined, { includeCustomInstructions: false });
+    await askLlm(model, 0.7, [user('Hi')], undefined, undefined, { includeCustomInstructions: false });
 
     const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as {
       messages: { role: string; content: string | null }[];
@@ -1513,7 +1510,7 @@ describe('buildPayload — reasoning_effort and tools', () => {
   });
 });
 
-describe('buildPayload — thinking and webSearch', () => {
+describe('buildPayload — thinking modes', () => {
   const provider: LlmProvider = {
     id: 'test-provider',
     name: 'Test Provider',
@@ -1531,52 +1528,7 @@ describe('buildPayload — thinking and webSearch', () => {
     mockEstimateTokens.mockReturnValue({ promptTokens: 1, completionTokens: 1, totalTokens: 2 });
   });
 
-  it('disables thinking when webSearch is enabled', async () => {
-    const model = createUserChatModel({ thinkingToggle: 'enabled', streaming: true });
-    mockProviderGetState.mockReturnValue({
-      models: [model],
-      getAvailableModels: (): UserChatModel[] => [model],
-      getProviderForModel: (): LlmProvider => provider,
-    });
-
-    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
-    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      body: new ReadableStream({
-        start(controller): void {
-          controller.enqueue(
-            new TextEncoder().encode(
-              'data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n',
-            ),
-          );
-          controller.close();
-        },
-      }),
-    } as unknown as Response);
-
-    const { orchestrateLlmLoop } = await import('../llmService');
-    await orchestrateLlmLoop(
-      model,
-      0.7,
-      [user('Hi')],
-      () => {
-        /* noop */
-      },
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }],
-      true,
-    );
-
-    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
-    expect(body.thinking).toEqual({ type: 'disabled' });
-    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
-  });
-
-  it('sends thinking enabled when webSearch is off', async () => {
+  it('sends thinking enabled by default', async () => {
     const model = createUserChatModel({ thinkingToggle: 'enabled', streaming: true });
     mockProviderGetState.mockReturnValue({
       models: [model],
@@ -1653,13 +1605,56 @@ describe('buildPayload — thinking and webSearch', () => {
       undefined,
       [{ type: 'builtin_function', function: { name: 'test', description: 'test' } }],
       undefined,
-      undefined,
       { toolChoice: 'required' },
     );
 
     const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
     expect(body.thinking).toEqual({ type: 'disabled' });
     expect(body.tool_choice).toBe('required');
+    Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
+  });
+
+  it('does not disable thinking when a web search tool is registered', async () => {
+    const model = createUserChatModel({ thinkingToggle: 'enabled', streaming: true, supportsTools: true });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: new ReadableStream({
+        start(controller): void {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n',
+            ),
+          );
+          controller.close();
+        },
+      }),
+    } as unknown as Response);
+
+    const { orchestrateLlmLoop } = await import('../llmService');
+    await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('Hi')],
+      () => {
+        /* noop */
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [{ type: 'function', function: { name: 'web_search', description: 'search' } }],
+    );
+
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.thinking).toEqual({ type: 'enabled' });
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 });

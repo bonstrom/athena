@@ -515,7 +515,6 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         ],
         undefined,
         undefined,
-        undefined,
         { includeCustomInstructions: false },
       );
 

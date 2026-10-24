@@ -186,7 +186,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
     setTtsVoiceId,
     currency,
   } = useAuthStore();
-  const { getAvailableModels, providers } = useProviderStore();
+  const { getAvailableModels, providers, hasWebSearchProvider } = useProviderStore();
   const currentlySpeakingMessageId = useUiStore((s) => s.currentlySpeakingMessageId);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [parameterTab, setParameterTab] = useState(0);
@@ -206,7 +206,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
 
   const availableModels = getAvailableModels();
   const hasMiniMaxKey = providers.some((p) => p.id === 'builtin-minimax' && !!p.apiKeyEncrypted);
-  const hasWebSearchProvider = providers.some((p) => p.supportsWebSearch && !!p.apiKeyEncrypted);
+  const hasWebSearchProviderAvailable = hasWebSearchProvider();
   const openTempMenu = Boolean(anchorEl);
 
   useEffect(() => {
@@ -1434,8 +1434,14 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                 </Tooltip>
               )}
 
-              {hasWebSearchProvider && (
-                <Tooltip title={`Web Search (${webSearchEnabled ? 'Enabled' : 'Disabled'})`} disableTouchListener={isMobile}>
+              {hasWebSearchProviderAvailable && (
+                <Tooltip
+                  title={
+                    selectedModel.supportsTools
+                      ? `Web Search (${webSearchEnabled ? 'Enabled' : 'Disabled'})`
+                      : 'Web Search requires a model with tool support'
+                  }
+                  disableTouchListener={isMobile}>
                   <span>
                     <IconButton
                       onClick={(): void => {
@@ -1446,7 +1452,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                         }
                         setWebSearchEnabled(nextState);
                       }}
-                      disabled={sending}
+                      disabled={sending || !selectedModel.supportsTools}
                       color={webSearchEnabled ? 'primary' : 'default'}
                       aria-label="Toggle Web Search"
                       aria-pressed={webSearchEnabled}

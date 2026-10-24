@@ -13,6 +13,8 @@ import {
   READ_MESSAGES_TOOL,
   LIST_MESSAGES_TOOL,
   ASK_USER_TOOL,
+  WEB_SEARCH_TOOL,
+  FETCH_URL_TOOL,
   LlmTool,
   LlmDebugPayload,
   ToolLoopIteration,
@@ -26,6 +28,7 @@ import { rollupAnalytics } from '../services/analyticsRollupService';
 import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 import { useCuratorStore } from './CuratorStore';
+import { executeWebSearch, executeFetch, hasWebSearchApiKey } from '../services/webSearchService';
 
 import {
   LATEX_INSTRUCTIONS,
@@ -37,6 +40,9 @@ import {
   ASK_USER_INSTRUCTIONS,
   MESSAGE_RETRIEVAL_INSTRUCTIONS,
   CURATOR_SYSTEM_PROMPT,
+  WEB_SEARCH_INSTRUCTIONS,
+  SEARCH_COST_PER_CALL,
+  FETCH_COST_PER_CALL,
 } from '../constants';
 import { normalizeSvgDocument, replaceSvgBlockInMessage } from '../utils/svgEdit';
 import { parseStringArray } from '../utils/structuredJson';
@@ -99,7 +105,7 @@ interface AssembleChatSystemOptions {
   topic: Topic | undefined;
   selectedModel: ChatModel;
   webSearchEnabled: boolean;
-  supportsWebSearch: boolean;
+  webSearchAvailable: boolean;
   askUserEnabled: boolean;
   messageRetrievalEnabled: boolean;
   svgGenerationEnabled: boolean;
@@ -146,10 +152,9 @@ async function assembleChatSystemEntries(opts: AssembleChatSystemOptions): Promi
     entries.push({ content: opts.topic.scratchpad, sourceLabel: 'Scratchpad Content' });
   }
 
-  if (opts.webSearchEnabled && opts.supportsWebSearch) {
+  if (opts.webSearchEnabled && opts.webSearchAvailable) {
     entries.push({
-      content:
-        'Web search is available in this conversation. Search the internet whenever you need current or factual information you are not fully confident about.',
+      content: WEB_SEARCH_INSTRUCTIONS,
       sourceLabel: 'Web Search Instructions',
     });
   }
@@ -394,11 +399,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { selectedModel, webSearchEnabled } = get();
     const topicStoreState = useTopicStore.getState();
     const authStoreState = useAuthStore.getState();
-    const providerStoreState = useProviderStore.getState();
     const topic = topicStoreState.topics.find((t) => t.id === topicId);
     const customInstructions = authStoreState.customInstructions.trim();
     const scratchpadRulesTemplate = authStoreState.scratchpadRules;
-    const selectedProvider = providerStoreState.getProviderForModel(selectedModel);
 
     const existingContext = await topicStoreState.getTopicContext(topicId, undefined, userMessagePreview?.trim());
     const entries: ContextEntry[] = [];
@@ -413,7 +416,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       topic,
       selectedModel,
       webSearchEnabled,
-      supportsWebSearch: !!selectedProvider?.supportsWebSearch,
+      webSearchAvailable: hasWebSearchApiKey() && selectedModel.supportsTools,
       askUserEnabled: authStoreState.askUserEnabled,
       messageRetrievalEnabled: authStoreState.messageRetrievalEnabled,
       svgGenerationEnabled: authStoreState.svgGenerationEnabled,
@@ -740,7 +743,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       onReasoning,
       undefined,
       undefined,
-      undefined,
       { includeCustomInstructions: false },
     );
 
@@ -776,13 +778,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const { selectedModel } = get();
 
-    let effectiveModel = selectedModel;
-    if (get().webSearchEnabled) {
-      const webSearchModel = useProviderStore.getState().getFirstWebSearchModel();
-      if (webSearchModel) {
-        effectiveModel = webSearchModel;
-      }
-    }
+    // Web search is a client-side tool backed by the DeepSeek API, so it no
+    // longer changes which model answers the message.
+    const effectiveModel = selectedModel;
 
     const topicStoreState = useTopicStore.getState();
 
@@ -879,14 +877,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       };
     });
 
-    const selectedProvider = useProviderStore.getState().getProviderForModel(effectiveModel);
-
     // Shared system prompts — identical to what the context inspector shows
     const systemEntries = await assembleChatSystemEntries({
       topic: refreshedTopic,
       selectedModel: effectiveModel,
       webSearchEnabled: get().webSearchEnabled,
-      supportsWebSearch: !!selectedProvider?.supportsWebSearch,
+      webSearchAvailable: hasWebSearchApiKey() && effectiveModel.supportsTools,
       askUserEnabled: useAuthStore.getState().askUserEnabled,
       messageRetrievalEnabled: useAuthStore.getState().messageRetrievalEnabled,
       svgGenerationEnabled: useAuthStore.getState().svgGenerationEnabled,
@@ -952,6 +948,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const assistantSegmentIds: string[] = [assistantId];
     const segmentReasoning: string[] = [];
     const extraMessageIds: string[] = [];
+    // Count only successful Search/Fetch requests — DeepSeek does not bill failures.
+    let billableSearchCalls = 0;
+    let billableFetchCalls = 0;
 
     if (get().imageGenerationEnabled) {
       try {
@@ -1394,6 +1393,29 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               return `Error in ask_user: ${String(e)}`;
             }
           }
+          if (toolName === 'web_search') {
+            try {
+              const parsedArgs = JSON.parse(argsJson) as { query?: string; count?: number };
+              const response = await executeWebSearch(parsedArgs.query ?? '', {
+                count: parsedArgs.count,
+                signal: controller.signal,
+              });
+              if (response.billable) billableSearchCalls++;
+              return response.text;
+            } catch (e) {
+              return `Error running web_search: ${e instanceof Error ? e.message : String(e)}`;
+            }
+          }
+          if (toolName === 'fetch_url') {
+            try {
+              const parsedArgs = JSON.parse(argsJson) as { url?: string };
+              const response = await executeFetch(parsedArgs.url ?? '', { signal: controller.signal });
+              if (response.billable) billableFetchCalls++;
+              return response.text;
+            } catch (e) {
+              return `Error running fetch_url: ${e instanceof Error ? e.message : String(e)}`;
+            }
+          }
           return 'Tool not implemented.';
         },
         onToolLogCallback,
@@ -1406,9 +1428,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           if (authState.askUserEnabled) {
             tools.push(ASK_USER_TOOL);
           }
+          if (get().webSearchEnabled && hasWebSearchApiKey() && effectiveModel.supportsTools) {
+            tools.push(WEB_SEARCH_TOOL, FETCH_URL_TOOL);
+          }
           return tools;
         })(),
-        get().webSearchEnabled,
         controller.signal,
       );
 
@@ -1428,13 +1452,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         totalCachedTokens > 0 || totalCacheCreationTokens > 0
           ? { cached_tokens: totalCachedTokens, cache_creation_tokens: totalCacheCreationTokens }
           : undefined;
-      const finalTotalCost = calculateCostUSD(
-        effectiveModel,
-        totalPromptTokens,
-        totalCompletionTokens,
-        promptTokensDetails,
-        getPeakMultiplier(effectiveModel),
-      );
+      const finalTotalCost =
+        calculateCostUSD(
+          effectiveModel,
+          totalPromptTokens,
+          totalCompletionTokens,
+          promptTokensDetails,
+          getPeakMultiplier(effectiveModel),
+        ) +
+        billableSearchCalls * SEARCH_COST_PER_CALL +
+        billableFetchCalls * FETCH_COST_PER_CALL;
+      const totalSearchCalls = billableSearchCalls + billableFetchCalls;
 
       const debugPayload: LlmDebugPayload = {
         rawContent: lastResult.rawContent,
@@ -1490,6 +1518,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 cachedTokens: dbCachedTokens,
                 cacheCreationTokens: dbCacheCreationTokens,
                 latencyMs,
+                searchCount: totalSearchCalls,
                 rawResponse: JSON.stringify(debugPayload),
               }
             : {}),
@@ -1598,7 +1627,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                 ? selectedModel
                 : (useProviderStore.getState().models.find((m) => m.id === replyPredictionModel || m.apiModelId === replyPredictionModel) ??
                   selectedModel);
-            const result = await askLlm(targetModel, 0.7, suggestionContext, undefined, undefined, undefined, { includeCustomInstructions: false });
+            const result = await askLlm(targetModel, 0.7, suggestionContext, undefined, undefined, { includeCustomInstructions: false });
             const raw = result.content.trim();
             const suggestions = parseStringArray(raw)?.slice(0, 3) ?? null;
 
@@ -1766,7 +1795,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               { role: 'system', content: `Reply with a short summary of about ${summaryWordLimit} words. No explanation, just the summary.` },
               { role: 'user', content: `Summarize this:\n\n${safeContent}` },
             ];
-      const result = await askLlm(selectedModel, 0.3, messages, undefined, undefined, undefined, { includeCustomInstructions: false });
+      const result = await askLlm(selectedModel, 0.3, messages, undefined, undefined, { includeCustomInstructions: false });
       const rawSummary = result.content;
       const summaryTokens = result.promptTokens + result.completionTokens;
       const summaryCost = calculateCostUSD(

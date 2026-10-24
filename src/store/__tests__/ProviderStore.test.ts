@@ -13,7 +13,7 @@ interface ProviderStoreState {
   getModelById: (id: string) => UserChatModel | undefined;
   getAvailableModels: () => UserChatModel[];
   getProviderForModel: (model: UserChatModel) => LlmProvider | undefined;
-  getFirstWebSearchModel: () => UserChatModel | undefined;
+  hasWebSearchProvider: () => boolean;
   hasAnyApiKey: () => boolean;
   deleteProvider: (providerId: string) => void;
   resetProvider: (providerId: string) => void;
@@ -262,17 +262,20 @@ describe('ProviderStore selectors', () => {
     expect(store.getState().getProviderForModel(orphanModel)).toBeUndefined();
   });
 
-  it('getFirstWebSearchModel returns model when provider has key and supports webSearch', () => {
-    store.getState().setProviderKey('builtin-moonshot', 'test-key');
+  it('hasWebSearchProvider is true when the DeepSeek key is configured', () => {
+    const store = loadProviderStore();
+    expect(store.getState().hasWebSearchProvider()).toBe(false);
 
-    const wsModel = store.getState().getFirstWebSearchModel();
-    expect(wsModel).toBeDefined();
-    expect(wsModel?.providerId).toBe('builtin-moonshot');
+    store.getState().setProviderKey('builtin-deepseek', 'test-key');
+
+    expect(store.getState().hasWebSearchProvider()).toBe(true);
   });
 
-  it('getFirstWebSearchModel returns undefined when no web search provider has key', () => {
-    const wsModel = store.getState().getFirstWebSearchModel();
-    expect(wsModel).toBeUndefined();
+  it('hasWebSearchProvider stays false when only a non-search provider has a key', () => {
+    const store = loadProviderStore();
+    store.getState().setProviderKey('builtin-openai', 'test-key');
+
+    expect(store.getState().hasWebSearchProvider()).toBe(false);
   });
 
   it('getAvailableModels excludes disabled models', () => {
@@ -791,6 +794,20 @@ describe('ProviderStore migrations', () => {
     const provider = store.getState().getProviderById('builtin-openai');
     expect(provider).toBeDefined();
     expect(provider?.name).toBe('OpenAI');
+  });
+
+  it('syncs supportsWebSearch from defaults for built-in providers', () => {
+    seedProvider('builtin-deepseek', 'builtin-moonshot');
+    localStorage.setItem('athena_models', JSON.stringify([]));
+
+    const store = loadProviderStore();
+
+    expect(store.getState().getProviderById('builtin-deepseek')?.supportsWebSearch).toBe(true);
+    expect(store.getState().getProviderById('builtin-moonshot')?.supportsWebSearch).toBe(false);
+
+    const storedProviders = JSON.parse(localStorage.getItem('athena_providers') ?? '[]') as LlmProvider[];
+    expect(storedProviders.find((p) => p.id === 'builtin-deepseek')?.supportsWebSearch).toBe(true);
+    expect(storedProviders.find((p) => p.id === 'builtin-moonshot')?.supportsWebSearch).toBe(false);
   });
 
   it('adds missing built-in providers to existing storage', () => {

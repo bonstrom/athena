@@ -118,7 +118,8 @@ interface ProviderState {
   getAvailableModels: () => UserChatModel[];
   getProviderForModel: (model: UserChatModel) => LlmProvider | undefined;
   hasAnyApiKey: () => boolean;
-  getFirstWebSearchModel: () => UserChatModel | undefined;
+  /** True when a provider with a web-search-capable key (DeepSeek) is configured. */
+  hasWebSearchProvider: () => boolean;
 }
 
 function initStore(): Pick<ProviderState, 'providers' | 'models'> {
@@ -264,8 +265,14 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
       const p = providers[i];
       if (!p.isBuiltIn) continue;
       const def = DEFAULT_PROVIDERS.find((dp) => dp.id === p.id);
-      if (def && p.name !== def.name) {
-        providers[i] = { ...p, name: def.name };
+      if (!def) continue;
+      let next = p;
+      if (p.name !== def.name) next = { ...next, name: def.name };
+      // Sync capability flags so storage from older versions picks up changes
+      // (e.g. web search moving from Moonshot to DeepSeek).
+      if (p.supportsWebSearch !== def.supportsWebSearch) next = { ...next, supportsWebSearch: def.supportsWebSearch };
+      if (next !== p) {
+        providers[i] = next;
         providersChanged = true;
       }
     }
@@ -406,15 +413,8 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     return get().getAvailableModels().length > 0;
   },
 
-  getFirstWebSearchModel: (): UserChatModel | undefined => {
-    const { models, providers } = get();
-    const available = models.filter((m) => {
-      if (!m.enabled) return false;
-      const provider = providers.find((p) => p.id === m.providerId);
-      if (!provider?.supportsWebSearch) return false;
-      const hasKey = getApiKey(provider).length > 0;
-      return hasKey || providerCanBeUsedWithoutKey(provider);
-    });
-    return available.length > 0 ? available[0] : undefined;
+  hasWebSearchProvider: (): boolean => {
+    const { providers } = get();
+    return providers.some((p) => p.supportsWebSearch && (getApiKey(p).length > 0 || providerCanBeUsedWithoutKey(p)));
   },
 }));

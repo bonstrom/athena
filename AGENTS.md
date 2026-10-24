@@ -164,16 +164,16 @@ Supports both OpenAI `/chat/completions` and Anthropic `/v1/messages` formats. H
 | Provider | Format    | Supports        |
 | -------- | --------- | --------------- |
 | OpenAI   | openai    | Web search: no  |
-| DeepSeek | openai    | Web search: no  |
+| DeepSeek | openai    | Web search: yes |
 | Google   | openai    | Web search: no  |
-| Moonshot | openai    | Web search: yes |
+| Moonshot | openai    | Web search: no  |
 | MiniMax  | anthropic | Web search: no  |
 
 **16 built-in models** including DeepSeek V4.1 Flash/V4 Pro, GPT-6.1 Sol/GPT-6 Luna, Gemini 3.7 Flash, Kimi 2.5/2.6/2.7 Code/K2 Turbo/K3.1 Pro/Kimi v1 8k, MiniMax M2.7/M3, Mistral Large/Medium 3.5, and ZAI GLM 5.2. Each model definition includes pricing (input/cachedInput/output per 1M tokens), context window size, and feature flags (streaming, vision, tools, thinking, files, temperature support, alternate-role enforcement).
 
 Key LLM features:
 
-- **Web search**: Moonshot provider — when enabled, results are injected as system messages
+- **Web search**: DeepSeek Search/Fetch APIs, exposed as client-side `web_search` and `fetch_url` tools (see `src/services/webSearchService.ts`). Works with any tools-capable model and never changes the selected model. Billed per successful call ($0.00075 each), added to `totalCost` separately from token pricing.
 - **Reasoning/Thinking**: Extracted via `thinkingParseMode` — `api-native` (default, from API response fields), `tag-based` (strips `<think>...</think>`), or `none`
 - **Vision**: Image attachments sent as `image_url` content parts
 - **DeepSeek peak hours**: 2x pricing at 01:00–04:00 UTC and 06:00–10:00 UTC on weekdays, shown with a flame icon in the chat header
@@ -190,7 +190,9 @@ Tools are defined in `ChatStore.ts` and passed to the LLM API:
 | `read_messages`     | Read full content of specific historical messages                                     |
 | `list_messages`     | Search/filter past messages (by content, date, model)                                 |
 | `ask_user`          | Ask the user a clarifying question (preferred over embedding questions in reply text) |
-| `manage_scratchpad` | Read/write to the topic's private scratchpad for long-term memory                     |
+| `update_scratchpad` | Read/write to the topic's private scratchpad for long-term memory                     |
+| `web_search`        | Search the live web via the DeepSeek Search API (client-side tool)                    |
+| `fetch_url`         | Fetch a web page as Markdown via the DeepSeek Fetch API (client-side tool)             |
 
 ### Content Rendering (`src/components/MarkdownWithCode.tsx`)
 

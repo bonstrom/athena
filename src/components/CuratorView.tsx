@@ -686,7 +686,6 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           (token: string): void => { accumulated += token; },
           undefined,
           undefined,
-          false,
           controller.signal,
           { includeCustomInstructions: false },
         );
@@ -707,7 +706,6 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             (token: string): void => { repairAccumulated += token; },
             undefined,
             undefined,
-            false,
             controller.signal,
             { includeCustomInstructions: false },
           );
@@ -912,7 +910,6 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             (token: string): void => { accumulated += token; },
             undefined,
             undefined,
-            false,
             controller.signal,
             { includeCustomInstructions: false },
           );
@@ -975,7 +972,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             1.0,
             [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
             (token: string): void => { accumulated += token; },
-            undefined, undefined, false, controller.signal,
+            undefined, undefined, controller.signal,
             { includeCustomInstructions: false },
           );
           const finalContent = accumulated || result.content;
@@ -1047,7 +1044,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
                 1.0,
                 [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
                 (token: string): void => { accumulated += token; },
-                undefined, undefined, false, controller.signal,
+                undefined, undefined, controller.signal,
                 { includeCustomInstructions: false },
               );
               const finalContent = accumulated || result.content;
@@ -1230,7 +1227,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
       const result = await askLlmStream(
         teacherModel, 1.0, llmMessages,
         (token: string): void => { accumulated += token; setTeacherStreaming(accumulated); },
-        undefined, undefined, false, controller.signal,
+        undefined, undefined, controller.signal,
         { includeCustomInstructions: false },
       );
 
