@@ -149,6 +149,8 @@ function initStore(): Pick<ProviderState, 'providers' | 'models'> {
       safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-gpt-6-1-sol');
     } else if (selected === 'builtin-gpt-5-6-luna') {
       safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-gpt-6-luna');
+    } else if (selected === 'builtin-kimi-k3') {
+      safeSetItem(STORAGE_KEY_SELECTED_MODEL, 'builtin-kimi-k3-1-pro');
     }
 
     const existingModelIds = new Set(models.map((m) => m.id));

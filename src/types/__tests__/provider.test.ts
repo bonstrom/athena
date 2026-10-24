@@ -123,17 +123,28 @@ describe('DEFAULT_MODELS', () => {
     expect(kimiV1.supportsTemperature).toBe(false);
   });
 
-  it('has reasoningEffort "high" for Kimi K3', () => {
-    const kimiK3 = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k3');
-    expect(kimiK3).toBeDefined();
-    if (!kimiK3) { throw new Error('Expected kimiK3 to be defined'); }
-    expect(kimiK3.reasoningEffort).toBe('high');
+  it('has reasoningEffort "high" for Kimi K3.1 Pro', () => {
+    const kimiK31Pro = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k3-1-pro');
+    expect(kimiK31Pro).toBeDefined();
+    if (!kimiK31Pro) { throw new Error('Expected kimiK31Pro to be defined'); }
+    expect(kimiK31Pro.reasoningEffort).toBe('high');
   });
 
-  it('has supportsThinking true for Kimi K3', () => {
-    const kimiK3 = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k3');
-    expect(kimiK3).toBeDefined();
-    if (!kimiK3) { throw new Error('Expected kimiK3 to be defined'); }
-    expect(kimiK3.supportsThinking).toBe(true);
+  it('has supportsThinking true for Kimi K3.1 Pro', () => {
+    const kimiK31Pro = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k3-1-pro');
+    expect(kimiK31Pro).toBeDefined();
+    if (!kimiK31Pro) { throw new Error('Expected kimiK31Pro to be defined'); }
+    expect(kimiK31Pro.supportsThinking).toBe(true);
+  });
+
+  it('has K3.1 Pro pricing and 1M context window', () => {
+    const kimiK31Pro = DEFAULT_MODELS.find((m) => m.id === 'builtin-kimi-k3-1-pro');
+    expect(kimiK31Pro).toBeDefined();
+    if (!kimiK31Pro) { throw new Error('Expected kimiK31Pro to be defined'); }
+    expect(kimiK31Pro.apiModelId).toBe('kimi-k3.1-pro');
+    expect(kimiK31Pro.input).toBe(2.0);
+    expect(kimiK31Pro.cachedInput).toBe(0.2);
+    expect(kimiK31Pro.output).toBe(10.0);
+    expect(kimiK31Pro.contextWindow).toBe(1_048_576);
   });
 });

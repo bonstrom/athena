@@ -169,7 +169,7 @@ Supports both OpenAI `/chat/completions` and Anthropic `/v1/messages` formats. H
 | Moonshot | openai    | Web search: yes |
 | MiniMax  | anthropic | Web search: no  |
 
-**16 built-in models** including DeepSeek V4 Flash/Pro, GPT-6.1 Sol/GPT-6 Luna, Gemini 3.7 Flash, Kimi 2.5/2.6/2.7 Code/K2 Turbo/K3/Kimi v1 8k, MiniMax M2.7/M3, Mistral Large/Medium 3.5, and ZAI GLM 5.2. Each model definition includes pricing (input/cachedInput/output per 1M tokens), context window size, and feature flags (streaming, vision, tools, thinking, files, temperature support, alternate-role enforcement).
+**16 built-in models** including DeepSeek V4 Flash/Pro, GPT-6.1 Sol/GPT-6 Luna, Gemini 3.7 Flash, Kimi 2.5/2.6/2.7 Code/K2 Turbo/K3.1 Pro/Kimi v1 8k, MiniMax M2.7/M3, Mistral Large/Medium 3.5, and ZAI GLM 5.2. Each model definition includes pricing (input/cachedInput/output per 1M tokens), context window size, and feature flags (streaming, vision, tools, thinking, files, temperature support, alternate-role enforcement).
 
 Key LLM features:
 

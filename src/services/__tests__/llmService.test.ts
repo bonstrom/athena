@@ -1485,9 +1485,9 @@ describe('buildPayload — reasoning_effort and tools', () => {
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 
-  it('sends reasoning_effort "high" for Kimi K3 model with tools', async () => {
+  it('sends reasoning_effort "high" for Kimi K3.1 Pro model with tools', async () => {
     const model = createUserChatModel({
-      apiModelId: 'kimi-k3',
+      apiModelId: 'kimi-k3.1-pro',
       reasoningEffort: 'high',
       streaming: true,
     });

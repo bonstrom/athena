@@ -507,6 +507,17 @@ describe('ProviderStore migrations', () => {
     expect(store.getState().models.length).toBeGreaterThan(0);
   });
 
+  it('migrates Kimi K3 to K3.1 Pro selection key', () => {
+    seedProvider('builtin-moonshot');
+    localStorage.setItem('athena_selected_model', 'builtin-kimi-k3');
+
+    const store = loadProviderStore();
+    const selected = localStorage.getItem('athena_selected_model');
+    expect(selected).toBe('builtin-kimi-k3-1-pro');
+    expect(store.getState().models.some((m) => m.id === 'builtin-kimi-k3-1-pro')).toBe(true);
+    expect(store.getState().models.some((m) => m.id === 'builtin-kimi-k3')).toBe(false);
+  });
+
   it('updates built-in model properties from new defaults', () => {
     // Must include at least one provider so migration path is taken
     localStorage.setItem(
