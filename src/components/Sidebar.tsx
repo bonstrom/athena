@@ -22,6 +22,7 @@ import { GlobalSearch } from './GlobalSearch';
 import { JSX, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import GridOnIcon from '@mui/icons-material/GridOn';
 import SettingsIcon from '@mui/icons-material/Settings';
 import LogoutIcon from '@mui/icons-material/Logout';
 
@@ -152,6 +153,19 @@ export const Sidebar = (): JSX.Element => {
       <Divider sx={{ my: 1 }} />
 
       <Box px={2} pb={2}>
+        <Button
+          variant="text"
+          fullWidth
+          startIcon={<GridOnIcon />}
+          onClick={(): void => {
+            if (isMobile) closeDrawer();
+            void navigate(`/pixel`);
+          }}
+          sx={{ mb: 1, justifyContent: 'flex-start', color: 'text.secondary' }}
+        >
+          Pixel Art
+        </Button>
+
         <Button
           variant="text"
           fullWidth

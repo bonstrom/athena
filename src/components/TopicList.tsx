@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@mui/material';
 import { useTopicStore } from '../store/TopicStore';
+import { usePixelStore } from '../store/PixelStore';
 import { useChatStore } from '../store/ChatStore';
 import { useAuthStore } from '../store/AuthStore';
 import { useUiStore } from '../store/UiStore';
@@ -26,6 +27,7 @@ export const TopicList = (): JSX.Element => {
   const { topics, loading, loadTopics, visibleTopicCount, increaseVisibleTopicCount, deleteTopics } = useTopicStore();
   const preloadTopics = useChatStore((state) => state.preloadTopics);
   const topicPreloadCount = useAuthStore((state) => state.topicPreloadCount);
+  const pixelDocuments = usePixelStore((state) => state.documents);
   const { selectedTopicIds, selectAllTopics, clearTopicSelection, sidebarFilter } = useUiStore();
   const { topicId } = useParams();
   const navigate = useNavigate();
@@ -69,12 +71,19 @@ export const TopicList = (): JSX.Element => {
   }, [topTopicUpdatedOn, topTopicId]);
 
   const filteredTopics = React.useMemo(() => {
-    if (sidebarFilter === 'courses') return topics.filter((t) => t.mode === 'curator');
-    if (sidebarFilter === 'debates') return topics.filter((t) => t.mode === 'debate');
-    if (sidebarFilter === 'checklists') return topics.filter((t) => t.mode === 'checklist');
-    if (sidebarFilter === 'topics') return topics.filter((t) => !t.mode || t.mode === 'topic');
-    return topics;
-  }, [topics, sidebarFilter]);
+    // Sprite chats live in the Pixel Art view; listing them as ordinary topics
+    // would show a conversation with no canvas next to it.
+    const spriteChatIds = new Set(
+      pixelDocuments.map((document) => document.chatTopicId).filter((id): id is string => Boolean(id)),
+    );
+    const visible = topics.filter((topic) => !spriteChatIds.has(topic.id));
+
+    if (sidebarFilter === 'courses') return visible.filter((t) => t.mode === 'curator');
+    if (sidebarFilter === 'debates') return visible.filter((t) => t.mode === 'debate');
+    if (sidebarFilter === 'checklists') return visible.filter((t) => t.mode === 'checklist');
+    if (sidebarFilter === 'topics') return visible.filter((t) => !t.mode || t.mode === 'topic');
+    return visible;
+  }, [topics, sidebarFilter, pixelDocuments]);
 
   const visibleTopics = React.useMemo(
     () => filteredTopics.slice(0, visibleTopicCount),

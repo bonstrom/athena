@@ -1,4 +1,6 @@
 import Dexie, { Table } from 'dexie';
+import type { PixelDocument, SavedPixelPalette } from '../pixel/types';
+import { normalizePixelDocument } from '../pixel/ops';
 
 class AthenaDatabase extends Dexie {
   topics!: Table<Topic, string>;
@@ -373,6 +375,79 @@ class AthenaDatabase extends Dexie {
           throw err;
         }
       });
+
+    // Version 20: pixel art documents (palette-indexed raster, own page/mode)
+    this.version(20).stores({
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
+      analyticsSnapshots: 'date',
+      learningCycles: 'id, topicId, phase, weekStart',
+      learningDays: 'id, cycleId, dayNumber',
+      checklistTabs: 'id, topicId, sortOrder',
+      checklistGroups: 'id, topicId, tabId, sortOrder',
+      checklistItems: 'id, groupId, sortOrder',
+      checklistHistory: 'id, topicId, tabId, seq',
+      llmOperationUsages: 'id, topicId, created, operationType',
+      operationLeases: 'id, topicId, expiresAt',
+      pixelDocuments: 'id, name, updatedOn',
+    });
+
+    // Version 21: give every sprite an active palette subset for glyph addressing
+    this.version(21)
+      .stores({
+        topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+        messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+        predefinedPrompts: 'id, name',
+        userSettings: 'id',
+        analyticsSnapshots: 'date',
+        learningCycles: 'id, topicId, phase, weekStart',
+        learningDays: 'id, cycleId, dayNumber',
+        checklistTabs: 'id, topicId, sortOrder',
+        checklistGroups: 'id, topicId, tabId, sortOrder',
+        checklistItems: 'id, groupId, sortOrder',
+        checklistHistory: 'id, topicId, tabId, seq',
+        llmOperationUsages: 'id, topicId, created, operationType',
+        operationLeases: 'id, topicId, expiresAt',
+        pixelDocuments: 'id, name, updatedOn',
+      })
+      .upgrade(async (trans) => {
+        try {
+          const documents = (await trans.table('pixelDocuments').toArray()) as PixelDocument[];
+          for (const document of documents) {
+            const normalized = normalizePixelDocument(document);
+            if (normalized.activeColorIds.length > 0) {
+              await trans
+                .table('pixelDocuments')
+                .update(document.id, { activeColorIds: normalized.activeColorIds });
+            }
+          }
+        } catch (err) {
+          console.error('[migration-error] AthenaDb v21 migration failed', err);
+          throw err;
+        }
+      });
+
+    // Version 22: reusable palette library, so imported .gpl files can be reused
+    this.version(22).stores({
+      topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+      messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+      predefinedPrompts: 'id, name',
+      userSettings: 'id',
+      analyticsSnapshots: 'date',
+      learningCycles: 'id, topicId, phase, weekStart',
+      learningDays: 'id, cycleId, dayNumber',
+      checklistTabs: 'id, topicId, sortOrder',
+      checklistGroups: 'id, topicId, tabId, sortOrder',
+      checklistItems: 'id, groupId, sortOrder',
+      checklistHistory: 'id, topicId, tabId, seq',
+      llmOperationUsages: 'id, topicId, created, operationType',
+      operationLeases: 'id, topicId, expiresAt',
+      pixelDocuments: 'id, name, updatedOn',
+      pixelPalettes: 'id, name, updatedOn',
+    });
+
   }
 
   analyticsSnapshots!: Table<AnalyticsSnapshot, string>;
@@ -382,6 +457,8 @@ class AthenaDatabase extends Dexie {
   checklistGroups!: Table<ChecklistGroup, string>;
   checklistItems!: Table<ChecklistItem, string>;
   checklistHistory!: Table<ChecklistHistoryEntry, string>;
+  pixelDocuments!: Table<PixelDocument, string>;
+  pixelPalettes!: Table<SavedPixelPalette, string>;
 }
 
 export type MessageType = 'user' | 'assistant' | 'system' | 'aiNote';
@@ -558,7 +635,7 @@ export interface AnalyticsSnapshot {
 export interface LlmOperationUsage {
   id: string;
   topicId: string;
-  operationType: 'checklist_generate' | 'checklist_edit';
+  operationType: 'checklist_generate' | 'checklist_edit' | 'pixel_edit' | 'pixel_review';
   model?: string;
   created: string;
   promptTokens: number;

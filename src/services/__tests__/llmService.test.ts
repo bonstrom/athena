@@ -16,7 +16,7 @@ jest.mock('../../components/ModelSelector', () => ({
 jest.mock('../estimateTokens', () => ({ estimateTokens: jest.fn() }));
 jest.mock('../embeddingWorkerFactory', () => ({ createEmbeddingWorker: jest.fn() }));
 
-import { askLlm, askLlmStream, filterMessagesForModel, LlmMessage, orchestrateLlmLoop } from '../llmService';
+import { askLlm, askLlmStream, filterMessagesForModel, findOldestRemovableUnit, LlmMessage, orchestrateLlmLoop } from '../llmService';
 import { calculateCostUSD } from '../../components/ModelSelector';
 import { estimateTokens } from '../estimateTokens';
 import { LlmProvider, UserChatModel } from '../../types/provider';
@@ -2457,5 +2457,40 @@ describe('estimateStreamedTokens — with cost calculation', () => {
     const result = estimateStreamedTokens(model, [user('hi')], 'short answer');
 
     expect(result.costUsd).toBe(2.5);
+  });
+});
+
+describe('findOldestRemovableUnit', () => {
+  const systemMessage: LlmMessage = { role: 'system', content: 'system' };
+  const userMessage: LlmMessage = { role: 'user', content: 'hi' };
+  const toolCallAssistant: LlmMessage = {
+    role: 'assistant',
+    content: null,
+    tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'pixel_edit', arguments: '{}' } }],
+  };
+  const toolResult: LlmMessage = { role: 'tool', tool_call_id: 'call-1', name: 'pixel_edit', content: 'ok' };
+
+  it('takes an assistant tool call together with all of its results', () => {
+    const messages = [systemMessage, toolCallAssistant, toolResult, toolResult, userMessage];
+
+    expect(findOldestRemovableUnit(messages, 10, 0)).toEqual({ start: 1, count: 3 });
+  });
+
+  it('removes a plain message on its own', () => {
+    const messages = [systemMessage, userMessage, userMessage];
+
+    expect(findOldestRemovableUnit(messages, 10, 0)).toEqual({ start: 1, count: 1 });
+  });
+
+  it('refuses to split a tool group to fit the budget', () => {
+    const messages = [systemMessage, toolCallAssistant, toolResult, toolResult, userMessage];
+
+    expect(findOldestRemovableUnit(messages, 2, 0)).toBeNull();
+  });
+
+  it('returns null when only system messages remain', () => {
+    const messages = [systemMessage, { role: 'system', content: 'another' }];
+
+    expect(findOldestRemovableUnit(messages, 10, 0)).toBeNull();
   });
 });

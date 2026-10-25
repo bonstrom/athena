@@ -893,6 +893,37 @@ function getAdapter(provider: LlmProvider, model: ChatModel): IMessageAdapter {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Locate the oldest chunk of context that may be dropped.
+ *
+ * A message and its tool results must move together: removing an assistant
+ * message that carries `tool_calls` while leaving the following `tool` messages
+ * produces a payload that stricter APIs (DeepSeek) reject outright. The whole
+ * group is therefore returned as one unit.
+ */
+export function findOldestRemovableUnit(
+  messages: LlmMessage[],
+  maxRemovable: number,
+  removedSoFar: number,
+): { start: number; count: number } | null {
+  const start = messages.findIndex((message) => message.role !== 'system');
+  if (start === -1) return null;
+
+  const first = messages[start];
+  let end = start;
+  if (first.role === 'assistant' && (first.tool_calls?.length ?? 0) > 0) {
+    while (messages[end + 1]?.role === 'tool') end += 1;
+  }
+
+  const removable = messages
+    .slice(start, end + 1)
+    .filter((message) => message.role !== 'system').length;
+  if (removable === 0) return null;
+  if (removedSoFar + removable > maxRemovable) return null;
+
+  return { start, count: end - start + 1 };
+}
+
 function buildPayload(
   model: ChatModel,
   messages: LlmMessage[],
@@ -938,9 +969,13 @@ function buildPayload(
     if (oldestNonSystemIndex === -1) break; // all system messages — nothing safe to drop
     if (usesResponsesApi(providerConfig, resolvedModel) && !finalMessages.slice(oldestNonSystemIndex + 1).some((message) => message.role === 'user'))
       break;
-    if (removedNonSystem >= maxRemovable) break; // preserve last 2 non-system messages
-    finalMessages.splice(oldestNonSystemIndex, 1);
-    removedNonSystem++;
+    if (removedNonSystem >= maxRemovable) break;
+
+    // Drop the oldest message, or the whole assistant-tool-call group it starts.
+    const unit = findOldestRemovableUnit(finalMessages, maxRemovable, removedNonSystem);
+    if (!unit) break; // preserve last 2 non-system messages
+    finalMessages.splice(unit.start, unit.count);
+    removedNonSystem += unit.count;
   }
 
   const finalTools = [...(tools ?? [])];
@@ -1594,6 +1629,12 @@ export async function orchestrateLlmLoop(
     if (result.toolCalls && result.toolCalls.length > 0) {
       const providerConfig = resolveProvider(resolvedModel);
       const adapter = getAdapter(providerConfig, resolvedModel);
+
+      // Streaming providers occasionally omit ids. A tool result without an id
+      // cannot be paired with its call, which stricter APIs reject.
+      result.toolCalls.forEach((toolCall, index): void => {
+        if (!toolCall.id) toolCall.id = `call_${loopCount}_${index}`;
+      });
 
       // Add assistant tool calls to context
       llmContext.push(adapter.buildAssistantContextMsg(result, providerConfig));

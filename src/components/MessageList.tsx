@@ -150,6 +150,8 @@ const Pane: React.FC<{
 interface Props {
   messages: Message[];
   maxContextMessages: number;
+  /** Overrides the route's topic id when rendered outside /chat/:topicId. */
+  topicId?: string;
   suggestions?: string[];
   isSuggestionsLoading?: boolean;
   onSuggestionSelect?: (suggestion: string) => void;
@@ -158,8 +160,9 @@ interface Props {
 const ROOT_CLASS = css({ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' });
 const FOLLOW_BUTTON_CLASS = css({ display: 'none' });
 
-const MessageList: React.FC<Props> = ({ messages, maxContextMessages, suggestions = [], isSuggestionsLoading = false, onSuggestionSelect }) => {
-  const { topicId } = useParams();
+const MessageList: React.FC<Props> = ({ messages, maxContextMessages, topicId: topicIdProp, suggestions = [], isSuggestionsLoading = false, onSuggestionSelect }) => {
+  const { topicId: routeTopicId } = useParams();
+  const scrollKey = topicIdProp ?? routeTopicId;
   const visibleMessageCount = useChatStore((s) => s.visibleMessageCount);
   const increaseVisibleMessageCount = useChatStore((s) => s.increaseVisibleMessageCount);
   const highlightedMessageId = useChatStore((s) => s.highlightedMessageId);
@@ -308,7 +311,7 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, suggestion
 
   return (
     <ScrollToBottom
-      key={topicId}
+      key={scrollKey}
       className={ROOT_CLASS}
       initialScrollBehavior="auto"
       scrollViewClassName="my-scroll-view"

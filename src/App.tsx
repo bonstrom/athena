@@ -7,6 +7,7 @@ import { useAutoBackup } from './hooks/useAutoBackup';
 import { useEmbeddingBackfill } from './hooks/useEmbeddingBackfill';
 import { useAuthStore } from './store/AuthStore';
 import { useChatStore } from './store/ChatStore';
+import { usePixelStore } from './store/PixelStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { idleDeferredRollup, rebuildAnalyticsOwnership } from './services/analyticsRollupService';
 
@@ -15,6 +16,7 @@ useChatStore.getState().initDefaults();
 const Home = React.lazy(() => import('./pages/Home'));
 const Settings = React.lazy(() => import('./pages/Settings'));
 const ChatView = React.lazy(() => import('./pages/ChatView'));
+const PixelArt = React.lazy(() => import('./pages/PixelArt'));
 
 const RouteFallback: React.FC = () => (
   <Box display="flex" alignItems="center" justifyContent="center" minHeight="100vh">
@@ -33,6 +35,11 @@ const App: React.FC = () => {
     void rebuildAnalyticsOwnership().then(() => idleDeferredRollup());
   }, []);
 
+  useEffect((): void => {
+    // Load sprites once so the pixel tools can be offered without a DB read per turn.
+    if (!usePixelStore.getState().isLoaded) void usePixelStore.getState().loadDocuments();
+  }, []);
+
   return (
     <ErrorBoundary>
       <HashRouter>
@@ -44,6 +51,8 @@ const App: React.FC = () => {
               <Route path="settings" element={<Settings />} />
 
               <Route path="chat/:topicId" element={<ChatView />} />
+
+              <Route path="pixel" element={<PixelArt />} />
             </Route>
           </Routes>
         </Suspense>

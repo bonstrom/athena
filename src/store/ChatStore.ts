@@ -20,6 +20,7 @@ import {
 import { generateImage, generateMusic, speakText } from '../services/mediaService';
 import { stripMarkdown } from '../utils/stripMarkdown';
 import { Message, Attachment, Topic } from '../database/AthenaDb';
+import type { PixelDocument } from '../pixel/types';
 import { athenaDb } from '../database/AthenaDb';
 import { BackupService } from '../services/backupService';
 import { rollupAnalytics } from '../services/analyticsRollupService';
@@ -27,6 +28,8 @@ import { useAuthStore } from './AuthStore';
 import { embeddingService } from '../services/embeddingService';
 import { useCuratorStore } from './CuratorStore';
 import { executeWebSearch, executeFetch, hasWebSearchApiKey } from '../services/webSearchService';
+import { PIXEL_TOOLS, executePixelTool, spriteFocusPrompt } from '../services/pixelTools';
+import { usePixelStore } from './PixelStore';
 
 import {
   LATEX_INSTRUCTIONS,
@@ -254,6 +257,17 @@ function pruneMessagesCache(
 let summarizeBusy = false;
 const summarizePending: (() => void)[] = [];
 
+/**
+ * Sprite whose chat this topic is, if it is a sprite conversation.
+ *
+ * Sprite chats get pixel tools instead of the SVG/artifact guidance: the canvas
+ * already holds the artwork, and asking for markup only wastes output tokens.
+ */
+function spriteBoundToTopic(topicId: string | undefined): PixelDocument | undefined {
+  if (!topicId) return undefined;
+  return usePixelStore.getState().documents.find((document) => document.chatTopicId === topicId);
+}
+
 export const useChatStore = create<ChatStore>((set, get) => ({
   messagesByTopic: {},
   currentTopicId: null,
@@ -354,7 +368,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       webSearchEnabled,
       webSearchAvailable: hasWebSearchApiKey() && selectedModel.supportsTools,
       messageRetrievalEnabled: authStoreState.messageRetrievalEnabled,
-      svgGenerationEnabled: authStoreState.svgGenerationEnabled,
+      svgGenerationEnabled: spriteBoundToTopic(topicId) ? false : authStoreState.svgGenerationEnabled,
       scratchpadRulesTemplate,
       predefinedPrompts: authStoreState.predefinedPrompts,
       selectedPromptIds: topic?.selectedPromptIds ?? [],
@@ -805,6 +819,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       };
     });
 
+    // Pixel tools and sprite focus only exist in a sprite's own conversation,
+    // so ordinary chats keep their original tool list and prompt.
+    const spriteForTopic = spriteBoundToTopic(refreshedTopic.id);
+
     // Shared system prompts — identical to what the context inspector shows
     const systemEntries = await assembleChatSystemEntries({
       topic: refreshedTopic,
@@ -812,7 +830,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       webSearchEnabled: get().webSearchEnabled,
       webSearchAvailable: hasWebSearchApiKey() && effectiveModel.supportsTools,
       messageRetrievalEnabled: useAuthStore.getState().messageRetrievalEnabled,
-      svgGenerationEnabled: useAuthStore.getState().svgGenerationEnabled,
+      svgGenerationEnabled: spriteForTopic ? false : useAuthStore.getState().svgGenerationEnabled,
       scratchpadRulesTemplate: useAuthStore.getState().scratchpadRules,
       predefinedPrompts: useAuthStore.getState().predefinedPrompts,
       selectedPromptIds: refreshedTopic.selectedPromptIds ?? [],
@@ -824,6 +842,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
       return { role: 'system', content: e.content };
     });
+
+    if (spriteForTopic) {
+      systems.push({ role: 'system', content: spriteFocusPrompt(spriteForTopic) });
+    }
 
     llmContext.unshift(...systems);
 
@@ -1207,6 +1229,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               return `Error running fetch_url: ${e instanceof Error ? e.message : String(e)}`;
             }
           }
+          if (toolName.startsWith('pixel_')) {
+            return executePixelTool(toolName, argsJson, { defaultDocumentId: spriteForTopic?.id });
+          }
           return 'Tool not implemented.';
         },
         onToolLogCallback,
@@ -1218,6 +1243,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           }
           if (get().webSearchEnabled && hasWebSearchApiKey() && effectiveModel.supportsTools) {
             tools.push(WEB_SEARCH_TOOL, FETCH_URL_TOOL);
+          }
+          if (effectiveModel.supportsTools && spriteForTopic) {
+            tools.push(...PIXEL_TOOLS);
           }
           return tools;
         })(),
