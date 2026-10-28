@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 const mockMermaidRender = jest.fn<Promise<{ svg: string }>, [string, string]>().mockResolvedValue({ svg: '<svg></svg>' });
 const mockMermaidInitialize = jest.fn();
@@ -183,6 +183,40 @@ describe('MarkdownWithCode — mermaid', () => {
     expect(container.innerHTML).not.toContain('onerror');
   });
 
+  it('REN-02 blocks unapproved external resources in Mermaid output', async (): Promise<void> => {
+    mockMermaidRender.mockResolvedValue({
+      svg: '<svg data-testid="external-mermaid"><foreignObject><img src="https://render-review.invalid/mermaid.png"/></foreignObject></svg>',
+    });
+    const { container } = render(<MarkdownWithCode>{'```mermaid\nflowchart TD\n A["external image"]\n```'}</MarkdownWithCode>);
+
+    expect(await screen.findByTestId('external-mermaid')).toBeInTheDocument();
+    expect(container.innerHTML).not.toContain('https://render-review.invalid/');
+  });
+
+  it('REN-02 rejects resource-capable Mermaid definitions before render', async (): Promise<void> => {
+    render(
+      <MarkdownWithCode>
+        {'```mermaid\nflowchart TD\n A["<img src=\'https://render-review.invalid/tracker.png\'>"]\n```'}
+      </MarkdownWithCode>,
+    );
+
+    expect(await screen.findByText('External resources are not allowed in diagrams.')).toBeInTheDocument();
+    expect(mockMermaidRender).not.toHaveBeenCalled();
+  });
+
+  it('REN-02 decodes entity-obfuscated image inputs before Mermaid renders', async (): Promise<void> => {
+    render(
+      <MarkdownWithCode>
+        {
+          '```mermaid\nflowchart TD\n A["<input type=\'image\' src=\'https:&sol;&sol;render-review.invalid/tracker.png\'>"]\n```'
+        }
+      </MarkdownWithCode>,
+    );
+
+    expect(await screen.findByText('External resources are not allowed in diagrams.')).toBeInTheDocument();
+    expect(mockMermaidRender).not.toHaveBeenCalled();
+  });
+
   it('calls mermaid render with diagram content', async () => {
     render(<MarkdownWithCode>{'```mermaid\nflowchart LR\n    X --> Y\n```'}</MarkdownWithCode>);
 
@@ -211,6 +245,49 @@ describe('MarkdownWithCode — mermaid', () => {
     await waitFor(() => {
       expect(screen.getByText(/Parse error/)).toBeInTheDocument();
     });
+  });
+
+  it('REN-03 removes temporary Mermaid DOM after a rejected render and unmount', async (): Promise<void> => {
+    const temporary = document.createElement('div');
+    temporary.setAttribute('data-render-review-orphan', 'true');
+    mockMermaidRender.mockImplementationOnce((id: string): Promise<{ svg: string }> => {
+      temporary.id = `d${id}`;
+      temporary.innerHTML = '<svg><text>Unowned error diagram</text></svg>';
+      document.body.appendChild(temporary);
+      return Promise.reject(new Error('Parse error: invalid diagram'));
+    });
+    const { unmount } = render(<MarkdownWithCode>{'```mermaid\nflowchart TD\n A[\n```'}</MarkdownWithCode>);
+
+    try {
+      expect(await screen.findByText('Parse error: invalid diagram')).toBeInTheDocument();
+      unmount();
+
+      expect(document.querySelector('[data-render-review-orphan]')).toBeNull();
+    } finally {
+      temporary.remove();
+    }
+  });
+
+  it('REN-control ignores a stale Mermaid result after the source changes', async (): Promise<void> => {
+    let resolveOld!: (result: { svg: string }) => void;
+    const oldRender = new Promise<{ svg: string }>((resolve) => {
+      resolveOld = resolve;
+    });
+    mockMermaidRender.mockReturnValueOnce(oldRender).mockResolvedValueOnce({ svg: '<svg data-testid="current-diagram"></svg>' });
+    const { rerender } = render(<MarkdownWithCode>{'```mermaid\nflowchart TD\n A --> B\n```'}</MarkdownWithCode>);
+    await waitFor(() => {
+      expect(mockMermaidRender).toHaveBeenCalledTimes(1);
+    });
+
+    rerender(<MarkdownWithCode>{'```mermaid\nflowchart TD\n C --> D\n```'}</MarkdownWithCode>);
+    expect(await screen.findByTestId('current-diagram')).toBeInTheDocument();
+    await act(async (): Promise<void> => {
+      resolveOld({ svg: '<svg data-testid="stale-diagram"></svg>' });
+      await oldRender;
+    });
+
+    expect(screen.queryByTestId('stale-diagram')).not.toBeInTheDocument();
+    expect(screen.getByTestId('current-diagram')).toBeInTheDocument();
   });
 
   it('initializes mermaid with light theme', async () => {
@@ -353,6 +430,48 @@ Some text after.`;
 
     const innerHTML = container.innerHTML;
     expect(innerHTML).not.toContain('onload');
+  });
+
+  it('REN-01 does not insert document-wide CSS from an untrusted SVG fence', (): void => {
+    const { container } = render(
+      <MarkdownWithCode>{'```svg\n<svg><style>body { display: none; }</style><rect width="10" height="10"/></svg>\n```'}</MarkdownWithCode>,
+    );
+
+    expect(container.querySelector('svg style')?.textContent ?? '').not.toContain('body');
+  });
+
+  it.each([
+    ['SVG image', '<svg data-testid="resource-svg"><image href="https://render-review.invalid/pixel.svg"/></svg>'],
+    ['HTML image in foreignObject', '<svg data-testid="resource-svg"><foreignObject><img src="https://render-review.invalid/pixel.png"/></foreignObject></svg>'],
+    ['srcset image', '<svg data-testid="resource-svg"><foreignObject><img srcset="https://render-review.invalid/tracker.png 1x"/></foreignObject></svg>'],
+    ['image input', '<svg data-testid="resource-svg"><foreignObject><input type="image" src="https://render-review.invalid/input.png"/></foreignObject></svg>'],
+    ['feImage', '<svg data-testid="resource-svg"><feImage href="https://render-review.invalid/feimage.png"/></svg>'],
+    ['CSS import', '<svg data-testid="resource-svg"><style>@import url("https://render-review.invalid/style.css");</style></svg>'],
+  ])('REN-02 blocks an unapproved external resource in %s', (_kind: string, svg: string): void => {
+    const { container } = render(<MarkdownWithCode>{'```svg\n' + svg + '\n```'}</MarkdownWithCode>);
+
+    expect(screen.getByTestId('resource-svg')).toBeInTheDocument();
+    expect(container.innerHTML).not.toContain('https://render-review.invalid/');
+  });
+
+  it.each([
+    ['backslash', '<svg data-testid="resource-svg"><image href="https:\\\\render-review.invalid\\\\pixel.svg"/></svg>'],
+    ['entity', '<svg data-testid="resource-svg"><image href="https:&sol;&sol;render-review.invalid/pixel.svg"/></svg>'],
+    ['embedded tab', '<svg data-testid="resource-svg"><image href="https:\t//render-review.invalid/pixel.svg"/></svg>'],
+  ])('REN-02 blocks a %s-normalized external SVG image URL', (_kind: string, svg: string): void => {
+    const { container } = render(<MarkdownWithCode>{'```svg\n' + svg + '\n```'}</MarkdownWithCode>);
+
+    expect(screen.getByTestId('resource-svg')).toBeInTheDocument();
+    expect(container.innerHTML).not.toContain('render-review.invalid');
+  });
+
+  it('REN-control strips JavaScript SVG links and SMIL href retargeting', (): void => {
+    const { container } = render(
+      <MarkdownWithCode>{'```svg\n<svg><a href="javascript:alert(1)"><text>open</text><animate attributeName="href" values="javascript:alert(1)"/></a></svg>\n```'}</MarkdownWithCode>,
+    );
+
+    expect(container.querySelector('svg a')?.getAttribute('href')).toBeNull();
+    expect(container.querySelector('svg animate')?.getAttribute('attributeName') ?? null).toBeNull();
   });
 
   it('renders an Edit button and calls onEditSvg with the SVG source', () => {

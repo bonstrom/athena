@@ -16,7 +16,14 @@ jest.mock('../../components/ModelSelector', () => ({
 jest.mock('../estimateTokens', () => ({ estimateTokens: jest.fn() }));
 jest.mock('../embeddingWorkerFactory', () => ({ createEmbeddingWorker: jest.fn() }));
 
-import { askLlm, askLlmStream, filterMessagesForModel, findOldestRemovableUnit, LlmMessage, orchestrateLlmLoop } from '../llmService';
+import {
+  askLlm,
+  askLlmStream,
+  filterMessagesForModel,
+  findOldestRemovableUnit,
+  LlmMessage,
+  orchestrateLlmLoop,
+} from '../llmService';
 import { calculateCostUSD } from '../../components/ModelSelector';
 import { estimateTokens } from '../estimateTokens';
 import { LlmProvider, UserChatModel } from '../../types/provider';
@@ -55,7 +62,9 @@ describe('GPT-6.1 Sol Responses API', () => {
   };
   const reasoning = { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'opaque' };
   const call = { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'edit_item', arguments: '{}' };
-  const finalOutput = [{ type: 'message', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text: 'Updated.' }] }];
+  const finalOutput = [
+    { type: 'message', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text: 'Updated.' }] },
+  ];
   const response = (output: unknown[]): Record<string, unknown> => ({
     id: 'resp_1',
     model: model.apiModelId,
@@ -138,7 +147,12 @@ describe('GPT-6.1 Sol Responses API', () => {
     expect(first).not.toHaveProperty('reasoning_effort');
     const second: unknown = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
     expect(second).toMatchObject({
-      input: [user('Check the task'), reasoning, call, { type: 'function_call_output', call_id: 'call_1', output: 'success' }],
+      input: [
+        user('Check the task'),
+        reasoning,
+        call,
+        { type: 'function_call_output', call_id: 'call_1', output: 'success' },
+      ],
     });
     expect(execute).toHaveBeenCalledWith('edit_item', '{}', 1);
     expect(result.finalContent).toBe('Updated.');
@@ -179,7 +193,17 @@ describe('GPT-6.1 Sol Responses API', () => {
       void token;
     });
     const execute = jest.fn((): Promise<string> => Promise.resolve('success'));
-    const result = await orchestrateLlmLoop(streamingModel, 0.2, [user('Check')], onToken, onReasoning, undefined, execute, undefined, [tool]);
+    const result = await orchestrateLlmLoop(
+      streamingModel,
+      0.2,
+      [user('Check')],
+      onToken,
+      onReasoning,
+      undefined,
+      execute,
+      undefined,
+      [tool],
+    );
     expect(onToken).toHaveBeenCalledTimes(1);
     expect(onToken).toHaveBeenCalledWith('Updated.');
     expect(onReasoning).toHaveBeenCalledWith('Plan');
@@ -238,7 +262,9 @@ describe('GPT-6.1 Sol Responses API', () => {
   });
 
   it('rejects a failed response stream', async () => {
-    mockFetch.mockResolvedValueOnce(streamedResponse([{ type: 'response.failed', response: { error: { message: 'Tool request failed' } } }]));
+    mockFetch.mockResolvedValueOnce(
+      streamedResponse([{ type: 'response.failed', response: { error: { message: 'Tool request failed' } } }]),
+    );
     await expect(askLlmStream(model, 0.2, [user('Check')])).rejects.toThrow('Tool request failed');
   });
 
@@ -377,6 +403,181 @@ describe('orchestrateLlmLoop — tool calls', () => {
     consoleWarnSpy.mockRestore();
   });
 
+  it('STR-06 rejects cancellation while a non-streaming response body completes', async () => {
+    const controller = new AbortController();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue({
+      ok: true,
+      json: (): Promise<unknown> => {
+        controller.abort();
+        return Promise.resolve({
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+          choices: [{ message: { content: 'Canceled reply' }, finish_reason: 'stop' }],
+        });
+      },
+    } as Response);
+    try {
+      await expect(askLlm(model, 0.7, [user('Hi')], undefined, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it.each(['throw', 'return'] as const)(
+    'TOOL-01 stops dispatching after cancellation when the first tool callbacks %s',
+    async (outcome) => {
+      const controller = new AbortController();
+      const originalFetch = globalThis.fetch;
+      const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+      mockFetch
+        .mockResolvedValueOnce(
+          jsonResponse({
+            usage: { prompt_tokens: 1, completion_tokens: 1 },
+            choices: [
+              {
+                message: {
+                  content: '',
+                  tool_calls: [
+                    { id: 'first', type: 'function', function: { name: 'read_messages', arguments: '{}' } },
+                    { id: 'second', type: 'function', function: { name: 'mutate_document', arguments: '{}' } },
+                  ],
+                },
+                finish_reason: 'tool_calls',
+              },
+            ],
+          }),
+        )
+        .mockRejectedValue(new DOMException('Stopped', 'AbortError'));
+      globalThis.fetch = mockFetch;
+      const execute = jest.fn((): Promise<string> => {
+        controller.abort();
+        if (outcome === 'throw') return Promise.reject(new DOMException('Stopped', 'AbortError'));
+        return Promise.resolve('Error: stopped');
+      });
+      try {
+        await orchestrateLlmLoop(
+          model,
+          0.7,
+          [user('Edit')],
+          undefined,
+          undefined,
+          undefined,
+          execute,
+          undefined,
+          undefined,
+          controller.signal,
+        ).catch((): undefined => undefined);
+        expect(execute).toHaveBeenCalledTimes(1);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    },
+  );
+
+  it.each([false, true])('TOOL-02 acknowledges only executed scratchpad updates (malformed: %s)', async (malformed) => {
+    const originalFetch = globalThis.fetch;
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    const calls = malformed
+      ? [{ id: 'invalid', type: 'function', function: { name: 'update_scratchpad', arguments: '{not-json' } }]
+      : ['A', 'B'].map((content) => ({
+          id: content,
+          type: 'function',
+          function: { name: 'update_scratchpad', arguments: JSON.stringify({ content, action: 'append' }) },
+        }));
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+          choices: [{ message: { content: '', tool_calls: calls }, finish_reason: 'tool_calls' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+          choices: [{ message: { content: 'Done' }, finish_reason: 'stop' }],
+        }),
+      );
+    globalThis.fetch = mockFetch;
+    const update = jest.fn((): Promise<void> => Promise.resolve());
+    try {
+      const result = await orchestrateLlmLoop(model, 0.7, [user('Remember')], undefined, undefined, update);
+      if (malformed) {
+        expect(update).not.toHaveBeenCalled();
+        expect(result.toolLoopTrace[0].toolResults[0].result).not.toBe('Updated.');
+      } else {
+        expect(update).toHaveBeenNthCalledWith(1, 'A', 'append');
+        expect(update).toHaveBeenNthCalledWith(2, 'B', 'append');
+        expect(result.toolLoopTrace[0].toolResults.map(({ toolCallId }) => toolCallId)).toEqual(['A', 'B']);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('TOOL-03 preserves Anthropic call/result pairing under budget trimming', async () => {
+    mockAuthGetState.mockReturnValue({ customInstructions: '', maxContextTokens: 4098 });
+    mockEstimateTokens.mockImplementation((messages): ReturnType<typeof estimateTokens> => {
+      const promptTokens = messages.filter((message) => message.role !== 'system').length;
+      return { promptTokens, completionTokens: 0, totalTokens: promptTokens };
+    });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => ({ ...provider, messageFormat: 'anthropic' }),
+    });
+    const originalFetch = globalThis.fetch;
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    mockFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          usage: { input_tokens: 1, output_tokens: 1 },
+          content: [
+            { type: 'tool_use', id: 'call-1', name: 'read_messages', input: { id: 'one' } },
+            { type: 'tool_use', id: 'call-2', name: 'read_messages', input: { id: 'two' } },
+          ],
+          stop_reason: 'tool_use',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          usage: { input_tokens: 1, output_tokens: 1 },
+          content: [{ type: 'text', text: 'Done' }],
+          stop_reason: 'end_turn',
+        }),
+      );
+    globalThis.fetch = mockFetch;
+    try {
+      await orchestrateLlmLoop(
+        model,
+        0.7,
+        [user('Read')],
+        undefined,
+        undefined,
+        undefined,
+        (): Promise<string> => Promise.resolve('Result'),
+      );
+      const body: unknown = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
+      if (!body || typeof body !== 'object' || !('messages' in body) || !Array.isArray(body.messages))
+        throw new Error('Missing wire messages');
+      const messages: unknown[] = body.messages;
+      const precedingCalls = new Set<string>();
+      for (const message of messages) {
+        if (!message || typeof message !== 'object' || !('content' in message) || !Array.isArray(message.content))
+          continue;
+        const blocks: unknown[] = message.content;
+        for (const block of blocks) {
+          if (!block || typeof block !== 'object' || !('type' in block)) continue;
+          if (block.type === 'tool_use' && 'id' in block && typeof block.id === 'string') precedingCalls.add(block.id);
+          if (block.type === 'tool_result' && 'tool_use_id' in block)
+            expect(precedingCalls.has(String(block.tool_use_id))).toBe(true);
+        }
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('executes tool calls and includes tool results in loop trace', async () => {
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
@@ -422,7 +623,15 @@ describe('orchestrateLlmLoop — tool calls', () => {
 
     const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('Tool output payload'));
 
-    const result = await orchestrateLlmLoop(model, 0.7, [user('What did I say earlier?')], undefined, undefined, undefined, onExecuteTool);
+    const result = await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('What did I say earlier?')],
+      undefined,
+      undefined,
+      undefined,
+      onExecuteTool,
+    );
 
     expect(onExecuteTool).toHaveBeenCalledWith('read_messages', '{"messages":[{"messageId":"abc"}]}', 1);
     expect(result.finalContent).toBe('Final answer after tool result');
@@ -591,7 +800,15 @@ describe('orchestrateLlmLoop — tool calls', () => {
 
     const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('shared tool result'));
 
-    const result = await orchestrateLlmLoop(model, 0.7, [user('Read message twice')], undefined, undefined, undefined, onExecuteTool);
+    const result = await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('Read message twice')],
+      undefined,
+      undefined,
+      undefined,
+      onExecuteTool,
+    );
 
     expect(onExecuteTool).toHaveBeenCalledTimes(1);
     expect(result.toolLoopTrace).toHaveLength(1);
@@ -646,7 +863,15 @@ describe('orchestrateLlmLoop — tool calls', () => {
     const onScratchpadUpdate = jest.fn((): Promise<void> => Promise.resolve());
     const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('should not be called for scratchpad'));
 
-    const result = await orchestrateLlmLoop(model, 0.7, [user('Remember this note')], undefined, undefined, onScratchpadUpdate, onExecuteTool);
+    const result = await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('Remember this note')],
+      undefined,
+      undefined,
+      onScratchpadUpdate,
+      onExecuteTool,
+    );
 
     expect(onScratchpadUpdate).toHaveBeenCalledWith('remember this', 'append');
     expect(onExecuteTool).not.toHaveBeenCalled();
@@ -754,7 +979,15 @@ describe('orchestrateLlmLoop — tool calls', () => {
     mockFetch.mockResolvedValue(toolResponse);
 
     const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve('loop result'));
-    const result = await orchestrateLlmLoop(model, 0.7, [user('Loop test')], undefined, undefined, undefined, onExecuteTool);
+    const result = await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('Loop test')],
+      undefined,
+      undefined,
+      undefined,
+      onExecuteTool,
+    );
 
     expect(mockFetch).toHaveBeenCalledTimes(11);
     expect(result.toolLoopTrace).toHaveLength(10);
@@ -800,7 +1033,15 @@ describe('orchestrateLlmLoop — tool calls', () => {
     const oversizedResult = 'X'.repeat(10_000);
     const onExecuteTool = jest.fn((): Promise<string> => Promise.resolve(oversizedResult));
 
-    const result = await orchestrateLlmLoop(model, 0.7, [user('Get large result')], undefined, undefined, undefined, onExecuteTool);
+    const result = await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('Get large result')],
+      undefined,
+      undefined,
+      undefined,
+      onExecuteTool,
+    );
     const tracedResult = result.toolLoopTrace[0].toolResults[0].result;
 
     expect(tracedResult).toContain('[TRUNCATED: result exceeded 8000 chars]');
@@ -848,10 +1089,21 @@ describe('orchestrateLlmLoop — tool calls', () => {
       void log;
     });
 
-    await orchestrateLlmLoop(model, 0.7, [user('Show logs')], undefined, undefined, undefined, onExecuteTool, onToolLog);
+    await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('Show logs')],
+      undefined,
+      undefined,
+      undefined,
+      onExecuteTool,
+      onToolLog,
+    );
 
     expect(onToolLog).toHaveBeenCalledWith(expect.stringContaining('**Executing Tool**: `read_messages`'));
-    expect(onToolLog).toHaveBeenCalledWith(expect.stringContaining('... *(display truncated — full content sent to LLM)*'));
+    expect(onToolLog).toHaveBeenCalledWith(
+      expect.stringContaining('... *(display truncated — full content sent to LLM)*'),
+    );
   });
 
   it('captures tool execution errors and continues the loop', async () => {
@@ -892,7 +1144,15 @@ describe('orchestrateLlmLoop — tool calls', () => {
 
     const onExecuteTool = jest.fn((): Promise<string> => Promise.reject(new Error('tool failed')));
 
-    const result = await orchestrateLlmLoop(model, 0.7, [user('Trigger tool error')], undefined, undefined, undefined, onExecuteTool);
+    const result = await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('Trigger tool error')],
+      undefined,
+      undefined,
+      undefined,
+      onExecuteTool,
+    );
 
     expect(onExecuteTool).toHaveBeenCalledTimes(1);
     expect(result.finalContent).toBe('fallback answer');
@@ -938,7 +1198,14 @@ describe('orchestrateLlmLoop — tool calls', () => {
 
     const onScratchpadUpdate = jest.fn((): Promise<void> => Promise.resolve());
 
-    const result = await orchestrateLlmLoop(model, 0.7, [user('bad scratchpad args test')], undefined, undefined, onScratchpadUpdate);
+    const result = await orchestrateLlmLoop(
+      model,
+      0.7,
+      [user('bad scratchpad args test')],
+      undefined,
+      undefined,
+      onScratchpadUpdate,
+    );
 
     expect(onScratchpadUpdate).not.toHaveBeenCalled();
     expect(result.finalContent).toBe('continue after bad args');
@@ -981,7 +1248,9 @@ describe('orchestrateLlmLoop — tool calls', () => {
     );
 
     expect(onScratchpadUpdate).toHaveBeenCalledWith('store this memory', 'replace');
-    expect(onToolLog).toHaveBeenCalledWith(expect.stringContaining('**Executing Tool**: `update_scratchpad` *(via fallback syntax)*'));
+    expect(onToolLog).toHaveBeenCalledWith(
+      expect.stringContaining('**Executing Tool**: `update_scratchpad` *(via fallback syntax)*'),
+    );
     expect(onToolLog).toHaveBeenCalledWith(expect.stringContaining('"action": "replace"'));
     expect(result.finalContent).toBe('Visible answer');
     expect(result.lastResult.aiNote).toBe('store this memory');
@@ -1181,6 +1450,140 @@ describe('askLlmStream — streaming API calls', () => {
     mockEstimateTokens.mockReturnValue({ promptTokens: 50, completionTokens: 75, totalTokens: 125 });
   });
 
+  it('STR-03 preserves UTF-8 text across every byte split', async () => {
+    const text = 'caf\u00e9 \u4e2d\u6587 \ud83d\ude80';
+    const bytes = new TextEncoder().encode(
+      `data: ${JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+    );
+    const originalFetch = globalThis.fetch;
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    globalThis.fetch = mockFetch;
+    try {
+      for (let split = 1; split < bytes.length; split++) {
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          body: new ReadableStream<Uint8Array>({
+            start(controller): void {
+              controller.enqueue(bytes.slice(0, split));
+              controller.enqueue(bytes.slice(split));
+              controller.close();
+            },
+          }),
+        } as Response);
+        const onToken = jest.fn((token: string): void => {
+          void token;
+        });
+        const result = await askLlmStream(model, 0.7, [user('Hi')], onToken);
+        expect({ split, content: result.content }).toEqual({ split, content: text });
+        expect(onToken.mock.calls.map(([token]) => token).join('')).toBe(text);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it.each(['openai', 'anthropic'] as const)('STR-04 rejects premature EOF for %s streams', async (messageFormat) => {
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => ({ ...provider, messageFormat }),
+    });
+    const delta =
+      messageFormat === 'openai'
+        ? { choices: [{ delta: { content: 'partial' } }] }
+        : { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'partial' } };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue({
+      ok: true,
+      body: new ReadableStream<Uint8Array>({
+        start(controller): void {
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(delta)}\n\n`));
+          controller.close();
+        },
+      }),
+    } as Response);
+    try {
+      await expect(
+        askLlmStream(
+          model,
+          0.7,
+          [user('Hi')],
+          jest.fn((token: string): void => {
+            void token;
+          }),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it.each(['request', 'orchestration'] as const)(
+    'STR-06 rejects cancellation when a pending stream read resolves as EOF (%s)',
+    async (path) => {
+      const streamingModel = { ...model, streaming: true };
+      mockProviderGetState.mockReturnValue({
+        models: [streamingModel],
+        getAvailableModels: (): UserChatModel[] => [streamingModel],
+        getProviderForModel: (): LlmProvider => provider,
+      });
+      const originalFetch = globalThis.fetch;
+      const abortController = new AbortController();
+      let reading!: () => void;
+      const pendingRead = new Promise<void>((resolve) => {
+        reading = resolve;
+      });
+      let pulls = 0;
+      const cancelled = jest.fn((): void => undefined);
+      const stream = new ReadableStream<Uint8Array>(
+        {
+          pull(controller): void {
+            if (pulls++ === 0) {
+              controller.enqueue(
+                new TextEncoder().encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'),
+              );
+            } else {
+              reading();
+            }
+          },
+          cancel: cancelled,
+        },
+        { highWaterMark: 0 },
+      );
+      globalThis.fetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>().mockResolvedValue({
+        ok: true,
+        body: stream,
+      } as Response);
+      const onToken = jest.fn();
+      try {
+        const request =
+          path === 'request'
+            ? askLlmStream(streamingModel, 0.7, [user('Hi')], onToken, undefined, undefined, abortController.signal)
+            : orchestrateLlmLoop(
+                streamingModel,
+                0.7,
+                [user('Hi')],
+                onToken,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                abortController.signal,
+              );
+        const outcome = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+        await pendingRead;
+        expect(onToken).toHaveBeenCalledWith('partial');
+        abortController.abort();
+        await outcome;
+        expect(cancelled).toHaveBeenCalledTimes(1);
+        expect(stream.locked).toBe(false);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    },
+  );
+
   it('streams tokens, assembles the final content, and uses usage from the stream', async () => {
     const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
     Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
@@ -1279,7 +1682,11 @@ describe('askLlmStream — streaming API calls', () => {
     const { askLlmStream } = await import('../llmService');
     const result = await askLlmStream(model, 0.7, [user('Hi')], onToken);
 
-    expect(consoleWarnSpy).not.toHaveBeenCalledWith(expect.stringContaining('Invalid stream chunk'), expect.anything(), expect.anything());
+    expect(consoleWarnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('Invalid stream chunk'),
+      expect.anything(),
+      expect.anything(),
+    );
     expect(onToken).toHaveBeenNthCalledWith(1, 'Hello ');
     expect(onToken).toHaveBeenNthCalledWith(2, 'world');
     expect(result.content).toBe('Hello world');
@@ -2150,7 +2557,9 @@ describe('getDeepSeekBalance', () => {
       json: (): Promise<unknown> =>
         Promise.resolve({
           is_available: true,
-          balance_infos: [{ currency: 'USD', total_balance: '12.34', granted_balance: '0', topped_up_balance: '12.34' }],
+          balance_infos: [
+            { currency: 'USD', total_balance: '12.34', granted_balance: '0', topped_up_balance: '12.34' },
+          ],
         }),
     } as unknown as Response);
 
@@ -2204,8 +2613,8 @@ describe('getDeepSeekBalance', () => {
   });
 
   it('logs errors only in development when fetch throws', async () => {
-    const previousNodeEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'development';
+    const previousEnv = process.env;
+    process.env = { ...previousEnv, NODE_ENV: 'development' };
 
     const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation((...args: unknown[]): void => {
       void args;
@@ -2215,14 +2624,16 @@ describe('getDeepSeekBalance', () => {
 
     mockFetch.mockRejectedValueOnce(new Error('timeout'));
 
-    const { getDeepSeekBalance } = await import('../llmService');
-    const result = await getDeepSeekBalance();
+    try {
+      const { getDeepSeekBalance } = await import('../llmService');
+      const result = await getDeepSeekBalance();
 
-    expect(result).toBeNull();
-    expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch DeepSeek balance:', expect.any(Error));
-
-    consoleErrorSpy.mockRestore();
-    process.env.NODE_ENV = previousNodeEnv;
+      expect(result).toBeNull();
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to fetch DeepSeek balance:', expect.any(Error));
+    } finally {
+      consoleErrorSpy.mockRestore();
+      process.env = previousEnv;
+    }
   });
 });
 describe('askLlm — temperature resolution', () => {
@@ -2298,7 +2709,11 @@ describe('askLlm — temperature resolution', () => {
 
     const mockStream = new ReadableStream({
       start(controller): void {
-        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"streaming response"}}]}\n\ndata: [DONE]\n\n'));
+        controller.enqueue(
+          new TextEncoder().encode(
+            'data: {"choices":[{"delta":{"content":"streaming response"}}]}\n\ndata: [DONE]\n\n',
+          ),
+        );
         controller.close();
       },
     });
@@ -2342,7 +2757,10 @@ describe('generateMinimaxImage', () => {
     const result = await generateMinimaxImage('a cute cat');
 
     expect(result.base64).toBe('base64-image-data-here');
-    expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('image_generation'), expect.objectContaining({ method: 'POST' }));
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('image_generation'),
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('throws when API returns an error', async () => {
@@ -2386,7 +2804,10 @@ describe('generateMinimaxMusic', () => {
     const result = await generateMinimaxMusic('jazz melody', 'lyrics here');
 
     expect(result.audioHex).toBe('deadbeef1234');
-    expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('music'), expect.objectContaining({ method: 'POST' }));
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('music'),
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('throws when API returns an error', async () => {
@@ -2438,7 +2859,9 @@ describe('generateMinimaxSpeech', () => {
     const { generateMinimaxSpeech } = await import('../llmService');
     await generateMinimaxSpeech('Hello', 'English_Graceful_Lady');
 
-    const callBody = JSON.parse(mockFetch.mock.calls[0][1].body as string) as {
+    const requestBody = mockFetch.mock.calls[0][1]?.body;
+    if (typeof requestBody !== 'string') throw new Error('Expected a JSON request body');
+    const callBody = JSON.parse(requestBody) as {
       voice_setting: { voice_id: string; speed: number; vol: number };
     };
     expect(callBody.voice_setting.voice_id).toBe('English_Graceful_Lady');
@@ -2489,7 +2912,7 @@ describe('findOldestRemovableUnit', () => {
   });
 
   it('returns null when only system messages remain', () => {
-    const messages = [systemMessage, { role: 'system', content: 'another' }];
+    const messages: LlmMessage[] = [systemMessage, { role: 'system', content: 'another' }];
 
     expect(findOldestRemovableUnit(messages, 10, 0)).toBeNull();
   });

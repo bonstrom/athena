@@ -22,6 +22,8 @@ interface AuthStoreSlice {
   backupInterval: number;
   themeMode: 'light' | 'dark';
   colorTheme: string;
+  checklistCelebrations: boolean;
+  setChecklistCelebrations: (enabled: boolean) => void;
   ragEnabled: boolean;
   maxContextTokens: number;
   messageRetrievalEnabled: boolean;
@@ -79,6 +81,17 @@ describe('AuthStore', () => {
     const store = loadAuthStore();
 
     expect(store.getState().ragEnabled).toBe(false);
+  });
+
+  it('defaults celebrations on and persists the opt-out across store reloads', () => {
+    const store = loadAuthStore();
+    expect(store.getState().checklistCelebrations).toBe(true);
+    store.getState().setChecklistCelebrations(false);
+    expect(localStorage.getItem('checklistCelebrations')).toBe('false');
+    expect(loadAuthStore().getState().checklistCelebrations).toBe(false);
+    store.getState().clearAuth();
+    expect(store.getState().checklistCelebrations).toBe(true);
+    expect(localStorage.getItem('checklistCelebrations')).toBeNull();
   });
 
   it('uses persisted ragEnabled=true when explicitly stored', () => {

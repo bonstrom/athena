@@ -90,6 +90,7 @@ function bucketSize(length: number): string {
 
 export async function computeLocalStats(): Promise<AnalyticsStats> {
   const messages = await athenaDb.messages.toArray();
+  const operationUsages = await athenaDb.llmOperationUsages.toArray();
   const topics = await athenaDb.topics.toArray();
 
   const stats: AnalyticsStats = {
@@ -172,6 +173,17 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
     if (!stats.lastMessageAt || m.created > stats.lastMessageAt) {
       stats.lastMessageAt = m.created;
     }
+  }
+
+  // Non-message operations are persisted separately. They contribute usage,
+  // but must not inflate chat-message/type counts or size distributions.
+  for (const operation of operationUsages) {
+    stats.totalPromptTokens += operation.promptTokens;
+    stats.totalCompletionTokens += operation.completionTokens;
+    stats.totalCachedTokens += operation.cachedTokens ?? 0;
+    stats.totalCacheCreationTokens += operation.cacheCreationTokens ?? 0;
+    stats.totalCost += operation.totalCost;
+    stats.totalWebSearches += operation.searchCount ?? 0;
   }
 
   for (const t of topics) {
@@ -341,6 +353,7 @@ export async function computeToolUsageBreakdown(): Promise<ToolUsageRow[]> {
 
 async function computeProviderBreakdownFromMessages(): Promise<ProviderBreakdown[]> {
   const messages = await athenaDb.messages.toArray();
+  const operationUsages = await athenaDb.llmOperationUsages.toArray();
 
   const merged: Record<string, { messages: number; cost: number; tokens: number }> = {};
   for (const m of messages) {
@@ -352,6 +365,14 @@ async function computeProviderBreakdownFromMessages(): Promise<ProviderBreakdown
     merged[name].cost += m.totalCost;
     merged[name].tokens += m.promptTokens + m.completionTokens;
   }
+  for (const operation of operationUsages) {
+    const name = resolveProviderName(operation.model);
+    if (name === null) continue;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    merged[name] = merged[name] ?? { messages: 0, cost: 0, tokens: 0 };
+    merged[name].cost += operation.totalCost;
+    merged[name].tokens += operation.promptTokens + operation.completionTokens;
+  }
 
   return Object.entries(merged)
     .map(([provider, stats]) => ({ provider, ...stats }))
@@ -361,16 +382,17 @@ async function computeProviderBreakdownFromMessages(): Promise<ProviderBreakdown
 
 async function computeToolUsageFromMessages(): Promise<ToolUsageRow[]> {
   const messages = await athenaDb.messages.toArray();
+  const operationUsages = await athenaDb.llmOperationUsages.toArray();
   const merged: Record<string, { calls: number; successCount: number; errors: string[] }> = {};
 
-  for (const m of messages) {
-    if (!m.rawResponse) continue;
+  const addToolUsage = (rawResponse: string | undefined): void => {
+    if (!rawResponse) return;
     try {
-      const parsed: unknown = JSON.parse(m.rawResponse);
-      if (typeof parsed !== 'object' || parsed === null) continue;
+      const parsed: unknown = JSON.parse(rawResponse);
+      if (typeof parsed !== 'object' || parsed === null) return;
       const obj = parsed as Record<string, unknown>;
       const trace = obj.toolLoopTrace;
-      if (!Array.isArray(trace)) continue;
+      if (!Array.isArray(trace)) return;
 
       for (const iteration of trace) {
         const iterObj = iteration as Record<string, unknown>;
@@ -399,7 +421,10 @@ async function computeToolUsageFromMessages(): Promise<ToolUsageRow[]> {
     } catch {
       // skip invalid rawResponse
     }
-  }
+  };
+
+  for (const m of messages) addToolUsage(m.rawResponse);
+  for (const operation of operationUsages) addToolUsage(operation.rawResponse);
 
   return Object.entries(merged)
     .map(([tool, stats]) => ({

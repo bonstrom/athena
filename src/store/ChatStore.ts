@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import { calculateCostUSD, getPeakMultiplier, ChatModel, getDefaultModel, getAvailableModels } from '../components/ModelSelector';
+import {
+  calculateCostUSD,
+  getPeakMultiplier,
+  ChatModel,
+  getDefaultModel,
+  getAvailableModels,
+} from '../components/ModelSelector';
 import { useProviderStore } from './ProviderStore';
 import { useTopicStore } from './TopicStore';
 import { useNotificationStore } from './NotificationStore';
@@ -54,7 +60,6 @@ function stripPersistReplaceComments(text: string): string {
     .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '')
     .trim();
 }
-
 
 interface ChatSystemEntry {
   content: string;
@@ -150,6 +155,7 @@ export interface StreamingState {
   assistantMessageId: string;
   content: string;
   reasoning: string;
+  activity?: 'thinking' | 'writing' | 'searching' | 'reading' | 'working';
 }
 
 interface ChatStore {
@@ -179,7 +185,12 @@ interface ChatStore {
   updateMessage: (id: string, patch: Partial<Message>) => Promise<void>;
   updateMessages: (updates: { id: string; patch: Partial<Message> }[]) => Promise<void>;
   updateMessageStateOnly: (id: string, patch: Partial<Message>) => void;
-  editSvgInMessage: (messageId: string, svgSource: string, instruction: string, onReasoning?: (partial: string) => void) => Promise<void>;
+  editSvgInMessage: (
+    messageId: string,
+    svgSource: string,
+    instruction: string,
+    onReasoning?: (partial: string) => void,
+  ) => Promise<void>;
   sendMessageStream: (
     content: string,
     topicId: string,
@@ -202,13 +213,19 @@ interface ChatStore {
   setThinkingMode: (mode: 'enabled' | 'disabled' | null) => void;
   abortController: AbortController | null;
   currentRequestMessageIds: { userMessageId: string; assistantMessageId: string } | null;
+  currentRequestTopicId: string | null;
   streaming: StreamingState | null;
   stopSending: () => Promise<string | null>;
   pendingSuggestions: string[] | null;
   clearSuggestions: () => void;
   isSuggestionsLoading: boolean;
   preloadTopics: (topicIds: string[]) => Promise<void>;
-  maybeSummarize: (messageId: string, content: string, force?: boolean, contextMessages?: LlmMessage[]) => Promise<void>;
+  maybeSummarize: (
+    messageId: string,
+    content: string,
+    force?: boolean,
+    contextMessages?: LlmMessage[],
+  ) => Promise<void>;
   _runSummarize: (messageId: string, content: string, contextMessages?: LlmMessage[]) => Promise<void>;
   summarizingMessageIds: Set<string>;
   failedSummaryMessageIds: Set<string>;
@@ -285,6 +302,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   autoReadEnabled: false,
   abortController: null,
   currentRequestMessageIds: null,
+  currentRequestTopicId: null,
   streaming: null,
   pendingSuggestions: null,
   summarizingMessageIds: new Set<string>(),
@@ -391,10 +409,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       } else {
         sourceLabel = `Recent ${m.type === 'user' ? 'User' : 'Assistant'} Message`;
       }
+      let messageContent: LlmMessage['content'] = m.content;
+      if (
+        m.attachments &&
+        m.attachments.length > 0 &&
+        (selectedModel.supportsVision || selectedModel.supportsFiles)
+      ) {
+        const parts: LlmContentPart[] = [{ type: 'text', text: m.content }];
+        for (const att of m.attachments) {
+          if (att.type.startsWith('image/') && selectedModel.supportsVision) {
+            parts.push({ type: 'image_url', image_url: { url: att.data } });
+          }
+        }
+        messageContent = parts;
+      }
       entries.push({
         message: {
           role,
-          content: m.content,
+          content: messageContent,
           ...(role === 'assistant'
             ? { reasoning_content: m.reasoning ?? 'Thinking process hidden or not provided.' }
             : m.reasoning !== undefined && { reasoning_content: m.reasoning }),
@@ -452,7 +484,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // parentMessageId rather than array position, to correctly handle aiNote/system
     // messages that may appear between the user and assistant messages).
     const pairedAssistantIds =
-      target?.type === 'user' ? messages.filter((m) => m.type === 'assistant' && m.parentMessageId === id).map((m) => m.id) : [];
+      target?.type === 'user'
+        ? messages.filter((m) => m.type === 'assistant' && m.parentMessageId === id).map((m) => m.id)
+        : [];
 
     const idsToDelete = [id, ...pairedAssistantIds];
 
@@ -498,7 +532,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const cached = get().messagesByTopic[topicId];
     if (cached !== undefined && !forkId) {
       touchTopic(topicId);
-      set({ currentTopicId: topicId, isInitialLoad: true, visibleMessageCount: 10, autoReadEnabled: false, webSearchEnabled: false });
+      set({
+        currentTopicId: topicId,
+        isInitialLoad: true,
+        visibleMessageCount: 10,
+        autoReadEnabled: false,
+        webSearchEnabled: false,
+      });
       return;
     }
 
@@ -547,7 +587,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { currentTopicId, messagesByTopic } = get();
     if (!currentTopicId) return;
 
-    const updated = (messagesByTopic[currentTopicId] ?? []).map((m) => (m.id === id ? { ...m, includeInContext: include } : m));
+    const updated = (messagesByTopic[currentTopicId] ?? []).map((m) =>
+      m.id === id ? { ...m, includeInContext: include } : m,
+    );
 
     set({ messagesByTopic: { ...messagesByTopic, [currentTopicId]: updated } });
   },
@@ -731,9 +773,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     if (!content.trim() || !topicId) return;
     const controller = new AbortController();
-    set({ sending: true, abortController: controller });
+    set({ sending: true, abortController: controller, currentRequestTopicId: topicId });
 
-    const now = new Date().toISOString();
+    // Only the invocation that still owns the shared lifecycle state may
+    // release it. A stopped request can settle after a replacement started.
+    const ownsRequest = (): boolean => get().abortController === controller;
+    const canContinueRequest = (): boolean => ownsRequest() && !controller.signal.aborted;
+    const releaseRequest = (): void => {
+      if (!ownsRequest()) return;
+      set({
+        sending: false,
+        abortController: null,
+        currentRequestMessageIds: null,
+        currentRequestTopicId: null,
+        streaming: null,
+      });
+    };
+
+    try {
+      const now = new Date().toISOString();
     const isContinuation = continuationAssistantId !== undefined;
     const isRetry = !!messageId && !isContinuation;
 
@@ -784,7 +842,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     // 2. Build Context
-    const existingContext = await topicStoreState.getTopicContext(topicId, isRetry ? messageId : undefined, content.trim());
+    const existingContext = await topicStoreState.getTopicContext(
+      topicId,
+      isRetry ? messageId : undefined,
+      content.trim(),
+    );
+    // The request may have been stopped and replaced while setup was pending.
+    if (!canContinueRequest()) return;
 
     // Re-fetch topic store after await — topic may have been deleted
     const refreshedTopicStore = useTopicStore.getState();
@@ -795,7 +859,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const llmContext: LlmMessage[] = existingContext.map((m) => {
       const role = m.type === 'user' ? 'user' : m.type === 'assistant' ? 'assistant' : 'system';
-      if (m.attachments && m.attachments.length > 0 && (effectiveModel.supportsVision || effectiveModel.supportsFiles)) {
+      if (
+        m.attachments &&
+        m.attachments.length > 0 &&
+        (effectiveModel.supportsVision || effectiveModel.supportsFiles)
+      ) {
         const parts: LlmContentPart[] = [{ type: 'text', text: m.content }];
         for (const att of m.attachments) {
           if (att.type.startsWith('image/') && effectiveModel.supportsVision) {
@@ -835,6 +903,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       predefinedPrompts: useAuthStore.getState().predefinedPrompts,
       selectedPromptIds: refreshedTopic.selectedPromptIds ?? [],
     });
+    if (!canContinueRequest()) return;
 
     const systems: LlmMessage[] = systemEntries.map((e) => {
       if (e.sourceLabel === 'Scratchpad Content') {
@@ -850,7 +919,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     llmContext.unshift(...systems);
 
     // Add current user message to context before calling loop
-    if (userMessage.attachments && userMessage.attachments.length > 0 && (effectiveModel.supportsVision || effectiveModel.supportsFiles)) {
+    if (
+      userMessage.attachments &&
+      userMessage.attachments.length > 0 &&
+      (effectiveModel.supportsVision || effectiveModel.supportsFiles)
+    ) {
       const parts: LlmContentPart[] = [{ type: 'text', text: userMessage.content }];
       for (const att of userMessage.attachments) {
         if (att.type.startsWith('image/') && effectiveModel.supportsVision) {
@@ -864,6 +937,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     // 3. Prepare Assistant Message
     const existingAssistant = isContinuation ? await athenaDb.messages.get(continuationAssistantId) : undefined;
+    if (!canContinueRequest()) return;
     if (isContinuation && !existingAssistant) {
       throw new Error('Assistant message not found for continuation.');
     }
@@ -889,12 +963,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     // For a continuation, the answer is embedded into the existing assistant
     // message (no new user bubble). Prefix everything streamed/finalized with it.
-    const contentPrefix = isContinuation ? `${existingAssistantContent}\n\n**Your answer:** ${userMessage.content}` : '';
+    const contentPrefix = isContinuation
+      ? `${existingAssistantContent}\n\n**Your answer:** ${userMessage.content}`
+      : '';
     // Count only successful Search/Fetch requests — DeepSeek does not bill failures.
     let billableSearchCalls = 0;
     let billableFetchCalls = 0;
 
     if (get().imageGenerationEnabled) {
+      if (!canContinueRequest()) return;
       try {
         await athenaDb.transaction('rw', athenaDb.messages, async () => {
           if (isRetry) {
@@ -913,12 +990,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           return {
             messagesByTopic: { ...state.messagesByTopic, [topicId]: sortMessages(updated) },
             currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId },
+            currentRequestTopicId: topicId,
           };
         });
 
         void topicStoreState.updateTopicTimestamp(topicId);
 
-        const { content: resultContent, attachment, model: resultModel } = await generateImage(content, controller.signal);
+        const {
+          content: resultContent,
+          attachment,
+          model: resultModel,
+        } = await generateImage(content, controller.signal);
         const finalizedAssistant: Partial<Message> = {
           content: resultContent,
           attachments: [attachment],
@@ -949,12 +1031,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await athenaDb.messages.update(assistantId, errorPatch);
         get().updateMessageStateOnly(assistantId, errorPatch);
       } finally {
-        set({ sending: false, abortController: null });
+        releaseRequest();
       }
       return;
     }
 
     if (get().musicGenerationEnabled) {
+      if (!canContinueRequest()) return;
       try {
         await athenaDb.transaction('rw', athenaDb.messages, async () => {
           if (isRetry) {
@@ -973,12 +1056,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           return {
             messagesByTopic: { ...state.messagesByTopic, [topicId]: sortMessages(updated) },
             currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId },
+            currentRequestTopicId: topicId,
           };
         });
 
         void topicStoreState.updateTopicTimestamp(topicId);
 
-        const { content: resultContent, attachment, model: resultModel } = await generateMusic(content, controller.signal);
+        const {
+          content: resultContent,
+          attachment,
+          model: resultModel,
+        } = await generateMusic(content, controller.signal);
         const finalizedAssistant: Partial<Message> = {
           content: resultContent,
           attachments: [attachment],
@@ -1009,11 +1097,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await athenaDb.messages.update(assistantId, errorPatch);
         get().updateMessageStateOnly(assistantId, errorPatch);
       } finally {
-        set({ sending: false, abortController: null });
+        releaseRequest();
       }
       return;
     }
 
+    if (!canContinueRequest()) return;
     try {
       // Create initial DB state in a single transaction
       await athenaDb.transaction('rw', athenaDb.messages, async () => {
@@ -1030,6 +1119,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await athenaDb.messages.update(userMessage.id, { activeResponseId: assistantId });
       });
 
+      // A stop can land while the write transaction is committing. The stop
+      // action did not yet know these IDs, so discard the newly written rows
+      // instead of publishing them under the replacement request.
+      if (!canContinueRequest()) {
+        if (!isContinuation) {
+          await athenaDb.messages.delete(assistantId);
+          if (!isRetry) await athenaDb.messages.delete(userMessage.id);
+        }
+        return;
+      }
+
       // Fire-and-forget embedding for the new user message (not a retry or continuation)
       if (!isRetry && !isContinuation && embeddingService.isReady && userMessage.content.trim()) {
         void embeddingService
@@ -1045,7 +1145,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (isContinuation) {
           updated = updated.map((m) => (m.id === assistantId ? { ...m, failed: false } : m));
         } else if (isRetry) {
-          updated = updated.map((m) => (m.id === userMessage.id ? { ...m, failed: false, activeResponseId: assistantId } : m));
+          updated = updated.map((m) =>
+            m.id === userMessage.id ? { ...m, failed: false, activeResponseId: assistantId } : m,
+          );
           updated.push(assistantMessage);
         } else {
           updated.push(userMessage);
@@ -1058,6 +1160,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             [topicId]: sortMessages(updated),
           },
           currentRequestMessageIds: { userMessageId: userMessage.id, assistantMessageId: assistantId },
+          currentRequestTopicId: topicId,
           streaming: { topicId, assistantMessageId: assistantId, content: contentPrefix, reasoning: '' },
         };
       });
@@ -1071,14 +1174,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const RENDER_THROTTLE_MS = 64; // ~15fps for smooth but efficient UI
 
       const onTokenCallback = (chunk: string): void => {
+        if (!canContinueRequest()) return;
         streamedContent += chunk;
         const now = Date.now();
         if (now - lastContentRenderTime > RENDER_THROTTLE_MS) {
           const displayContent =
             contentPrefix +
-            streamedContent.replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '').replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '');
+            streamedContent
+              .replace(/<!--\s*persist:\s*[\s\S]*?(-->|$)/gi, '')
+              .replace(/<!--\s*replace:\s*[\s\S]*?(-->|$)/gi, '');
           set({
-            streaming: { topicId, assistantMessageId: assistantId, content: displayContent, reasoning: streamedThinking.trim() },
+            streaming: {
+              topicId,
+              assistantMessageId: assistantId,
+              content: displayContent,
+              reasoning: streamedThinking.trim(),
+              activity: 'writing',
+            },
           });
           lastContentRenderTime = now;
         }
@@ -1087,6 +1199,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       let lastThinkingRenderTime = 0;
 
       const onReasoningCallback = (token: string): void => {
+        if (!canContinueRequest()) return;
         streamedThinking += token;
         const now = Date.now();
         if (now - lastThinkingRenderTime > RENDER_THROTTLE_MS) {
@@ -1096,6 +1209,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               assistantMessageId: assistantId,
               content: contentPrefix + streamedContent,
               reasoning: streamedThinking.trim(),
+              activity: 'thinking',
             },
           });
           lastThinkingRenderTime = now;
@@ -1103,6 +1217,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       };
 
       const onToolLogCallback = (log: string): void => {
+        if (!canContinueRequest()) return;
         streamedThinking += log;
         set({
           streaming: {
@@ -1110,6 +1225,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             assistantMessageId: assistantId,
             content: contentPrefix + streamedContent,
             reasoning: streamedThinking.trim(),
+            activity: get().streaming?.activity,
           },
         });
       };
@@ -1122,6 +1238,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         onTokenCallback,
         onReasoningCallback,
         async (aiNote: string, action: 'append' | 'replace') => {
+          if (!canContinueRequest()) throw new DOMException('Request stopped', 'AbortError');
           const currentScratchpad = useTopicStore.getState().topics.find((t) => t.id === topicId)?.scratchpad ?? '';
           let updatedScratchpad = '';
           if (action === 'replace') {
@@ -1132,107 +1249,137 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           if (updatedScratchpad.length > SCRATCHPAD_LIMIT) {
             const cutoff = updatedScratchpad.lastIndexOf('\n', SCRATCHPAD_LIMIT);
             updatedScratchpad = updatedScratchpad.slice(0, cutoff > 0 ? cutoff : SCRATCHPAD_LIMIT);
-            useNotificationStore.getState().addNotification('Scratchpad full', 'Content was trimmed to fit the character limit.');
+            useNotificationStore
+              .getState()
+              .addNotification('Scratchpad full', 'Content was trimmed to fit the character limit.');
           }
           await topicStoreState.updateTopicScratchpad(topicId, updatedScratchpad);
         },
         async (toolName, argsJson) => {
-          if (toolName === 'read_messages') {
-            try {
-              const parsedArgs = JSON.parse(argsJson) as { messages?: { messageId: string; startLine?: number; endLine?: number }[] };
-              const messagesToRead = parsedArgs.messages ?? [];
-              const results: string[] = [];
+          if (!canContinueRequest()) throw new DOMException('Request stopped', 'AbortError');
+          set((state) => ({
+            streaming:
+              state.streaming?.assistantMessageId === assistantId
+                ? {
+                    ...state.streaming,
+                    activity:
+                      toolName === 'web_search'
+                        ? 'searching'
+                        : toolName === 'fetch_url' || toolName === 'read_messages' || toolName === 'list_messages'
+                          ? 'reading'
+                          : 'working',
+                  }
+                : state.streaming,
+          }));
+          try {
+            if (toolName === 'read_messages') {
+              try {
+                const parsedArgs = JSON.parse(argsJson) as {
+                  messages?: { messageId: string; startLine?: number; endLine?: number }[];
+                };
+                const messagesToRead = parsedArgs.messages ?? [];
+                const results: string[] = [];
 
-              if (messagesToRead.length === 0) {
-                return 'Error: No messages array provided in arguments.';
-              }
+                if (messagesToRead.length === 0) {
+                  return 'Error: No messages array provided in arguments.';
+                }
 
-              const activeForkId = useTopicStore.getState().topics.find((t) => t.id === topicId)?.activeForkId ?? 'main';
-              const allMessagesInTopic = await athenaDb.messages
-                .where('topicId')
-                .equals(topicId)
-                .and((m) => m.forkId === activeForkId)
-                .toArray();
+                const activeForkId =
+                  useTopicStore.getState().topics.find((t) => t.id === topicId)?.activeForkId ?? 'main';
+                const allMessagesInTopic = await athenaDb.messages
+                  .where('topicId')
+                  .equals(topicId)
+                  .and((m) => m.forkId === activeForkId)
+                  .toArray();
 
-              for (const req of messagesToRead) {
-                if (!req.messageId) continue;
-                // Find message by full ID first, then fall back to prefix match
-                let target = allMessagesInTopic.find((m) => m.id === req.messageId);
-                if (!target) {
-                  const prefixMatches = allMessagesInTopic.filter((m) => m.id.startsWith(req.messageId));
-                  if (prefixMatches.length > 1) {
-                    results.push(
-                      `Ambiguous ID prefix "${req.messageId}" matches ${prefixMatches.length} messages. Use a longer prefix or the full ID.`,
-                    );
+                for (const req of messagesToRead) {
+                  if (!req.messageId) continue;
+                  // Find message by full ID first, then fall back to prefix match
+                  let target = allMessagesInTopic.find((m) => m.id === req.messageId);
+                  if (!target) {
+                    const prefixMatches = allMessagesInTopic.filter((m) => m.id.startsWith(req.messageId));
+                    if (prefixMatches.length > 1) {
+                      results.push(
+                        `Ambiguous ID prefix "${req.messageId}" matches ${prefixMatches.length} messages. Use a longer prefix or the full ID.`,
+                      );
+                      continue;
+                    }
+                    target = prefixMatches.at(0);
+                  }
+                  if (!target) {
+                    results.push(`Message ${req.messageId} not found.`);
                     continue;
                   }
-                  target = prefixMatches.at(0);
-                }
-                if (!target) {
-                  results.push(`Message ${req.messageId} not found.`);
-                  continue;
-                }
 
-                let content = target.content;
-                if (req.startLine || req.endLine) {
-                  const lines = content.split('\n');
-                  const start = (req.startLine ?? 1) - 1;
-                  const end = req.endLine ?? lines.length;
-                  content = lines.slice(start, end).join('\n');
+                  let content = target.content;
+                  if (req.startLine || req.endLine) {
+                    const lines = content.split('\n');
+                    const start = (req.startLine ?? 1) - 1;
+                    const end = req.endLine ?? lines.length;
+                    content = lines.slice(start, end).join('\n');
+                  }
+                  results.push(`[Message ${target.id}]\n${content}`);
                 }
-                results.push(`[Message ${target.id}]\n${content}`);
+                return results.join('\n\n---\n\n');
+              } catch (e) {
+                return `Error reading messages: ${String(e)}`;
               }
-              return results.join('\n\n---\n\n');
-            } catch (e) {
-              return `Error reading messages: ${String(e)}`;
             }
-          }
-          if (toolName === 'list_messages') {
-            try {
-              const activeForkId = useTopicStore.getState().topics.find((t) => t.id === topicId)?.activeForkId ?? 'main';
-              const allMessages = await athenaDb.messages
-                .where('topicId')
-                .equals(topicId)
-                .and((m) => m.forkId === activeForkId)
-                .sortBy('created');
-              const lines = allMessages
-                .filter((m) => !m.isDeleted && (m.type === 'user' || m.type === 'assistant'))
-                .map((m) => {
-                  const snippet = m.content.substring(0, 150).replace(/\n/g, ' ').trim();
-                  return `[ID: ${m.id.slice(0, SHORTENED_ID_LENGTH)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
+            if (toolName === 'list_messages') {
+              try {
+                const activeForkId =
+                  useTopicStore.getState().topics.find((t) => t.id === topicId)?.activeForkId ?? 'main';
+                const allMessages = await athenaDb.messages
+                  .where('topicId')
+                  .equals(topicId)
+                  .and((m) => m.forkId === activeForkId)
+                  .sortBy('created');
+                const lines = allMessages
+                  .filter((m) => !m.isDeleted && (m.type === 'user' || m.type === 'assistant'))
+                  .map((m) => {
+                    const snippet = m.content.substring(0, 150).replace(/\n/g, ' ').trim();
+                    return `[ID: ${m.id.slice(0, SHORTENED_ID_LENGTH)}] ${m.type === 'user' ? 'User' : 'Assistant'}: "${snippet}..."`;
+                  });
+                return `CHRONOLOGICAL DIRECTORY OF TOPIC "${useTopicStore.getState().topics.find((t) => t.id === topicId)?.name ?? 'Untitled'}":\n\n${lines.join('\n')}\n\nUse 'read_messages' with any of these IDs to see full content.`;
+              } catch (e) {
+                return `Error listing messages: ${String(e)}`;
+              }
+            }
+            if (toolName === 'web_search') {
+              try {
+                const parsedArgs = JSON.parse(argsJson) as { query?: string; count?: number };
+                const response = await executeWebSearch(parsedArgs.query ?? '', {
+                  count: parsedArgs.count,
+                  signal: controller.signal,
                 });
-              return `CHRONOLOGICAL DIRECTORY OF TOPIC "${useTopicStore.getState().topics.find((t) => t.id === topicId)?.name ?? 'Untitled'}":\n\n${lines.join('\n')}\n\nUse 'read_messages' with any of these IDs to see full content.`;
-            } catch (e) {
-              return `Error listing messages: ${String(e)}`;
+                if (response.billable) billableSearchCalls++;
+                return response.text;
+              } catch (e) {
+                return `Error running web_search: ${e instanceof Error ? e.message : String(e)}`;
+              }
             }
-          }
-          if (toolName === 'web_search') {
-            try {
-              const parsedArgs = JSON.parse(argsJson) as { query?: string; count?: number };
-              const response = await executeWebSearch(parsedArgs.query ?? '', {
-                count: parsedArgs.count,
-                signal: controller.signal,
-              });
-              if (response.billable) billableSearchCalls++;
-              return response.text;
-            } catch (e) {
-              return `Error running web_search: ${e instanceof Error ? e.message : String(e)}`;
+            if (toolName === 'fetch_url') {
+              try {
+                const parsedArgs = JSON.parse(argsJson) as { url?: string };
+                const response = await executeFetch(parsedArgs.url ?? '', { signal: controller.signal });
+                if (response.billable) billableFetchCalls++;
+                return response.text;
+              } catch (e) {
+                return `Error running fetch_url: ${e instanceof Error ? e.message : String(e)}`;
+              }
             }
-          }
-          if (toolName === 'fetch_url') {
-            try {
-              const parsedArgs = JSON.parse(argsJson) as { url?: string };
-              const response = await executeFetch(parsedArgs.url ?? '', { signal: controller.signal });
-              if (response.billable) billableFetchCalls++;
-              return response.text;
-            } catch (e) {
-              return `Error running fetch_url: ${e instanceof Error ? e.message : String(e)}`;
+            if (toolName.startsWith('pixel_')) {
+              return executePixelTool(toolName, argsJson, { defaultDocumentId: spriteForTopic?.id });
             }
+            return 'Tool not implemented.';
+          } finally {
+            set((state) => ({
+              streaming:
+                state.streaming?.assistantMessageId === assistantId
+                  ? { ...state.streaming, activity: 'thinking' }
+                  : state.streaming,
+            }));
           }
-          if (toolName.startsWith('pixel_')) {
-            return executePixelTool(toolName, argsJson, { defaultDocumentId: spriteForTopic?.id });
-          }
-          return 'Tool not implemented.';
         },
         onToolLogCallback,
         ((): LlmTool[] => {
@@ -1252,6 +1399,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         controller.signal,
       );
 
+      if (!canContinueRequest()) return;
       // Re-fetch topic after async ops — it may have been deleted mid-stream
       const refreshedTopic = useTopicStore.getState().topics.find((t) => t.id === topicId);
       if (!refreshedTopic) {
@@ -1301,7 +1449,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // ── Verification: Main chat stream ──
       if (!finalContent.trim()) console.warn('[verify:chat] Assistant response was empty');
       if (totalPromptTokens === 0) console.warn('[verify:chat] promptTokens is 0 — possible usage tracking issue');
-      if (totalCompletionTokens === 0) console.warn('[verify:chat] completionTokens is 0 — possible usage tracking issue');
+      if (totalCompletionTokens === 0)
+        console.warn('[verify:chat] completionTokens is 0 — possible usage tracking issue');
       if (finalTotalCost <= 0) console.warn('[verify:chat] Calculated cost is 0 — model:', effectiveModel.id);
 
       // 5. Finalize DB Updates in atomic transaction
@@ -1331,12 +1480,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       };
 
       await athenaDb.transaction('rw', athenaDb.messages, async () => {
+        if (!canContinueRequest()) throw new DOMException('Request stopped', 'AbortError');
         if (!isContinuation) {
           await athenaDb.messages.update(userMessage.id, userPatch);
+          if (!canContinueRequest()) throw new DOMException('Request stopped', 'AbortError');
         }
         await athenaDb.messages.update(assistantId, assistantPatch);
+        if (!canContinueRequest()) throw new DOMException('Request stopped', 'AbortError');
       });
 
+      if (!canContinueRequest()) return;
       // Fire-and-forget embedding for the finalized assistant response
       if (embeddingService.isReady && assistantContent.trim()) {
         void embeddingService
@@ -1378,7 +1531,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         void get().maybeSummarize(userMessage.id, userMessage.content);
       }
       if (assistantContent.trim()) {
-        void get().maybeSummarize(assistantId, assistantContent, undefined, [...llmContext, { role: 'assistant', content: assistantContent }]);
+        void get().maybeSummarize(assistantId, assistantContent, undefined, [
+          ...llmContext,
+          { role: 'assistant', content: assistantContent },
+        ]);
       }
 
       void topicStoreState.generateTopicName(topicId, content);
@@ -1417,15 +1573,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             const targetModel =
               replyPredictionModel === 'same' || replyPredictionModel === 'local'
                 ? selectedModel
-                : (useProviderStore.getState().models.find((m) => m.id === replyPredictionModel || m.apiModelId === replyPredictionModel) ??
+                : (useProviderStore
+                    .getState()
+                    .models.find((m) => m.id === replyPredictionModel || m.apiModelId === replyPredictionModel) ??
                   selectedModel);
-            const result = await askLlm(targetModel, 0.7, suggestionContext, undefined, undefined, { includeCustomInstructions: false });
+            const result = await askLlm(targetModel, 0.7, suggestionContext, undefined, undefined, {
+              includeCustomInstructions: false,
+            });
             const raw = result.content.trim();
             const suggestions = parseStringArray(raw)?.slice(0, 3) ?? null;
 
-            if (!suggestions) console.warn('[verify:replies] Failed to parse JSON array from response:', raw.slice(0, 200));
-            else if (suggestions.length === 0) console.warn('[verify:replies] Parsed JSON but got 0 suggestions:', raw.slice(0, 200));
-            else if (suggestions.length < 3) console.warn('[verify:replies] Expected 3 suggestions, got %d', suggestions.length);
+            if (!suggestions)
+              console.warn('[verify:replies] Failed to parse JSON array from response:', raw.slice(0, 200));
+            else if (suggestions.length === 0)
+              console.warn('[verify:replies] Parsed JSON but got 0 suggestions:', raw.slice(0, 200));
+            else if (suggestions.length < 3)
+              console.warn('[verify:replies] Expected 3 suggestions, got %d', suggestions.length);
 
             if (suggestions && suggestions.length > 0) {
               set({ pendingSuggestions: suggestions, isSuggestionsLoading: false });
@@ -1454,7 +1617,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         await get().updateMessage(assistantId, { isDeleted: true });
       }
     } finally {
-      set({ sending: false, abortController: null, currentRequestMessageIds: null, streaming: null });
+      releaseRequest();
+    }
+    } catch (setupError) {
+      if (!(setupError instanceof Error && setupError.name === 'AbortError')) {
+        console.error('LLM request setup failed', setupError);
+        const msg = setupError instanceof Error ? setupError.message : String(setupError);
+        useNotificationStore.getState().addNotification('LLM request failed', msg);
+      }
+      throw setupError;
+    } finally {
+      releaseRequest();
     }
   },
   regenerateResponse: async (assistantId): Promise<void> => {
@@ -1477,22 +1650,43 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     await get().sendMessageStream(userMsg.content, currentTopicId, userMsg.id);
   },
   stopSending: async (): Promise<string | null> => {
-    const { abortController, currentRequestMessageIds, currentTopicId, messagesByTopic } = get();
+    const { abortController, currentRequestMessageIds, currentTopicId, currentRequestTopicId, messagesByTopic } = get();
 
     if (abortController) {
       abortController.abort();
     }
 
-    if (currentRequestMessageIds && currentTopicId) {
+    // The request may belong to a topic the user has navigated away from. Its
+    // pending rows and cached messages live in that topic, not the visible one.
+    const requestTopicId =
+      currentRequestTopicId ??
+      (currentRequestMessageIds
+        ? Object.keys(messagesByTopic).find((topicId) =>
+            (messagesByTopic[topicId] ?? []).some((m) => m.id === currentRequestMessageIds.userMessageId),
+          )
+        : undefined) ??
+      currentTopicId;
+
+    if (currentRequestMessageIds && requestTopicId) {
       const { userMessageId, assistantMessageId } = currentRequestMessageIds;
-      const messages = messagesByTopic[currentTopicId] ?? [];
+      const messages = messagesByTopic[requestTopicId] ?? [];
       const userMsg = messages.find((m) => m.id === userMessageId);
       const content = userMsg?.content ?? null;
 
       // Continuation requests have no user message — don't delete the assistant
       // message (it pre-exists with the original question), just stop streaming.
       if (!userMessageId) {
-        set({ sending: false, abortController: null, currentRequestMessageIds: null, streaming: null });
+        set((state) =>
+          state.abortController === abortController
+            ? {
+                sending: false,
+                abortController: null,
+                currentRequestMessageIds: null,
+                currentRequestTopicId: null,
+                streaming: null,
+              }
+            : {},
+        );
         return null;
       }
 
@@ -1501,25 +1695,47 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Delete from DB
       await athenaDb.messages.bulkDelete(idsToDelete);
 
-      // Update state
-      set((state) => ({
-        sending: false,
-        abortController: null,
-        currentRequestMessageIds: null,
-        streaming: null,
-        messagesByTopic: {
+      // Update state. The stopped request may have finalized while the delete
+      // was pending, allowing a replacement request to acquire ownership.
+      set((state) => {
+        const messagesByTopic = {
           ...state.messagesByTopic,
-          [currentTopicId]: (state.messagesByTopic[currentTopicId] ?? []).filter((m) => !idsToDelete.includes(m.id)),
-        },
-      }));
+          [requestTopicId]: (state.messagesByTopic[requestTopicId] ?? []).filter((m) => !idsToDelete.includes(m.id)),
+        };
+        const stillOwnsLifecycle =
+          state.abortController === abortController &&
+          state.currentRequestMessageIds?.userMessageId === userMessageId;
+        if (!stillOwnsLifecycle) return { messagesByTopic };
+        return {
+          sending: false,
+          abortController: null,
+          currentRequestMessageIds: null,
+          currentRequestTopicId: null,
+          streaming: null,
+          messagesByTopic,
+        };
+      });
 
       return content;
     }
 
-    set({ sending: false, abortController: null, currentRequestMessageIds: null, streaming: null });
+    if (get().abortController === abortController) {
+      set({
+        sending: false,
+        abortController: null,
+        currentRequestMessageIds: null,
+        currentRequestTopicId: null,
+        streaming: null,
+      });
+    }
     return null;
   },
-  maybeSummarize: async (messageId: string, content: string, force = false, contextMessages?: LlmMessage[]): Promise<void> => {
+  maybeSummarize: async (
+    messageId: string,
+    content: string,
+    force = false,
+    contextMessages?: LlmMessage[],
+  ): Promise<void> => {
     const { aiSummaryEnabled } = useAuthStore.getState();
     const { summarizingMessageIds } = get();
     if (!force && (!aiSummaryEnabled || content.length <= 500)) return;
@@ -1563,20 +1779,31 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const dbMessage = await athenaDb.messages.get(messageId);
       const fullContent = dbMessage?.content ?? content;
       const SUMMARY_INPUT_MAX = 6000;
-      const safeContent = fullContent.length > SUMMARY_INPUT_MAX ? fullContent.slice(0, SUMMARY_INPUT_MAX) + '... (truncated)' : fullContent;
+      const safeContent =
+        fullContent.length > SUMMARY_INPUT_MAX
+          ? fullContent.slice(0, SUMMARY_INPUT_MAX) + '... (truncated)'
+          : fullContent;
 
       const summaryWordLimit = Math.max(15, Math.min(60, Math.floor(fullContent.length / 15)));
       const messages: LlmMessage[] =
         contextMessages != null
           ? [
               ...contextMessages,
-              { role: 'user', content: `Summarize your last reply in about ${summaryWordLimit} words. Just the summary, no explanation.` },
+              {
+                role: 'user',
+                content: `Summarize your last reply in about ${summaryWordLimit} words. Just the summary, no explanation.`,
+              },
             ]
           : [
-              { role: 'system', content: `Reply with a short summary of about ${summaryWordLimit} words. No explanation, just the summary.` },
+              {
+                role: 'system',
+                content: `Reply with a short summary of about ${summaryWordLimit} words. No explanation, just the summary.`,
+              },
               { role: 'user', content: `Summarize this:\n\n${safeContent}` },
             ];
-      const result = await askLlm(selectedModel, 0.3, messages, undefined, undefined, { includeCustomInstructions: false });
+      const result = await askLlm(selectedModel, 0.3, messages, undefined, undefined, {
+        includeCustomInstructions: false,
+      });
       const rawSummary = result.content;
       const summaryTokens = result.promptTokens + result.completionTokens;
       const summaryCost = calculateCostUSD(

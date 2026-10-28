@@ -144,6 +144,39 @@ function makeMsg(overrides: Partial<Message> = {}): Message {
   };
 }
 
+function trackSnapshots(): Map<string, AnalyticsSnapshot> {
+  const snapshots = new Map<string, AnalyticsSnapshot>();
+  mockSnapshotGet.mockImplementation((date: string): Promise<AnalyticsSnapshot | undefined> => Promise.resolve(snapshots.get(date)));
+  mockSnapshotPut.mockImplementation((snapshot: AnalyticsSnapshot): Promise<string> => {
+    snapshots.set(snapshot.date, snapshot);
+    return Promise.resolve(snapshot.date);
+  });
+  return snapshots;
+}
+
+function makeOperationUsage(overrides: Partial<LlmOperationUsage> = {}): LlmOperationUsage {
+  return {
+    id: 'operation-1',
+    topicId: 'topic-1',
+    operationType: 'checklist_edit',
+    created: '2026-01-01T12:00:00.000Z',
+    promptTokens: 20,
+    completionTokens: 10,
+    totalCost: 0.2,
+    failed: false,
+    ...overrides,
+  };
+}
+
+function loadIsolatedRollup(): typeof rollupAnalytics {
+  let rollup!: typeof rollupAnalytics;
+  jest.isolateModules((): void => {
+    const service = jest.requireActual<typeof import('../analyticsRollupService')>('../analyticsRollupService');
+    rollup = service.rollupAnalytics;
+  });
+  return rollup;
+}
+
 describe('resolveProviderName', () => {
   it('returns provider name when model found', () => {
     mockModels.push({ id: 'm1', apiModelId: 'gpt-4', providerId: 'p1', label: 'GPT-4' } as UserChatModel);
@@ -164,6 +197,332 @@ describe('resolveProviderName', () => {
 });
 
 describe('rollupAnalytics', () => {
+  it.each([
+    ['older timestamp', '2026-01-01T10:00:00.000Z'],
+    ['same timestamp with a lower ID', '2026-01-01T12:00:00.000Z'],
+  ])('ACC-01 counts a late record with %s exactly once', async (_scenario: string, created: string): Promise<void> => {
+    const messages = [makeMsg({ id: 'z', totalCost: 0.1 })];
+    const snapshots = new Map<string, AnalyticsSnapshot>();
+    mockMessagesToArray.mockImplementation((): Promise<Message[]> => Promise.resolve([...messages]));
+    mockWhereCreated.mockImplementation((): ReturnType<typeof mockWhereCreated> => ({
+      aboveOrEqual: (marker: string): { toArray: () => Promise<Message[]> } => ({
+        toArray: (): Promise<Message[]> => Promise.resolve(messages.filter((message) => message.created >= marker)),
+      }),
+    }));
+    mockSnapshotGet.mockImplementation((date: string): Promise<AnalyticsSnapshot | undefined> => Promise.resolve(snapshots.get(date)));
+    mockSnapshotPut.mockImplementation((snapshot: AnalyticsSnapshot): Promise<string> => {
+      snapshots.set(snapshot.date, snapshot);
+      return Promise.resolve(snapshot.date);
+    });
+
+    await rollupAnalytics();
+    messages.push(makeMsg({ id: 'a', created, totalCost: 0.2 }));
+    await rollupAnalytics();
+    await rollupAnalytics();
+
+    expect(snapshots.get('2026-01-01')?.cost).toBeCloseTo(0.3);
+    expect(snapshots.get('2026-01-01')?.messageCount).toBe(2);
+  });
+
+  it('ACC-02 replaces provisional usage after an already-counted message is finalized', async (): Promise<void> => {
+    const snapshots = trackSnapshots();
+    const message = makeMsg({ promptTokens: 0, completionTokens: 0, totalCost: 0 });
+    mockMessagesToArray.mockImplementation((): Promise<Message[]> => Promise.resolve([{ ...message }]));
+
+    await rollupAnalytics();
+    message.promptTokens = 100;
+    message.completionTokens = 50;
+    message.totalCost = 0.3;
+    message.failed = true;
+    await rollupAnalytics();
+
+    const snapshot = snapshots.get('2026-01-01');
+    expect(snapshot?.cost).toBeCloseTo(0.3);
+    expect(snapshot?.promptTokens).toBe(100);
+    expect(snapshot?.completionTokens).toBe(50);
+    expect(snapshot?.failedCount).toBe(1);
+    expect(snapshot?.messageCount).toBe(1);
+  });
+
+  it('ACC-03 does not replay accounted records after a transient checkpoint read failure', async (): Promise<void> => {
+    const snapshots = trackSnapshots();
+    mockMessagesToArray.mockResolvedValue([makeMsg({ totalCost: 0.1 })]);
+    await rollupAnalytics();
+    mockUserSettingsGet.mockRejectedValueOnce(new Error('Checkpoint temporarily unavailable'));
+
+    await rollupAnalytics().catch((): void => undefined);
+    await rollupAnalytics();
+
+    expect(snapshots.get('2026-01-01')?.cost).toBeCloseTo(0.1);
+    expect(snapshots.get('2026-01-01')?.messageCount).toBe(1);
+  });
+
+  it('ACC-04 counts a batch once across independent rollup instances with serialized commits', async (): Promise<void> => {
+    const snapshots = trackSnapshots();
+    const firstRollup = loadIsolatedRollup();
+    const secondRollup = loadIsolatedRollup();
+    let reads = 0;
+    let releaseReads!: () => void;
+    const bothReadCheckpoint = new Promise<void>((resolve) => {
+      releaseReads = resolve;
+    });
+    mockMessagesToArray.mockImplementation(async (): Promise<Message[]> => {
+      reads++;
+      if (reads === 2) releaseReads();
+      await bothReadCheckpoint;
+      return [makeMsg({ totalCost: 0.1 })];
+    });
+    let transactionQueue: Promise<unknown> = Promise.resolve();
+    mockTransaction.mockImplementation((_mode, _tables, scope): Promise<unknown> => {
+      const run = transactionQueue.then(scope);
+      transactionQueue = run.catch((): void => undefined);
+      return run;
+    });
+
+    await Promise.all([firstRollup(), secondRollup()]);
+
+    expect(snapshots.get('2026-01-01')?.cost).toBeCloseTo(0.1);
+    expect(snapshots.get('2026-01-01')?.messageCount).toBe(1);
+  });
+
+  it('ACC-01 counts a late operation below a message-owned checkpoint', async (): Promise<void> => {
+    const snapshots = trackSnapshots();
+    mockMessagesToArray.mockResolvedValue([makeMsg({ id: 'z', totalCost: 0.1 })]);
+    await rollupAnalytics();
+    mockOperationUsagesToArray.mockResolvedValue([makeOperationUsage({ id: 'a' })]);
+
+    await rollupAnalytics();
+    await rollupAnalytics();
+
+    expect(snapshots.get('2026-01-01')?.cost).toBeCloseTo(0.3);
+    expect(snapshots.get('2026-01-01')?.messageCount).toBe(2);
+  });
+
+  it('ACC-04 rebuilds legacy snapshots once instead of double-counting after ledger creation', async (): Promise<void> => {
+    const snapshots = trackSnapshots();
+    snapshots.set('2026-01-01', {
+      date: '2026-01-01',
+      messageCount: 1,
+      failedCount: 0,
+      promptTokens: 10,
+      completionTokens: 5,
+      cost: 0.1,
+      latencySamples: [],
+      providerStats: {},
+      toolStats: {},
+    });
+    mockSnapshotToArray.mockImplementation((): Promise<AnalyticsSnapshot[]> => Promise.resolve([...snapshots.values()]));
+    mockSnapshotClear.mockImplementation((): Promise<void> => {
+      snapshots.clear();
+      return Promise.resolve();
+    });
+    setRollupMarker('2026-01-02T00:00:00.000Z');
+    userSettingsStore.set('analyticsRollupLastId', 'legacy');
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({ id: 'a', totalCost: 0.1 }),
+      makeMsg({ id: 'b', totalCost: 0.2 }),
+    ]);
+
+    await rollupAnalytics();
+    expect(snapshots.get('2026-01-01')?.cost).toBeCloseTo(0.3);
+    expect(snapshots.get('2026-01-01')?.messageCount).toBe(2);
+
+    await rollupAnalytics();
+    expect(snapshots.get('2026-01-01')?.cost).toBeCloseTo(0.3);
+    expect(snapshots.get('2026-01-01')?.messageCount).toBe(2);
+  });
+
+  it('ACC-04 ignores a stale concurrent legacy migration instead of clearing newer totals', async (): Promise<void> => {
+    const snapshots = trackSnapshots();
+    snapshots.set('2026-01-01', {
+      date: '2026-01-01',
+      messageCount: 1,
+      failedCount: 0,
+      promptTokens: 10,
+      completionTokens: 5,
+      cost: 0.1,
+      latencySamples: [],
+      providerStats: {},
+      toolStats: {},
+    });
+    mockSnapshotToArray.mockImplementation((): Promise<AnalyticsSnapshot[]> => Promise.resolve([...snapshots.values()]));
+    mockSnapshotClear.mockImplementation((): Promise<void> => {
+      snapshots.clear();
+      return Promise.resolve();
+    });
+    setRollupMarker('2026-01-02T00:00:00.000Z');
+    userSettingsStore.set('analyticsRollupLastId', 'legacy');
+    const firstRollup = loadIsolatedRollup();
+    const secondRollup = loadIsolatedRollup();
+    const newer = [makeMsg({ id: 'a', totalCost: 0.1 }), makeMsg({ id: 'b', totalCost: 0.2 })];
+    const stale = [makeMsg({ id: 'a', totalCost: 0.1 })];
+    let firstRead = true;
+    let releaseStale!: () => void;
+    let markStalePrepared!: () => void;
+    const staleGate = new Promise<void>((resolve) => {
+      releaseStale = resolve;
+    });
+    const stalePrepared = new Promise<void>((resolve) => {
+      markStalePrepared = resolve;
+    });
+    mockMessagesToArray.mockImplementation(async (): Promise<Message[]> => {
+      if (firstRead) {
+        firstRead = false;
+        await stalePrepared;
+        return newer;
+      }
+      markStalePrepared();
+      await staleGate;
+      return stale;
+    });
+
+    // Both instances read the empty legacy ledger before either commits. The
+    // newer instance finishes migration while the stale one is still preparing.
+    const firstRun = firstRollup();
+    const secondRun = secondRollup();
+    await firstRun;
+    releaseStale();
+    await secondRun;
+
+    expect(snapshots.get('2026-01-01')?.cost).toBeCloseTo(0.3);
+    expect(snapshots.get('2026-01-01')?.messageCount).toBe(2);
+
+    mockMessagesToArray.mockResolvedValue(newer);
+    await firstRollup();
+    expect(snapshots.get('2026-01-01')?.cost).toBeCloseTo(0.3);
+    expect(snapshots.get('2026-01-01')?.messageCount).toBe(2);
+  });
+
+  it('ACC-05 replaces obsolete latency samples and tool errors on revision', async (): Promise<void> => {
+    const snapshots = trackSnapshots();
+    const message = makeMsg({
+      id: 'revision',
+      latencyMs: 100,
+      rawResponse: JSON.stringify({
+        toolLoopTrace: [{ toolResults: [{ toolName: 'update_scratchpad', result: 'Error: old failure' }] }],
+      }),
+    });
+    mockMessagesToArray.mockImplementation((): Promise<Message[]> => Promise.resolve([{ ...message }]));
+
+    await rollupAnalytics();
+    expect(snapshots.get('2026-01-01')?.latencySamples).toEqual([100]);
+    expect(snapshots.get('2026-01-01')?.toolStats.update_scratchpad.errors).toEqual(['Error: old failure']);
+
+    message.latencyMs = 200;
+    message.rawResponse = JSON.stringify({
+      toolLoopTrace: [{ toolResults: [{ toolName: 'update_scratchpad', result: 'Saved' }] }],
+    });
+    await rollupAnalytics();
+
+    const snapshot = snapshots.get('2026-01-01');
+    expect(snapshot?.latencySamples).toEqual([200]);
+    expect(snapshot?.toolStats.update_scratchpad).toEqual({ calls: 1, successCount: 1, errors: [] });
+  });
+
+  it('ACC-07 preserves a shared tool error until every contributing record is corrected', async (): Promise<void> => {
+    const snapshots = trackSnapshots();
+    const sharedError = JSON.stringify({
+      toolLoopTrace: [{ toolResults: [{ toolName: 'update_scratchpad', result: 'Error: shared failure' }] }],
+    });
+    const first = makeMsg({ id: 'first', rawResponse: sharedError });
+    const second = makeMsg({ id: 'second', rawResponse: sharedError });
+    mockMessagesToArray.mockImplementation((): Promise<Message[]> => Promise.resolve([{ ...first }, { ...second }]));
+
+    await rollupAnalytics();
+    expect(snapshots.get('2026-01-01')?.toolStats.update_scratchpad).toEqual({
+      calls: 2,
+      successCount: 0,
+      errors: ['Error: shared failure'],
+    });
+
+    first.rawResponse = JSON.stringify({
+      toolLoopTrace: [{ toolResults: [{ toolName: 'update_scratchpad', result: 'Saved' }] }],
+    });
+    await rollupAnalytics();
+    expect(snapshots.get('2026-01-01')?.toolStats.update_scratchpad).toEqual({
+      calls: 2,
+      successCount: 1,
+      errors: ['Error: shared failure'],
+    });
+
+    second.rawResponse = JSON.stringify({
+      toolLoopTrace: [{ toolResults: [{ toolName: 'update_scratchpad', result: 'Saved' }] }],
+    });
+    await rollupAnalytics();
+    expect(snapshots.get('2026-01-01')?.toolStats.update_scratchpad).toEqual({
+      calls: 2,
+      successCount: 2,
+      errors: [],
+    });
+  });
+
+  it('ACC-control includes message and operation usage once on repeated and overlapping runs', async (): Promise<void> => {
+    const snapshots = trackSnapshots();
+    mockMessagesToArray.mockResolvedValue([makeMsg({ id: 'message', totalCost: 0.1 })]);
+    mockOperationUsagesToArray.mockResolvedValue([makeOperationUsage({ id: 'operation' })]);
+
+    await Promise.all([rollupAnalytics(), rollupAnalytics()]);
+    await rollupAnalytics();
+
+    expect(snapshots.get('2026-01-01')?.cost).toBeCloseTo(0.3);
+    expect(snapshots.get('2026-01-01')?.messageCount).toBe(2);
+    expect(snapshots.get('2026-01-01')?.promptTokens).toBe(120);
+    expect(snapshots.get('2026-01-01')?.completionTokens).toBe(60);
+  });
+
+  it.each(['snapshot', 'marker', 'last ID'])(
+    'ACC-control rolls back the %s write failure and retries without duplicate accounting',
+    async (boundary: string): Promise<void> => {
+      const snapshots = trackSnapshots();
+      const messages = [makeMsg({ id: 'a', totalCost: 0.1 })];
+      mockMessagesToArray.mockImplementation((): Promise<Message[]> => Promise.resolve([...messages]));
+      await rollupAnalytics();
+      messages.push(makeMsg({ id: 'b', created: '2026-01-02T12:00:00.000Z', totalCost: 0.2 }));
+      mockTransaction.mockImplementation(async (_mode, _tables, scope): Promise<unknown> => {
+        const previousSnapshots = new Map(snapshots);
+        const previousSettings = new Map(userSettingsStore);
+        try {
+          return await scope();
+        } catch (error: unknown) {
+          snapshots.clear();
+          previousSnapshots.forEach((value, key): void => {
+            snapshots.set(key, value);
+          });
+          userSettingsStore.clear();
+          previousSettings.forEach((value, key): void => {
+            userSettingsStore.set(key, value);
+          });
+          throw error;
+        }
+      });
+      if (boundary === 'snapshot') {
+        mockSnapshotPut.mockRejectedValueOnce(new Error('Injected write failure'));
+      } else {
+        let failNext = true;
+        const failingKey = boundary === 'marker' ? 'analyticsRollupMarker' : 'analyticsRollupLastId';
+        mockUserSettingsPut.mockImplementation((setting): Promise<string> => {
+          if (failNext && setting.id === failingKey) {
+            failNext = false;
+            return Promise.reject(new Error('Injected write failure'));
+          }
+          userSettingsStore.set(setting.id, setting.value);
+          return Promise.resolve(setting.id);
+        });
+      }
+
+      await expect(rollupAnalytics()).rejects.toThrow('Injected write failure');
+      expect(snapshots.size).toBe(1);
+      expect(getRollupMarker()).toBe('2026-01-01T12:00:00.000Z');
+      expect(getRollupLastId()).toBe('a');
+      await rollupAnalytics();
+
+      expect(snapshots.size).toBe(2);
+      expect(snapshots.get('2026-01-01')?.cost).toBeCloseTo(0.1);
+      expect(snapshots.get('2026-01-02')?.cost).toBeCloseTo(0.2);
+      expect(getRollupLastId()).toBe('b');
+    },
+  );
+
   it('processes all messages on first run (no marker)', async () => {
     const msgs = [
       makeMsg({ id: 'a', created: '2026-01-01T10:00:00.000Z', promptTokens: 10, completionTokens: 5, totalCost: 0.001 }),

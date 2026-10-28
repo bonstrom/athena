@@ -49,7 +49,13 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
   const { maxContextTokens, messageRetrievalEnabled } = useAuthStore();
 
   const effectiveBudget = useMemo(() => {
-    return Math.min(maxContextTokens, Math.floor(selectedModel.contextWindow * 0.9));
+    // Mirror buildPayload: reserve output tokens before fitting conversation
+    // history into the same hard model/user limit.
+    const reservedCompletionTokens = selectedModel.maxTokensOverride ?? 4096;
+    return Math.max(
+      1,
+      Math.min(maxContextTokens, Math.floor(selectedModel.contextWindow * 0.9)) - reservedCompletionTokens,
+    );
   }, [maxContextTokens, selectedModel]);
 
   const reload = (): void => {
@@ -93,9 +99,13 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
       return { droppedIds: dropped, budgetedTokenCount: totalTokenCount };
     }
 
-    // Walk from oldest non-system entry forward, marking drops until under budget
+    // Walk from oldest non-system entry forward, marking drops until under budget.
+    // Runtime keeps at least the last two non-system messages regardless of the
+    // token count, so the preview must apply the same minimum-retention floor.
     const working = entries.map((e) => e.message);
+    let nonSystemCount = working.filter((m) => m.role !== 'system').length;
     while (working.length > 1 && estimateTokens(working).promptTokens > effectiveBudget) {
+      if (nonSystemCount <= 2) break;
       const idx = working.findIndex((m) => m.role !== 'system');
       if (idx === -1) break;
 
@@ -103,6 +113,7 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
       const droppedEntry = entries.find((e) => e.message === working[idx]);
       dropped.add(droppedEntry?.messageId ?? String(droppedEntry ? entries.indexOf(droppedEntry) : -1));
       working.splice(idx, 1);
+      nonSystemCount--;
     }
 
     const count = estimateTokens(working).promptTokens;

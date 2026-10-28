@@ -1,4 +1,4 @@
-import { createTheme, Theme } from '@mui/material/styles';
+import { alpha, createTheme, Theme } from '@mui/material/styles';
 
 declare module '@mui/material/styles' {
   interface Palette {
@@ -146,8 +146,8 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
         contrastText: '#ffffff',
       },
       background: {
-        default: mode === 'dark' ? '#121212' : '#f5f5f5',
-        paper: mode === 'dark' ? '#1e1e1e' : '#ffffff',
+        default: mode === 'dark' ? '#13151a' : '#f5f6fa',
+        paper: mode === 'dark' ? '#1d2027' : '#ffffff',
       },
       text: {
         primary: mode === 'dark' ? '#ffffff' : 'rgba(0, 0, 0, 0.87)',
@@ -166,6 +166,7 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
       MuiCssBaseline: {
         styleOverrides: {
           body: {
+            '--athena-accent-soft': alpha(palette.primary, 0.16),
             '--scrollbar-track': mode === 'dark' ? '#121212' : '#f5f5f5',
             '--scrollbar-thumb': mode === 'dark' ? '#606060' : '#b0b0b0',
           },
@@ -200,6 +201,7 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
         styleOverrides: {
           root: {
             borderRadius: 8,
+            backgroundImage: 'none',
           },
         },
       },

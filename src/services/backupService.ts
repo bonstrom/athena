@@ -1,4 +1,4 @@
-import { exportDB, importInto } from 'dexie-export-import';
+import { exportDB, importDB, importInto, peakImportFile } from 'dexie-export-import';
 import { athenaDb } from '../database/AthenaDb';
 import { get, set } from 'idb-keyval';
 import { useBackupStore } from '../store/BackupStore';
@@ -27,6 +27,7 @@ declare global {
 
 const BACKUP_HANDLE_KEY = 'autoBackupFileHandle';
 const LAST_BACKUP_TIME_KEY = 'lastAutoBackupTime';
+const RECOVERY_REQUIRED_KEY = 'athenaRecoveryRequired';
 const OPFS_FILE_NAME = 'athena_auto_backup.json';
 
 // Serializes full-database export/import operations so a manual restore/merge
@@ -46,6 +47,113 @@ function enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
 
 // Prevents concurrent auto-backup calls from writing to the file simultaneously.
 let autoBackupInProgress = false;
+
+// Set when a restore failed and its safety rollback also failed. Persisted in
+// localStorage so a reload or another tab cannot overwrite the last known-good
+// automatic backup with the damaged live database.
+let recoveryRequiredInMemory = false;
+let lastSafetyBackup: Blob | null = null;
+
+function isRecoveryRequired(): boolean {
+  if (recoveryRequiredInMemory) return true;
+  try {
+    return localStorage.getItem(RECOVERY_REQUIRED_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function setRecoveryRequired(required: boolean): void {
+  recoveryRequiredInMemory = required;
+  try {
+    if (required) localStorage.setItem(RECOVERY_REQUIRED_KEY, new Date().toISOString());
+    else localStorage.removeItem(RECOVERY_REQUIRED_KEY);
+  } catch {
+    // In-memory state still protects this module instance.
+  }
+}
+
+class NonDestructiveRestoreError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'NonDestructiveRestoreError';
+  }
+}
+
+function isNonDestructiveRestoreError(error: unknown): boolean {
+  if (error instanceof NonDestructiveRestoreError) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('Database version differs');
+}
+
+function canStageRestore(): boolean {
+  return (
+    typeof importDB === 'function' &&
+    typeof peakImportFile === 'function' &&
+    Array.isArray(athenaDb.tables) &&
+    athenaDb.tables.length > 0
+  );
+}
+
+/**
+ * Replace the live database from a backup without clearing it until the whole
+ * staged import is ready. The live clear/import runs in one Dexie transaction,
+ * so a storage failure cannot leave a partially replaced database.
+ */
+async function replaceDatabaseFromBackup(backup: File | Blob): Promise<void> {
+  if (!canStageRestore()) {
+    // Test/diagnostic fallback for environments without a real Dexie database.
+    await importInto(athenaDb, backup, { overwriteValues: true, clearTablesBeforeImport: true });
+    return;
+  }
+
+  // Everything before the live transaction is non-destructive. Read all staged
+  // rows and close the staging database before opening the live transaction so
+  // that transaction never awaits another database (which would auto-commit).
+  let stagedRowsByTable: { name: string; rows: unknown[] }[];
+  try {
+    const metadata = await peakImportFile(backup);
+    const currentVersion = (athenaDb as unknown as { verno?: number }).verno;
+    if (typeof currentVersion === 'number' && metadata.data.databaseVersion !== currentVersion) {
+      throw new NonDestructiveRestoreError(
+        new Error(
+          `Database version differs: backup version ${String(metadata.data.databaseVersion)} cannot replace database version ${String(currentVersion)}.`,
+        ),
+      );
+    }
+
+    const staging = await importDB(backup, { name: `athena_restore_staging_${crypto.randomUUID()}` });
+    try {
+      stagedRowsByTable = [];
+      for (const table of staging.tables) {
+        stagedRowsByTable.push({ name: table.name, rows: await table.toArray() });
+      }
+    } finally {
+      staging.close();
+      await staging.delete();
+    }
+  } catch (error) {
+    if (error instanceof NonDestructiveRestoreError) throw error;
+    throw new NonDestructiveRestoreError(error);
+  }
+
+  const stagedRows = new Map(stagedRowsByTable.map(({ name, rows }) => [name, rows]));
+  try {
+    await athenaDb.transaction('rw', athenaDb.tables, async () => {
+      for (const table of athenaDb.tables) {
+        await table.clear();
+      }
+      for (const table of athenaDb.tables) {
+        const rows = stagedRows.get(table.name);
+        if (rows && rows.length > 0) await table.bulkAdd(rows);
+      }
+    });
+  } catch (error) {
+    // A rejected Dexie transaction has rolled back its clears and inserts.
+    // Replaying the earlier snapshot would erase writes accepted since export.
+    throw new NonDestructiveRestoreError(error);
+  }
+}
 
 function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -121,21 +229,41 @@ export const BackupService = {
         );
       }
 
+      lastSafetyBackup = safetyBackup;
+
       try {
-        await importInto(athenaDb, file, { overwriteValues: true, clearTablesBeforeImport: true });
+        await replaceDatabaseFromBackup(file);
+        setRecoveryRequired(false);
+        lastSafetyBackup = null;
       } catch (error) {
-        // Attempt to restore from safety backup
-        try {
-          await importInto(athenaDb, safetyBackup, { overwriteValues: true, clearTablesBeforeImport: true });
-          useNotificationStore.getState().addNotification(
-            'Import failed. Your previous data has been restored from a safety backup.',
-          );
-        } catch (rollbackError) {
-          useNotificationStore.getState().addNotification(
-            'Import failed and safety backup restoration also failed. Some data may have been lost.',
-          );
-          if (process.env.NODE_ENV === 'development') {
-            console.error('Failed to restore safety backup after failed import', rollbackError);
+        // Staging failures and aborted atomic replacements leave live data
+        // intact. Only the non-atomic fallback may need snapshot recovery.
+        if (!isNonDestructiveRestoreError(error)) {
+          try {
+            await replaceDatabaseFromBackup(safetyBackup);
+            setRecoveryRequired(false);
+            lastSafetyBackup = null;
+            useNotificationStore.getState().addNotification(
+              'Import failed. Your previous data has been restored from a safety backup.',
+            );
+          } catch (rollbackError) {
+            setRecoveryRequired(true);
+            useNotificationStore.getState().addNotification(
+              'Import failed and safety backup restoration also failed. Some data may have been lost.',
+            );
+            if (lastSafetyBackup && typeof URL.createObjectURL === 'function') {
+              try {
+                triggerDownload(
+                  lastSafetyBackup,
+                  `athena_recovery_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
+                );
+              } catch {
+                // The retained in-memory backup is still available to this session.
+              }
+            }
+            if (process.env.NODE_ENV === 'development') {
+              console.error('Failed to restore safety backup after failed import', rollbackError);
+            }
           }
         }
         if (process.env.NODE_ENV === 'development') {
@@ -270,6 +398,13 @@ export const BackupService = {
   async performAutoBackupInternal(interactive: boolean): Promise<void> {
     const store = useBackupStore.getState();
     try {
+      if (isRecoveryRequired()) {
+        store.setErrorMessage(
+          'Automatic backups are paused because a failed restore could not be rolled back. Restore a known-good backup first.',
+        );
+        store.setStatus('error');
+        return;
+      }
       if (store.backupMode === 'external') {
         const handle = await this.getAutoBackupHandle();
         if (!handle) {

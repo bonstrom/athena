@@ -156,8 +156,13 @@ interface ChecklistState {
 }
 
 let editAbortController: AbortController | null = null;
+let activeEditOperationId: number | null = null;
+const stoppedEditOperationIds = new Set<number>();
+let nextEditOperationId = 0;
 let checklistLoadRequestId = 0;
 const itemUpdateQueues = new Map<string, Promise<number>>();
+const itemIntentVersions = new Map<string, number>();
+const pendingManualMutations = new Set<Promise<void>>();
 
 export const useChecklistStore = create<ChecklistState>((set, get) => {
   const notifyError = (action: string, err: unknown): void => {
@@ -222,6 +227,22 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
     return group?.topicId ?? null;
   };
 
+  /**
+   * Registers an already-admitted manual mutation so an AI edit waits for it
+   * before capturing its snapshot. The returned callback must run in finally.
+   */
+  const beginManualMutation = (): (() => void) => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    pendingManualMutations.add(pending);
+    return (): void => {
+      pendingManualMutations.delete(pending);
+      release();
+    };
+  };
+
   const persistItemUpdate = (itemId: string, patch: Partial<Pick<ChecklistItem, 'content' | 'details' | 'checked'>>): Promise<number> => {
     const previous = itemUpdateQueues.get(itemId) ?? Promise.resolve(1);
     const operation = previous.catch(() => 0).then(() => athenaDb.checklistItems.update(itemId, patch));
@@ -281,6 +302,9 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
     const topicGroups = groups.filter((group) => group.topicId === topicId);
     const topicGroupIds = new Set(topicGroups.map((group) => group.id));
     const topicItems = items.filter((item) => topicGroupIds.has(item.groupId));
+    const publishToolChange = (updater: (state: ChecklistState) => Partial<ChecklistState>): void => {
+      if (get().activeTopicId === topicId && get().activeTabId === activeTabId) set(updater);
+    };
 
     const parseArgs = (raw: string): Record<string, unknown> | null => {
       try {
@@ -329,7 +353,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           await athenaDb.checklistGroups.add(group);
           if (createdItems.length > 0) await athenaDb.checklistItems.bulkAdd(createdItems);
         });
-        set((state) => ({
+        publishToolChange((state) => ({
           groups: [...state.groups, group],
           items: [...state.items, ...createdItems],
         }));
@@ -346,7 +370,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
         const title = args.title.trim();
         const updated = await athenaDb.checklistGroups.update(target.id, { title });
         if (updated === 0) return 'Error: group no longer exists.';
-        set((state) => ({ groups: state.groups.map((g) => (g.id === target.id ? { ...g, title } : g)) }));
+        publishToolChange((state) => ({ groups: state.groups.map((g) => (g.id === target.id ? { ...g, title } : g)) }));
         await touchTopic(topicId);
         return `Renamed group [${shortId(target.id)}] to "${title}".`;
       }
@@ -360,7 +384,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           await athenaDb.checklistGroups.delete(target.id);
           await athenaDb.checklistItems.where('groupId').equals(target.id).delete();
         });
-        set((state) => ({
+        publishToolChange((state) => ({
           groups: state.groups.filter((g) => g.id !== target.id),
           items: state.items.filter((i) => i.groupId !== target.id),
         }));
@@ -386,7 +410,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
             requireUpdated(await athenaDb.checklistGroups.update(group.id, { sortOrder: group.sortOrder }), 'Group');
           }
         });
-        set((state) => {
+        publishToolChange((state) => {
           const byId = new Map(reordered.map((g) => [g.id, g]));
           return { groups: state.groups.map((g) => byId.get(g.id) ?? g).sort((a, b) => a.sortOrder - b.sortOrder) };
         });
@@ -420,7 +444,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           item.sortOrder = nextSortOrder(persistedItems);
           await athenaDb.checklistItems.add(item);
         });
-        set((state) => ({ items: [...state.items, item] }));
+        publishToolChange((state) => ({ items: [...state.items, item] }));
         await touchTopic(topicId);
         return `Added item [${shortId(item.id)}] "${item.content}" to group [${shortId(target.id)}].`;
       }
@@ -444,7 +468,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
         if (Object.keys(patch).length === 0) return 'Error: nothing to update.';
         const updated = await persistItemUpdate(target.id, patch);
         if (updated === 0) return 'Error: item no longer exists.';
-        set((state) => ({ items: state.items.map((i) => (i.id === target.id ? { ...i, ...patch } : i)) }));
+        publishToolChange((state) => ({ items: state.items.map((i) => (i.id === target.id ? { ...i, ...patch } : i)) }));
         await touchTopic(topicId);
         return `Updated item [${shortId(target.id)}].`;
       }
@@ -455,7 +479,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
         const target = args.itemId ? resolveById(topicItems, args.itemId) : undefined;
         if (!target) return 'Error: item not found.';
         await athenaDb.checklistItems.delete(target.id);
-        set((state) => ({ items: state.items.filter((i) => i.id !== target.id) }));
+        publishToolChange((state) => ({ items: state.items.filter((i) => i.id !== target.id) }));
         await touchTopic(topicId);
         return `Deleted item [${shortId(target.id)}].`;
       }
@@ -478,7 +502,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
             requireUpdated(await athenaDb.checklistItems.update(item.id, { sortOrder: item.sortOrder }), 'Item');
           }
         });
-        set((state) => {
+        publishToolChange((state) => {
           const byId = new Map(reordered.map((i) => [i.id, i]));
           return {
             items: sortItems(state.items.map((i) => byId.get(i.id) ?? i)),
@@ -509,7 +533,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
             requireUpdated(await athenaDb.checklistItems.update(item.id, { sortOrder: item.sortOrder }), 'Item');
           }
         });
-        set((state) => {
+        publishToolChange((state) => {
           const byId = new Map(reordered.map((item) => [item.id, item]));
           return { items: sortItems(state.items.map((item) => byId.get(item.id) ?? item)) };
         });
@@ -550,7 +574,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           }
           await athenaDb.checklistItems.bulkAdd(createdItems);
         });
-        set((state) => ({ items: [...state.items, ...createdItems] }));
+        publishToolChange((state) => ({ items: [...state.items, ...createdItems] }));
         await touchTopic(topicId);
         return `Added ${createdItems.length} item(s) to group [${shortId(target.id)}].`;
       }
@@ -569,7 +593,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
         await athenaDb.transaction('rw', athenaDb.checklistItems, async () => {
           await athenaDb.checklistItems.bulkDelete(idsToDelete);
         });
-        set((state) => ({ items: state.items.filter((item) => !idsToDelete.includes(item.id)) }));
+        publishToolChange((state) => ({ items: state.items.filter((item) => !idsToDelete.includes(item.id)) }));
         await touchTopic(topicId);
         return `Deleted ${idsToDelete.length} item(s).`;
       }
@@ -583,10 +607,15 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
    * Appends a history entry for the current topic and trims to the last
    * HISTORY_LIMIT entries (both in state and in the DB).
    */
-  const addHistoryEntry = async (topicId: string, role: 'user' | 'assistant', content: string): Promise<void> => {
+  const addHistoryEntry = async (
+    topicId: string,
+    role: 'user' | 'assistant',
+    content: string,
+    ownerTabId?: string,
+  ): Promise<void> => {
     const trimmed = content.trim();
     if (!trimmed) return;
-    const tabId = await getActiveTabId(topicId);
+    const tabId = ownerTabId ?? (await getActiveTabId(topicId));
 
     let committedHistory: ChecklistHistoryEntry[] = [];
     await athenaDb.transaction('rw', [athenaDb.topics, athenaDb.checklistHistory], async () => {
@@ -666,6 +695,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       if (get().editing || get().generating) return null;
       const trimmed = name.trim();
       if (!trimmed) return null;
+      const finishManualMutation = beginManualMutation();
       try {
         const tab: ChecklistTab = { id: crypto.randomUUID(), topicId, name: trimmed, sortOrder: 0 };
         await athenaDb.transaction('rw', [athenaDb.topics, athenaDb.checklistTabs], async () => {
@@ -675,12 +705,16 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           await athenaDb.checklistTabs.add(tab);
           requireUpdated(await athenaDb.topics.update(topicId, { activeChecklistTabId: tab.id }), 'Topic');
         });
-        set((state) => ({ tabs: sortTabs([...state.tabs, tab]), activeTabId: tab.id, groups: [], items: [], history: [] }));
+        if (get().activeTopicId === topicId) {
+          set((state) => ({ tabs: sortTabs([...state.tabs, tab]), activeTabId: tab.id, groups: [], items: [], history: [] }));
+        }
         await touchTopic(topicId);
         return tab;
       } catch (err) {
         notifyError('Failed to create tab', err);
         return null;
+      } finally {
+        finishManualMutation();
       }
     },
 
@@ -688,15 +722,22 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       if (get().editing || get().generating) return false;
       const trimmed = name.trim();
       if (!trimmed) return false;
+      const finishManualMutation = beginManualMutation();
       try {
         const tab = await athenaDb.checklistTabs.get(tabId);
         requireUpdated(await athenaDb.checklistTabs.update(tabId, { name: trimmed }), 'Tab');
-        set((state) => ({ tabs: state.tabs.map((candidate) => (candidate.id === tabId ? { ...candidate, name: trimmed } : candidate)) }));
+        if (tab && get().activeTopicId === tab.topicId) {
+          set((state) => ({
+            tabs: state.tabs.map((candidate) => (candidate.id === tabId ? { ...candidate, name: trimmed } : candidate)),
+          }));
+        }
         if (tab) await touchTopic(tab.topicId);
         return true;
       } catch (err) {
         notifyError('Failed to rename tab', err);
         return false;
+      } finally {
+        finishManualMutation();
       }
     },
 
@@ -708,6 +749,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       if (!tab) return false;
       const remainingTabs = tabs.filter((candidate) => candidate.id !== tabId);
       const nextActiveTabId = activeTabId === tabId ? remainingTabs[0].id : (activeTabId ?? remainingTabs[0].id);
+      const finishManualMutation = beginManualMutation();
       try {
         await athenaDb.transaction(
           'rw',
@@ -721,17 +763,23 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
             requireUpdated(await athenaDb.topics.update(activeTopicId, { activeChecklistTabId: nextActiveTabId }), 'Topic');
           },
         );
-        if (activeTabId === tabId) {
-          const content = await loadTabContent(nextActiveTabId);
-          set({ tabs: remainingTabs, activeTabId: nextActiveTabId, ...content });
-        } else {
-          set({ tabs: remainingTabs });
+        if (get().activeTopicId === activeTopicId) {
+          if (activeTabId === tabId) {
+            const content = await loadTabContent(nextActiveTabId);
+            if (get().activeTopicId === activeTopicId) {
+              set({ tabs: remainingTabs, activeTabId: nextActiveTabId, ...content });
+            }
+          } else {
+            set({ tabs: remainingTabs });
+          }
         }
         await touchTopic(activeTopicId);
         return true;
       } catch (err) {
         notifyError('Failed to delete tab', err);
         return false;
+      } finally {
+        finishManualMutation();
       }
     },
 
@@ -739,14 +787,19 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       if (get().editing || get().generating || get().activeTabId === tabId) return;
       const tab = get().tabs.find((candidate) => candidate.id === tabId);
       if (!tab) return;
+      const finishManualMutation = beginManualMutation();
       try {
         const requestId = ++checklistLoadRequestId;
         const content = await loadTabContent(tabId);
         if (requestId !== checklistLoadRequestId) return;
         requireUpdated(await athenaDb.topics.update(tab.topicId, { activeChecklistTabId: tabId }), 'Topic');
-        set({ activeTabId: tabId, ...content, lastEditSummary: '' });
+        if (get().activeTopicId === tab.topicId) {
+          set({ activeTabId: tabId, ...content, lastEditSummary: '' });
+        }
       } catch (err) {
         notifyError('Failed to switch tab', err);
+      } finally {
+        finishManualMutation();
       }
     },
 
@@ -754,6 +807,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       if (get().editing) return null;
       const trimmed = title.trim();
       if (!trimmed) return null;
+      const finishManualMutation = beginManualMutation();
       try {
         const tabId = await getActiveTabId(topicId);
         const group: ChecklistGroup = {
@@ -769,12 +823,19 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           group.sortOrder = nextSortOrder(persistedGroups);
           await athenaDb.checklistGroups.add(group);
         });
-        set((state) => ({ groups: [...state.groups, group] }));
+        // The write belongs to its original topic/tab. If the user navigated
+        // while it was pending, keep the committed row but do not append it to
+        // the replacement view.
+        if (get().activeTopicId === topicId && get().activeTabId === tabId) {
+          set((state) => ({ groups: [...state.groups, group] }));
+        }
         await touchTopic(topicId);
         return group;
       } catch (err) {
         notifyError('Failed to create list', err);
         return null;
+      } finally {
+        finishManualMutation();
       }
     },
 
@@ -782,35 +843,45 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       if (get().editing) return false;
       const trimmed = title.trim();
       if (!trimmed) return false;
+      const finishManualMutation = beginManualMutation();
       try {
         const group = await athenaDb.checklistGroups.get(groupId);
         requireUpdated(await athenaDb.checklistGroups.update(groupId, { title: trimmed }), 'Group');
-        set((state) => ({ groups: state.groups.map((g) => (g.id === groupId ? { ...g, title: trimmed } : g)) }));
+        if (group && get().activeTopicId === group.topicId && get().activeTabId === (group.tabId ?? null)) {
+          set((state) => ({ groups: state.groups.map((g) => (g.id === groupId ? { ...g, title: trimmed } : g)) }));
+        }
         if (group) await touchTopic(group.topicId);
         return true;
       } catch (err) {
         notifyError('Failed to rename list', err);
         return false;
+      } finally {
+        finishManualMutation();
       }
     },
 
     deleteGroup: async (groupId: string): Promise<boolean> => {
       if (get().editing) return false;
+      const finishManualMutation = beginManualMutation();
       try {
         const group = await athenaDb.checklistGroups.get(groupId);
         await athenaDb.transaction('rw', [athenaDb.checklistGroups, athenaDb.checklistItems], async () => {
           await athenaDb.checklistGroups.delete(groupId);
           await athenaDb.checklistItems.where('groupId').equals(groupId).delete();
         });
-        set((state) => ({
-          groups: state.groups.filter((g) => g.id !== groupId),
-          items: state.items.filter((i) => i.groupId !== groupId),
-        }));
+        if (group && get().activeTopicId === group.topicId && get().activeTabId === (group.tabId ?? null)) {
+          set((state) => ({
+            groups: state.groups.filter((g) => g.id !== groupId),
+            items: state.items.filter((i) => i.groupId !== groupId),
+          }));
+        }
         if (group) await touchTopic(group.topicId);
         return true;
       } catch (err) {
         notifyError('Failed to delete list', err);
         return false;
+      } finally {
+        finishManualMutation();
       }
     },
 
@@ -819,6 +890,9 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       const groups = get().groups;
       if (fromIndex === toIndex) return;
       if (fromIndex < 0 || toIndex < 0 || fromIndex >= groups.length || toIndex >= groups.length) return;
+      const ownerTopicId = get().activeTopicId;
+      const ownerTabId = get().activeTabId;
+      const finishManualMutation = beginManualMutation();
       const next = [...groups];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
@@ -829,11 +903,15 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
             requireUpdated(await athenaDb.checklistGroups.update(g.id, { sortOrder: g.sortOrder }), 'Group');
           }
         });
-        set({ groups: reordered });
+        if (get().activeTopicId === ownerTopicId && get().activeTabId === ownerTabId) {
+          set({ groups: reordered });
+        }
         const topicId = reordered[0]?.topicId;
         if (topicId) await touchTopic(topicId);
       } catch (err) {
         notifyError('Failed to reorder lists', err);
+      } finally {
+        finishManualMutation();
       }
     },
 
@@ -841,6 +919,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       if (get().editing) return null;
       const trimmed = content.trim();
       if (!trimmed) return null;
+      const finishManualMutation = beginManualMutation();
       try {
         const item: ChecklistItem = {
           id: crypto.randomUUID(),
@@ -851,26 +930,35 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           sortOrder: 0,
           createdBy,
         };
+        let ownerTopicId: string | null = null;
+        let ownerTabId: string | null = null;
         await athenaDb.transaction('rw', [athenaDb.topics, athenaDb.checklistGroups, athenaDb.checklistItems], async () => {
           const group = await athenaDb.checklistGroups.get(groupId);
           if (!group) throw new DOMException('Checklist group no longer exists', 'AbortError');
           await requireTopic(group.topicId);
+          ownerTopicId = group.topicId;
+          ownerTabId = group.tabId ?? null;
           const persistedItems = await athenaDb.checklistItems.where('groupId').equals(groupId).toArray();
           item.sortOrder = nextSortOrder(persistedItems);
           await athenaDb.checklistItems.add(item);
         });
-        set((state) => ({ items: [...state.items, item] }));
-        const group = await athenaDb.checklistGroups.get(groupId);
-        if (group) await touchTopic(group.topicId);
+        if (get().activeTopicId === ownerTopicId && get().activeTabId === ownerTabId) {
+          set((state) => ({ items: [...state.items, item] }));
+        }
+        const resolvedOwnerTopicId = ownerTopicId as string | null;
+        if (resolvedOwnerTopicId) await touchTopic(resolvedOwnerTopicId);
         return item;
       } catch (err) {
         notifyError('Failed to add task', err);
         return null;
+      } finally {
+        finishManualMutation();
       }
     },
 
     updateItem: async (itemId: string, patch): Promise<boolean> => {
       if (get().editing) return false;
+      const finishManualMutation = beginManualMutation();
       try {
         const topicId = await getItemTopicId(itemId);
         requireUpdated(await persistItemUpdate(itemId, patch), 'Item');
@@ -880,11 +968,15 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       } catch (err) {
         notifyError('Failed to update task', err);
         return false;
+      } finally {
+        finishManualMutation();
       }
     },
 
     toggleItem: async (itemId: string): Promise<boolean> => {
       if (get().editing) return false;
+      const intentVersion = (itemIntentVersions.get(itemId) ?? 0) + 1;
+      itemIntentVersions.set(itemId, intentVersion);
       let previousChecked: boolean | undefined;
       let desiredChecked: boolean | undefined;
       set((state) => ({
@@ -898,34 +990,49 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       if (previousChecked === undefined || desiredChecked === undefined) return false;
       const persistedPreviousChecked = previousChecked;
       const persistedDesiredChecked = desiredChecked;
+      const finishManualMutation = beginManualMutation();
 
       try {
         const topicId = await getItemTopicId(itemId);
+        // A newer toggle owns the item's state. Do not let this older lookup
+        // completion overwrite the user's latest intent.
+        if (itemIntentVersions.get(itemId) !== intentVersion) return false;
         requireUpdated(await persistItemUpdate(itemId, { checked: persistedDesiredChecked }), 'Item');
         if (topicId) await touchTopic(topicId);
         return true;
       } catch (err) {
-        set((state) => ({
-          items: state.items.map((item) =>
-            item.id === itemId && item.checked === persistedDesiredChecked ? { ...item, checked: persistedPreviousChecked } : item,
-          ),
-        }));
+        if (itemIntentVersions.get(itemId) === intentVersion) {
+          set((state) => ({
+            items: state.items.map((item) =>
+              item.id === itemId && item.checked === persistedDesiredChecked ? { ...item, checked: persistedPreviousChecked } : item,
+            ),
+          }));
+        }
         notifyError('Failed to update task', err);
         return false;
+      } finally {
+        finishManualMutation();
       }
     },
 
     deleteItem: async (itemId: string): Promise<boolean> => {
       if (get().editing) return false;
+      const ownerTopicId = get().activeTopicId;
+      const ownerTabId = get().activeTabId;
+      const finishManualMutation = beginManualMutation();
       try {
         const topicId = await getItemTopicId(itemId);
         await athenaDb.checklistItems.delete(itemId);
-        set((state) => ({ items: state.items.filter((i) => i.id !== itemId) }));
+        if (get().activeTopicId === ownerTopicId && get().activeTabId === ownerTabId) {
+          set((state) => ({ items: state.items.filter((i) => i.id !== itemId) }));
+        }
         if (topicId) await touchTopic(topicId);
         return true;
       } catch (err) {
         notifyError('Failed to delete task', err);
         return false;
+      } finally {
+        finishManualMutation();
       }
     },
 
@@ -934,6 +1041,9 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       const groupItems = get().items.filter((i) => i.groupId === groupId);
       if (fromIndex === toIndex) return;
       if (fromIndex < 0 || toIndex < 0 || fromIndex >= groupItems.length || toIndex >= groupItems.length) return;
+      const ownerTopicId = get().activeTopicId;
+      const ownerTabId = get().activeTabId;
+      const finishManualMutation = beginManualMutation();
       const next = [...groupItems];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
@@ -944,14 +1054,18 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
             requireUpdated(await athenaDb.checklistItems.update(it.id, { sortOrder: it.sortOrder }), 'Item');
           }
         });
-        set((state) => {
-          const byId = new Map(reordered.map((i) => [i.id, i]));
-          return { items: sortItems(state.items.map((i) => byId.get(i.id) ?? i)) };
-        });
+        if (get().activeTopicId === ownerTopicId && get().activeTabId === ownerTabId) {
+          set((state) => {
+            const byId = new Map(reordered.map((i) => [i.id, i]));
+            return { items: sortItems(state.items.map((i) => byId.get(i.id) ?? i)) };
+          });
+        }
         const group = await athenaDb.checklistGroups.get(groupId);
         if (group) await touchTopic(group.topicId);
       } catch (err) {
         notifyError('Failed to reorder tasks', err);
+      } finally {
+        finishManualMutation();
       }
     },
 
@@ -1079,7 +1193,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
 
     applyLlmEdit: async (topicId: string, instruction: string): Promise<void> => {
       const trimmed = instruction.trim();
-      if (!trimmed || get().editing) return;
+      if (!trimmed || get().editing || activeEditOperationId !== null) return;
 
       const model: ChatModel = useChatStore.getState().selectedModel;
       if (!model.supportsTools) {
@@ -1087,26 +1201,43 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
         return;
       }
 
-      const resolvedTabId = await getActiveTabId(topicId);
-      const topicGroups = get().groups.filter((group) => group.tabId === resolvedTabId);
-      const topicGroupIds = new Set(topicGroups.map((group) => group.id));
-      const topicItems = get().items.filter((item) => topicGroupIds.has(item.groupId));
-      const { activeTopicId, activeTabId } = get();
-      if (activeTopicId !== null && activeTopicId !== topicId) return;
-      if (activeTabId !== resolvedTabId) return;
-      const stateBlock = serializeChecklist(topicGroups, topicItems);
-
+      // Reserve ownership synchronously, before the first await, so two
+      // same-tick invocations cannot both enter the orchestrator.
+      const operationId = ++nextEditOperationId;
+      activeEditOperationId = operationId;
+      const ownsEdit = (): boolean => activeEditOperationId === operationId;
       const editController = new AbortController();
+      const throwIfEditAborted = (): void => {
+        if (editController.signal.aborted) throw new DOMException('Request stopped', 'AbortError');
+      };
       editAbortController = editController;
       set({ editing: true, streamingContent: '', lastEditSummary: '', toolLog: '' });
       let completedToolMutations = 0;
       const unresolvedToolErrors = new Map<string, string>();
       let structuralMutationIteration: number | null = null;
+      let editTabId: string | undefined;
       const editStartedAt = Date.now();
 
       try {
+        // Wait for manual writes admitted before this edit so the snapshot
+        // reflects their committed values rather than a stale checklist.
+        await Promise.all([...pendingManualMutations]);
+        if (!ownsEdit()) return;
+
+        const resolvedTabId = await getActiveTabId(topicId);
+        if (!ownsEdit()) return;
+        editTabId = resolvedTabId;
+        const topicGroups = get().groups.filter((group) => group.tabId === resolvedTabId);
+        const topicGroupIds = new Set(topicGroups.map((group) => group.id));
+        const topicItems = get().items.filter((item) => topicGroupIds.has(item.groupId));
+        const { activeTopicId, activeTabId } = get();
+        if (activeTopicId !== null && activeTopicId !== topicId) return;
+        if (activeTabId !== resolvedTabId) return;
+        const stateBlock = serializeChecklist(topicGroups, topicItems);
+
         const historyMessages = buildHistoryMessages();
-        await addHistoryEntry(topicId, 'user', trimmed);
+        await addHistoryEntry(topicId, 'user', trimmed, editTabId);
+        throwIfEditAborted();
         const messages: LlmMessage[] = [
           { role: 'system', content: CHECKLIST_EDITING_INSTRUCTIONS },
           {
@@ -1123,7 +1254,9 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           model,
           0.2,
           messages,
-          (token: string): void => set((state) => ({ streamingContent: state.streamingContent + token })),
+          (token: string): void => {
+            if (ownsEdit()) set((state) => ({ streamingContent: state.streamingContent + token }));
+          },
           undefined,
           undefined,
           async (toolName: string, argsJson: string, iteration?: number): Promise<string> => {
@@ -1154,13 +1287,16 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
             const status = toolResult.startsWith('Error:') ? toolResult : `Success: ${toolResult}`;
             return `${status}\nCURRENT CHECKLIST JSON after this tool call:\n${serializeChecklistToolState(currentGroups, currentItems)}`;
           },
-          (log: string): void => set((state) => ({ toolLog: state.toolLog + log })),
+          (log: string): void => {
+            if (ownsEdit()) set((state) => ({ toolLog: state.toolLog + log }));
+          },
           CHECKLIST_TOOLS,
           editController.signal,
           { includeCustomInstructions: false, toolChoice: 'required', disableThinking: true },
           false,
         );
 
+        throwIfEditAborted();
         if (unresolvedToolErrors.size > 0) {
           useNotificationStore.getState().addNotification('Some checklist changes failed', formatToolErrors(unresolvedToolErrors), 'warning');
         }
@@ -1178,24 +1314,58 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           JSON.stringify({ toolLoopTrace: result.toolLoopTrace }),
         );
 
+        throwIfEditAborted();
+        if (!ownsEdit()) return;
         if ((get().activeTopicId !== null && get().activeTopicId !== topicId) || get().activeTabId !== activeTabId) {
           throw new DOMException('Checklist topic changed during edit', 'AbortError');
         }
         set({ lastEditSummary: result.finalContent.trim() });
 
         // Record the summary for future turns; the instruction was persisted before execution.
-        await addHistoryEntry(topicId, 'assistant', result.finalContent);
+        await addHistoryEntry(topicId, 'assistant', result.finalContent, editTabId);
       } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
-          if (get().activeTopicId === topicId && editController.signal.aborted) {
-            await addHistoryEntry(topicId, 'assistant', `Edit stopped after ${completedToolMutations} successful tool operation(s).`);
+        if (editController.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+          // Durable outcome recording is independent of UI ownership: stopEdit
+          // has already released the latter by the time this branch runs.
+          if (stoppedEditOperationIds.has(operationId) && editController.signal.aborted) {
+            stoppedEditOperationIds.delete(operationId);
+            try {
+              await addHistoryEntry(
+                topicId,
+                'assistant',
+                `Edit stopped after ${completedToolMutations} successful tool operation(s).`,
+                editTabId,
+              );
+            } catch (historyError) {
+              notifyError('Failed to record checklist edit outcome', historyError);
+            }
           }
           return;
         }
-        notifyError('Failed to update checklist', err);
+        if (ownsEdit()) {
+          notifyError('Failed to update checklist', err);
+          // Durable tool mutations may already have committed. Leave a terminal
+          // record so later edits and users can distinguish partial success.
+          try {
+            await addHistoryEntry(
+              topicId,
+              'assistant',
+              `Edit failed after ${completedToolMutations} successful tool operation(s): ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+              editTabId,
+            );
+          } catch (historyError) {
+            notifyError('Failed to record checklist edit outcome', historyError);
+          }
+        }
       } finally {
-        set((state) => ({ editing: false, streamingContent: '', lastToolLog: state.toolLog }));
-        editAbortController = null;
+        stoppedEditOperationIds.delete(operationId);
+        if (ownsEdit()) {
+          activeEditOperationId = null;
+          set((state) => ({ editing: false, streamingContent: '', lastToolLog: state.toolLog }));
+          if (editAbortController === editController) editAbortController = null;
+        }
       }
     },
 
@@ -1204,6 +1374,12 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
         editAbortController.abort();
         editAbortController = null;
       }
+      // Release ownership immediately so a replacement edit can start. The
+      // stopped invocation's finalizer checks the operation id before clearing
+      // shared state, so it cannot clobber that replacement. Its abort handler
+      // still records the durable stopped outcome for this operation id.
+      if (activeEditOperationId !== null) stoppedEditOperationIds.add(activeEditOperationId);
+      activeEditOperationId = null;
       set({ editing: false, streamingContent: '', lastEditSummary: '' });
     },
   };

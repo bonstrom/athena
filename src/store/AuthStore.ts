@@ -24,6 +24,8 @@ interface AuthState {
   chatFontSize: number;
   themeMode: 'light' | 'dark';
   colorTheme: string;
+  checklistCelebrations: boolean;
+  setChecklistCelebrations: (enabled: boolean) => void;
   dateFormat: 'sv-SE' | 'en-GB' | 'en-US';
   currency: CurrencyCode;
   predefinedPrompts: PredefinedPrompt[];
@@ -103,7 +105,8 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedAiSummaryEnabled = localStorage.getItem('aiSummaryEnabled') === 'true';
   const storedSummaryModel = localStorage.getItem('summaryModel') ?? 'same';
   const storedDefaultMaxContextMessages = Number(localStorage.getItem('defaultMaxContextMessages') ?? '10');
-  const storedShowCameraButton = (localStorage.getItem('showCameraButton') as 'auto' | 'always' | 'never' | null) ?? 'auto';
+  const storedShowCameraButton =
+    (localStorage.getItem('showCameraButton') as 'auto' | 'always' | 'never' | null) ?? 'auto';
   const storedTtsEnabled = localStorage.getItem('ttsEnabled') === 'true';
   const storedTtsVoiceId = localStorage.getItem('ttsVoiceId') ?? DEFAULT_VOICE_ID;
   const storedSvgGenerationEnabled = localStorage.getItem('svgGenerationEnabled') !== 'false'; // default true
@@ -118,6 +121,11 @@ export const useAuthStore = create<AuthState>((set) => {
     chatFontSize: storedChatFontSize,
     themeMode: storedThemeMode,
     colorTheme: storedColorTheme,
+    checklistCelebrations: localStorage.getItem('checklistCelebrations') !== 'false',
+    setChecklistCelebrations: (enabled): void => {
+      localStorage.setItem('checklistCelebrations', String(enabled));
+      set({ checklistCelebrations: enabled });
+    },
     dateFormat: storedDateFormat,
     currency: storedCurrency,
     predefinedPrompts: [],
@@ -138,6 +146,7 @@ export const useAuthStore = create<AuthState>((set) => {
     svgGenerationEnabled: storedSvgGenerationEnabled,
     clearAuth: (): void => {
       localStorage.removeItem('userName');
+      localStorage.removeItem('checklistCelebrations');
       localStorage.removeItem('customInstructions');
       localStorage.removeItem('chatWidth');
       localStorage.removeItem('chatFontSize');
@@ -187,6 +196,7 @@ export const useAuthStore = create<AuthState>((set) => {
         ttsEnabled: false,
         ttsVoiceId: DEFAULT_VOICE_ID,
         svgGenerationEnabled: true,
+        checklistCelebrations: true,
       });
     },
     setShowCameraButton: (value: 'auto' | 'always' | 'never'): void => {

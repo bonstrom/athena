@@ -124,6 +124,59 @@ interface MermaidProps {
 
 const MERMAID_DEBOUNCE_MS = 300;
 
+// Mermaid builds temporary DOM before returning SVG, so resource-capable HTML
+// labels must be rejected before render() is called, not only sanitized after.
+const MERMAID_RESOURCE_TAG = /<\s*(?:img|image|input|feimage|iframe|object|embed|video|audio|source|link|style)\b/i;
+const MERMAID_EXTERNAL_URL = /(?:src|srcset|href|xlink:href)\s*=\s*["']?\s*(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
+
+function decodeResourceEntities(value: string): string {
+  return value
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string): string => {
+      const code = Number.parseInt(hex, 16);
+      return Number.isFinite(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
+    })
+    .replace(/&#([0-9]+);/g, (_match, decimal: string): string => {
+      const code = Number.parseInt(decimal, 10);
+      return Number.isFinite(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
+    })
+    .replace(/&sol;|&Tab;|&NewLine;|&colon;|&period;|&amp;/gi, (entity): string => {
+      switch (entity.toLowerCase()) {
+        case '&sol;':
+          return '/';
+        case '&tab;':
+          return '\t';
+        case '&newline;':
+          return '\n';
+        case '&colon;':
+          return ':';
+        case '&period;':
+          return '.';
+        default:
+          return '&';
+      }
+    });
+}
+
+function stripCharacters(value: string, removeSpaces: boolean): string {
+  let result = '';
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    const isRemovedControl = code <= 31 || code === 127;
+    if (removeSpaces ? code <= 32 || code === 127 : isRemovedControl) continue;
+    result += character;
+  }
+  return result;
+}
+
+function normalizeResourceText(value: string): string {
+  return stripCharacters(decodeResourceEntities(value).replace(/\\/g, '/'), false);
+}
+
+function hasUnsafeMermaidResource(definition: string): boolean {
+  const normalized = normalizeResourceText(definition);
+  return MERMAID_RESOURCE_TAG.test(normalized) || MERMAID_EXTERNAL_URL.test(normalized);
+}
+
 const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -138,6 +191,10 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
 
     const renderDiagram = async (): Promise<void> => {
       try {
+        if (hasUnsafeMermaidResource(children)) {
+          if (!cancelled) setError('External resources are not allowed in diagrams.');
+          return;
+        }
         const mermaidModule = (await import('mermaid')) as unknown as { default: MermaidApi };
         const mermaid = mermaidModule.default;
         mermaid.initialize({
@@ -146,10 +203,17 @@ const MermaidDiagram: React.FC<MermaidProps> = ({ children }) => {
           securityLevel: 'loose',
         });
         const id = `mermaid-${crypto.randomUUID()}`;
-        const { svg } = await mermaid.render(id, children.trim());
-        if (cancelled) return;
-        container.innerHTML = sanitizeSvg(svg);
-        setError(null);
+        try {
+          const { svg } = await mermaid.render(id, children.trim());
+          if (cancelled) return;
+          container.innerHTML = sanitizeSvg(svg);
+          setError(null);
+        } finally {
+          // Mermaid may leave its body-level `d<id>` staging container behind
+          // when parsing fails. It is outside React's ownership; remove it.
+          const orphan = document.getElementById(`d${id}`);
+          if (orphan) orphan.remove();
+        }
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Failed to render diagram');
@@ -247,8 +311,10 @@ const SVG_SANITIZE_CONFIG: DOMPurify.Config = {
     'title',
     'desc',
     'metadata',
-    'style',
   ],
+  // SVG <style> elements apply document-wide selectors, not just to the SVG.
+  // Untrusted generated diagrams must not be able to restyle the application.
+  FORBID_TAGS: ['style'],
   ADD_ATTR: [
     'd',
     'cx',
@@ -325,8 +391,70 @@ const SVG_SANITIZE_CONFIG: DOMPurify.Config = {
   HTML_INTEGRATION_POINTS: { 'annotation-xml': true, foreignobject: true },
 };
 
+/**
+ * Browsers normalize backslashes in URLs, so classify a normalized reference
+ * instead of matching only literal `https://`.
+ */
+function isExternalResourceReference(raw: string): boolean {
+  const value = stripCharacters(normalizeResourceText(raw), true);
+  if (!value || value.startsWith('#')) return false;
+  if (/^(?:data|blob):/i.test(value)) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return true;
+  return value.startsWith('//');
+}
+
+function srcsetHasExternalResource(value: string): boolean {
+  return value.split(',').some((candidate) => {
+    const url = candidate.trim().split(/\s+/)[0] ?? '';
+    return isExternalResourceReference(url);
+  });
+}
+
+const RESOURCE_URL_ATTRIBUTES = [
+  'src',
+  'href',
+  'xlink:href',
+  'srcset',
+  'poster',
+  'data',
+  'action',
+  'formaction',
+  'background',
+  'longdesc',
+  'cite',
+];
+
+/**
+ * Apply a restrictive resource policy to every element: external URLs are
+ * removed from attributes that can trigger automatic loading. Ordinary
+ * user-activated <a> links are kept distinct from resource sinks.
+ */
+function removeExternalResources(html: string): string {
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+
+  doc.querySelectorAll('style').forEach((element) => element.remove());
+  for (const element of doc.body.querySelectorAll('*')) {
+    const tagName = element.tagName.toLowerCase();
+    for (const attribute of RESOURCE_URL_ATTRIBUTES) {
+      if (tagName === 'a' && (attribute === 'href' || attribute === 'xlink:href')) continue;
+      const value = element.getAttribute(attribute);
+      if (value === null) continue;
+      if (attribute === 'srcset' ? srcsetHasExternalResource(value) : isExternalResourceReference(value)) {
+        element.removeAttribute(attribute);
+      }
+    }
+    const style = element.getAttribute('style');
+    if (style !== null) {
+      const normalized = stripCharacters(normalizeResourceText(style), true);
+      if (/url\(['"]?(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(normalized)) element.removeAttribute('style');
+    }
+  }
+
+  return doc.body.innerHTML;
+}
+
 function sanitizeSvg(svg: string): string {
-  return svgSanitizer.sanitize(svg, SVG_SANITIZE_CONFIG);
+  return removeExternalResources(svgSanitizer.sanitize(svg, SVG_SANITIZE_CONFIG));
 }
 
 type SvgBackground = 'light' | 'dark' | 'transparent';

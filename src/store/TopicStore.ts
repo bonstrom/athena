@@ -229,7 +229,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     // Pre-index assistant messages by parentId for fallback logic
     const assistantByParent = new Map<string, Message[]>();
     for (const m of sorted) {
-      if (m.type === 'assistant' && m.parentMessageId) {
+      if (m.type === 'assistant' && m.parentMessageId && !m.isDeleted) {
         const existing = assistantByParent.get(m.parentMessageId) ?? [];
         existing.push(m);
         assistantByParent.set(m.parentMessageId, existing);
@@ -252,8 +252,15 @@ export const useTopicStore = create<TopicState>((set, get) => ({
           const parent = userMessageMap.get(m.parentMessageId);
           if (parent) {
             const versions = assistantByParent.get(m.parentMessageId) ?? [];
-            // Use activeResponseId if set, otherwise fallback to the latest version in the sequence
-            const activeId = parent.activeResponseId ?? (versions.length > 0 ? versions[versions.length - 1].id : null);
+            // Prefer a valid, non-deleted active response. A stale pointer left
+            // behind after deletion must not hide the newest surviving answer.
+            const storedActiveId = parent.activeResponseId;
+            const activeId =
+              storedActiveId && versions.some((version) => version.id === storedActiveId)
+                ? storedActiveId
+                : versions.length > 0
+                  ? versions[versions.length - 1].id
+                  : null;
             if (activeId === m.id) {
               activeSequence.push(m);
             }
@@ -330,7 +337,15 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
     if (ragEnabled && userQuery && embeddingService.isReady) {
       const baseIds = new Set(base.map((m) => m.id));
-      const candidates = activeSequence.filter((m) => (m.type === 'user' || m.type === 'assistant') && m.embedding && m.embedding.length > 0);
+      // Retrieval only supplements the conversation window. Messages already in
+      // the base context must not compete for top-K slots or be injected twice.
+      const candidates = activeSequence.filter(
+        (m) =>
+          (m.type === 'user' || m.type === 'assistant') &&
+          !baseIds.has(m.id) &&
+          m.embedding &&
+          m.embedding.length > 0,
+      );
 
       try {
         const scoredResults: ScoredMessage[] = await embeddingService.searchSimilarMessages(userQuery, candidates, RAG_TOP_K);

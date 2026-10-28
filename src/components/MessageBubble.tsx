@@ -28,6 +28,7 @@ import { useState, memo, useEffect, useRef, useMemo } from 'react';
 import { useAuthStore } from '../store/AuthStore';
 import MarkdownWithCode from './MarkdownWithCode';
 import TypingIndicator from './TypingIndicator';
+import ActivityIndicator from './ActivityIndicator';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PushPinIcon from '@mui/icons-material/PushPin';
@@ -82,12 +83,24 @@ interface SvgEditDialogProps {
   open: boolean;
   messageId: string;
   svgSource: string | null;
-  editSvgInMessage: (messageId: string, svgSource: string, instruction: string, onReasoning?: (partial: string) => void) => Promise<void>;
+  editSvgInMessage: (
+    messageId: string,
+    svgSource: string,
+    instruction: string,
+    onReasoning?: (partial: string) => void,
+  ) => Promise<void>;
   addNotification: (title: string, message?: string, severity?: NotificationSeverity) => void;
   onClose: () => void;
 }
 
-const SvgEditDialog: React.FC<SvgEditDialogProps> = ({ open, messageId, svgSource, editSvgInMessage, addNotification, onClose }) => {
+const SvgEditDialog: React.FC<SvgEditDialogProps> = ({
+  open,
+  messageId,
+  svgSource,
+  editSvgInMessage,
+  addNotification,
+  onClose,
+}) => {
   const [instruction, setInstruction] = useState('');
   const [reasoning, setReasoning] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -109,7 +122,9 @@ const SvgEditDialog: React.FC<SvgEditDialogProps> = ({ open, messageId, svgSourc
     setIsEditing(true);
     setReasoning('');
     try {
-      await editSvgInMessage(messageId, svgSource, instruction.trim(), (partial: string): void => setReasoning((prev) => prev + partial));
+      await editSvgInMessage(messageId, svgSource, instruction.trim(), (partial: string): void =>
+        setReasoning((prev) => prev + partial),
+      );
       addNotification('SVG updated', 'The SVG was edited in place.', 'success');
       onClose();
     } catch (err) {
@@ -120,7 +135,11 @@ const SvgEditDialog: React.FC<SvgEditDialogProps> = ({ open, messageId, svgSourc
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      fullWidth
+      maxWidth="sm">
       <DialogTitle>Edit SVG</DialogTitle>
       <DialogContent>
         <DialogContentText>Describe the change you want to make to this SVG.</DialogContentText>
@@ -146,23 +165,31 @@ const SvgEditDialog: React.FC<SvgEditDialogProps> = ({ open, messageId, svgSourc
               borderLeft: (theme): string => `4px solid ${alpha(theme.palette.text.secondary, 0.2)}`,
               maxHeight: '240px',
               overflowY: 'auto',
-            }}
-          >
+            }}>
             <Typography
               variant="caption"
               color="text.secondary"
-              sx={{ fontWeight: 'bold', mb: 0.5, display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}
-            >
+              sx={{
+                fontWeight: 'bold',
+                mb: 0.5,
+                display: 'block',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+              }}>
               Thoughts
             </Typography>
-            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.4 }}>
+            <Typography
+              variant="body2"
+              sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.4 }}>
               {reasoning || 'Thinking…'}
             </Typography>
           </Box>
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={isEditing}>
+        <Button
+          onClick={handleClose}
+          disabled={isEditing}>
           Cancel
         </Button>
         <Button
@@ -172,8 +199,14 @@ const SvgEditDialog: React.FC<SvgEditDialogProps> = ({ open, messageId, svgSourc
           color="primary"
           variant="contained"
           disabled={isEditing || !instruction.trim()}
-          startIcon={isEditing ? <CircularProgress size={16} color="inherit" /> : undefined}
-        >
+          startIcon={
+            isEditing ? (
+              <CircularProgress
+                size={16}
+                color="inherit"
+              />
+            ) : undefined
+          }>
           Edit
         </Button>
       </DialogActions>
@@ -202,6 +235,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const currency = useAuthStore((s) => s.currency);
   const isMobile = useUiStore((s) => s.isMobile);
   const currentlySpeakingMessageId = useUiStore((s) => s.currentlySpeakingMessageId);
+  const activity = useChatStore((s) =>
+    s.streaming?.assistantMessageId === message.id ? (s.streaming.activity ?? 'thinking') : undefined,
+  );
 
   const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -209,20 +245,34 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const [showRaw, setShowRaw] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [infoAnchorEl, setInfoAnchorEl] = useState<null | HTMLElement>(null);
-  const [isExpanded, setIsExpanded] = useState(() => messageTruncateChars === 0 || message.content.length <= messageTruncateChars);
+  const [isExpanded, setIsExpanded] = useState(
+    () => messageTruncateChars === 0 || message.content.length <= messageTruncateChars,
+  );
   const [expandedImage, setExpandedImage] = useState<{ url: string; name: string; data: string } | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const [editingSvgSource, setEditingSvgSource] = useState<string | null>(null);
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [pinFeedback, setPinFeedback] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => (): void => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      if (pinTimerRef.current) clearTimeout(pinTimerRef.current);
+    },
+    [],
+  );
 
   const isSpeaking = currentlySpeakingMessageId === message.id;
 
   const isAssistant = message.type === 'assistant';
   const isClarification = !!message.isClarification;
   const isLong = messageTruncateChars > 0 && message.content.length > messageTruncateChars;
-  const displayContent = isLong && !isExpanded ? message.content.slice(0, messageTruncateChars) + '\u2026' : message.content;
+  const displayContent =
+    isLong && !isExpanded ? message.content.slice(0, messageTruncateChars) + '\u2026' : message.content;
   const contentTypes = useMemo(() => (isLong ? detectContentTypes(message.content) : []), [isLong, message.content]);
 
   const wasReasoningAutoShownRef = useRef(false);
@@ -249,6 +299,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const togglePin = async (): Promise<void> => {
     try {
       await updateMessageContext(message.id, !message.includeInContext);
+      setPinFeedback(true);
+      if (pinTimerRef.current) clearTimeout(pinTimerRef.current);
+      pinTimerRef.current = setTimeout(() => setPinFeedback(false), 500);
     } catch (err) {
       console.error('Failed to update context pin:', err);
       const message = err instanceof Error ? err.message : String(err);
@@ -319,7 +372,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
     try {
       await navigator.clipboard.writeText(message.content);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     } catch (err) {
       console.error('Failed to copy message:', err);
       addNotification('Error', 'Failed to copy message');
@@ -405,7 +459,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
         p: { xs: 1.5, sm: 2 },
         width: '100%',
         minWidth: 0,
-        boxShadow: 'none',
+        boxShadow: (theme) =>
+          `0 2px 8px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.12 : 0.035)}`,
         backgroundImage: 'none',
         borderRadius: 2,
         border: (theme): string => {
@@ -414,11 +469,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           if (message.type === 'user') return `1px solid ${theme.palette.divider}`;
           return '1px solid transparent';
         },
-        borderLeft: !message.failed && isClarification ? (theme): string => `3px solid ${theme.palette.warning.main}` : undefined,
+        borderLeft:
+          !message.failed && isClarification ? (theme): string => `3px solid ${theme.palette.warning.main}` : undefined,
         bgcolor: (theme): string | undefined => {
           if (message.failed) return alpha(theme.palette.error.main, 0.1);
           if (message.type === 'user') return theme.palette.background.paper;
-          if (message.type === 'assistant') return alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.14 : 0.07);
+          if (message.type === 'assistant')
+            return alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.14 : 0.07);
           if (message.type === 'aiNote') return theme.palette.aiNote.main;
           return undefined;
         },
@@ -434,11 +491,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
         '&:focus-within .message-actions': {
           opacity: 1,
         },
-      }}
-    >
+      }}>
       <Box sx={{ width: '100%' }}>
-        <Box display="flex" justifyContent="space-between" mb={0.5}>
-          <Box display="flex" alignItems="center">
+        <Box
+          display="flex"
+          justifyContent="space-between"
+          mb={0.5}>
+          <Box
+            display="flex"
+            alignItems="center">
             <>
               <ButtonBase
                 onClick={handleInfoClick}
@@ -453,8 +514,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   px: 0,
                   py: 0.25,
                   '&:hover': { opacity: 0.7 },
-                }}
-              >
+                }}>
                 <Typography
                   variant="subtitle2"
                   sx={{
@@ -468,16 +528,21 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 0.5,
-                  }}
-                >
+                  }}>
                   {isClarification && <LiveHelpIcon sx={{ fontSize: 15, color: 'warning.main' }} />}
-                  {isClarification ? 'Question for you' : message.type === 'user' ? userName : getModelLabel(message.model)}
+                  {isClarification
+                    ? 'Question for you'
+                    : message.type === 'user'
+                      ? userName
+                      : getModelLabel(message.model)}
                 </Typography>
-                {message.type !== 'user' && isDeepSeekPeakHours() && getModelProviderId(message.model) === 'builtin-deepseek' && (
-                  <Tooltip title="DeepSeek peak hours — 2x pricing">
-                    <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
-                  </Tooltip>
-                )}
+                {message.type !== 'user' &&
+                  isDeepSeekPeakHours() &&
+                  getModelProviderId(message.model) === 'builtin-deepseek' && (
+                    <Tooltip title="DeepSeek peak hours — 2x pricing">
+                      <WhatshotIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                    </Tooltip>
+                  )}
               </ButtonBase>
               <Popover
                 open={Boolean(infoAnchorEl)}
@@ -485,16 +550,21 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 onClose={handleInfoClose}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
                 transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-                slotProps={{ paper: { sx: { p: 1.5, maxWidth: 300, userSelect: 'text' } } }}
-              >
-                <Typography variant="caption" display="block">
+                slotProps={{ paper: { sx: { p: 1.5, maxWidth: 300, userSelect: 'text' } } }}>
+                <Typography
+                  variant="caption"
+                  display="block">
                   {new Date(message.created).toLocaleString(dateFormat)}
                 </Typography>
-                <Typography variant="caption" display="block">
+                <Typography
+                  variant="caption"
+                  display="block">
                   {formatCost(message.totalCost, currency, 3)}
                 </Typography>
                 {(message.promptTokens > 0 || message.completionTokens > 0) && (
-                  <Typography variant="caption" display="block">
+                  <Typography
+                    variant="caption"
+                    display="block">
                     {[
                       message.promptTokens > 0 ? `Prompt: ${message.promptTokens.toLocaleString()}` : null,
                       message.completionTokens > 0 ? `Comp: ${message.completionTokens.toLocaleString()}` : null,
@@ -504,10 +574,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   </Typography>
                 )}
                 {((message.cachedTokens ?? 0) > 0 || (message.cacheCreationTokens ?? 0) > 0) && (
-                  <Typography variant="caption" display="block">
+                  <Typography
+                    variant="caption"
+                    display="block">
                     {[
                       message.cachedTokens ? `Cache hit: ${message.cachedTokens.toLocaleString()}` : null,
-                      message.cacheCreationTokens ? `Cache write: ${message.cacheCreationTokens.toLocaleString()}` : null,
+                      message.cacheCreationTokens
+                        ? `Cache write: ${message.cacheCreationTokens.toLocaleString()}`
+                        : null,
                     ]
                       .filter(Boolean)
                       .join(' | ')}
@@ -515,24 +589,39 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 )}
                 {message.latencyMs && (
                   <>
-                    <Typography variant="caption" display="block">
+                    <Typography
+                      variant="caption"
+                      display="block">
                       {`Time: ${(message.latencyMs / 1000).toFixed(1)} s`}
                     </Typography>
-                    <Typography variant="caption" display="block">
+                    <Typography
+                      variant="caption"
+                      display="block">
                       {`Speed: ${((message.promptTokens + message.completionTokens) / (message.latencyMs / 1000)).toFixed(1)} TPS`}
                     </Typography>
                   </>
                 )}
                 {message.summary && (
-                  <Box mt={1} pt={1} sx={{ borderTop: (theme): string => `1px solid ${alpha(theme.palette.divider, 0.2)}` }}>
-                    <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                  <Box
+                    mt={1}
+                    pt={1}
+                    sx={{ borderTop: (theme): string => `1px solid ${alpha(theme.palette.divider, 0.2)}` }}>
+                    <Typography
+                      variant="caption"
+                      sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
                       <SummarizeIcon sx={{ fontSize: '0.8rem' }} /> Summary
                     </Typography>
-                    <Typography variant="caption" display="block" sx={{ fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.3 }}>
+                    <Typography
+                      variant="caption"
+                      display="block"
+                      sx={{ fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.3 }}>
                       {message.summary}
                     </Typography>
                     {(message.summaryTokens ?? 0) > 0 && (
-                      <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                      <Typography
+                        variant="caption"
+                        display="block"
+                        sx={{ mt: 0.5 }}>
                         {`Summary cost: ${formatCost(message.summaryCost ?? 0, currency, 3)} | Prompt: ${(message.summaryTokens ?? 0).toLocaleString()} tok`}
                       </Typography>
                     )}
@@ -555,8 +644,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                         ? 'Regenerate summary'
                         : 'Generate summary'
                   }
-                  disableTouchListener={isMobile}
-                >
+                  disableTouchListener={isMobile}>
                   <IconButton
                     size="small"
                     disabled={summarizingMessageIds.has(message.id)}
@@ -566,16 +654,24 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     sx={{
                       ml: 0.5,
                       p: 0.4,
-                      color: failedSummaryMessageIds.has(message.id) ? 'error.main' : message.summary ? 'primary.main' : 'text.disabled',
+                      color: failedSummaryMessageIds.has(message.id)
+                        ? 'error.main'
+                        : message.summary
+                          ? 'primary.main'
+                          : 'text.disabled',
                       '&:hover': {
                         color: failedSummaryMessageIds.has(message.id) ? 'error.main' : 'primary.main',
                         bgcolor: (theme): string =>
-                          failedSummaryMessageIds.has(message.id) ? alpha(theme.palette.error.main, 0.1) : alpha(theme.palette.primary.main, 0.1),
+                          failedSummaryMessageIds.has(message.id)
+                            ? alpha(theme.palette.error.main, 0.1)
+                            : alpha(theme.palette.primary.main, 0.1),
                       },
-                    }}
-                  >
+                    }}>
                     {summarizingMessageIds.has(message.id) ? (
-                      <CircularProgress size={16} color="inherit" />
+                      <CircularProgress
+                        size={16}
+                        color="inherit"
+                      />
                     ) : (
                       <AutoAwesomeIcon sx={{ fontSize: '1rem' }} />
                     )}
@@ -589,12 +685,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 alignItems="center"
                 ml={1.5}
                 sx={{
-                  bgcolor: (theme): string => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'),
+                  bgcolor: (theme): string =>
+                    theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
                   borderRadius: 1.5,
                   px: 0.5,
                   height: 24,
-                }}
-              >
+                }}>
                 <IconButton
                   size="small"
                   aria-label="Previous version"
@@ -605,15 +701,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       void switchMessageVersion(message.parentMessageId, versions[currentIndex - 1].id);
                     }
                   }}
-                  sx={{ p: 0.25, color: 'text.secondary' }}
-                >
+                  sx={{ p: 0.25, color: 'text.secondary' }}>
                   <ChevronLeftIcon sx={{ fontSize: '1.1rem' }} />
                 </IconButton>
                 <Typography
                   variant="caption"
                   color="text.secondary"
-                  sx={{ mx: 0.5, fontWeight: 'bold', minWidth: '2.5em', textAlign: 'center', fontSize: '0.7rem' }}
-                >
+                  sx={{ mx: 0.5, fontWeight: 'bold', minWidth: '2.5em', textAlign: 'center', fontSize: '0.7rem' }}>
                   {`${versions.findIndex((v) => v.id === message.id) + 1} / ${versions.length}`}
                 </Typography>
                 <IconButton
@@ -626,8 +720,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       void switchMessageVersion(message.parentMessageId, versions[currentIndex + 1].id);
                     }
                   }}
-                  sx={{ p: 0.25, color: 'text.secondary' }}
-                >
+                  sx={{ p: 0.25, color: 'text.secondary' }}>
                   <ChevronRightIcon sx={{ fontSize: '1.1rem' }} />
                 </IconButton>
               </Box>
@@ -642,56 +735,99 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             sx={{
               opacity: isMobile || Boolean(anchorEl) ? 1 : 0,
               transition: 'opacity 0.15s ease',
-            }}
-          >
+            }}>
             {/* High-frequency actions: Copy and Pin */}
-            <Box display="flex" alignItems="center" gap={0.5}>
-              <Tooltip title={copied ? 'Copied!' : 'Copy message'} disableTouchListener={isMobile}>
+            <Box
+              display="flex"
+              alignItems="center"
+              gap={0.5}>
+              <Tooltip
+                title={copied ? 'Copied!' : 'Copy message'}
+                disableTouchListener={isMobile}>
                 <IconButton
                   size="small"
                   aria-label={copied ? 'Copied!' : 'Copy message'}
+                  className={copied ? 'athena-feedback' : undefined}
                   onClick={(): void => {
                     void handleCopy();
                   }}
                   sx={{
-                    color: 'text.secondary',
+                    color: copied ? 'success.main' : 'text.secondary',
                     '&:hover': {
-                      bgcolor: (theme): string => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
+                      bgcolor: (theme): string =>
+                        theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
                     },
-                  }}
-                >
-                  <Box position="relative" display="flex" alignItems="center" justifyContent="center" sx={{ width: 20, height: 20 }}>
-                    <Zoom in={!copied} timeout={200} unmountOnExit>
-                      <ContentCopyIcon fontSize="small" sx={{ position: 'absolute' }} />
+                  }}>
+                  <Box
+                    position="relative"
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    sx={{ width: 20, height: 20 }}>
+                    <Zoom
+                      in={!copied}
+                      timeout={200}
+                      unmountOnExit>
+                      <ContentCopyIcon
+                        fontSize="small"
+                        sx={{ position: 'absolute' }}
+                      />
                     </Zoom>
-                    <Zoom in={copied} timeout={200} unmountOnExit>
-                      <CheckIcon fontSize="small" color="success" sx={{ position: 'absolute' }} />
+                    <Zoom
+                      in={copied}
+                      timeout={200}
+                      unmountOnExit>
+                      <CheckIcon
+                        fontSize="small"
+                        color="success"
+                        sx={{ position: 'absolute' }}
+                      />
                     </Zoom>
                   </Box>
                 </IconButton>
               </Tooltip>
 
               {!isMobile && (
-                <Tooltip title={message.includeInContext ? 'Remove from future replies' : 'Keep for future replies'} disableTouchListener={isMobile}>
+                <Tooltip
+                  title={message.includeInContext ? 'Remove from future replies' : 'Keep for future replies'}
+                  disableTouchListener={isMobile}>
                   <IconButton
                     size="small"
                     aria-label={message.includeInContext ? 'Remove from future replies' : 'Keep for future replies'}
+                    className={pinFeedback ? 'athena-feedback' : undefined}
                     onClick={(): void => {
                       void togglePin();
                     }}
                     sx={{
-                      color: 'text.secondary',
+                      color: message.includeInContext ? 'primary.main' : 'text.secondary',
                       '&:hover': {
-                        bgcolor: (theme): string => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
+                        bgcolor: (theme): string =>
+                          theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
                       },
-                    }}
-                  >
-                    <Box position="relative" display="flex" alignItems="center" justifyContent="center" sx={{ width: 20, height: 20 }}>
-                      <Zoom in={!message.includeInContext} timeout={200} unmountOnExit>
-                        <PushPinOutlinedIcon fontSize="small" sx={{ position: 'absolute' }} />
+                    }}>
+                    <Box
+                      position="relative"
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      sx={{ width: 20, height: 20 }}>
+                      <Zoom
+                        in={!message.includeInContext}
+                        timeout={200}
+                        unmountOnExit>
+                        <PushPinOutlinedIcon
+                          fontSize="small"
+                          sx={{ position: 'absolute' }}
+                        />
                       </Zoom>
-                      <Zoom in={message.includeInContext} timeout={200} unmountOnExit>
-                        <PushPinIcon fontSize="small" sx={{ position: 'absolute' }} />
+                      <Zoom
+                        in={message.includeInContext}
+                        timeout={200}
+                        unmountOnExit>
+                        <PushPinIcon
+                          fontSize="small"
+                          sx={{ position: 'absolute' }}
+                        />
                       </Zoom>
                     </Box>
                   </IconButton>
@@ -700,7 +836,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             </Box>
 
             {!isMobile && isAssistant && message.content.trim() && (
-              <Tooltip title={isSpeaking ? 'Stop speech' : 'Read aloud'} disableTouchListener={isMobile}>
+              <Tooltip
+                title={isSpeaking ? 'Stop speech' : 'Read aloud'}
+                disableTouchListener={isMobile}>
                 <IconButton
                   size="small"
                   aria-label={isSpeaking ? 'Stop speech' : 'Read aloud'}
@@ -709,7 +847,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   sx={{
                     color: isSpeaking ? 'primary.main' : 'text.secondary',
                     '&:hover': {
-                      bgcolor: (theme): string => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
+                      bgcolor: (theme): string =>
+                        theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
                     },
                     ...(isSpeaking
                       ? {
@@ -721,10 +860,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                           },
                         }
                       : {}),
-                  }}
-                >
+                  }}>
                   {speaking && !isSpeaking ? (
-                    <CircularProgress size={14} color="inherit" />
+                    <CircularProgress
+                      size={14}
+                      color="inherit"
+                    />
                   ) : isSpeaking ? (
                     <StopCircleIcon fontSize="small" />
                   ) : (
@@ -744,10 +885,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   sx={{
                     color: 'text.secondary',
                     '&:hover': {
-                      bgcolor: (theme): string => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
+                      bgcolor: (theme): string =>
+                        theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
                     },
-                  }}
-                >
+                  }}>
                   <MoreVertIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
@@ -756,19 +897,23 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 open={Boolean(anchorEl)}
                 onClose={handleMenuClose}
                 transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-              >
+                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}>
                 {isMobile && (
                   <MenuItem
                     onClick={(): void => {
                       void togglePin();
                       handleMenuClose();
-                    }}
-                  >
+                    }}>
                     <ListItemIcon>
-                      {message.includeInContext ? <PushPinIcon fontSize="small" /> : <PushPinOutlinedIcon fontSize="small" />}
+                      {message.includeInContext ? (
+                        <PushPinIcon fontSize="small" />
+                      ) : (
+                        <PushPinOutlinedIcon fontSize="small" />
+                      )}
                     </ListItemIcon>
-                    <ListItemText>{message.includeInContext ? 'Remove from future replies' : 'Keep for future replies'}</ListItemText>
+                    <ListItemText>
+                      {message.includeInContext ? 'Remove from future replies' : 'Keep for future replies'}
+                    </ListItemText>
                   </MenuItem>
                 )}
                 {isMobile && isAssistant && message.content.trim() && (
@@ -776,9 +921,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     onClick={(): void => {
                       handleSpeakToggle();
                       handleMenuClose();
-                    }}
-                  >
-                    <ListItemIcon>{isSpeaking ? <StopCircleIcon fontSize="small" /> : <VolumeUpIcon fontSize="small" />}</ListItemIcon>
+                    }}>
+                    <ListItemIcon>
+                      {isSpeaking ? <StopCircleIcon fontSize="small" /> : <VolumeUpIcon fontSize="small" />}
+                    </ListItemIcon>
                     <ListItemText>{isSpeaking ? 'Stop speech' : 'Read aloud'}</ListItemText>
                   </MenuItem>
                 )}
@@ -793,7 +939,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                 {isAssistant && message.content !== '' && !message.failed && (
                   <MenuItem onClick={handleForkMenu}>
                     <ListItemIcon>
-                      <AltRouteIcon fontSize="small" sx={{ transform: 'rotate(90deg)' }} />
+                      <AltRouteIcon
+                        fontSize="small"
+                        sx={{ transform: 'rotate(90deg)' }}
+                      />
                     </ListItemIcon>
                     <ListItemText>Branch from this message</ListItemText>
                   </MenuItem>
@@ -831,8 +980,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               variant="body2"
               fontStyle="italic"
               color="text.secondary"
-              sx={{ fontSize: 'inherit', display: 'flex', alignItems: 'center', gap: 0.5 }}
-            >
+              sx={{ fontSize: 'inherit', display: 'flex', alignItems: 'center', gap: 0.5 }}>
               {getModelLabel(message.model)}
               {isDeepSeekPeakHours() && getModelProviderId(message.model) === 'builtin-deepseek' && (
                 <Tooltip title="DeepSeek peak hours — 2x pricing">
@@ -857,8 +1005,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)'),
                     borderRadius: 1,
                     overflowX: 'auto',
-                  }}
-                >
+                  }}>
                   {/* eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- IIFE in render */}
                   {(() => {
                     try {
@@ -873,21 +1020,23 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   fontSize={chatFontSize}
                   disableMermaid={isLong && !isExpanded}
                   disableSvg={isLong && !isExpanded}
-                  onEditSvg={isAssistant && (!isLong || isExpanded) ? handleEditSvgClick : undefined}
-                >
+                  onEditSvg={isAssistant && (!isLong || isExpanded) ? handleEditSvgClick : undefined}>
                   {displayContent}
                 </MarkdownWithCode>
               )}
               {(isLong || message.reasoning) && (
-                <Box mt={0.5} display="flex" alignItems="center" gap={1}>
+                <Box
+                  mt={0.5}
+                  display="flex"
+                  alignItems="center"
+                  gap={1}>
                   {isLong && !showRaw && (
                     <Button
                       size="small"
                       variant="text"
                       startIcon={isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                       onClick={(): void => setIsExpanded((v) => !v)}
-                      sx={{ textTransform: 'none', color: 'text.secondary', fontSize: '0.75rem', px: 0.5 }}
-                    >
+                      sx={{ textTransform: 'none', color: 'text.secondary', fontSize: '0.75rem', px: 0.5 }}>
                       {isExpanded ? 'Show less' : 'Show more'}
                     </Button>
                   )}
@@ -895,7 +1044,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     !isExpanded &&
                     !showRaw &&
                     contentTypes.map((type) => (
-                      <Tooltip key={type} title={CONTENT_TYPE_LABELS[type]} disableTouchListener={isMobile}>
+                      <Tooltip
+                        key={type}
+                        title={CONTENT_TYPE_LABELS[type]}
+                        disableTouchListener={isMobile}>
                         {CONTENT_TYPE_ICONS[type]}
                       </Tooltip>
                     ))}
@@ -910,8 +1062,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                           '&:hover': {
                             bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
                           },
-                        }}
-                      >
+                        }}>
                         <PsychologyIcon sx={{ fontSize: '1.2rem' }} />
                       </IconButton>
                     </Tooltip>
@@ -923,7 +1074,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
         </Box>
 
         {message.attachments && message.attachments.length > 0 && (
-          <Box display="flex" flexWrap="wrap" gap={1} mt={2} mb={1}>
+          <Box
+            display="flex"
+            flexWrap="wrap"
+            gap={1}
+            mt={2}
+            mb={1}>
             {message.attachments.map((att) => (
               <Box
                 key={att.id}
@@ -933,8 +1089,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                   overflow: 'hidden',
                   border: (theme) => `1px solid ${alpha(theme.palette.divider, 0.1)}`,
                   bgcolor: (theme) => alpha(theme.palette.action.hover, 0.05),
-                }}
-              >
+                }}>
                 {att.previewUrl ? (
                   <>
                     <Box
@@ -972,15 +1127,18 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                         '&:hover': {
                           backgroundColor: 'rgba(0,0,0,0.7)',
                         },
-                      }}
-                    >
+                      }}>
                       <DownloadIcon fontSize="small" />
                     </IconButton>
                   </>
                 ) : att.name.toLowerCase().match(/\.(mp3|wav|ogg)$/) ? (
                   <>
                     {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                    <audio controls src={att.data} style={{ display: 'block', outline: 'none' }} />
+                    <audio
+                      controls
+                      src={att.data}
+                      style={{ display: 'block', outline: 'none' }}
+                    />
                   </>
                 ) : (
                   <Button
@@ -999,9 +1157,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                         borderColor: 'primary.main',
                         bgcolor: 'action.hover',
                       },
-                    }}
-                  >
-                    <Typography variant="caption" noWrap sx={{ maxWidth: 150 }}>
+                    }}>
+                    <Typography
+                      variant="caption"
+                      noWrap
+                      sx={{ maxWidth: 150 }}>
                       {att.name}
                     </Typography>
                   </Button>
@@ -1011,7 +1171,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           </Box>
         )}
 
-        {isAssistant && message.content === '' && !message.failed && (
+        {isAssistant && activity && !message.failed && <ActivityIndicator activity={activity} />}
+        {isAssistant && !activity && message.content === '' && !message.failed && (
           <Box
             sx={{
               mt: 1,
@@ -1019,11 +1180,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               display: 'flex',
               alignItems: 'center',
               gap: 1,
-            }}
-          >
+            }}>
             <TypingIndicator />
             {message.reasoning && (
-              <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', animation: 'pulse 2s infinite' }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ fontStyle: 'italic', animation: 'pulse 2s infinite' }}>
                 Thinking...
               </Typography>
             )}
@@ -1041,13 +1204,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               borderLeft: (theme): string => `4px solid ${alpha(theme.palette.text.secondary, 0.2)}`,
               maxHeight: '400px',
               overflowY: 'auto',
-            }}
-          >
+            }}>
             <Typography
               variant="caption"
               color="text.secondary"
-              sx={{ fontWeight: 'bold', mb: 0.5, display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}
-            >
+              sx={{
+                fontWeight: 'bold',
+                mb: 0.5,
+                display: 'block',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+              }}>
               Thought Process
             </Typography>
             <Box sx={{ fontSize: `${Math.max(11, chatFontSize - 2)}px` }}>
@@ -1068,9 +1235,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               flexDirection: 'column',
               alignItems: 'center',
               gap: 1,
-            }}
-          >
-            <Typography variant="body2" color="error" sx={{ fontWeight: 'bold' }}>
+            }}>
+            <Typography
+              variant="body2"
+              color="error"
+              sx={{ fontWeight: 'bold' }}>
               Message delivery failed
             </Typography>
             <Button
@@ -1081,18 +1250,21 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               onClick={(): void => {
                 void sendMessageStream(message.content, message.topicId, message.id);
               }}
-              sx={{ textTransform: 'none' }}
-            >
+              sx={{ textTransform: 'none' }}>
               Retry Sending
             </Button>
           </Box>
         )}
       </Box>
 
-      <Dialog open={openDeleteDialog} onClose={handleCloseDeleteDialog}>
+      <Dialog
+        open={openDeleteDialog}
+        onClose={handleCloseDeleteDialog}>
         <DialogTitle>Delete Message</DialogTitle>
         <DialogContent>
-          <DialogContentText>Are you sure you want to delete this message? This action cannot be undone.</DialogContentText>
+          <DialogContentText>
+            Are you sure you want to delete this message? This action cannot be undone.
+          </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDeleteDialog}>Cancel</Button>
@@ -1101,14 +1273,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               void handleConfirmDelete();
             }}
             color="error"
-            variant="contained"
-          >
+            variant="contained">
             Delete
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={openEditDialog} onClose={handleCloseEditDialog} fullWidth maxWidth="md">
+      <Dialog
+        open={openEditDialog}
+        onClose={handleCloseEditDialog}
+        fullWidth
+        maxWidth="md">
         <DialogTitle>Edit Message</DialogTitle>
         <DialogContent>
           <TextField
@@ -1124,7 +1299,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseEditDialog} disabled={isSavingEdit}>
+          <Button
+            onClick={handleCloseEditDialog}
+            disabled={isSavingEdit}>
             Cancel
           </Button>
           <Button
@@ -1134,8 +1311,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
             color="primary"
             variant="contained"
             disabled={isSavingEdit}
-            startIcon={isSavingEdit ? <CircularProgress size={16} color="inherit" /> : undefined}
-          >
+            startIcon={
+              isSavingEdit ? (
+                <CircularProgress
+                  size={16}
+                  color="inherit"
+                />
+              ) : undefined
+            }>
             Save
           </Button>
         </DialogActions>
@@ -1150,9 +1333,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
         onClose={handleCloseSvgEditDialog}
       />
 
-      <Dialog open={Boolean(expandedImage)} onClose={(): void => setExpandedImage(null)} maxWidth="xl">
+      <Dialog
+        open={Boolean(expandedImage)}
+        onClose={(): void => setExpandedImage(null)}
+        maxWidth="xl">
         <Box sx={{ position: 'relative' }}>
-          <Box component="img" src={expandedImage?.url} alt={expandedImage?.name} sx={{ maxWidth: '100%', maxHeight: '90vh', display: 'block' }} />
+          <Box
+            component="img"
+            src={expandedImage?.url}
+            alt={expandedImage?.name}
+            sx={{ maxWidth: '100%', maxHeight: '90vh', display: 'block' }}
+          />
           <IconButton
             onClick={(): void => {
               if (expandedImage) {
@@ -1171,8 +1362,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               '&:hover': {
                 backgroundColor: 'rgba(0,0,0,0.7)',
               },
-            }}
-          >
+            }}>
             <DownloadIcon />
           </IconButton>
         </Box>

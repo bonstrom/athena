@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { athenaDb, DebatePhase, Message } from '../database/AthenaDb';
-import { ChatModel, calculateCostUSD, getPeakMultiplier, getAvailableModels, getDefaultModel } from '../components/ModelSelector';
+import {
+  ChatModel,
+  calculateCostUSD,
+  getPeakMultiplier,
+  getAvailableModels,
+  getDefaultModel,
+} from '../components/ModelSelector';
 import { askLlmStream, LlmMessage } from '../services/llmService';
 import { useTopicStore } from './TopicStore';
 import { useNotificationStore } from './NotificationStore';
@@ -14,6 +20,8 @@ interface DebateState {
   debateModelA: ChatModel | null;
   debateModelB: ChatModel | null;
   debateSending: boolean;
+  modelAActive: boolean;
+  modelBActive: boolean;
   currentPhase: 'idle' | DebatePhase;
   abortController: AbortController | null;
   streamingContentA: string;
@@ -182,6 +190,7 @@ async function runDebatePhase(
   };
 
   try {
+    setStore({ modelAActive: true, modelBActive: true });
     [resultA, resultB] = await Promise.all([
       askLlmStream(
         debateModelA,
@@ -194,7 +203,7 @@ async function runDebatePhase(
         undefined,
         undefined,
         controller.signal,
-      ),
+      ).finally(() => setStore({ modelAActive: false })),
       askLlmStream(
         debateModelB,
         DEBATE_TEMPERATURE,
@@ -206,7 +215,7 @@ async function runDebatePhase(
         undefined,
         undefined,
         controller.signal,
-      ),
+      ).finally(() => setStore({ modelBActive: false })),
     ]);
   } catch (err) {
     await Promise.all([updateMessage(msgIdA, { failed: true }), updateMessage(msgIdB, { failed: true })]);
@@ -252,6 +261,8 @@ export const useDebateStore = create<DebateState>((set, get) => ({
   debateModelA: null,
   debateModelB: null,
   debateSending: false,
+  modelAActive: false,
+  modelBActive: false,
   currentPhase: 'idle',
   abortController: null,
   streamingContentA: '',
@@ -280,7 +291,8 @@ export const useDebateStore = create<DebateState>((set, get) => ({
     if (available.length === 0) return;
 
     const defaultModel = getDefaultModel();
-    const findModel = (id: string | undefined): ChatModel => (id ? available.find((m) => m.id === id) : undefined) ?? defaultModel;
+    const findModel = (id: string | undefined): ChatModel =>
+      (id ? available.find((m) => m.id === id) : undefined) ?? defaultModel;
 
     set({
       debateModelA: findModel(topic?.debateModelAId),
@@ -302,7 +314,13 @@ export const useDebateStore = create<DebateState>((set, get) => ({
 
     const controller = new AbortController();
     try {
-      set({ debateSending: true, abortController: controller, streamingContentA: '', streamingContentB: '', streamingConsensus: '' });
+      set({
+        debateSending: true,
+        abortController: controller,
+        streamingContentA: '',
+        streamingContentB: '',
+        streamingConsensus: '',
+      });
 
       const now = new Date().toISOString();
       const baseMessages = (msgs: LlmMessage[]): LlmMessage[] => {
@@ -340,7 +358,18 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         parentIdA: string,
         parentIdB: string,
       ): Promise<{ msgIdA: string; msgIdB: string; contentA: string; contentB: string }> =>
-        runDebatePhase(phase, messagesA, messagesB, parentIdA, parentIdB, debateModelA, debateModelB, topicId, controller, set);
+        runDebatePhase(
+          phase,
+          messagesA,
+          messagesB,
+          parentIdA,
+          parentIdB,
+          debateModelA,
+          debateModelB,
+          topicId,
+          controller,
+          set,
+        );
 
       // Refresh messages so the user message is visible immediately
       await refreshDebateMessages(topicId);
@@ -353,7 +382,13 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         msgIdB: answerIdB,
         contentA: answerA,
         contentB: answerB,
-      } = await runPhase('answer', baseMessages([questionMsg]), baseMessages([questionMsg]), userMessageId, userMessageId);
+      } = await runPhase(
+        'answer',
+        baseMessages([questionMsg]),
+        baseMessages([questionMsg]),
+        userMessageId,
+        userMessageId,
+      );
       set({ streamingContentA: '', streamingContentB: '' });
       await refreshDebateMessages(topicId);
 
@@ -463,7 +498,13 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification('Debate failed', message);
     } finally {
-      set({ debateSending: false, currentPhase: 'idle', abortController: null });
+      set({
+        debateSending: false,
+        modelAActive: false,
+        modelBActive: false,
+        currentPhase: 'idle',
+        abortController: null,
+      });
       await releaseDebateLease(topicId, leaseOwner);
     }
   },
@@ -500,7 +541,8 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       const roundMessages = allMessages.slice(lastUserIdx + 1).filter((m) => m.type === 'assistant');
 
       // Helpers to check phase completion
-      const phaseMessages = (phase: DebatePhase): Message[] => roundMessages.filter((m) => m.debatePhase === phase && m.content.trim() !== '');
+      const phaseMessages = (phase: DebatePhase): Message[] =>
+        roundMessages.filter((m) => m.debatePhase === phase && m.content.trim() !== '');
       const isPairedDone = (phase: DebatePhase): boolean => {
         const msgs = phaseMessages(phase);
         return msgs.some((m) => m.debateSide === 'left') && msgs.some((m) => m.debateSide === 'right');
@@ -564,7 +606,13 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       if (!answerDone) {
         set({ currentPhase: 'answer' });
         const questionMsg: LlmMessage = { role: 'user', content: question.trim() };
-        const result = await runPhase('answer', baseMessages([questionMsg]), baseMessages([questionMsg]), userMessageId, userMessageId);
+        const result = await runPhase(
+          'answer',
+          baseMessages([questionMsg]),
+          baseMessages([questionMsg]),
+          userMessageId,
+          userMessageId,
+        );
         answerA = result.contentA;
         answerB = result.contentB;
         answerIdA = result.msgIdA;
@@ -577,7 +625,13 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         set({ currentPhase: 'review' });
         const reviewPromptA = buildReviewPrompt(question.trim(), answerB);
         const reviewPromptB = buildReviewPrompt(question.trim(), answerA);
-        const result = await runPhase('review', baseMessages([reviewPromptA]), baseMessages([reviewPromptB]), answerIdA, answerIdB);
+        const result = await runPhase(
+          'review',
+          baseMessages([reviewPromptA]),
+          baseMessages([reviewPromptB]),
+          answerIdA,
+          answerIdB,
+        );
         reviewForB = result.contentA;
         reviewForA = result.contentB;
         reviewIdA = result.msgIdA;
@@ -674,7 +728,13 @@ export const useDebateStore = create<DebateState>((set, get) => ({
       const message = err instanceof Error ? err.message : String(err);
       useNotificationStore.getState().addNotification('Debate continuation failed', message);
     } finally {
-      set({ debateSending: false, currentPhase: 'idle', abortController: null });
+      set({
+        debateSending: false,
+        modelAActive: false,
+        modelBActive: false,
+        currentPhase: 'idle',
+        abortController: null,
+      });
       await releaseDebateLease(topicId, leaseOwner);
     }
   },
@@ -682,6 +742,15 @@ export const useDebateStore = create<DebateState>((set, get) => ({
   stopDebate: (): void => {
     const { abortController } = get();
     abortController?.abort();
-    set({ debateSending: false, currentPhase: 'idle', abortController: null, streamingContentA: '', streamingContentB: '', streamingConsensus: '' });
+    set({
+      debateSending: false,
+      modelAActive: false,
+      modelBActive: false,
+      currentPhase: 'idle',
+      abortController: null,
+      streamingContentA: '',
+      streamingContentB: '',
+      streamingConsensus: '',
+    });
   },
 }));

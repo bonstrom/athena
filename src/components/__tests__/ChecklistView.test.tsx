@@ -1,5 +1,5 @@
 import { renderWithTheme, selectorize } from '../../testUtils';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor, render } from '@testing-library/react';
 import { JSX } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { ChecklistGroup, ChecklistItem, ChecklistTab, Topic } from '../../database/AthenaDb';
@@ -91,6 +91,10 @@ jest.mock('../../store/ChatStore', () => ({
   useChatStore: jest.fn(),
 }));
 
+jest.mock('../../store/AuthStore', () => ({
+  useAuthStore: jest.fn(),
+}));
+
 jest.mock('@mui/material', () => {
   const actual = jest.requireActual<typeof import('@mui/material')>('@mui/material');
   return {
@@ -111,11 +115,13 @@ jest.mock('../MarkdownWithCode', () => ({
 
 import { useChecklistStore } from '../../store/ChecklistStore';
 import { useChatStore } from '../../store/ChatStore';
+import { useAuthStore } from '../../store/AuthStore';
 import ChecklistView from '../ChecklistView';
 
 const mockUseChecklistStore = useChecklistStore as unknown as jest.Mock<ChecklistViewStoreSlice>;
 const mockUseChatStore = useChatStore as unknown as jest.Mock<{ selectedModel: { supportsTools: boolean } }>;
 const mockUseMediaQuery = useMediaQuery as unknown as jest.Mock<boolean>;
+const mockUseAuthStore = useAuthStore as unknown as jest.Mock<{ checklistCelebrations: boolean }>;
 
 const topic: Topic = {
   id: 't1',
@@ -153,6 +159,7 @@ describe('ChecklistView', () => {
     mockSwitchTab.mockResolvedValue(undefined);
     mockUseMediaQuery.mockReturnValue(false);
     selectorize(mockUseChatStore, { selectedModel: { supportsTools: true } });
+    selectorize(mockUseAuthStore, { checklistCelebrations: true });
     mockUseChecklistStore.mockReturnValue(createStoreState());
   });
 
@@ -180,6 +187,50 @@ describe('ChecklistView', () => {
     expect(screen.getByText('Important')).toBeInTheDocument();
     expect(screen.getByText('Task 1')).toBeInTheDocument();
     expect(screen.getByText('Create new list')).toBeInTheDocument();
+  });
+
+  it('updates exact progress and celebrates only newly completed checklists', () => {
+    const groups: ChecklistGroup[] = [{ id: 'g1', topicId: 't1', title: 'Tasks', sortOrder: 0 }];
+    const items: ChecklistItem[] = [
+      { id: 'i1', groupId: 'g1', content: 'First task', checked: false, sortOrder: 0 },
+      { id: 'i2', groupId: 'g1', content: 'Second task', checked: true, sortOrder: 1 },
+    ];
+    mockUseChecklistStore.mockReturnValue(createStoreState({ groups, items }));
+    const { rerender } = render(<ChecklistView topic={topic} />);
+    expect(screen.getByRole('progressbar', { name: 'Checklist completion' })).toHaveAttribute('aria-valuenow', '50');
+    expect(screen.queryByTestId('checklist-celebration')).not.toBeInTheDocument();
+
+    mockUseChecklistStore.mockReturnValue(createStoreState({ groups, items: items.map((item): ChecklistItem => ({ ...item, checked: true })) }));
+    rerender(<ChecklistView topic={topic} />);
+    expect(screen.getByRole('progressbar', { name: 'Checklist completion' })).toHaveAttribute('aria-valuenow', '100');
+    expect(screen.getByText('All tasks complete')).toBeInTheDocument();
+    expect(screen.getByTestId('checklist-celebration')).toBeInTheDocument();
+  });
+
+  it('does not celebrate opening a completed checklist or switching to a completed tab', () => {
+    const state = createStoreState({
+      groups: [{ id: 'g1', topicId: 't1', title: 'Tasks', sortOrder: 0 }],
+      items: [{ id: 'i1', groupId: 'g1', content: 'Done', checked: true, sortOrder: 0 }],
+    });
+    mockUseChecklistStore.mockReturnValue(state);
+    const { rerender } = render(<ChecklistView topic={topic} />);
+    expect(screen.queryByTestId('checklist-celebration')).not.toBeInTheDocument();
+
+    mockUseChecklistStore.mockReturnValue({ ...state, activeTabId: 'tab-other', tabs: [{ id: 'tab-other', topicId: 't1', name: 'Other', sortOrder: 0 }] });
+    rerender(<ChecklistView topic={topic} />);
+    expect(screen.queryByTestId('checklist-celebration')).not.toBeInTheDocument();
+  });
+
+  it('honors the celebration preference while retaining completion feedback', () => {
+    selectorize(mockUseAuthStore, { checklistCelebrations: false });
+    const groups: ChecklistGroup[] = [{ id: 'g1', topicId: 't1', title: 'Tasks', sortOrder: 0 }];
+    const item: ChecklistItem = { id: 'i1', groupId: 'g1', content: 'Task', checked: false, sortOrder: 0 };
+    mockUseChecklistStore.mockReturnValue(createStoreState({ groups, items: [item] }));
+    const { rerender } = render(<ChecklistView topic={topic} />);
+    mockUseChecklistStore.mockReturnValue(createStoreState({ groups, items: [{ ...item, checked: true }] }));
+    rerender(<ChecklistView topic={topic} />);
+    expect(screen.getByText('All tasks complete')).toBeInTheDocument();
+    expect(screen.queryByTestId('checklist-celebration')).not.toBeInTheDocument();
   });
 
   it('switches checklist tabs', () => {

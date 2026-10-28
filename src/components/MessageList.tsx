@@ -1,5 +1,5 @@
 import React, { JSX, useEffect, useRef } from 'react';
-import { ListItem, Button, Fab, Box, Typography, CircularProgress } from '@mui/material';
+import { ListItem, Button, Fab, Box, Typography, CircularProgress, useMediaQuery } from '@mui/material';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ScrollToBottom, { useScrollToBottom, useSticky } from 'react-scroll-to-bottom';
 import { css } from '@emotion/css';
@@ -19,6 +19,7 @@ import SuggestedReplies from './SuggestedReplies';
 import { Message } from '../database/AthenaDb';
 
 const FollowFab = (): JSX.Element | null => {
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const scrollToBottom = useScrollToBottom();
   const [sticky] = useSticky();
   if (sticky) return null;
@@ -45,18 +46,19 @@ const FollowFab = (): JSX.Element | null => {
           boxShadow: 3,
         },
       }}
-      onClick={(): void => scrollToBottom({ behavior: 'smooth' })}
-    >
+      onClick={(): void => scrollToBottom({ behavior: reducedMotion ? 'auto' : 'smooth' })}>
       <ArrowDownwardIcon fontSize="small" />
     </Fab>
   );
 };
 
-const MessageItem: React.FC<{ message: Message; versions?: Message[]; showAllMessages: boolean }> = ({
+const MessageItem: React.FC<{ message: Message; versions?: Message[]; showAllMessages: boolean; animate: boolean }> = ({
   message,
   versions,
   showAllMessages,
+  animate,
 }) => {
+  const [enter] = React.useState(animate);
   const scrollToBottom = useScrollToBottom();
   const [sticky] = useSticky();
 
@@ -85,14 +87,25 @@ const MessageItem: React.FC<{ message: Message; versions?: Message[]; showAllMes
       ? { ...rendered, content: '⚠️ Assistant stored a hidden note here.' }
       : rendered;
 
-  return <MessageBubble message={displayMessage} versions={versions} />;
+  return (
+    <Box
+      className={enter ? 'athena-message-enter' : undefined}
+      sx={{ width: '100%', minWidth: 0 }}>
+      <MessageBubble
+        message={displayMessage}
+        versions={versions}
+      />
+    </Box>
+  );
 };
 
 const Pane: React.FC<{
   groups: { msg: Message; versions?: Message[] }[];
   maxContextMessages: number;
   showAllMessages: boolean;
-}> = ({ groups, maxContextMessages, showAllMessages }) => {
+  entranceIds: ReadonlySet<string>;
+}> = ({ groups, maxContextMessages, showAllMessages, entranceIds }) => {
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const scrollToBottom = useScrollToBottom();
   const [sticky] = useSticky();
 
@@ -108,17 +121,20 @@ const Pane: React.FC<{
     const isStreaming = lastId === prevIdRef.current && lastLength > 0;
 
     if (isNewMessage) {
-      scrollToBottom({ behavior: 'smooth' });
+      scrollToBottom({ behavior: reducedMotion ? 'auto' : 'smooth' });
     } else if (isStreaming && sticky) {
       scrollToBottom({ behavior: 'auto' });
     }
 
     prevIdRef.current = lastId;
-  }, [lastId, lastLength, sticky, scrollToBottom]);
+  }, [lastId, lastLength, sticky, scrollToBottom, reducedMotion]);
 
   // For the context window indicator, we need the active sequence
   const contextMessages = groups.map((g) => g.msg).filter((m) => m.type === 'user' || m.type === 'assistant');
-  const firstInWindowId = contextMessages.length > maxContextMessages ? contextMessages[contextMessages.length - maxContextMessages].id : null;
+  const firstInWindowId =
+    contextMessages.length > maxContextMessages
+      ? contextMessages[contextMessages.length - maxContextMessages].id
+      : null;
 
   return (
     <>
@@ -127,16 +143,30 @@ const Pane: React.FC<{
         return (
           <React.Fragment key={m.id}>
             {isFirstInWindow && (
-              <ListItem component="div" sx={{ py: 1, px: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+              <ListItem
+                component="div"
+                sx={{ py: 1, px: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Box sx={{ flex: 1, height: '1px', bgcolor: 'divider', opacity: 0.3 }} />
-                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap', userSelect: 'none' }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ whiteSpace: 'nowrap', userSelect: 'none' }}>
                   Context Window
                 </Typography>
                 <Box sx={{ flex: 1, height: '1px', bgcolor: 'divider', opacity: 0.3 }} />
               </ListItem>
             )}
-            <ListItem id={`msg-${m.id}`} component="div" disableGutters sx={{ px: 2 }}>
-              <MessageItem message={m} versions={versions} showAllMessages={showAllMessages} />
+            <ListItem
+              id={`msg-${m.id}`}
+              component="div"
+              disableGutters
+              sx={{ px: 2 }}>
+              <MessageItem
+                message={m}
+                versions={versions}
+                showAllMessages={showAllMessages}
+                animate={entranceIds.has(m.id)}
+              />
             </ListItem>
           </React.Fragment>
         );
@@ -160,7 +190,14 @@ interface Props {
 const ROOT_CLASS = css({ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' });
 const FOLLOW_BUTTON_CLASS = css({ display: 'none' });
 
-const MessageList: React.FC<Props> = ({ messages, maxContextMessages, topicId: topicIdProp, suggestions = [], isSuggestionsLoading = false, onSuggestionSelect }) => {
+const MessageList: React.FC<Props> = ({
+  messages,
+  maxContextMessages,
+  topicId: topicIdProp,
+  suggestions = [],
+  isSuggestionsLoading = false,
+  onSuggestionSelect,
+}) => {
   const { topicId: routeTopicId } = useParams();
   const scrollKey = topicIdProp ?? routeTopicId;
   const visibleMessageCount = useChatStore((s) => s.visibleMessageCount);
@@ -168,11 +205,50 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, topicId: t
   const highlightedMessageId = useChatStore((s) => s.highlightedMessageId);
   const setHighlightedMessageId = useChatStore((s) => s.setHighlightedMessageId);
   const showAllMessages = useUiStore((s) => s.showAllMessages);
+  const request = useChatStore((s) => s.currentRequestMessageIds);
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const contextKey = `${scrollKey ?? ''}:${messages[0]?.forkId ?? ''}`;
+  const baselineIds = new Set([
+    ...messages.map((message) => message.id),
+    ...(request ? [request.userMessageId, request.assistantMessageId] : []),
+  ]);
+  const baseline = useRef({
+    key: scrollKey,
+    messages,
+    ids: baselineIds,
+    entrances: new Set<string>(),
+  });
+  if (baseline.current.key !== scrollKey) {
+    baseline.current = {
+      key: scrollKey,
+      messages,
+      ids: baselineIds,
+      entrances: new Set<string>(),
+    };
+  } else if (baseline.current.messages !== messages) {
+    const entrances = new Set(
+      messages
+        .filter(
+          (message) =>
+            !baseline.current.ids.has(message.id) &&
+            (request?.userMessageId === message.id || request?.assistantMessageId === message.id),
+        )
+        .map((message) => message.id),
+    );
+    baseline.current = {
+      key: scrollKey,
+      messages,
+      ids: new Set([...baseline.current.ids, ...messages.map((message) => message.id)]),
+      entrances,
+    };
+  }
 
   // 1. Filter, Sort, and Group
   const processedGroups = React.useMemo(() => {
     // 1.1 Filter deleted and sort
-    const all = messages.filter((m) => !m.isDeleted).sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
+    const all = messages
+      .filter((m) => !m.isDeleted)
+      .sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
     // 1.2 Group versions
     const groups: { msg: Message; versions?: Message[] }[] = [];
@@ -238,7 +314,7 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, topicId: t
 
     const el = document.getElementById(`msg-${highlightedMessageId}`);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' });
       setHighlightedMessageId(null);
       return;
     }
@@ -260,7 +336,7 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, topicId: t
         store.increaseVisibleMessageCount();
       }
     }
-  }, [highlightedMessageId, processedGroups, visibleMessageCount, setHighlightedMessageId]);
+  }, [highlightedMessageId, processedGroups, visibleMessageCount, setHighlightedMessageId, reducedMotion]);
 
   if (processedGroups.length === 0) {
     return (
@@ -281,8 +357,7 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, topicId: t
             from: { opacity: 0, transform: 'translateY(20px)' },
             to: { opacity: 0.8, transform: 'translateY(0)' },
           },
-        }}
-      >
+        }}>
         <Box
           component="img"
           src="/athena/icons/android-chrome-192x192.png"
@@ -301,8 +376,7 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, topicId: t
             color: 'text.primary',
             lineHeight: 1,
             m: 0,
-          }}
-        >
+          }}>
           Athena
         </Typography>
       </Box>
@@ -311,26 +385,46 @@ const MessageList: React.FC<Props> = ({ messages, maxContextMessages, topicId: t
 
   return (
     <ScrollToBottom
-      key={scrollKey}
+      key={contextKey}
       className={ROOT_CLASS}
       initialScrollBehavior="auto"
       scrollViewClassName="my-scroll-view"
-      followButtonClassName={FOLLOW_BUTTON_CLASS}
-    >
+      followButtonClassName={FOLLOW_BUTTON_CLASS}>
       {processedGroups.length > visibleGroups.length && (
         <ListItem component="div">
-          <Button onClick={increaseVisibleMessageCount} fullWidth variant="outlined">
+          <Button
+            onClick={increaseVisibleMessageCount}
+            fullWidth
+            variant="outlined">
             Load older messages ({processedGroups.length - visibleGroups.length} more)
           </Button>
         </ListItem>
       )}
 
-      <Pane groups={visibleGroups} maxContextMessages={maxContextMessages} showAllMessages={showAllMessages} />
-      {suggestions.length > 0 && onSuggestionSelect && <SuggestedReplies suggestions={suggestions} onSelect={onSuggestionSelect} />}
+      <Pane
+        groups={visibleGroups}
+        maxContextMessages={maxContextMessages}
+        showAllMessages={showAllMessages}
+        entranceIds={baseline.current.entrances}
+      />
+      {suggestions.length > 0 && onSuggestionSelect && (
+        <SuggestedReplies
+          suggestions={suggestions}
+          onSelect={onSuggestionSelect}
+        />
+      )}
       {isSuggestionsLoading && (
-        <Box display="flex" alignItems="center" gap={1} px={2} py={0.5} justifyContent="flex-end">
+        <Box
+          display="flex"
+          alignItems="center"
+          gap={1}
+          px={2}
+          py={0.5}
+          justifyContent="flex-end">
           <CircularProgress size={12} />
-          <Typography variant="caption" color="text.secondary">
+          <Typography
+            variant="caption"
+            color="text.secondary">
             Generating suggestions...
           </Typography>
         </Box>

@@ -90,8 +90,48 @@ describe('TopicContextDialog', () => {
     });
   });
 
+  it('CTX-04 reserves completion tokens when predicting dropped conversation turns', async () => {
+    mockUseAuthStore.mockReturnValue({ maxContextTokens: 6000, messageRetrievalEnabled: false });
+    mockEstimateTokens.mockImplementation((messages): ReturnType<typeof estimateTokens> => {
+      const promptTokens = messages.reduce(
+        (total, message) => total + (typeof message.content === 'string' ? message.content.length : 0),
+        0,
+      );
+      return { promptTokens, completionTokens: 0, totalTokens: promptTokens };
+    });
+    const entries = Array.from({ length: 4 }, (_, index) => ({
+      message: {
+        role: index % 2 === 0 ? ('user' as const) : ('assistant' as const),
+        content: `Turn ${index + 1} `.padEnd(1000, '.'),
+      },
+      sourceLabel: `Entry ${index + 1}`,
+      messageId: `message-${index}`,
+      isConversationMessage: true,
+    }));
+    mockUseChatStore.mockReturnValue({
+      buildFullContext: (): ReturnType<ChatStoreSlice['buildFullContext']> => Promise.resolve(entries),
+      updateMessageContext: (): Promise<void> => Promise.resolve(),
+      selectedModel: { contextWindow: 128000, supportsTools: false },
+    });
+    render(
+      <TopicContextDialog
+        open
+        topicId="topic-1"
+        onClose={jest.fn()}
+      />,
+    );
+    await screen.findByText('Entry 1');
+    expect(screen.queryAllByText('will be dropped')).toHaveLength(2);
+  });
+
   it('uses standard word-break on content preview text, not aggressive anywhere breaking', async () => {
-    render(<TopicContextDialog open topicId="topic-1" onClose={jest.fn()} />);
+    render(
+      <TopicContextDialog
+        open
+        topicId="topic-1"
+        onClose={jest.fn()}
+      />,
+    );
 
     await screen.findByText('Hello context');
 
@@ -108,7 +148,13 @@ describe('TopicContextDialog', () => {
   it('loads context entries, supports copy, and closes dialog', async () => {
     const onClose = jest.fn((): void => undefined);
 
-    render(<TopicContextDialog open topicId="topic-1" onClose={onClose} />);
+    render(
+      <TopicContextDialog
+        open
+        topicId="topic-1"
+        onClose={onClose}
+      />,
+    );
 
     expect(await screen.findByText('Hello context')).toBeInTheDocument();
 

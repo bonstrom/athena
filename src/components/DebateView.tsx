@@ -1,13 +1,13 @@
 import React, { JSX, useEffect, useMemo, useRef } from 'react';
-import { Alert, Box, Chip, Typography, useTheme } from '@mui/material';
+import { Alert, alpha, Box, Chip, Typography, useMediaQuery, useTheme } from '@mui/material';
 import { Message, Topic } from '../database/AthenaDb';
 import { useDebateStore } from '../store/DebateStore';
 import ModelSelector from './ModelSelector';
 import MessageBubble from './MessageBubble';
 import DebateComposer from './DebateComposer';
 import MarkdownWithCode from './MarkdownWithCode';
-import TypingIndicator from './TypingIndicator';
 import { ChatModel } from './ModelSelector';
+import ActivityIndicator from './ActivityIndicator';
 
 interface DebateColumnProps {
   side: 'left' | 'right';
@@ -16,6 +16,7 @@ interface DebateColumnProps {
   messages: Message[];
   streamingContent: string;
   debateSending: boolean;
+  active: boolean;
   currentPhase: 'idle' | 'answer' | 'review' | 'final' | 'consensus';
 }
 
@@ -33,20 +34,22 @@ const DebateColumn = React.memo(function DebateColumn({
   messages,
   streamingContent,
   debateSending,
+  active,
   currentPhase,
 }: DebateColumnProps): JSX.Element {
   const { setDebateModelA, setDebateModelB } = useDebateStore();
   const theme = useTheme();
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(messages.length);
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 
   useEffect(() => {
     const isNewMessage = messages.length !== prevMessageCountRef.current;
     prevMessageCountRef.current = messages.length;
     // Use smooth scroll only when a new message arrives; streaming content
     // updates use an instant scroll to avoid overlapping smooth animations.
-    bottomRef.current?.scrollIntoView({ behavior: isNewMessage ? 'smooth' : 'auto' });
-  }, [messages.length, streamingContent]);
+    bottomRef.current?.scrollIntoView({ behavior: isNewMessage && !reducedMotion ? 'smooth' : 'auto' });
+  }, [messages.length, streamingContent, reducedMotion]);
 
   const handleModelChange = (m: ChatModel): void => {
     if (side === 'left') setDebateModelA(m, topicId);
@@ -62,6 +65,8 @@ const DebateColumn = React.memo(function DebateColumn({
       flexBasis="50%"
       minWidth={0}
       sx={{
+        boxShadow: active ? `inset 0 0 0 2px ${alpha(theme.palette.primary.main, 0.4)}` : 'inset 0 0 0 2px transparent',
+        transition: 'box-shadow 200ms ease',
         borderRight: side === 'left' ? `1px solid ${theme.palette.divider}` : 'none',
         height: '100%',
         overflow: 'hidden',
@@ -70,6 +75,7 @@ const DebateColumn = React.memo(function DebateColumn({
       {/* Column header: model selector */}
       <Box px={1.5} py={1} sx={{ borderBottom: `1px solid ${theme.palette.divider}`, flexShrink: 0 }}>
         {model && <ModelSelector selectedModel={model} onChange={handleModelChange} />}
+        {active && <ActivityIndicator activity={streamingContent ? 'writing' : 'thinking'} />}
       </Box>
 
       {/* Message list */}
@@ -92,7 +98,7 @@ const DebateColumn = React.memo(function DebateColumn({
 
         {/* Live streaming content */}
         {isStreaming && (
-          <Box mb={1}>
+          <Box mb={1} className="athena-message-enter">
             <Chip
               label={currentPhase !== 'idle' ? (PHASE_LABELS[currentPhase] ?? currentPhase) : ''}
               size="small"
@@ -110,13 +116,6 @@ const DebateColumn = React.memo(function DebateColumn({
             >
               <MarkdownWithCode>{streamingContent}</MarkdownWithCode>
             </Box>
-          </Box>
-        )}
-
-        {/* Typing indicator while waiting for first token */}
-        {debateSending && !isStreaming && (
-          <Box mb={1}>
-            <TypingIndicator />
           </Box>
         )}
 
@@ -143,6 +142,8 @@ const DebateView = ({ topic, messages }: DebateViewProps): JSX.Element => {
     debateModelA,
     debateModelB,
     debateSending,
+    modelAActive,
+    modelBActive,
     currentPhase,
     streamingContentA,
     streamingContentB,
@@ -241,6 +242,7 @@ const DebateView = ({ topic, messages }: DebateViewProps): JSX.Element => {
           messages={leftWithUsers}
           streamingContent={streamingContentA}
           debateSending={debateSending}
+          active={debateSending && modelAActive}
           currentPhase={currentPhase}
         />
         <DebateColumn
@@ -250,6 +252,7 @@ const DebateView = ({ topic, messages }: DebateViewProps): JSX.Element => {
           messages={rightWithUsers}
           streamingContent={streamingContentB}
           debateSending={debateSending}
+          active={debateSending && modelBActive}
           currentPhase={currentPhase}
         />
       </Box>
@@ -264,9 +267,11 @@ const DebateView = ({ topic, messages }: DebateViewProps): JSX.Element => {
             flexShrink: 0,
             maxHeight: '40%',
             overflow: 'auto',
+            boxShadow: debateSending && currentPhase === 'consensus' ? (t): string => `inset 0 2px 0 ${alpha(t.palette.primary.main, 0.5)}` : 'none',
           }}
         >
           <Chip label="Consensus" size="small" color="primary" sx={{ mb: 1, fontSize: '0.75rem' }} />
+          {debateSending && currentPhase === 'consensus' && <ActivityIndicator activity={streamingConsensus ? 'writing' : 'thinking'} />}
           {messages
             .filter((m) => m.debatePhase === 'consensus')
             .map((msg) => (
@@ -279,7 +284,6 @@ const DebateView = ({ topic, messages }: DebateViewProps): JSX.Element => {
               <MarkdownWithCode>{streamingConsensus}</MarkdownWithCode>
             </Box>
           )}
-          {currentPhase === 'consensus' && !streamingConsensus && debateSending && <TypingIndicator />}
         </Box>
       )}
 

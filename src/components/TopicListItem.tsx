@@ -94,7 +94,12 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
     <>
       <ListItem disablePadding>
         {isEditing ? (
-          <Box display="flex" alignItems="center" width="100%" pl={2} pr={1}>
+          <Box
+            display="flex"
+            alignItems="center"
+            width="100%"
+            pl={2}
+            pr={1}>
             <TextField
               value={editedName}
               onChange={(e): void => setEditedName(e.target.value)}
@@ -107,12 +112,13 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
               aria-label="Save topic name"
               onClick={(): void => {
                 void save();
-              }}
-            >
+              }}>
               <SaveIcon />
             </IconButton>
 
-            <IconButton aria-label="Cancel editing" onClick={(): void => setIsEditing(false)}>
+            <IconButton
+              aria-label="Cancel editing"
+              onClick={(): void => setIsEditing(false)}>
               <CloseIcon />
             </IconButton>
           </Box>
@@ -124,8 +130,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             py={0.5}
             sx={{
               '&:hover .morevert-btn': { opacity: 1 },
-            }}
-          >
+            }}>
             {isSelecting && (
               <Checkbox
                 checked={selectedTopicIds.has(topic.id)}
@@ -137,6 +142,8 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             )}
             <ListItemButton
               selected={topic.id === topicId}
+              data-active-topic={topic.id === topicId ? 'true' : undefined}
+              aria-current={topic.id === topicId ? 'page' : undefined}
               onClick={(): void => {
                 if (isSelecting) {
                   toggleTopicSelection(topic.id);
@@ -150,15 +157,16 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                 minHeight: 40,
                 borderRadius: 2,
                 mx: 1,
-                '&.Mui-selected': {
-                  boxShadow: (theme) => `inset 3px 0 0 ${theme.palette.primary.main}`,
-                },
-              }}
-            >
+              }}>
               <ListItemText
                 primary={
-                  <Box display="flex" alignItems="center" gap={1}>
-                    <Tooltip title={isTopicNameOverflowing ? topicName : ''} disableInteractive>
+                  <Box
+                    display="flex"
+                    alignItems="center"
+                    gap={1}>
+                    <Tooltip
+                      title={isTopicNameOverflowing ? topicName : ''}
+                      disableInteractive>
                       <Box
                         ref={topicNameRef}
                         component="span"
@@ -166,28 +174,39 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap',
-                        }}
-                      >
+                        }}>
                         {topicName}
                       </Box>
                     </Tooltip>
                     {topic.mode === 'debate' && (
-                      <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
+                      <Box
+                        display="flex"
+                        alignItems="center"
+                        sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
                         <CompareArrowsIcon sx={{ fontSize: '0.85rem' }} />
                       </Box>
                     )}
                     {topic.mode === 'curator' && (
-                      <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
+                      <Box
+                        display="flex"
+                        alignItems="center"
+                        sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
                         <MenuBookOutlined sx={{ fontSize: '0.85rem' }} />
                       </Box>
                     )}
                     {topic.mode === 'checklist' && (
-                      <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
+                      <Box
+                        display="flex"
+                        alignItems="center"
+                        sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
                         <ChecklistIcon sx={{ fontSize: '0.85rem' }} />
                       </Box>
                     )}
                     {(topic.forks?.length ?? 0) > 1 && (
-                      <Box display="flex" alignItems="center" sx={{ opacity: 0.6, ml: 'auto', flexShrink: 0 }}>
+                      <Box
+                        display="flex"
+                        alignItems="center"
+                        sx={{ opacity: 0.6, ml: 'auto', flexShrink: 0 }}>
                         <AltRouteIcon
                           sx={{
                             fontSize: '0.85rem',
@@ -201,8 +220,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                             fontSize: `${Math.max(11, chatFontSize * 0.7)}px`,
                             fontWeight: 'bold',
                             lineHeight: 1,
-                          }}
-                        >
+                          }}>
                           {(topic.forks?.length ?? 1) - 1}
                         </Typography>
                       </Box>
@@ -226,8 +244,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
               aria-controls={openMenu ? `menu-${topic.id}` : undefined}
               aria-haspopup="true"
               aria-expanded={openMenu ? 'true' : undefined}
-              sx={{ opacity: isMobile ? 1 : 0, transition: 'opacity 0.15s ease' }}
-            >
+              sx={{ opacity: isMobile ? 1 : 0, transition: 'opacity 0.15s ease' }}>
               <MoreVertIcon fontSize="small" />
             </IconButton>
 
@@ -236,14 +253,12 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
               open={openMenu}
               onClose={handleMenuClose}
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-            >
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
               <MenuItem
                 onClick={(): void => {
                   setShowContextDialog(true);
                   handleMenuClose();
-                }}
-              >
+                }}>
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <MenuBookOutlined fontSize="small" />
                 </ListItemIcon>
@@ -254,8 +269,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                 onClick={(): void => {
                   setIsEditing(true);
                   handleMenuClose();
-                }}
-              >
+                }}>
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <EditIcon fontSize="small" />
                 </ListItemIcon>
@@ -266,8 +280,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                 onClick={(): void => {
                   setConfirmOpen(true);
                   handleMenuClose();
-                }}
-              >
+                }}>
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <DeleteIcon fontSize="small" />
                 </ListItemIcon>
@@ -278,8 +291,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                 onClick={(): void => {
                   toggleTopicSelection(topic.id);
                   handleMenuClose();
-                }}
-              >
+                }}>
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <DeleteSweepIcon fontSize="small" />
                 </ListItemIcon>
@@ -290,7 +302,9 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
         )}
       </ListItem>
 
-      <Dialog open={confirmOpen} onClose={(): void => setConfirmOpen(false)}>
+      <Dialog
+        open={confirmOpen}
+        onClose={(): void => setConfirmOpen(false)}>
         <DialogTitle>Delete Topic</DialogTitle>
 
         <DialogContent>
@@ -304,14 +318,17 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             onClick={(): void => {
               void handleDelete();
             }}
-            color="error"
-          >
+            color="error">
             Delete
           </Button>
         </DialogActions>
       </Dialog>
 
-      <TopicContextDialog open={showContextDialog} topicId={topic.id} onClose={(): void => setShowContextDialog(false)} />
+      <TopicContextDialog
+        open={showContextDialog}
+        topicId={topic.id}
+        onClose={(): void => setShowContextDialog(false)}
+      />
     </>
   );
 };

@@ -1,6 +1,12 @@
-export {};
+import Dexie from 'dexie';
 const mockExportDB = jest.fn<Promise<Blob>, [unknown, { prettyJson: boolean }]>();
 const mockImportInto = jest.fn<Promise<void>, [unknown, File | Blob, { overwriteValues: boolean; clearTablesBeforeImport: boolean }]>();
+const mockImportDB = jest.fn<Promise<unknown>, [File | Blob, { name: string }]>();
+const mockPeakImportFile = jest.fn<
+  Promise<{ data: { databaseVersion: number; databaseName: string } }>,
+  [File | Blob]
+>();
+const mockAthenaDb: Record<string, unknown> = {};
 const mockGet = jest.fn<Promise<unknown>, [string]>();
 const mockSet = jest.fn<Promise<void>, [string, unknown]>();
 
@@ -13,6 +19,9 @@ const mockAddNotification = jest.fn<undefined, [string, string | undefined]>();
 jest.mock('dexie-export-import', () => ({
   exportDB: (...args: [unknown, { prettyJson: boolean }]): Promise<Blob> => mockExportDB(...args),
   importInto: (...args: [unknown, File | Blob, { overwriteValues: boolean; clearTablesBeforeImport: boolean }]): Promise<void> => mockImportInto(...args),
+  importDB: (...args: [File | Blob, { name: string }]): Promise<unknown> => mockImportDB(...args),
+  peakImportFile: (...args: [File | Blob]): Promise<{ data: { databaseVersion: number; databaseName: string } }> =>
+    mockPeakImportFile(...args),
 }));
 
 jest.mock('idb-keyval', () => ({
@@ -21,7 +30,7 @@ jest.mock('idb-keyval', () => ({
 }));
 
 jest.mock('../../database/AthenaDb', () => ({
-  athenaDb: {},
+  athenaDb: mockAthenaDb,
 }));
 
 jest.mock('../../store/BackupStore', () => ({
@@ -106,6 +115,27 @@ function createMockFile(content: string): File {
     type: 'application/json',
   } as unknown as File;
 }
+
+function createDexieBackup(databaseVersion = 22): File {
+  const content = JSON.stringify({
+    formatName: 'dexie',
+    formatVersion: 1,
+    data: {
+      databaseName: 'AthenaDatabase',
+      databaseVersion,
+      tables: [{ name: 'messages', schema: 'id', rowCount: 0 }],
+      data: [{ tableName: 'messages', inbound: true, rows: [] }],
+    },
+  });
+  const file = new File([content], 'backup.json', { type: 'application/json' });
+  Object.defineProperty(file, 'text', { value: (): Promise<string> => Promise.resolve(content) });
+  return file;
+}
+
+beforeEach(() => {
+  for (const key of Object.keys(mockAthenaDb)) Reflect.deleteProperty(mockAthenaDb, key);
+  mockPeakImportFile.mockResolvedValue({ data: { databaseVersion: 22, databaseName: 'AthenaDatabase' } });
+});
 
 describe('BackupService.performAutoBackup', () => {
   beforeEach(() => {
@@ -517,6 +547,215 @@ describe('BackupService download/restore/merge', () => {
     );
   });
 
+  it('BAK-01 preserves a post-snapshot write when the real importer rejects before clearing', async () => {
+    const service = loadBackupService();
+    const { importInto } = jest.requireActual<typeof import('dexie-export-import')>('dexie-export-import');
+    const database = new Dexie('AthenaDatabase');
+    database.version(22).stores({ messages: 'id' });
+    const file = createDexieBackup(21);
+    const safetyBackup = new Blob(['snapshot']);
+    const rows = new Map<string, string>([['original', 'before export']]);
+    let snapshot = new Map<string, string>();
+    let markExportStarted!: () => void;
+    let releaseExport!: () => void;
+    const exportStarted = new Promise<void>((resolve) => {
+      markExportStarted = resolve;
+    });
+    const exportGate = new Promise<void>((resolve) => {
+      releaseExport = resolve;
+    });
+    mockExportDB.mockImplementationOnce(async (): Promise<Blob> => {
+      snapshot = new Map(rows);
+      markExportStarted();
+      await exportGate;
+      return safetyBackup;
+    });
+    mockImportInto.mockImplementation(async (_database, input): Promise<void> => {
+      if (input === file) {
+        await importInto(database, input, { overwriteValues: true, clearTablesBeforeImport: true });
+        return;
+      }
+      rows.clear();
+      snapshot.forEach((value, key): void => {
+        rows.set(key, value);
+      });
+    });
+
+    const restore = service.restoreBackup(file);
+  const outcome = expect(restore).rejects.toThrow('Database version differs');
+    await exportStarted;
+    rows.set('new-message', 'committed after export');
+    releaseExport();
+    await outcome;
+
+    expect(rows.get('new-message')).toBe('committed after export');
+  });
+
+  it('BAK-02 keeps existing rows without replaying a snapshot when the atomic transaction cannot start', async () => {
+    const service = loadBackupService();
+    const rows = new Map<string, string>([['original', 'irreplaceable message']]);
+    const clear = jest.fn((): Promise<void> => {
+      rows.clear();
+      return Promise.resolve();
+    });
+    const transaction = jest.fn((): never => {
+      throw new Error('Storage unavailable');
+    });
+    mockAthenaDb.tables = [{ name: 'messages', clear, bulkAdd: jest.fn(), toArray: jest.fn() }];
+    mockAthenaDb.verno = 22;
+    mockAthenaDb.transaction = transaction;
+    const staging = {
+      tables: [{ name: 'messages', toArray: jest.fn((): Promise<unknown[]> => Promise.resolve([{ id: 'imported' }])) }],
+      close: jest.fn(),
+      delete: jest.fn((): Promise<void> => Promise.resolve()),
+    };
+    mockImportDB.mockResolvedValue(staging);
+    mockExportDB.mockResolvedValue(createDexieBackup());
+
+    await expect(service.restoreBackup(createDexieBackup())).rejects.toThrow('Storage unavailable');
+
+    // Failure to start an atomic replacement leaves live data intact. Replaying
+    // a snapshot would needlessly replace newer writes and must not be attempted.
+    expect(mockImportDB).toHaveBeenCalledTimes(1);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(clear).not.toHaveBeenCalled();
+    expect(mockImportInto).not.toHaveBeenCalled();
+    expect(mockAddNotification).not.toHaveBeenCalled();
+    expect(localStorage.getItem('athenaRecoveryRequired')).toBeNull();
+    expect(rows.get('original')).toBe('irreplaceable message');
+  });
+
+  it('BAK-02 replaces live rows only after staged rows are fully loaded', async () => {
+    const service = loadBackupService();
+    const liveRows = new Map<string, string>([['original', 'replace me']]);
+    let transactionActive = false;
+    const table = {
+      name: 'messages',
+      clear: jest.fn((): Promise<void> => {
+        liveRows.clear();
+        return Promise.resolve();
+      }),
+      bulkAdd: jest.fn((rows: { id: string; value: string }[]): Promise<void> => {
+        rows.forEach((row) => liveRows.set(row.id, row.value));
+        return Promise.resolve();
+      }),
+    };
+    const staging = {
+      tables: [
+        {
+          name: 'messages',
+          toArray: jest.fn((): Promise<{ id: string; value: string }[]> => {
+            if (transactionActive) return Promise.reject(new Error('TransactionInactiveError'));
+            return Promise.resolve([{ id: 'imported', value: 'restored row' }]);
+          }),
+        },
+      ],
+      close: jest.fn(),
+      delete: jest.fn((): Promise<void> => Promise.resolve()),
+    };
+    mockAthenaDb.tables = [table];
+    mockAthenaDb.verno = 22;
+    mockAthenaDb.transaction = jest.fn(async (_mode: string, _tables: unknown, scope: () => Promise<void>) => {
+      transactionActive = true;
+      try {
+        await scope();
+      } finally {
+        transactionActive = false;
+      }
+    });
+    mockImportDB.mockResolvedValue(staging);
+    mockExportDB.mockResolvedValue(createDexieBackup());
+
+    await service.restoreBackup(createDexieBackup());
+
+    expect(liveRows).toEqual(new Map([['imported', 'restored row']]));
+    expect(table.clear).toHaveBeenCalledTimes(1);
+    expect(staging.tables[0].toArray).toHaveBeenCalledTimes(1);
+  });
+
+  it('BAK-02 does not roll back live data after a pre-commit staging rejection', async () => {
+    const service = loadBackupService();
+    const liveRows = new Map<string, string>([['original', 'keep me']]);
+    const transaction = jest.fn();
+    mockAthenaDb.tables = [{ name: 'messages', clear: jest.fn(), bulkAdd: jest.fn() }];
+    mockAthenaDb.verno = 22;
+    mockAthenaDb.transaction = transaction;
+    mockExportDB.mockResolvedValue(createDexieBackup());
+    mockImportDB.mockRejectedValue(new Error('malformed staged backup'));
+
+    await expect(service.restoreBackup(createDexieBackup())).rejects.toThrow('malformed staged backup');
+
+    expect(mockImportDB).toHaveBeenCalledTimes(1);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(mockImportInto).not.toHaveBeenCalled();
+    expect(liveRows.get('original')).toBe('keep me');
+  });
+
+  it('BAK-03 does not overwrite the last external recovery copy after restore and rollback fail', async () => {
+    jest.doMock('../../store/BackupStore', () => ({
+      useBackupStore: {
+        getState: (): {
+          backupMode: string;
+          setStatus: typeof mockSetStatus;
+          setLastBackupTime: typeof mockSetLastBackupTime;
+          setErrorMessage: typeof mockSetErrorMessage;
+        } => ({
+          backupMode: 'external',
+          setStatus: mockSetStatus,
+          setLastBackupTime: mockSetLastBackupTime,
+          setErrorMessage: mockSetErrorMessage,
+        }),
+      },
+    }));
+    const service = loadBackupService();
+    const intactBackup = createDexieBackup();
+    const clearedDatabaseBackup = new Blob(['cleared database']);
+    let externalBackup: BufferSource | Blob | string = intactBackup;
+    let databaseCleared = false;
+    const writable: FileSystemWritableFileStreamLike = {
+      write: jest.fn((data: BufferSource | Blob | string): Promise<void> => {
+        externalBackup = data;
+        return Promise.resolve();
+      }),
+      close: jest.fn((): Promise<void> => Promise.resolve()),
+    };
+    mockGet.mockResolvedValue(createHandle('granted', 'granted', writable));
+    mockExportDB.mockImplementation((): Promise<Blob> =>
+      Promise.resolve(databaseCleared ? clearedDatabaseBackup : intactBackup),
+    );
+    mockImportInto.mockImplementation((): Promise<void> => {
+      databaseCleared = true;
+      return Promise.reject(new Error('Storage unavailable'));
+    });
+
+    const restore = service.restoreBackup(createDexieBackup());
+    const outcome = expect(restore).rejects.toThrow('Storage unavailable');
+    const autoBackup = service.performAutoBackup();
+    await outcome;
+    await autoBackup;
+
+    expect(externalBackup === intactBackup).toBe(true);
+  });
+
+  it('BAK-03 persists recovery protection across a module reload and another instance', async () => {
+    const failedRestore = loadBackupService();
+    mockExportDB.mockResolvedValue(createDexieBackup());
+    mockImportInto.mockRejectedValue(new Error('Storage unavailable'));
+
+    await expect(failedRestore.restoreBackup(createDexieBackup())).rejects.toThrow('Storage unavailable');
+    expect(localStorage.getItem('athenaRecoveryRequired')).not.toBeNull();
+
+    // Simulate a reload / independent tab: a fresh module instance must read the
+    // persisted state and refuse to overwrite the last automatic backup.
+    const reloaded = loadBackupService();
+    const exportsBeforeReload = mockExportDB.mock.calls.length;
+    await reloaded.performAutoBackup();
+
+    expect(mockExportDB).toHaveBeenCalledTimes(exportsBeforeReload);
+    expect(mockSetStatus).toHaveBeenCalledWith('error');
+    expect(mockSetErrorMessage).toHaveBeenCalledWith(expect.stringContaining('Automatic backups are paused'));
+  });
+
   it('restoreBackup notifies when both import and safety backup rollback fail', async () => {
     mockExportDB.mockResolvedValue(new Blob(['{"data":{"messages":[]}}'], { type: 'application/json' }));
     mockImportInto.mockRejectedValue(new Error('Import crashed'));
@@ -569,6 +808,40 @@ describe('BackupService download/restore/merge', () => {
     const file = createMockFile('bad json');
 
     await expect(service.mergeBackup(file)).rejects.toThrow('Backup validation failed');
+  });
+
+  it('BAK-control aborts merge if the safety export fails', async () => {
+    mockExportDB.mockRejectedValue(new Error('Export unavailable'));
+    const service = loadBackupService();
+
+    await expect(service.mergeBackup(createDexieBackup())).rejects.toThrow('Export unavailable');
+
+    expect(mockImportInto).not.toHaveBeenCalled();
+  });
+
+  it('BAK-control aborts merge if starting the safety download throws', async () => {
+    mockClick.mockImplementationOnce((): never => {
+      throw new Error('Download unavailable');
+    });
+    const service = loadBackupService();
+
+    await expect(service.mergeBackup(createDexieBackup())).rejects.toThrow('Download unavailable');
+
+    expect(mockImportInto).not.toHaveBeenCalled();
+  });
+
+  it('BAK-control resumes queued backup operations after a failed validation', async () => {
+    const service = loadBackupService();
+    const restore = service.restoreBackup(createMockFile('not JSON'));
+    const outcome = expect(restore).rejects.toThrow('Backup validation failed');
+    const download = service.downloadBackup();
+
+    await outcome;
+    await download;
+
+    expect(mockImportInto).not.toHaveBeenCalled();
+    expect(mockExportDB).toHaveBeenCalledTimes(1);
+    expect(mockClick).toHaveBeenCalledTimes(1);
   });
 
   it('serializes manual backup operations so they never overlap', async () => {

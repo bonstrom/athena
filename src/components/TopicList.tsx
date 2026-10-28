@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  useMediaQuery,
 } from '@mui/material';
 import { useTopicStore } from '../store/TopicStore';
 import { usePixelStore } from '../store/PixelStore';
@@ -18,7 +19,7 @@ import { useAuthStore } from '../store/AuthStore';
 import { useUiStore } from '../store/UiStore';
 import { useCuratorStore } from '../store/CuratorStore';
 import { TopicListItem } from './TopicListItem';
-import React, { JSX, useEffect, useState } from 'react';
+import React, { JSX, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { groupTopicsByDate } from '../utils/groupTopicsByDate';
 import { useNavigate, useParams } from 'react-router-dom';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -33,6 +34,41 @@ export const TopicList = (): JSX.Element => {
   const navigate = useNavigate();
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [inProgressIds, setInProgressIds] = useState<Set<string>>(new Set());
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const listRef = useRef<HTMLUListElement>(null);
+  const [marker, setMarker] = useState<{ top: number; height: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const measure = (): void => {
+      const active = list.querySelector('[data-active-topic="true"]');
+      if (!active) {
+        setMarker(null);
+        return;
+      }
+      const rect = active.getBoundingClientRect();
+      const parent = list.getBoundingClientRect();
+      const next = { top: rect.top - parent.top + 8, height: Math.max(0, rect.height - 16) };
+      setMarker((previous) => (previous?.top === next.top && previous.height === next.height ? previous : next));
+    };
+    measure();
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    resize?.observe(list);
+    const mutations = new MutationObserver(measure);
+    mutations.observe(list, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-active-topic'],
+    });
+    window.addEventListener('resize', measure);
+    return (): void => {
+      resize?.disconnect();
+      mutations.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [topicId, topics, inProgressIds, sidebarFilter, visibleTopicCount, selectedTopicIds]);
 
   useEffect(() => {
     void loadTopics().then(() => {
@@ -66,9 +102,9 @@ export const TopicList = (): JSX.Element => {
     // If the top element's time or ID shifts (e.g. bumped to top), smoothly scroll into view
     const container = document.getElementById('sidebar-scroll-container');
     if (container) {
-      container.scrollTo({ top: 0, behavior: 'smooth' });
+      container.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
     }
-  }, [topTopicUpdatedOn, topTopicId]);
+  }, [topTopicUpdatedOn, topTopicId, reducedMotion]);
 
   const filteredTopics = React.useMemo(() => {
     // Sprite chats live in the Pixel Art view; listing them as ordinary topics
@@ -116,17 +152,31 @@ export const TopicList = (): JSX.Element => {
   return (
     <>
       {isSelecting && (
-        <Box px={1} py={0.5} bgcolor="action.selected">
-          <Typography variant="body2" sx={{ textAlign: 'center', py: 0.5 }}>
+        <Box
+          px={1}
+          py={0.5}
+          bgcolor="action.selected">
+          <Typography
+            variant="body2"
+            sx={{ textAlign: 'center', py: 0.5 }}>
             {selectionCount} selected
           </Typography>
-          <Box display="flex" alignItems="center" justifyContent="space-evenly">
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="space-evenly">
             {selectionCount < visibleTopics.length && (
-              <Button size="small" sx={{ minWidth: 0, px: 1, whiteSpace: 'nowrap' }} onClick={handleSelectAll}>
+              <Button
+                size="small"
+                sx={{ minWidth: 0, px: 1, whiteSpace: 'nowrap' }}
+                onClick={handleSelectAll}>
                 Select All
               </Button>
             )}
-            <Button size="small" sx={{ minWidth: 0, px: 1 }} onClick={clearTopicSelection}>
+            <Button
+              size="small"
+              sx={{ minWidth: 0, px: 1 }}
+              onClick={clearTopicSelection}>
               Cancel
             </Button>
             <Button
@@ -134,15 +184,36 @@ export const TopicList = (): JSX.Element => {
               color="error"
               startIcon={<DeleteIcon />}
               sx={{ minWidth: 0, px: 1, whiteSpace: 'nowrap' }}
-              onClick={(): void => setBulkDeleteConfirmOpen(true)}
-            >
+              onClick={(): void => setBulkDeleteConfirmOpen(true)}>
               Delete
             </Button>
           </Box>
         </Box>
       )}
 
-      <List>
+      <List
+        ref={listRef}
+        sx={{ position: 'relative' }}>
+        {marker && (
+          <Box
+            component="li"
+            aria-hidden="true"
+            sx={{
+              position: 'absolute',
+              left: 8,
+              top: 0,
+              width: 3,
+              height: marker.height,
+              transform: `translateY(${marker.top}px)`,
+              borderRadius: 2,
+              bgcolor: 'primary.main',
+              pointerEvents: 'none',
+              listStyle: 'none',
+              zIndex: 1,
+              transition: 'transform 200ms ease, height 200ms ease',
+            }}
+          />
+        )}
         {inProgressTopics.length > 0 && (
           <React.Fragment key="in-progress">
             <ListSubheader
@@ -155,12 +226,14 @@ export const TopicList = (): JSX.Element => {
                 lineHeight: '2.5rem',
                 bgcolor: 'transparent',
                 fontWeight: 700,
-              }}
-            >
+              }}>
               In Progress
             </ListSubheader>
             {inProgressTopics.map((topic) => (
-              <TopicListItem key={topic.id} topic={topic} />
+              <TopicListItem
+                key={topic.id}
+                topic={topic}
+              />
             ))}
           </React.Fragment>
         )}
@@ -175,35 +248,44 @@ export const TopicList = (): JSX.Element => {
                 color: 'text.secondary',
                 lineHeight: '2.5rem',
                 bgcolor: 'transparent',
-              }}
-            >
+              }}>
               {group.label}
             </ListSubheader>
             {group.topics.map((topic) => (
-              <TopicListItem key={topic.id} topic={topic} />
+              <TopicListItem
+                key={topic.id}
+                topic={topic}
+              />
             ))}
           </React.Fragment>
         ))}
       </List>
 
-      <Box p={2} textAlign="center">
+      <Box
+        p={2}
+        textAlign="center">
         {loading ? (
           <CircularProgress size={24} />
         ) : (
           hasMoreToShow && (
-            <Button onClick={increaseVisibleTopicCount} variant="outlined">
+            <Button
+              onClick={increaseVisibleTopicCount}
+              variant="outlined">
               Load Older Topics
             </Button>
           )
         )}
       </Box>
 
-      <Dialog open={bulkDeleteConfirmOpen} onClose={(): void => setBulkDeleteConfirmOpen(false)}>
+      <Dialog
+        open={bulkDeleteConfirmOpen}
+        onClose={(): void => setBulkDeleteConfirmOpen(false)}>
         <DialogTitle>Delete {selectionCount} Topics?</DialogTitle>
 
         <DialogContent>
           <DialogContentText>
-            Are you sure you want to delete {selectionCount} topics? All messages within these topics will also be deleted. This cannot be undone.
+            Are you sure you want to delete {selectionCount} topics? All messages within these topics will also be
+            deleted. This cannot be undone.
           </DialogContentText>
         </DialogContent>
 
@@ -214,8 +296,7 @@ export const TopicList = (): JSX.Element => {
             onClick={(): void => {
               void handleBulkDelete();
             }}
-            color="error"
-          >
+            color="error">
             Delete All
           </Button>
         </DialogActions>

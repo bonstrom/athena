@@ -1,8 +1,9 @@
-import { athenaDb, AnalyticsSnapshot } from '../database/AthenaDb';
+import { athenaDb, AnalyticsSnapshot, LlmOperationUsage, Message } from '../database/AthenaDb';
 import { useProviderStore } from '../store/ProviderStore';
 
 const ROLLUP_MARKER_KEY = 'analyticsRollupMarker';
 const ROLLUP_LAST_ID_KEY = 'analyticsRollupLastId';
+const ROLLUP_LEDGER_KEY = 'analyticsRollupLedger';
 const OWNERSHIP_REBUILT_FLAG = 'analyticsOwnershipRebuilt';
 const MAX_LATENCY_SAMPLES = 300;
 
@@ -14,17 +15,63 @@ function readStringSetting(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-async function getRollupState(): Promise<{ marker: string; lastId: string }> {
-  try {
-    const markerSetting = await athenaDb.userSettings.get(ROLLUP_MARKER_KEY);
-    const lastIdSetting = await athenaDb.userSettings.get(ROLLUP_LAST_ID_KEY);
-    return {
-      marker: readStringSetting(markerSetting?.value),
-      lastId: readStringSetting(lastIdSetting?.value),
-    };
-  } catch {
-    return { marker: '', lastId: '' };
+interface RecordContribution {
+  date: string;
+  failed: boolean;
+  promptTokens: number;
+  completionTokens: number;
+  totalCost: number;
+  latencyMs?: number;
+  providerName: string | null;
+  toolUsage: Record<string, { calls: number; successCount: number; errors: string[] }>;
+}
+
+interface ContributionLedgerEntry {
+  fingerprint: string;
+  contribution: RecordContribution;
+}
+
+type ContributionLedger = Record<string, ContributionLedgerEntry | undefined>;
+
+type RollupSourceRecord = Pick<
+  Message & LlmOperationUsage,
+  'id' | 'created' | 'failed' | 'promptTokens' | 'completionTokens' | 'totalCost' | 'latencyMs' | 'model' | 'rawResponse'
+>;
+
+function readLedger(value: unknown): ContributionLedger {
+  if (typeof value === 'string') {
+    if (!value) return {};
+    try {
+      return readLedger(JSON.parse(value) as unknown);
+    } catch {
+      return {};
+    }
   }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {};
+  const result: ContributionLedger = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const candidate = entry as { fingerprint?: unknown; contribution?: unknown };
+    if (typeof candidate.fingerprint !== 'string') continue;
+    if (typeof candidate.contribution !== 'object' || candidate.contribution === null) continue;
+    result[key] = candidate as unknown as ContributionLedgerEntry;
+  }
+  return result;
+}
+
+async function getRollupState(): Promise<{ marker: string; lastId: string; ledger: ContributionLedger }> {
+  // Fail closed: treating an unreadable checkpoint as a first run would replay
+  // every source record into snapshots that already contain those records.
+  const [markerSetting, lastIdSetting, ledgerSetting] = await Promise.all([
+    athenaDb.userSettings.get(ROLLUP_MARKER_KEY),
+    athenaDb.userSettings.get(ROLLUP_LAST_ID_KEY),
+    athenaDb.userSettings.get(ROLLUP_LEDGER_KEY),
+  ]);
+  return {
+    marker: readStringSetting(markerSetting?.value),
+    lastId: readStringSetting(lastIdSetting?.value),
+    ledger: readLedger(ledgerSetting?.value),
+  };
 }
 
 // Serializes rollup/rebuild runs so overlapping invocations cannot process the
@@ -95,47 +142,6 @@ function parseToolUsage(rawResponse: string | undefined): Record<string, { calls
   return result as Record<string, { calls: number; successCount: number; errors: string[] }>;
 }
 
-function mergeSnapshots(existing: AnalyticsSnapshot, incoming: AnalyticsSnapshot): AnalyticsSnapshot {
-  const mergedLatency = [...(existing.latencySamples ?? []), ...(incoming.latencySamples ?? [])];
-  if (mergedLatency.length > MAX_LATENCY_SAMPLES) {
-    mergedLatency.length = MAX_LATENCY_SAMPLES;
-  }
-
-  const mergedProviderStats: Record<string, { cost: number; tokens: number; messageCount: number }> = { ...(existing.providerStats ?? {}) };
-  for (const [key, val] of Object.entries(incoming.providerStats ?? {})) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    mergedProviderStats[key] = mergedProviderStats[key] ?? { cost: 0, tokens: 0, messageCount: 0 };
-    mergedProviderStats[key].cost += val.cost;
-    mergedProviderStats[key].tokens += val.tokens;
-    mergedProviderStats[key].messageCount += val.messageCount;
-  }
-
-  const mergedToolStats: Record<string, { calls: number; successCount: number; errors: string[] }> = { ...(existing.toolStats ?? {}) };
-  for (const [key, val] of Object.entries(incoming.toolStats ?? {})) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    mergedToolStats[key] = mergedToolStats[key] ?? { calls: 0, successCount: 0, errors: [] };
-    mergedToolStats[key].calls += val.calls;
-    mergedToolStats[key].successCount += val.successCount;
-    for (const err of val.errors) {
-      if (!mergedToolStats[key].errors.includes(err) && mergedToolStats[key].errors.length < 10) {
-        mergedToolStats[key].errors.push(err);
-      }
-    }
-  }
-
-  return {
-    date: existing.date,
-    messageCount: existing.messageCount + incoming.messageCount,
-    failedCount: existing.failedCount + incoming.failedCount,
-    promptTokens: existing.promptTokens + incoming.promptTokens,
-    completionTokens: existing.completionTokens + incoming.completionTokens,
-    cost: existing.cost + incoming.cost,
-    latencySamples: mergedLatency,
-    providerStats: mergedProviderStats,
-    toolStats: mergedToolStats,
-  };
-}
-
 type PopulatedSnapshot = AnalyticsSnapshot & {
   latencySamples: number[];
   providerStats: Record<string, { cost: number; tokens: number; messageCount: number }>;
@@ -156,85 +162,243 @@ function createEmptySnapshot(date: string): PopulatedSnapshot {
   };
 }
 
-async function runRollup(): Promise<void> {
-  const { marker, lastId } = await getRollupState();
+function cloneSnapshot(snapshot: AnalyticsSnapshot): PopulatedSnapshot {
+  return {
+    ...snapshot,
+    latencySamples: [...(snapshot.latencySamples ?? [])],
+    providerStats: Object.fromEntries(
+      Object.entries(snapshot.providerStats ?? {}).map(([key, stats]) => [key, { ...stats }]),
+    ),
+    toolStats: Object.fromEntries(
+      Object.entries(snapshot.toolStats ?? {}).map(([key, stats]) => [key, { ...stats, errors: [...stats.errors] }]),
+    ),
+  };
+}
 
-  const messages = marker ? await athenaDb.messages.where('created').aboveOrEqual(marker).toArray() : await athenaDb.messages.toArray();
-  const operationUsages = marker
-    ? await athenaDb.llmOperationUsages.where('created').aboveOrEqual(marker).toArray()
-    : await athenaDb.llmOperationUsages.toArray();
-  const records = [...messages, ...operationUsages];
+function buildContribution(record: RollupSourceRecord): RecordContribution {
+  return {
+    date: getDateString(record.created),
+    failed: record.failed,
+    promptTokens: record.promptTokens,
+    completionTokens: record.completionTokens,
+    totalCost: record.totalCost,
+    ...(record.latencyMs != null && record.latencyMs > 0 && { latencyMs: record.latencyMs }),
+    providerName: resolveProviderName(record.model),
+    toolUsage: parseToolUsage(record.rawResponse),
+  };
+}
 
-  const filtered = marker ? records.filter((record) => !(record.created === marker && lastId !== '' && record.id <= lastId)) : records;
+function fingerprintContribution(record: RollupSourceRecord, contribution: RecordContribution): string {
+  return JSON.stringify([record.created, contribution]);
+}
 
-  if (filtered.length === 0) return;
+function hasOtherErrorContribution(
+  ledger: ContributionLedger,
+  excludedKey: string,
+  date: string,
+  toolName: string,
+  error: string,
+): boolean {
+  return Object.entries(ledger).some(([key, entry]) => {
+    if (key === excludedKey || entry?.contribution.date !== date) return false;
+    const stats = (entry.contribution.toolUsage as Record<string, { errors: string[] } | undefined>)[toolName];
+    return stats?.errors.includes(error) ?? false;
+  });
+}
 
-  let latestCreated = marker;
-  let latestId = lastId;
+/** Add (`sign` 1) or remove (`sign` -1) one record's contribution. */
+function applyContribution(snapshot: PopulatedSnapshot, contribution: RecordContribution, sign: 1 | -1): void {
+  snapshot.messageCount += sign;
+  if (contribution.failed) snapshot.failedCount += sign;
+  snapshot.promptTokens += sign * contribution.promptTokens;
+  snapshot.completionTokens += sign * contribution.completionTokens;
+  snapshot.cost += sign * contribution.totalCost;
 
-  const groupedByDate = new Map<string, PopulatedSnapshot>();
-
-  for (const record of filtered) {
-    const date = getDateString(record.created);
-    if (record.created > latestCreated || (record.created === latestCreated && record.id > latestId)) {
-      latestCreated = record.created;
-      latestId = record.id;
-    }
-
-    let snap = groupedByDate.get(date);
-    if (!snap) {
-      snap = createEmptySnapshot(date);
-      groupedByDate.set(date, snap);
-    }
-
-    snap.messageCount++;
-    if (record.failed) snap.failedCount++;
-    snap.promptTokens += record.promptTokens;
-    snap.completionTokens += record.completionTokens;
-    snap.cost += record.totalCost;
-
-    if (record.latencyMs != null && record.latencyMs > 0) {
-      snap.latencySamples.push(record.latencyMs);
-      if (snap.latencySamples.length > MAX_LATENCY_SAMPLES) {
-        snap.latencySamples.length = MAX_LATENCY_SAMPLES;
+  if (contribution.latencyMs != null) {
+    if (sign > 0) {
+      snapshot.latencySamples.push(contribution.latencyMs);
+      if (snapshot.latencySamples.length > MAX_LATENCY_SAMPLES) {
+        snapshot.latencySamples.length = MAX_LATENCY_SAMPLES;
       }
+    } else {
+      const index = snapshot.latencySamples.indexOf(contribution.latencyMs);
+      if (index >= 0) snapshot.latencySamples.splice(index, 1);
     }
+  }
 
-    const providerName = resolveProviderName(record.model);
-    if (providerName !== null) {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      const pStat = snap.providerStats[providerName] ?? { cost: 0, tokens: 0, messageCount: 0 };
-      pStat.cost += record.totalCost;
-      pStat.tokens += record.promptTokens + record.completionTokens;
-      pStat.messageCount++;
-      snap.providerStats[providerName] = pStat;
-    }
+  if (contribution.providerName !== null) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const pStat = snapshot.providerStats[contribution.providerName] ?? { cost: 0, tokens: 0, messageCount: 0 };
+    pStat.cost += sign * contribution.totalCost;
+    pStat.tokens += sign * (contribution.promptTokens + contribution.completionTokens);
+    pStat.messageCount += sign;
+    snapshot.providerStats[contribution.providerName] = pStat;
+  }
 
-    const toolUsage = parseToolUsage(record.rawResponse);
-    for (const [toolName, stats] of Object.entries(toolUsage)) {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      const existing = snap.toolStats[toolName] ?? { calls: 0, successCount: 0, errors: [] as string[] };
-      existing.calls += stats.calls;
-      existing.successCount += stats.successCount;
+  for (const [toolName, stats] of Object.entries(contribution.toolUsage)) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const existing = snapshot.toolStats[toolName] ?? { calls: 0, successCount: 0, errors: [] as string[] };
+    existing.calls += sign * stats.calls;
+    existing.successCount += sign * stats.successCount;
+    if (sign > 0) {
       for (const err of stats.errors) {
         if (!existing.errors.includes(err) && existing.errors.length < 10) {
           existing.errors.push(err);
         }
       }
-      snap.toolStats[toolName] = existing;
+    } else {
+      for (const err of stats.errors) {
+        const index = existing.errors.indexOf(err);
+        if (index >= 0) existing.errors.splice(index, 1);
+      }
+    }
+    snapshot.toolStats[toolName] = existing;
+  }
+}
+
+async function runRollup(): Promise<void> {
+  const { marker, lastId, ledger } = await getRollupState();
+
+  // Full scans are required: a record can be imported or committed with a
+  // timestamp behind the cursor. The contribution ledger, not sort order,
+  // decides whether each record is new or revised.
+  const messages = await athenaDb.messages.toArray();
+  const operationUsages = await athenaDb.llmOperationUsages.toArray();
+  const records: { key: string; record: RollupSourceRecord }[] = [
+    ...messages.map((record) => ({ key: `message:${record.id}`, record })),
+    ...operationUsages.map((record) => ({ key: `operation:${record.id}`, record })),
+  ];
+
+  const hasLedger = Object.keys(ledger).length > 0;
+  const legacyCursor = !hasLedger && marker !== '';
+  // A legacy cursor plus existing snapshots cannot be safely migrated
+  // incrementally: older records may have been omitted by the old cursor. Rebuild
+  // those derived aggregates from the complete source once, then continue with
+  // the ledger.
+  const rebuildFromScratch = legacyCursor && (await athenaDb.analyticsSnapshots.toArray()).length > 0;
+  const pending: {
+    key: string;
+    fingerprint: string;
+    contribution: RecordContribution;
+  }[] = [];
+  const seeded: { key: string; fingerprint: string; contribution: RecordContribution }[] = [];
+  let latestCreated = rebuildFromScratch ? '' : marker;
+  let latestId = rebuildFromScratch ? '' : lastId;
+
+  for (const { key, record } of records) {
+    const contribution = buildContribution(record);
+    const fingerprint = fingerprintContribution(record, contribution);
+    const previous = ledger[key];
+    if (!rebuildFromScratch && previous?.fingerprint === fingerprint) continue;
+
+    const atOrBeforeLegacyCursor =
+      marker !== '' && (record.created < marker || (record.created === marker && lastId !== '' && record.id <= lastId));
+    if (!rebuildFromScratch && !previous && !hasLedger && atOrBeforeLegacyCursor) {
+      // Seed the ledger so the next run does not treat these as newly imported.
+      seeded.push({ key, fingerprint, contribution });
+      continue;
+    }
+
+    pending.push({ key, fingerprint, contribution });
+    if (record.created > latestCreated || (record.created === latestCreated && record.id > latestId)) {
+      latestCreated = record.created;
+      latestId = record.id;
     }
   }
 
-  // Commit snapshots and advance the marker in a single transaction so the
-  // marker can never move ahead of the snapshots it describes.
+  if (pending.length === 0 && seeded.length === 0 && !rebuildFromScratch) return;
+
+  // Commit snapshots, the contribution ledger, and the legacy cursor in one
+  // transaction. The ledger is re-read here so two independent instances that
+  // selected the same batch cannot both add it.
   await athenaDb.transaction('rw', [athenaDb.analyticsSnapshots, athenaDb.userSettings], async () => {
-    for (const snap of groupedByDate.values()) {
-      const existing = await athenaDb.analyticsSnapshots.get(snap.date);
-      const merged = existing ? mergeSnapshots(existing, snap) : snap;
-      await athenaDb.analyticsSnapshots.put(merged);
+    const [ledgerSetting, markerSetting, lastIdSetting] = await Promise.all([
+      athenaDb.userSettings.get(ROLLUP_LEDGER_KEY),
+      athenaDb.userSettings.get(ROLLUP_MARKER_KEY),
+      athenaDb.userSettings.get(ROLLUP_LAST_ID_KEY),
+    ]);
+    const committedLedger = readLedger(ledgerSetting?.value);
+    const committedMarker = readStringSetting(markerSetting?.value);
+    const committedLastId = readStringSetting(lastIdSetting?.value);
+
+    // Another instance may have completed the legacy migration after this run
+    // prepared its rebuild. Its newer snapshot/ledger pair is authoritative;
+    // clearing it here could omit records this preparation did not observe.
+    if (rebuildFromScratch && Object.keys(committedLedger).length > 0) return;
+
+    const snapshotsByDate = new Map<string, PopulatedSnapshot>();
+    const snapshotFor = async (date: string): Promise<PopulatedSnapshot> => {
+      const cached = snapshotsByDate.get(date);
+      if (cached) return cached;
+      const existing = rebuildFromScratch ? undefined : await athenaDb.analyticsSnapshots.get(date);
+      const snap = existing ? cloneSnapshot(existing) : createEmptySnapshot(date);
+      snapshotsByDate.set(date, snap);
+      return snap;
+    };
+
+    let changed = false;
+    for (const item of pending) {
+      const committed = committedLedger[item.key];
+      if (!rebuildFromScratch && committed?.fingerprint === item.fingerprint) continue;
+      // Apply corrections to the existing aggregate, not a delta snapshot.
+      // This lets latency samples and error strings actually be removed.
+      if (!rebuildFromScratch && committed) {
+        const previousSnapshot = await snapshotFor(committed.contribution.date);
+        const retainedErrors: { toolName: string; errors: string[] }[] = [];
+        for (const [toolName, stats] of Object.entries(committed.contribution.toolUsage)) {
+          const shared = stats.errors.filter((error) =>
+            hasOtherErrorContribution(
+              committedLedger,
+              item.key,
+              committed.contribution.date,
+              toolName,
+              error,
+            ),
+          );
+          if (shared.length > 0) retainedErrors.push({ toolName, errors: shared });
+        }
+        applyContribution(previousSnapshot, committed.contribution, -1);
+        for (const { toolName, errors } of retainedErrors) {
+          const toolStats = (
+            previousSnapshot.toolStats as Record<string, { calls: number; successCount: number; errors: string[] } | undefined>
+          )[toolName];
+          if (!toolStats) continue;
+          for (const error of errors) {
+            if (!toolStats.errors.includes(error) && toolStats.errors.length < 10) toolStats.errors.push(error);
+          }
+        }
+      }
+      applyContribution(await snapshotFor(item.contribution.date), item.contribution, 1);
+      committedLedger[item.key] = { fingerprint: item.fingerprint, contribution: item.contribution };
+      changed = true;
     }
-    await athenaDb.userSettings.put({ id: ROLLUP_MARKER_KEY, value: latestCreated });
-    await athenaDb.userSettings.put({ id: ROLLUP_LAST_ID_KEY, value: latestId });
+
+    let ledgerChanged = false;
+    for (const item of seeded) {
+      if (committedLedger[item.key]) continue;
+      committedLedger[item.key] = { fingerprint: item.fingerprint, contribution: item.contribution };
+      ledgerChanged = true;
+    }
+    if (!changed && !ledgerChanged && !rebuildFromScratch) return;
+
+    if (rebuildFromScratch) {
+      await athenaDb.analyticsSnapshots.clear();
+    }
+    for (const snap of snapshotsByDate.values()) {
+      await athenaDb.analyticsSnapshots.put(snap);
+    }
+
+    const useIncomingCursor =
+      rebuildFromScratch || latestCreated > committedMarker || (latestCreated === committedMarker && latestId > committedLastId);
+    await athenaDb.userSettings.put({
+      id: ROLLUP_MARKER_KEY,
+      value: useIncomingCursor ? latestCreated : committedMarker,
+    });
+    await athenaDb.userSettings.put({
+      id: ROLLUP_LAST_ID_KEY,
+      value: useIncomingCursor ? latestId : committedLastId,
+    });
+    await athenaDb.userSettings.put({ id: ROLLUP_LEDGER_KEY, value: JSON.stringify(committedLedger) });
   });
 }
 
@@ -274,6 +438,7 @@ export async function rebuildAnalyticsOwnership(): Promise<void> {
       await athenaDb.analyticsSnapshots.clear();
       await athenaDb.userSettings.put({ id: ROLLUP_MARKER_KEY, value: '' });
       await athenaDb.userSettings.put({ id: ROLLUP_LAST_ID_KEY, value: '' });
+      await athenaDb.userSettings.put({ id: ROLLUP_LEDGER_KEY, value: '' });
     });
 
     // Clear the legacy localStorage marker used before the Dexie migration.

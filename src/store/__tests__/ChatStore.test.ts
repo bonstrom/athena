@@ -1,6 +1,7 @@
 import type { Message, Topic } from '../../database/AthenaDb';
 import type { LlmProvider, UserChatModel } from '../../types/provider';
 import { createUserChatModel, createLlmProvider, createTopic, createMessage } from '../../testUtils';
+import * as webSearchService from '../../services/webSearchService';
 
 const mockDefaultModel: UserChatModel = createUserChatModel();
 
@@ -28,6 +29,7 @@ interface AuthStoreState {
   predefinedPrompts: unknown[];
   messageRetrievalEnabled: boolean;
   aiSummaryEnabled: boolean;
+  summaryModel?: string;
   replyPredictionEnabled: boolean;
   replyPredictionModel: string;
   llmModelSelected: 'qwen3.5-0.8b' | 'qwen3.5-2b';
@@ -56,13 +58,14 @@ interface LlmLoopResult {
 }
 
 type AskLlmResult = unknown;
+type LlmLoopArgs = Parameters<typeof import('../../services/llmService').orchestrateLlmLoop>;
 
 const mockGetTopicContext = jest.fn<Promise<Message[]>, [string, string | undefined, string | undefined]>();
 const mockUpdateTopicTimestamp = jest.fn<Promise<void>, [string]>();
 const mockGenerateTopicName = jest.fn<Promise<void>, [string, string]>();
 const mockUpdateTopicScratchpad = jest.fn<Promise<void>, [string, string]>();
 const mockUpdateTopicModelId = jest.fn<Promise<void>, [string, string]>();
-const mockOrchestrateLlmLoop = jest.fn<Promise<LlmLoopResult>, unknown[]>();
+const mockOrchestrateLlmLoop = jest.fn<Promise<LlmLoopResult>, LlmLoopArgs>();
 const mockAskLlm = jest.fn<Promise<AskLlmResult>, unknown[]>();
 const mockAskLlmStream = jest.fn<Promise<AskLlmResult>, unknown[]>();
 const mockAuthGetState = jest.fn<AuthStoreState, []>();
@@ -130,7 +133,7 @@ jest.mock('../../store/NotificationStore', () => ({
 }));
 
 jest.mock('../../services/llmService', () => ({
-  orchestrateLlmLoop: (...args: unknown[]): Promise<LlmLoopResult> => mockOrchestrateLlmLoop(...args),
+  orchestrateLlmLoop: (...args: LlmLoopArgs): Promise<LlmLoopResult> => mockOrchestrateLlmLoop(...args),
   askLlm: (...args: unknown[]): Promise<AskLlmResult> => mockAskLlm(...args),
   askLlmStream: (...args: unknown[]): Promise<AskLlmResult> => mockAskLlmStream(...args),
   SCRATCHPAD_TOOL: { type: 'function', function: { name: 'update_scratchpad' } },
@@ -174,9 +177,15 @@ jest.mock('../../database/AthenaDb', () => ({
       delete: (...args: [string]): Promise<void> => mockDbDelete(...args),
       bulkDelete: (...args: [string[]]): Promise<void> => mockDbBulkDelete(...args),
       where: (): {
-        equals: () => { and?: () => { sortBy: (...args: [string]) => Promise<Message[]> }; sortBy: (...args: [string]) => Promise<Message[]> };
+        equals: () => {
+          and?: () => { sortBy: (...args: [string]) => Promise<Message[]> };
+          sortBy: (...args: [string]) => Promise<Message[]>;
+        };
       } => ({
-        equals: (): { and?: () => { sortBy: (...args: [string]) => Promise<Message[]> }; sortBy: (...args: [string]) => Promise<Message[]> } => ({
+        equals: (): {
+          and?: () => { sortBy: (...args: [string]) => Promise<Message[]> };
+          sortBy: (...args: [string]) => Promise<Message[]>;
+        } => ({
           and: (): { sortBy: (...args: [string]) => Promise<Message[]> } => ({
             sortBy: (...args: [string]): Promise<Message[]> => mockDbSortBy(...args),
           }),
@@ -185,11 +194,26 @@ jest.mock('../../database/AthenaDb', () => ({
       }),
     },
     transaction: (mode: string, table: unknown, callback: () => Promise<void>): Promise<void> => mockDbTransaction(mode, table, callback),
+
   },
 }));
 
 import { useChatStore } from '../../store/ChatStore';
 import { calculateCostUSD } from '../../components/ModelSelector';
+
+function createDeferred<Value>(): {
+  promise: Promise<Value>;
+  resolve: (value: Value) => void;
+  reject: (reason: Error) => void;
+} {
+  let resolve!: (value: Value) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<Value>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 describe('ChatStore', () => {
   let consoleDebugSpy: jest.SpiedFunction<typeof console.debug>;
@@ -273,6 +297,247 @@ describe('ChatStore', () => {
     consoleDebugSpy.mockRestore();
   });
 
+  it.each(['retry', 'context', 'continuation'] as const)(
+    'STR-02 releases request ownership after %s setup fails',
+    async (path) => {
+      if (path === 'context') mockGetTopicContext.mockRejectedValueOnce(new Error('Context unavailable'));
+      await useChatStore
+        .getState()
+        .sendMessageStream(
+          'Hello',
+          'topic-1',
+          path === 'retry' ? 'missing' : undefined,
+          undefined,
+          path === 'continuation' ? 'missing' : undefined,
+        )
+        .catch((): undefined => undefined);
+      expect(useChatStore.getState().sending).toBe(false);
+      expect(useChatStore.getState().abortController).toBeNull();
+      expect(useChatStore.getState().currentRequestMessageIds).toBeNull();
+    },
+  );
+
+  it('STR-01 keeps a replacement request owned when the stopped request settles', async () => {
+    const firstStarted = createDeferred<null>();
+    const secondStarted = createDeferred<null>();
+    const firstResult = createDeferred<LlmLoopResult>();
+    const secondResult = createDeferred<LlmLoopResult>();
+    mockOrchestrateLlmLoop
+      .mockImplementationOnce((): Promise<LlmLoopResult> => {
+        firstStarted.resolve(null);
+        return firstResult.promise;
+      })
+      .mockImplementationOnce((): Promise<LlmLoopResult> => {
+        secondStarted.resolve(null);
+        return secondResult.promise;
+      });
+    const first = useChatStore.getState().sendMessageStream('First', 'topic-1');
+    await firstStarted.promise;
+    await useChatStore.getState().stopSending();
+    const second = useChatStore.getState().sendMessageStream('Second', 'topic-1');
+    await secondStarted.promise;
+    const replacement = useChatStore.getState();
+    firstResult.reject(new DOMException('Stopped', 'AbortError'));
+    await first;
+    const afterOldCleanup = useChatStore.getState();
+    await useChatStore.getState().stopSending();
+    secondResult.reject(new DOMException('Stopped', 'AbortError'));
+    await second;
+    expect(afterOldCleanup.sending).toBe(true);
+    expect(afterOldCleanup.abortController).toBe(replacement.abortController);
+    expect(afterOldCleanup.currentRequestMessageIds).toEqual(replacement.currentRequestMessageIds);
+    expect(replacement.abortController?.signal.aborted).toBe(true);
+  });
+
+  it('STR-06 ignores a successful late result from a stopped continuation', async () => {
+    const assistant = createMessage({ id: 'existing-answer', topicId: 'topic-1', type: 'assistant', content: 'Original answer' });
+    mockDbGet.mockResolvedValueOnce(assistant);
+    useChatStore.setState({ messagesByTopic: { 'topic-1': [assistant] } });
+    const firstStarted = createDeferred<null>();
+    const secondStarted = createDeferred<null>();
+    const firstResult = createDeferred<LlmLoopResult>();
+    const secondResult = createDeferred<LlmLoopResult>();
+    mockOrchestrateLlmLoop
+      .mockImplementationOnce((): Promise<LlmLoopResult> => {
+        firstStarted.resolve(null);
+        return firstResult.promise;
+      })
+      .mockImplementationOnce((): Promise<LlmLoopResult> => {
+        secondStarted.resolve(null);
+        return secondResult.promise;
+      });
+    const first = useChatStore.getState().sendMessageStream('Continue', 'topic-1', undefined, undefined, assistant.id);
+    await firstStarted.promise;
+    await useChatStore.getState().stopSending();
+    const second = useChatStore.getState().sendMessageStream('Replacement', 'topic-1');
+    await secondStarted.promise;
+    const replacement = useChatStore.getState();
+    const writesBeforeLateResult = mockDbUpdate.mock.calls.length;
+    firstResult.resolve({
+      finalContent: 'Canceled partial reply',
+      totalPromptTokens: 10,
+      totalCompletionTokens: 5,
+      totalCachedTokens: 0,
+      totalCacheCreationTokens: 0,
+      totalSearchCount: 0,
+      toolLoopTrace: [],
+      lastResult: { content: 'Canceled partial reply', rawContent: '', promptTokens: 10, completionTokens: 5, searchCount: 0 },
+    });
+    await first;
+    const afterLateResult = useChatStore.getState();
+
+    await useChatStore.getState().stopSending();
+    secondResult.reject(new DOMException('Stopped', 'AbortError'));
+    await second;
+
+    expect(mockDbUpdate.mock.calls).toHaveLength(writesBeforeLateResult);
+    expect(afterLateResult.sending).toBe(true);
+    expect(afterLateResult.abortController).toBe(replacement.abortController);
+    expect(afterLateResult.currentRequestMessageIds).toEqual(replacement.currentRequestMessageIds);
+    expect(afterLateResult.streaming).toEqual(replacement.streaming);
+    expect(afterLateResult.messagesByTopic['topic-1']?.find(({ id }) => id === assistant.id)?.content).toBe('Original answer');
+  });
+
+  it('STR-06 does not publish a stopped request after its final transaction settles late', async () => {
+    const finalCommitStarted = createDeferred<null>();
+    const finalCommit = createDeferred<null>();
+    let transactions = 0;
+    mockDbTransaction.mockImplementation(async (_mode, _table, callback): Promise<void> => {
+      await callback();
+      if (++transactions === 2) {
+        finalCommitStarted.resolve(null);
+        await finalCommit.promise;
+      }
+    });
+    const secondStarted = createDeferred<null>();
+    const secondResult = createDeferred<LlmLoopResult>();
+    mockOrchestrateLlmLoop
+      .mockResolvedValueOnce({
+        finalContent: 'First reply',
+        totalPromptTokens: 10,
+        totalCompletionTokens: 5,
+        totalCachedTokens: 0,
+        totalCacheCreationTokens: 0,
+        totalSearchCount: 0,
+        toolLoopTrace: [],
+        lastResult: { content: 'First reply', rawContent: '', promptTokens: 10, completionTokens: 5, searchCount: 0 },
+      })
+      .mockImplementationOnce((): Promise<LlmLoopResult> => {
+        secondStarted.resolve(null);
+        return secondResult.promise;
+      });
+    const first = useChatStore.getState().sendMessageStream('First', 'topic-1');
+    await finalCommitStarted.promise;
+    await useChatStore.getState().stopSending();
+    const second = useChatStore.getState().sendMessageStream('Second', 'topic-1');
+    await secondStarted.promise;
+    const replacement = useChatStore.getState();
+    finalCommit.resolve(null);
+    await first;
+    const afterLateCommit = useChatStore.getState();
+
+    await useChatStore.getState().stopSending();
+    secondResult.reject(new DOMException('Stopped', 'AbortError'));
+    await second;
+
+    expect(afterLateCommit.sending).toBe(true);
+    expect(afterLateCommit.abortController).toBe(replacement.abortController);
+    expect(afterLateCommit.streaming).toEqual(replacement.streaming);
+    expect(mockGenerateTopicName).not.toHaveBeenCalled();
+  });
+
+  it('STR-01 ignores a stopped setup continuation after a replacement request starts', async () => {
+    const firstContext = createDeferred<Message[]>();
+    mockGetTopicContext.mockImplementationOnce((): Promise<Message[]> => firstContext.promise).mockResolvedValueOnce([]);
+    const first = useChatStore.getState().sendMessageStream('First setup', 'topic-1');
+    await Promise.resolve();
+    await useChatStore.getState().stopSending();
+
+    const secondStarted = createDeferred<null>();
+    const secondResult = createDeferred<LlmLoopResult>();
+    mockOrchestrateLlmLoop.mockImplementationOnce((): Promise<LlmLoopResult> => {
+      secondStarted.resolve(null);
+      return secondResult.promise;
+    });
+    const second = useChatStore.getState().sendMessageStream('Second setup', 'topic-1');
+    await secondStarted.promise;
+    const replacement = useChatStore.getState();
+
+    firstContext.resolve([]);
+    await first;
+
+    const afterOldSetup = useChatStore.getState();
+    expect(afterOldSetup.sending).toBe(true);
+    expect(afterOldSetup.abortController).toBe(replacement.abortController);
+    expect(afterOldSetup.currentRequestMessageIds).toEqual(replacement.currentRequestMessageIds);
+    expect(afterOldSetup.streaming).toEqual(replacement.streaming);
+    expect(mockDbAdd.mock.calls.every(([message]) => message.content !== 'First setup')).toBe(true);
+
+    await useChatStore.getState().stopSending();
+    secondResult.reject(new DOMException('Stopped', 'AbortError'));
+    await second;
+  });
+
+  it('STR-05 clears the request topic cache when stopped after navigation', async () => {
+    const pendingUser = createMessage({ id: 'pending-user', topicId: 'topic-1', content: 'Recover me' });
+    const pendingAssistant = createMessage({ id: 'pending-assistant', topicId: 'topic-1', type: 'assistant' });
+    const otherMessage = createMessage({ id: 'other', topicId: 'topic-2' });
+    useChatStore.setState({
+      currentTopicId: 'topic-2',
+      abortController: new AbortController(),
+      currentRequestMessageIds: { userMessageId: pendingUser.id, assistantMessageId: pendingAssistant.id },
+      messagesByTopic: { 'topic-1': [pendingUser, pendingAssistant], 'topic-2': [otherMessage] },
+    });
+    await useChatStore.getState().stopSending();
+    expect(mockDbBulkDelete).toHaveBeenCalledWith([pendingUser.id, pendingAssistant.id]);
+    expect(useChatStore.getState().messagesByTopic['topic-1']).toEqual([]);
+    expect(useChatStore.getState().messagesByTopic['topic-2']).toEqual([otherMessage]);
+  });
+
+  it('STR-01 does not clear a replacement request when the stopped deletion completes late', async () => {
+    const controllerA = new AbortController();
+    const controllerB = new AbortController();
+    const pendingUser = createMessage({ id: 'a-user', topicId: 'topic-1' });
+    const pendingAssistant = createMessage({ id: 'a-assistant', topicId: 'topic-1', type: 'assistant' });
+    useChatStore.setState({
+      sending: true,
+      abortController: controllerA,
+      currentRequestMessageIds: { userMessageId: pendingUser.id, assistantMessageId: pendingAssistant.id },
+      currentRequestTopicId: 'topic-1',
+      messagesByTopic: { 'topic-1': [pendingUser, pendingAssistant] },
+    });
+    const deletion = createDeferred<null>();
+    mockDbBulkDelete.mockReturnValueOnce(deletion.promise);
+    const stopping = useChatStore.getState().stopSending();
+
+    // The stopped request finalizes while bulkDelete is still pending.
+    useChatStore.setState({
+      sending: false,
+      abortController: null,
+      currentRequestMessageIds: null,
+      currentRequestTopicId: null,
+      streaming: null,
+    });
+    const replacement = {
+      sending: true,
+      abortController: controllerB,
+      currentRequestMessageIds: { userMessageId: 'b-user', assistantMessageId: 'b-assistant' },
+      currentRequestTopicId: 'topic-2',
+      streaming: { topicId: 'topic-2', assistantMessageId: 'b-assistant', content: 'B', reasoning: '' },
+    };
+    useChatStore.setState(replacement);
+
+    deletion.resolve(null);
+    await stopping;
+
+    const afterLateDelete = useChatStore.getState();
+    expect(afterLateDelete.sending).toBe(true);
+    expect(afterLateDelete.abortController).toBe(controllerB);
+    expect(afterLateDelete.currentRequestMessageIds).toEqual(replacement.currentRequestMessageIds);
+    expect(afterLateDelete.streaming).toEqual(replacement.streaming);
+    expect(afterLateDelete.messagesByTopic['topic-1']).toEqual([]);
+  });
+
   it('sendMessageStream persists a user and assistant message and finalizes assistant content', async () => {
     mockOrchestrateLlmLoop.mockResolvedValue({
       finalContent: 'Assistant final answer',
@@ -352,7 +617,12 @@ describe('ChatStore', () => {
       resolveLoop = resolve;
     });
     mockOrchestrateLlmLoop.mockImplementation(
-      (_model: unknown, _temp: unknown, _messages: unknown, tokenCb: (chunk: string) => void): Promise<LlmLoopResult> => {
+      (
+        _model: unknown,
+        _temp: unknown,
+        _messages: unknown,
+        tokenCb?: (chunk: string) => void,
+      ): Promise<LlmLoopResult> => {
         onToken = tokenCb;
         return loopPromise;
       },
@@ -371,6 +641,7 @@ describe('ChatStore', () => {
     const streaming = useChatStore.getState().streaming;
     expect(streaming).not.toBeNull();
     expect(streaming?.content).toBe('Hel');
+    expect(streaming?.activity).toBe('writing');
     // The historical message array must stay stable during streaming
     expect(useChatStore.getState().messagesByTopic['topic-1']).toBe(messagesBefore);
 
@@ -382,7 +653,13 @@ describe('ChatStore', () => {
       totalCacheCreationTokens: 0,
       totalSearchCount: 0,
       toolLoopTrace: [],
-      lastResult: { content: 'Hello there', rawContent: 'Hello there', promptTokens: 10, completionTokens: 5, searchCount: 0 },
+      lastResult: {
+        content: 'Hello there',
+        rawContent: 'Hello there',
+        promptTokens: 10,
+        completionTokens: 5,
+        searchCount: 0,
+      },
     });
 
     await sendPromise;
@@ -390,6 +667,43 @@ describe('ChatStore', () => {
     expect(useChatStore.getState().streaming).toBeNull();
     const assistant = useChatStore.getState().messagesByTopic['topic-1']?.find((m) => m.type === 'assistant');
     expect(assistant?.content).toBe('Hello there');
+  });
+
+  it('reports real tool activity and returns to thinking when each tool finishes', async () => {
+    const searchSpy = jest.spyOn(webSearchService, 'executeWebSearch').mockResolvedValue({
+      text: 'Search results', resultCount: 1, billable: false,
+    });
+    const fetchSpy = jest.spyOn(webSearchService, 'executeFetch').mockResolvedValue({
+      text: 'Page content', billable: false,
+    });
+    mockOrchestrateLlmLoop.mockImplementation(async (...args: LlmLoopArgs): Promise<LlmLoopResult> => {
+      const execute = args[6];
+      if (!execute) throw new Error('Expected tool execution callback');
+      const searching = execute('web_search', '{"query":"test"}', 1);
+      expect(useChatStore.getState().streaming?.activity).toBe('searching');
+      await searching;
+      expect(useChatStore.getState().streaming?.activity).toBe('thinking');
+      const reading = execute('fetch_url', '{"url":"https://example.com"}', 1);
+      expect(useChatStore.getState().streaming?.activity).toBe('reading');
+      await reading;
+      expect(useChatStore.getState().streaming?.activity).toBe('thinking');
+      await execute('unknown_tool', '{}', 1);
+      expect(useChatStore.getState().streaming?.activity).toBe('thinking');
+      return {
+        finalContent: 'Done', totalPromptTokens: 10, totalCompletionTokens: 5, totalSearchCount: 0,
+        toolLoopTrace: [],
+        lastResult: { content: 'Done', rawContent: 'Done', promptTokens: 10, completionTokens: 5, searchCount: 0 },
+      };
+    });
+    try {
+      await useChatStore.getState().sendMessageStream('Use tools', 'topic-1');
+      expect(searchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(useChatStore.getState().streaming).toBeNull();
+    } finally {
+      searchSpy.mockRestore();
+      fetchSpy.mockRestore();
+    }
   });
 
   it('sendMessageStream includes clarification and retrieval instructions at runtime', async () => {
@@ -558,7 +872,9 @@ describe('ChatStore', () => {
     expect(topicMessages).toHaveLength(1);
     expect(topicMessages[0].id).toBe('assistant-existing');
     expect(topicMessages[0].type).toBe('assistant');
-    expect(topicMessages[0].content).toBe("Which framework do you use?\n\n**Your answer:** React\n\nLet's set up Vite.");
+    expect(topicMessages[0].content).toBe(
+      "Which framework do you use?\n\n**Your answer:** React\n\nLet's set up Vite.",
+    );
     expect(mockDbAdd).not.toHaveBeenCalled();
   });
 
@@ -892,14 +1208,18 @@ describe('ChatStore', () => {
   it('editSvgInMessage throws when the model returns no valid SVG', async () => {
     mockAskLlmStream.mockResolvedValue({ content: 'I cannot do that.' });
 
-    await expect(useChatStore.getState().editSvgInMessage('msg-svg', '<svg></svg>', 'change')).rejects.toThrow('did not return a valid SVG');
+    await expect(useChatStore.getState().editSvgInMessage('msg-svg', '<svg></svg>', 'change')).rejects.toThrow(
+      'did not return a valid SVG',
+    );
   });
 
   it('editSvgInMessage throws when the message is not found', async () => {
     mockAskLlmStream.mockResolvedValue({ content: '```svg\n<svg></svg>\n```' });
     mockDbGet.mockResolvedValue(undefined);
 
-    await expect(useChatStore.getState().editSvgInMessage('missing', '<svg></svg>', 'change')).rejects.toThrow('Message not found');
+    await expect(useChatStore.getState().editSvgInMessage('missing', '<svg></svg>', 'change')).rejects.toThrow(
+      'Message not found',
+    );
   });
 
   it('updateMessageStateOnly updates state without persisting to database', () => {
@@ -1375,6 +1695,37 @@ describe('ChatStore', () => {
 
   // ========== buildFullContext ==========
 
+  it('CTX-03 previews the same historical image parts that runtime sends', async () => {
+    const imageUrl = 'data:image/png;base64,dGVzdA==';
+    const historical = createMessage({
+      id: 'with-image',
+      topicId: 'topic-1',
+      content: 'Inspect this image',
+      attachments: [{ id: 'image', name: 'test.png', type: 'image/png', size: 4, data: imageUrl }],
+    });
+    useChatStore.setState({ selectedModel: createUserChatModel({ supportsVision: true }) });
+    mockGetTopicContext.mockResolvedValue([historical]);
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: 'Answer',
+      totalPromptTokens: 1,
+      totalCompletionTokens: 1,
+      totalSearchCount: 0,
+      toolLoopTrace: [],
+      lastResult: { content: 'Answer', rawContent: 'Answer', promptTokens: 1, completionTokens: 1, searchCount: 0 },
+    });
+    const preview = await useChatStore.getState().buildFullContext('topic-1');
+    await useChatStore.getState().sendMessageStream('Next question', 'topic-1');
+    const expected = {
+      role: 'user',
+      content: [
+        { type: 'text', text: historical.content },
+        { type: 'image_url', image_url: { url: imageUrl } },
+      ],
+    };
+    expect(mockOrchestrateLlmLoop.mock.calls[0][2]).toEqual(expect.arrayContaining([expected]));
+    expect(preview.find(({ messageId }) => messageId === historical.id)?.message).toEqual(expected);
+  });
+
   it('buildFullContext returns formatting instructions and scratchpad rules by default', async () => {
     mockAuthGetState.mockReturnValue({
       customInstructions: '',
@@ -1721,11 +2072,18 @@ describe('ChatStore', () => {
     });
 
     mockDbGet.mockResolvedValue(createMessage({ id: 'msg-force', content: 'Short text' }));
-    mockAskLlm.mockResolvedValueOnce({ content: 'A concise summary of the short text.', promptTokens: 10, completionTokens: 8 });
+    mockAskLlm.mockResolvedValueOnce({
+      content: 'A concise summary of the short text.',
+      promptTokens: 10,
+      completionTokens: 8,
+    });
 
     await useChatStore.getState().maybeSummarize('msg-force', 'Short text', true);
 
-    expect(mockDbUpdate).toHaveBeenCalledWith('msg-force', expect.objectContaining({ summary: 'A concise summary of the short text.' }));
+    expect(mockDbUpdate).toHaveBeenCalledWith(
+      'msg-force',
+      expect.objectContaining({ summary: 'A concise summary of the short text.' }),
+    );
   });
 
   it('maybeSummarize clears previous failure state when retrying', async () => {
@@ -1753,7 +2111,10 @@ describe('ChatStore', () => {
     await useChatStore.getState().maybeSummarize('msg-retry', 'A'.repeat(501));
 
     expect(useChatStore.getState().failedSummaryMessageIds.has('msg-retry')).toBe(false);
-    expect(mockDbUpdate).toHaveBeenCalledWith('msg-retry', expect.objectContaining({ summary: 'Summary of the long text.' }));
+    expect(mockDbUpdate).toHaveBeenCalledWith(
+      'msg-retry',
+      expect.objectContaining({ summary: 'Summary of the long text.' }),
+    );
   });
 
   // ========== _runSummarize ==========
@@ -1777,10 +2138,20 @@ describe('ChatStore', () => {
 
     await useChatStore.getState()._runSummarize('msg-nodl', 'Some content');
 
-    expect(mockAskLlm).toHaveBeenCalledWith(useChatStore.getState().selectedModel, 0.3, expect.any(Array), undefined, undefined, {
-      includeCustomInstructions: false,
-    });
-    expect(mockDbUpdate).toHaveBeenCalledWith('msg-nodl', expect.objectContaining({ summary: 'API summary.', summaryTokens: 13 }));
+    expect(mockAskLlm).toHaveBeenCalledWith(
+      useChatStore.getState().selectedModel,
+      0.3,
+      expect.any(Array),
+      undefined,
+      undefined,
+      {
+        includeCustomInstructions: false,
+      },
+    );
+    expect(mockDbUpdate).toHaveBeenCalledWith(
+      'msg-nodl',
+      expect.objectContaining({ summary: 'API summary.', summaryTokens: 13 }),
+    );
   });
 
   it('_runSummarize ignores a previously downloaded local model', async () => {
@@ -1802,10 +2173,13 @@ describe('ChatStore', () => {
       failedSummaryMessageIds: new Set(),
     });
 
-    mockDbGet.mockResolvedValue(createMessage({ id: 'msg-qwen2b', content: 'Some moderately long content for summarization test purposes.' }));
+    mockDbGet.mockResolvedValue(
+      createMessage({ id: 'msg-qwen2b', content: 'Some moderately long content for summarization test purposes.' }),
+    );
     mockAskLlm.mockResolvedValueOnce({ content: 'A brief summary.', promptTokens: 10, completionTokens: 3 });
 
     await useChatStore.getState()._runSummarize('msg-qwen2b', 'Some moderately long content for summarization test purposes.');
+
 
     expect(mockDbUpdate).toHaveBeenCalledWith('msg-qwen2b', expect.objectContaining({ summary: 'A brief summary.' }));
   });
@@ -1835,7 +2209,10 @@ describe('ChatStore', () => {
     await useChatStore.getState()._runSummarize('msg-cloud', 'Some content for cloud summarization.');
 
     expect(mockAskLlm).toHaveBeenCalled();
-    expect(mockDbUpdate).toHaveBeenCalledWith('msg-cloud', expect.objectContaining({ summary: 'Cloud summary result.' }));
+    expect(mockDbUpdate).toHaveBeenCalledWith(
+      'msg-cloud',
+      expect.objectContaining({ summary: 'Cloud summary result.' }),
+    );
   });
 
   it('_runSummarize uses context messages for cloud path when provided', async () => {
@@ -1979,7 +2356,10 @@ describe('ChatStore', () => {
 
     await useChatStore.getState()._runSummarize('msg-clean', 'Some content for summarization test.');
 
-    expect(mockDbUpdate).toHaveBeenCalledWith('msg-clean', expect.objectContaining({ summary: 'This is a cleaned summary' }));
+    expect(mockDbUpdate).toHaveBeenCalledWith(
+      'msg-clean',
+      expect.objectContaining({ summary: 'This is a cleaned summary' }),
+    );
   });
 
   // ========== fetchMessages with forkId ==========
@@ -2235,7 +2615,11 @@ describe('ChatStore', () => {
     await Promise.resolve();
     await new Promise<void>((r) => setTimeout(r, 50));
 
-    expect(useChatStore.getState().pendingSuggestions).toEqual(['What about TypeScript?', 'Can you show an example?', 'How does this compare?']);
+    expect(useChatStore.getState().pendingSuggestions).toEqual([
+      'What about TypeScript?',
+      'Can you show an example?',
+      'How does this compare?',
+    ]);
   });
 
   it('sendMessageStream uses the API for legacy local reply prediction', async () => {
@@ -2266,7 +2650,11 @@ describe('ChatStore', () => {
       },
     });
 
-    mockAskLlm.mockResolvedValueOnce({ content: '["Follow up 1", "Follow up 2", "Follow up 3"]', promptTokens: 10, completionTokens: 20 });
+    mockAskLlm.mockResolvedValueOnce({
+      content: '["Follow up 1", "Follow up 2", "Follow up 3"]',
+      promptTokens: 10,
+      completionTokens: 20,
+    });
 
     const sendPromise = useChatStore.getState().sendMessageStream('Test message', 'topic-1');
     await sendPromise;
@@ -2486,8 +2874,16 @@ describe('ChatStore', () => {
   });
 
   it('fetchMessages restores model from topic.modelId when switching topics', async () => {
-    const savedModel: UserChatModel = createUserChatModel({ id: 'some-uuid-123', apiModelId: 'api-saved-model', label: 'Saved Model' });
-    const otherModel: UserChatModel = createUserChatModel({ id: 'other-uuid', apiModelId: 'other-api', label: 'Other' });
+    const savedModel: UserChatModel = createUserChatModel({
+      id: 'some-uuid-123',
+      apiModelId: 'api-saved-model',
+      label: 'Saved Model',
+    });
+    const otherModel: UserChatModel = createUserChatModel({
+      id: 'other-uuid',
+      apiModelId: 'other-api',
+      label: 'Other',
+    });
     mockGetAvailableModels.mockReturnValue([otherModel, mockDefaultModel, savedModel]);
 
     const topicWithModel: Topic = createTopic({
@@ -2583,7 +2979,11 @@ describe('ChatStore', () => {
   });
 
   it('sendMessageStream persists effective model to the topic', async () => {
-    const effectiveModel: UserChatModel = createUserChatModel({ id: 'uuid-effective', apiModelId: 'api-effective-model', label: 'Effective' });
+    const effectiveModel: UserChatModel = createUserChatModel({
+      id: 'uuid-effective',
+      apiModelId: 'api-effective-model',
+      label: 'Effective',
+    });
     mockGetAvailableModels.mockReturnValue([mockDefaultModel, effectiveModel]);
 
     useChatStore.setState({ selectedModel: effectiveModel });

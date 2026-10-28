@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type, unused-imports/no-unused-vars, @typescript-eslint/no-non-null-assertion */
-import type { AnalyticsSnapshot } from '../../database/AthenaDb';
+import type { AnalyticsSnapshot, LlmOperationUsage } from '../../database/AthenaDb';
+import { createLlmProvider, createUserChatModel } from '../../testUtils/fixtures';
 
 let mockSnapshots: AnalyticsSnapshot[] = [];
 const mockSnapshotToArray = jest.fn<Promise<AnalyticsSnapshot[]>, []>();
 const mockSnapshotGet = jest.fn<Promise<AnalyticsSnapshot | undefined>, [string]>();
 const mockMessagesToArray = jest.fn<Promise<Message[]>, []>();
+const mockOperationUsagesToArray = jest.fn<Promise<LlmOperationUsage[]>, []>();
 const mockReverseLimitToArray = jest.fn<Promise<AnalyticsSnapshot[]>, []>();
 
 jest.mock('../../store/AuthStore', () => ({
@@ -27,6 +29,9 @@ jest.mock('../../database/AthenaDb', () => ({
   athenaDb: {
     messages: {
       toArray: (): Promise<Message[]> => mockMessagesToArray(),
+    },
+    llmOperationUsages: {
+      toArray: (): Promise<LlmOperationUsage[]> => mockOperationUsagesToArray(),
     },
     topics: {
       toArray: (): Promise<unknown[]> => Promise.resolve([]),
@@ -67,6 +72,7 @@ jest.mock('../../services/analyticsRollupService', () => ({
 import type { Message } from '../../database/AthenaDb';
 import type { UserChatModel, LlmProvider } from '../../types/provider';
 import {
+  computeLocalStats,
   computeTrends,
   computeLatencyPercentiles,
   computeProviderBreakdown,
@@ -84,6 +90,7 @@ beforeEach(() => {
     (date: string): Promise<AnalyticsSnapshot | undefined> => Promise.resolve(mockSnapshots.find((s) => s.date === date)),
   );
   mockMessagesToArray.mockResolvedValue([]);
+  mockOperationUsagesToArray.mockResolvedValue([]);
   mockModels.length = 0;
   mockProviders.length = 0;
 });
@@ -120,6 +127,60 @@ function makeMsg(overrides: Partial<Message> = {}): Message {
     ...overrides,
   };
 }
+
+describe('operation usage accounting', () => {
+  beforeEach((): void => {
+    mockModels.push(createUserChatModel({ apiModelId: 'gpt-4', providerId: 'p1' }));
+    mockProviders.push(createLlmProvider({ id: 'p1', name: 'OpenAI' }));
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({ model: 'gpt-4', totalCost: 0.1, promptTokens: 10, completionTokens: 5, cachedTokens: 3 }),
+    ]);
+    mockOperationUsagesToArray.mockResolvedValue([
+      {
+        id: 'operation-1',
+        topicId: 'topic-1',
+        operationType: 'checklist_edit',
+        model: 'gpt-4',
+        created: '2026-01-01T12:00:00.000Z',
+        promptTokens: 20,
+        completionTokens: 10,
+        cachedTokens: 7,
+        cacheCreationTokens: 2,
+        totalCost: 0.2,
+        searchCount: 1,
+        failed: false,
+        rawResponse: JSON.stringify({
+          toolLoopTrace: [{ toolResults: [{ toolName: 'update_scratchpad', result: 'Saved' }] }],
+        }),
+      },
+    ]);
+  });
+
+  it('ACC-05 includes persisted operation usage in local and exported usage totals', async (): Promise<void> => {
+    const stats = await computeLocalStats();
+
+    expect(stats.totalCost).toBeCloseTo(0.3);
+    expect(stats.totalPromptTokens).toBe(30);
+    expect(stats.totalCompletionTokens).toBe(15);
+    expect(stats.totalCachedTokens).toBe(10);
+    expect(stats.totalCacheCreationTokens).toBe(2);
+    expect(stats.totalWebSearches).toBe(1);
+  });
+
+  it('ACC-05 includes operation cost and tokens in the no-snapshot provider fallback', async (): Promise<void> => {
+    const providers = await computeProviderBreakdown();
+
+    expect(providers).toHaveLength(1);
+    expect(providers[0].cost).toBeCloseTo(0.3);
+    expect(providers[0].tokens).toBe(45);
+  });
+
+  it('ACC-05 includes operation tool calls in the no-snapshot tool fallback', async (): Promise<void> => {
+    const tools = await computeToolUsageBreakdown();
+
+    expect(tools).toEqual([{ tool: 'update_scratchpad', calls: 1, successRate: 100, errors: [] }]);
+  });
+});
 
 describe('computeTrends', () => {
   it('returns trend rows from snapshots', async () => {

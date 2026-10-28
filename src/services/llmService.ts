@@ -414,6 +414,8 @@ interface StreamState {
   cacheReadTokens?: number;
   responsesOutput?: unknown[];
   streamError?: string;
+  /** Provider-specific end-of-stream signal (OpenAI [DONE], Anthropic message_stop). */
+  sawCompletionMarker?: boolean;
 }
 
 interface AnthropicContentBlockText {
@@ -699,6 +701,8 @@ const AnthropicAdapter: IMessageAdapter = {
       if (p.usage?.cache_creation_input_tokens != null) state.cacheCreationTokens = p.usage.cache_creation_input_tokens;
       if (p.usage?.cache_read_input_tokens != null) state.cacheReadTokens = p.usage.cache_read_input_tokens;
       syncCacheDetails();
+    } else if (p.type === 'message_stop') {
+      state.sawCompletionMarker = true;
     }
   },
 
@@ -901,6 +905,22 @@ function getAdapter(provider: LlmProvider, model: ChatModel): IMessageAdapter {
  * produces a payload that stricter APIs (DeepSeek) reject outright. The whole
  * group is therefore returned as one unit.
  */
+function contentBlockType(value: unknown): unknown {
+  return typeof value === 'object' && value !== null ? (value as { type?: unknown }).type : undefined;
+}
+
+function isAnthropicToolUseMessage(message: LlmMessage): boolean {
+  if (message.role !== 'assistant' || !Array.isArray(message.content)) return false;
+  const blocks = message.content as unknown[];
+  return blocks.some((block): boolean => contentBlockType(block) === 'tool_use');
+}
+
+function isAnthropicToolResultMessage(message: LlmMessage): boolean {
+  if (message.role !== 'user' || !Array.isArray(message.content)) return false;
+  const blocks = message.content as unknown[];
+  return blocks.length > 0 && blocks.every((block): boolean => contentBlockType(block) === 'tool_result');
+}
+
 export function findOldestRemovableUnit(
   messages: LlmMessage[],
   maxRemovable: number,
@@ -911,8 +931,10 @@ export function findOldestRemovableUnit(
 
   const first = messages[start];
   let end = start;
-  if (first.role === 'assistant' && (first.tool_calls?.length ?? 0) > 0) {
-    while (messages[end + 1]?.role === 'tool') end += 1;
+  if (first.role === 'assistant' && ((first.tool_calls?.length ?? 0) > 0 || isAnthropicToolUseMessage(first))) {
+    while (messages[end + 1]?.role === 'tool' || (messages[end + 1] && isAnthropicToolResultMessage(messages[end + 1]))) {
+      end += 1;
+    }
   }
 
   const removable = messages
@@ -1368,6 +1390,10 @@ function buildLlmResult(parsed: ParsedResponse): LlmResult {
   };
 }
 
+function throwIfRequestAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
+}
+
 export async function askLlm(
   model: ChatModel,
   temperature: number,
@@ -1376,6 +1402,7 @@ export async function askLlm(
   signal?: AbortSignal,
   options?: LlmRequestOptions,
 ): Promise<LlmResult> {
+  throwIfRequestAborted(signal);
   const { provider: providerConfig, model: resolvedModel } = resolveModelAndProvider(model);
   const payload = buildPayload(model, messages, false, temperature, tools, options);
   const adapter = getAdapter(providerConfig, resolvedModel);
@@ -1393,6 +1420,7 @@ export async function askLlm(
   }
 
   const parsed = adapter.parseResponse(await res.json());
+  throwIfRequestAborted(signal);
 
   const parseMode = resolvedModel.thinkingParseMode ?? 'api-native';
   if (parseMode === 'tag-based') {
@@ -1417,6 +1445,7 @@ export async function askLlmStream(
   signal?: AbortSignal,
   options?: LlmRequestOptions,
 ): Promise<LlmResult> {
+  throwIfRequestAborted(signal);
   const { provider: providerConfig, model: resolvedModel } = resolveModelAndProvider(model);
   const payload = buildPayload(model, messages, true, temperature, tools, options);
   const adapter = getAdapter(providerConfig, resolvedModel);
@@ -1465,6 +1494,36 @@ export async function askLlmStream(
     });
   };
   signal?.addEventListener('abort', onAbort);
+  if (signal?.aborted) onAbort();
+
+  const consumeChunk = (chunk: string): void => {
+    // Prepend any partial line from the previous chunk
+    const lines = (lineBuffer + chunk).split('\n');
+    // The last element may be incomplete; save it for the next chunk
+    lineBuffer = lines.pop() ?? '';
+
+    // Prevent unbounded growth from a stream that never emits newlines
+    if (lineBuffer.length > MAX_LINE_BUFFER) {
+      console.warn('[llmService] Line buffer exceeded 1 MB — flushing and resetting');
+      lineBuffer = '';
+    }
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+      const json = trimmed.slice(6);
+      if (json === '[DONE]') {
+        state.done = true;
+        state.sawCompletionMarker = true;
+        break;
+      }
+      try {
+        adapter.handleStreamChunk(JSON.parse(json) as unknown, state, activeOnToken, activeOnReasoning);
+      } catch (e) {
+        console.warn('Invalid stream chunk:', trimmed.slice(0, 80), e);
+      }
+    }
+  };
 
   try {
     while (!state.done) {
@@ -1473,42 +1532,29 @@ export async function askLlmStream(
       if (readerDone) break;
       if (signal?.aborted) break;
 
-      const chunk = decoder.decode(value);
+      // Decode incrementally so multibyte characters split across network
+      // reads are reassembled instead of becoming replacement characters.
+      consumeChunk(decoder.decode(value, { stream: true }));
       if (signal?.aborted) break;
-      // Prepend any partial line from the previous chunk
-      const lines = (lineBuffer + chunk).split('\n');
-      // The last element may be incomplete; save it for the next chunk
-      lineBuffer = lines.pop() ?? '';
-
-      // Prevent unbounded growth from a stream that never emits newlines
-      if (lineBuffer.length > MAX_LINE_BUFFER) {
-        console.warn('[llmService] Line buffer exceeded 1 MB — flushing and resetting');
-        lineBuffer = '';
-      }
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data: ')) continue;
-        const json = trimmed.slice(6);
-        if (json === '[DONE]') {
-          state.done = true;
-          break;
-        }
-        try {
-          adapter.handleStreamChunk(JSON.parse(json) as unknown, state, activeOnToken, activeOnReasoning);
-        } catch (e) {
-          console.warn('Invalid stream chunk:', trimmed.slice(0, 80), e);
-        }
-      }
+    }
+    if (!state.done && !signal?.aborted) {
+      const remaining = decoder.decode();
+      if (remaining) consumeChunk(remaining);
     }
   } finally {
     signal?.removeEventListener('abort', onAbort);
     reader.releaseLock();
   }
 
+  // reader.cancel() can resolve a pending read as EOF rather than reject it.
+  // Cancellation must not turn the accumulated partial text into a success.
+  throwIfRequestAborted(signal);
   if (state.streamError) throw new Error(`Responses API: ${state.streamError}`);
   if (usesResponsesApi(providerConfig, resolvedModel) && !state.responsesOutput && !signal?.aborted) {
     throw new Error('Responses API: stream ended before a complete response');
+  }
+  if (!usesResponsesApi(providerConfig, resolvedModel) && !state.finishReason && !state.sawCompletionMarker && !signal?.aborted) {
+    throw new Error('Stream ended before the provider signalled completion');
   }
 
   // Flush any buffered partial-tag characters and reconcile split state with stream state
@@ -1586,6 +1632,7 @@ export async function orchestrateLlmLoop(
   const toolLoopTrace: ToolLoopIteration[] = [];
 
   while (loopCount < MAX_TOOL_LOOP_ITERATIONS) {
+    throwIfRequestAborted(signal);
     loopCount++;
     // Cache tool results within a single iteration to avoid calling the same tool twice
     // in one round-trip. A fresh cache each iteration ensures state changes between
@@ -1597,10 +1644,12 @@ export async function orchestrateLlmLoop(
     const result = resolvedModel.streaming
       ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, tools, signal, iterationOptions)
       : await askLlm(resolvedModel, temperature, llmContext, tools, signal, iterationOptions);
+    throwIfRequestAborted(signal);
 
     if (!resolvedModel.streaming && result.reasoning && onReasoning) {
       onReasoning(result.reasoning);
     }
+    throwIfRequestAborted(signal);
 
     lastResult = result;
     totalPromptTokens += result.promptTokens;
@@ -1615,14 +1664,18 @@ export async function orchestrateLlmLoop(
       finalContent = finalContent ? `${finalContent}\n\n${result.content}` : result.content;
     } // Process AI Note (Scratchpad)
     if (result.aiNote && onScratchpadUpdate) {
-      // If the update came from the regex fallback (not a native tool call), log it so the user sees visual feedback
+      // Native scratchpad calls are executed individually in the tool dispatch
+      // loop below. Only the legacy HTML-comment fallback is applied here.
       const isNativeToolCall = result.toolCalls?.some((tc) => tc.function.name === 'update_scratchpad');
-      if (!isNativeToolCall && onToolLog) {
-        onToolLog(
-          `\n\n**Executing Tool**: \`update_scratchpad\` *(via fallback syntax)*\n> \`\`\`json\n> ${JSON.stringify({ content: result.aiNote, action: result.aiNoteAction ?? 'append' }, null, 2).replace(/\n/g, '\n> ')}\n> \`\`\`\n`,
-        );
+      if (!isNativeToolCall) {
+        if (onToolLog) {
+          onToolLog(
+            `\n\n**Executing Tool**: \`update_scratchpad\` *(via fallback syntax)*\n> \`\`\`json\n> ${JSON.stringify({ content: result.aiNote, action: result.aiNoteAction ?? 'append' }, null, 2).replace(/\n/g, '\n> ')}\n> \`\`\`\n`,
+          );
+        }
+        await onScratchpadUpdate(result.aiNote, result.aiNoteAction ?? 'append');
+        throwIfRequestAborted(signal);
       }
-      await onScratchpadUpdate(result.aiNote, result.aiNoteAction ?? 'append');
     }
 
     // Handle Tool Calls Loop
@@ -1644,14 +1697,41 @@ export async function orchestrateLlmLoop(
 
       // Add tool results to context
       for (const tc of result.toolCalls) {
+        // Cancellation must stop not-yet-started tools in the same batch.
+        throwIfRequestAborted(signal);
+
         const isScratchpad = tc.function.name === 'update_scratchpad';
-        let toolResult = 'Updated.';
+        let toolResult = '';
 
         if (onToolLog) {
           onToolLog(`\n\n**Executing Tool**: \`${tc.function.name}\`\n> \`\`\`json\n> ${tc.function.arguments}\n> \`\`\`\n`);
         }
 
-        if (!isScratchpad && onExecuteTool) {
+        if (isScratchpad) {
+          if (!onScratchpadUpdate) {
+            toolResult = 'Error: Scratchpad handler is unavailable.';
+          } else {
+            try {
+              const parsed: unknown = JSON.parse(tc.function.arguments);
+              if (typeof parsed !== 'object' || parsed === null) {
+                throw new Error('Arguments must be an object.');
+              }
+              const { content, action } = parsed as { content?: unknown; action?: unknown };
+              if (typeof content !== 'string' || content.trim().length === 0) {
+                throw new Error('Content must be a non-empty string.');
+              }
+              if (action !== 'append' && action !== 'replace') {
+                throw new Error('Action must be "append" or "replace".');
+              }
+              await onScratchpadUpdate(content, action);
+              toolResult = 'Updated.';
+            } catch (e) {
+              throwIfRequestAborted(signal);
+              if (e instanceof Error && e.name === 'AbortError') throw e;
+              toolResult = `Error updating scratchpad: ${e instanceof Error ? e.message : String(e)}`;
+            }
+          }
+        } else if (onExecuteTool) {
           const cacheKey = `${tc.function.name}:${tc.function.arguments}`;
           const cached = cacheToolResults ? toolResultCache.get(cacheKey) : undefined;
           if (cached !== undefined) {
@@ -1661,11 +1741,16 @@ export async function orchestrateLlmLoop(
               toolResult = await onExecuteTool(tc.function.name, tc.function.arguments, loopCount);
               if (cacheToolResults) toolResultCache.set(cacheKey, toolResult);
             } catch (e) {
+              throwIfRequestAborted(signal);
+              if (e instanceof Error && e.name === 'AbortError') throw e;
               toolResult = `Error executing tool: ${e instanceof Error ? e.message : String(e)}`;
             }
           }
+        } else {
+          toolResult = 'Error: Tool handler is unavailable.';
         }
 
+        throwIfRequestAborted(signal);
         // Cap tool result size to prevent tool output from crowding out conversation context
         const TOOL_RESULT_CHAR_LIMIT = 8000;
         if (toolResult.length > TOOL_RESULT_CHAR_LIMIT) {
@@ -1712,10 +1797,12 @@ export async function orchestrateLlmLoop(
   // If the loop exhausted its budget with pending tool calls, make one more
   // tool-free request so partial text is not presented as a completed answer.
   if (exhaustedWithPendingToolCalls) {
+    throwIfRequestAborted(signal);
     console.warn('[orchestrateLlmLoop] Loop exhausted with pending tools — firing forced final call without tools.');
     const finalResult = resolvedModel.streaming
       ? await askLlmStream(resolvedModel, temperature, llmContext, onToken, onReasoning, undefined, signal, options)
       : await askLlm(resolvedModel, temperature, llmContext, undefined, signal, options);
+    throwIfRequestAborted(signal);
 
     if (!resolvedModel.streaming && finalResult.reasoning && onReasoning) {
       onReasoning(finalResult.reasoning);
@@ -1730,6 +1817,7 @@ export async function orchestrateLlmLoop(
     lastResult = finalResult;
   }
 
+  throwIfRequestAborted(signal);
   if (!lastResult) throw new Error('No result from LLM');
 
   return {

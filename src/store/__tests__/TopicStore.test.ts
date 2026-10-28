@@ -116,7 +116,9 @@ jest.mock('../../database/AthenaDb', () => ({
             }
             return Promise.resolve(mockDbMessages.filter((m) => m.topicId === topicId));
           },
-          and: (predicate: (message: Message) => boolean): { toArray: () => Promise<Message[]>; delete: () => Promise<number> } => ({
+          and: (
+            predicate: (message: Message) => boolean,
+          ): { toArray: () => Promise<Message[]>; delete: () => Promise<number> } => ({
             toArray: (): Promise<Message[]> => {
               if (field !== 'topicId') {
                 return Promise.resolve([]);
@@ -235,9 +237,11 @@ describe('TopicStore.getTopicContext', () => {
     mockMessagesAnyOfDelete.mockResolvedValue(0);
     mockTopicsUpdate.mockResolvedValue(1);
     mockHasAnyApiKey.mockReturnValue(false);
-    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
-      await callback();
-    });
+    mockDbTransaction.mockImplementation(
+      async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+        await callback();
+      },
+    );
     mockMessagesToArray.mockResolvedValue([]);
     mockChecklistGroupsPrimaryKeys.mockResolvedValue([]);
     mockChecklistTabsAnyOfDelete.mockResolvedValue(0);
@@ -266,6 +270,69 @@ describe('TopicStore.getTopicContext', () => {
 
     useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main' })] });
     Object.defineProperty(embeddingService, 'isReady', { value: false, configurable: true });
+  });
+
+  it.each(['deleted-active', 'missing-active', 'deleted-latest'] as const)(
+    'CTX-01 retains a surviving answer with %s response selection',
+    async (selection) => {
+      mockDbMessages = [
+        createMessage({
+          id: 'question',
+          topicId: 'topic-1',
+          activeResponseId: selection === 'deleted-latest' ? undefined : 'removed',
+          created: '2024-01-01T00:00:00Z',
+        }),
+        createMessage({
+          id: 'surviving',
+          topicId: 'topic-1',
+          type: 'assistant',
+          parentMessageId: 'question',
+          content: 'Valid answer',
+          created: '2024-01-01T00:01:00Z',
+        }),
+      ];
+      if (selection !== 'missing-active') {
+        mockDbMessages.push(
+          createMessage({
+            id: 'removed',
+            topicId: 'topic-1',
+            type: 'assistant',
+            parentMessageId: 'question',
+            isDeleted: true,
+            created: '2024-01-01T00:02:00Z',
+          }),
+        );
+      }
+      const context = await useTopicStore.getState().getTopicContext('topic-1');
+      expect(context.map(({ id }) => id)).toContain('surviving');
+      expect(context.map(({ id }) => id)).not.toContain('removed');
+    },
+  );
+
+  it('CTX-02 excludes already-retained messages from retrieval and avoids duplicate evidence', async () => {
+    mockAuthGetState.mockReturnValue({
+      defaultMaxContextMessages: 4,
+      maxContextTokens: 10000,
+      contextWindowRatio: 0.75,
+      messageRetrievalEnabled: false,
+      ragEnabled: true,
+    });
+    Object.defineProperty(embeddingService, 'isReady', { value: true, configurable: true });
+    const recent = createMessage({
+      id: 'recent',
+      topicId: 'topic-1',
+      content: 'Already retained evidence',
+      embedding: [1, 0],
+    });
+    mockDbMessages = [recent];
+    mockSearchSimilarMessages.mockImplementation(
+      (_query, candidates): Promise<{ message: Message; score: number }[]> =>
+        Promise.resolve(candidates.map((message) => ({ message, score: 1 }))),
+    );
+    const context = await useTopicStore.getState().getTopicContext('topic-1', undefined, 'Relevant question');
+    expect(context.filter(({ id }) => id === recent.id)).toHaveLength(1);
+    expect(context.find(({ id }) => id === '__rag_context__')).toBeUndefined();
+    expect(mockSearchSimilarMessages.mock.calls[0][1].map(({ id }) => id)).not.toContain(recent.id);
   });
 
   it('merges clarification messages into the preceding assistant turn', async () => {
@@ -1132,9 +1199,11 @@ describe('TopicStore actions', () => {
     mockMessagesDelete.mockResolvedValue(0);
     mockMessagesAnyOfDelete.mockResolvedValue(0);
     mockHasAnyApiKey.mockReturnValue(false);
-    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
-      await callback();
-    });
+    mockDbTransaction.mockImplementation(
+      async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+        await callback();
+      },
+    );
     mockMessagesToArray.mockResolvedValue([]);
     mockChecklistGroupsPrimaryKeys.mockResolvedValue([]);
     mockChecklistTabsAnyOfDelete.mockResolvedValue(0);
@@ -1327,7 +1396,9 @@ describe('TopicStore actions', () => {
     expect(mockTopicsUpdate).toHaveBeenCalledTimes(2);
     expect(mockTopicsUpdate.mock.calls[1][0]).toBe('t1');
     expect(mockTopicsUpdate.mock.calls[1][1]).toMatchObject({ name: 'alpha beta gamma delta epsilon zeta' });
-    expect(useTopicStore.getState().topics.find((t) => t.id === 't1')?.name).toBe('alpha beta gamma delta epsilon zeta');
+    expect(useTopicStore.getState().topics.find((t) => t.id === 't1')?.name).toBe(
+      'alpha beta gamma delta epsilon zeta',
+    );
     expect(mockAskLlm).not.toHaveBeenCalled();
   });
 
@@ -1660,11 +1731,13 @@ describe('TopicStore actions', () => {
     let updateInside = false;
     let deleteInside = false;
 
-    mockDbTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
-      inTransaction = true;
-      await callback();
-      inTransaction = false;
-    });
+    mockDbTransaction.mockImplementation(
+      async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+        inTransaction = true;
+        await callback();
+        inTransaction = false;
+      },
+    );
     mockTopicsUpdate.mockImplementation((): Promise<number> => {
       updateInside = inTransaction;
       return Promise.resolve(1);

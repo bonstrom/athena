@@ -1,4 +1,4 @@
-import React, { JSX, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Button,
@@ -11,6 +11,7 @@ import {
   DialogContentText,
   DialogTitle,
   IconButton,
+  LinearProgress,
   Tab,
   Tabs,
   TextField,
@@ -20,9 +21,22 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import AddIcon from '@mui/icons-material/Add';
@@ -33,6 +47,8 @@ import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import { useAuthStore } from '../store/AuthStore';
 import type { Topic, ChecklistGroup, ChecklistItem, ChecklistTab } from '../database/AthenaDb';
 import { useChecklistStore } from '../store/ChecklistStore';
 import { useChatStore } from '../store/ChatStore';
@@ -70,6 +86,19 @@ const SortableItem = React.memo(function SortableItem({
 }: SortableItemProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
   const [expanded, setExpanded] = useState(false);
+  const previouslyChecked = useRef(item.checked);
+  const [justChecked, setJustChecked] = useState(false);
+  useEffect(() => {
+    const completed = item.checked && !previouslyChecked.current;
+    previouslyChecked.current = item.checked;
+    if (!completed) {
+      setJustChecked(false);
+      return;
+    }
+    setJustChecked(true);
+    const timer = setTimeout(() => setJustChecked(false), 650);
+    return (): void => clearTimeout(timer);
+  }, [item.checked]);
   const detailsId = `checklist-item-details-${item.id}`;
 
   const style: React.CSSProperties = {
@@ -89,11 +118,12 @@ const SortableItem = React.memo(function SortableItem({
         py: 0.5,
         px: 0.5,
         borderRadius: 2,
+        bgcolor: justChecked ? (theme): string => alpha(theme.palette.success.main, 0.12) : 'transparent',
+        transition: 'background-color 350ms ease',
         '&:hover': {
           bgcolor: (theme) => (theme.palette.mode === 'dark' ? alpha('#fff', 0.04) : alpha('#000', 0.03)),
         },
-      }}
-    >
+      }}>
       {isMobile ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', mt: 0.25 }}>
           <IconButton
@@ -101,8 +131,7 @@ const SortableItem = React.memo(function SortableItem({
             aria-label={`Move task ${item.content} up`}
             disabled={index === 0}
             onClick={(): void => onMoveItem(index, index - 1)}
-            sx={{ p: 0, color: 'text.secondary' }}
-          >
+            sx={{ p: 0, color: 'text.secondary' }}>
             <KeyboardArrowUpIcon fontSize="small" />
           </IconButton>
           <IconButton
@@ -110,8 +139,7 @@ const SortableItem = React.memo(function SortableItem({
             aria-label={`Move task ${item.content} down`}
             disabled={index === count - 1}
             onClick={(): void => onMoveItem(index, index + 1)}
-            sx={{ p: 0, color: 'text.secondary' }}
-          >
+            sx={{ p: 0, color: 'text.secondary' }}>
             <KeyboardArrowDownIcon fontSize="small" />
           </IconButton>
         </Box>
@@ -121,8 +149,7 @@ const SortableItem = React.memo(function SortableItem({
           {...attributes}
           {...listeners}
           aria-label={`Reorder task ${item.content}`}
-          sx={{ cursor: isDragging ? 'grabbing' : 'grab', mt: 0.25, p: 0.25, color: 'text.secondary' }}
-        >
+          sx={{ cursor: isDragging ? 'grabbing' : 'grab', mt: 0.25, p: 0.25, color: 'text.secondary' }}>
           <DragIndicatorIcon fontSize="small" />
         </IconButton>
       )}
@@ -133,6 +160,33 @@ const SortableItem = React.memo(function SortableItem({
         onChange={(): void => onToggle(item)}
         inputProps={{ 'aria-label': `Toggle task ${item.content}` }}
         sx={{ p: 0.5, mt: 0.25 }}
+        checkedIcon={
+          <Box
+            component="svg"
+            viewBox="0 0 24 24"
+            sx={{ width: 20, height: 20, color: 'success.main' }}>
+            <rect
+              x="3"
+              y="3"
+              width="18"
+              height="18"
+              rx="4"
+              fill="currentColor"
+            />
+            <Box
+              component="path"
+              d="m7 12 3 3 7-7"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+              sx={{
+                strokeDasharray: 24,
+                strokeDashoffset: 0,
+                animation: justChecked ? 'athena-check 300ms ease-out both' : 'none',
+              }}
+            />
+          </Box>
+        }
       />
 
       <Box sx={{ flexGrow: 1, minWidth: 0, mt: 0.25 }}>
@@ -142,8 +196,7 @@ const SortableItem = React.memo(function SortableItem({
             textDecoration: item.checked ? 'line-through' : 'none',
             color: item.checked ? 'text.secondary' : 'text.primary',
             wordBreak: 'break-word',
-          }}
-        >
+          }}>
           {item.content}
         </Typography>
         {item.details && (
@@ -154,8 +207,7 @@ const SortableItem = React.memo(function SortableItem({
               aria-expanded={expanded}
               onClick={(): void => setExpanded((v) => !v)}
               sx={{ p: 0, minWidth: 0, fontSize: '0.7rem', textTransform: 'none', color: 'primary.main' }}
-              endIcon={<ExpandMoreIcon sx={{ fontSize: 16, transform: expanded ? 'rotate(180deg)' : 'none' }} />}
-            >
+              endIcon={<ExpandMoreIcon sx={{ fontSize: 16, transform: expanded ? 'rotate(180deg)' : 'none' }} />}>
               {expanded ? 'Hide details' : 'Details'}
             </Button>
             <Collapse in={expanded}>
@@ -167,8 +219,7 @@ const SortableItem = React.memo(function SortableItem({
                   py: 0.5,
                   borderRadius: 1,
                   bgcolor: (theme) => (theme.palette.mode === 'dark' ? alpha('#fff', 0.04) : alpha('#000', 0.03)),
-                }}
-              >
+                }}>
                 <MarkdownWithCode>{item.details}</MarkdownWithCode>
               </Box>
             </Collapse>
@@ -176,10 +227,18 @@ const SortableItem = React.memo(function SortableItem({
         )}
       </Box>
 
-      <IconButton size="small" aria-label={`Edit task ${item.content}`} onClick={(): void => onEdit(item)} sx={{ color: 'text.secondary' }}>
+      <IconButton
+        size="small"
+        aria-label={`Edit task ${item.content}`}
+        onClick={(): void => onEdit(item)}
+        sx={{ color: 'text.secondary' }}>
         <EditOutlinedIcon fontSize="small" />
       </IconButton>
-      <IconButton size="small" aria-label={`Delete task ${item.content}`} onClick={(): void => onDelete(item.id)} sx={{ color: 'text.secondary' }}>
+      <IconButton
+        size="small"
+        aria-label={`Delete task ${item.content}`}
+        onClick={(): void => onDelete(item.id)}
+        sx={{ color: 'text.secondary' }}>
         <DeleteOutlineIcon fontSize="small" />
       </IconButton>
     </Box>
@@ -263,9 +322,10 @@ const SortableGroup = React.memo(function SortableGroup({
         mb: 2,
         borderRadius: 2,
         border: (theme) => `1px solid ${theme.palette.divider}`,
+        bgcolor: 'background.paper',
+        boxShadow: (theme) => `0 2px 8px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.1 : 0.03)}`,
         overflow: 'hidden',
-      }}
-    >
+      }}>
       <Box
         sx={{
           display: 'flex',
@@ -273,17 +333,18 @@ const SortableGroup = React.memo(function SortableGroup({
           gap: 0.5,
           px: 1,
           py: 0.75,
-          bgcolor: (theme) => (theme.palette.mode === 'dark' ? alpha(theme.palette.primary.main, 0.12) : alpha(theme.palette.primary.main, 0.08)),
-        }}
-      >
+          bgcolor: (theme) =>
+            theme.palette.mode === 'dark'
+              ? alpha(theme.palette.primary.main, 0.12)
+              : alpha(theme.palette.primary.main, 0.08),
+        }}>
         {!isMobile && (
           <IconButton
             size="small"
             {...attributes}
             {...listeners}
             aria-label={`Reorder list ${group.title}`}
-            sx={{ cursor: isDragging ? 'grabbing' : 'grab', p: 0.25, color: 'text.secondary' }}
-          >
+            sx={{ cursor: isDragging ? 'grabbing' : 'grab', p: 0.25, color: 'text.secondary' }}>
             <DragIndicatorIcon fontSize="small" />
           </IconButton>
         )}
@@ -294,8 +355,7 @@ const SortableGroup = React.memo(function SortableGroup({
               aria-label={`Move list ${group.title} up`}
               disabled={groupIndex === 0}
               onClick={(): void => onMoveGroup(groupIndex, groupIndex - 1)}
-              sx={{ p: 0, color: 'text.secondary' }}
-            >
+              sx={{ p: 0, color: 'text.secondary' }}>
               <KeyboardArrowUpIcon fontSize="small" />
             </IconButton>
             <IconButton
@@ -303,39 +363,49 @@ const SortableGroup = React.memo(function SortableGroup({
               aria-label={`Move list ${group.title} down`}
               disabled={groupIndex === groupCount - 1}
               onClick={(): void => onMoveGroup(groupIndex, groupIndex + 1)}
-              sx={{ p: 0, color: 'text.secondary' }}
-            >
+              sx={{ p: 0, color: 'text.secondary' }}>
               <KeyboardArrowDownIcon fontSize="small" />
             </IconButton>
           </Box>
         )}
-        <Typography variant="subtitle2" fontWeight="bold" sx={{ flexGrow: 1, wordBreak: 'break-word' }}>
+        <Typography
+          variant="subtitle2"
+          fontWeight="bold"
+          sx={{ flexGrow: 1, wordBreak: 'break-word' }}>
           {group.title}
         </Typography>
-        <Typography variant="caption" color="text.secondary">
+        <Typography
+          variant="caption"
+          color="text.secondary">
           {items.filter((i) => i.checked).length}/{items.length}
         </Typography>
         <IconButton
           size="small"
           aria-label={`Rename list ${group.title}`}
           onClick={(): void => onRenameGroup(group)}
-          sx={{ color: 'text.secondary' }}
-        >
+          sx={{ color: 'text.secondary' }}>
           <EditOutlinedIcon fontSize="small" />
         </IconButton>
         <IconButton
           size="small"
           aria-label={`Delete list ${group.title}`}
           onClick={(): void => onDeleteGroup(group.id)}
-          sx={{ color: 'text.secondary' }}
-        >
+          sx={{ color: 'text.secondary' }}>
           <DeleteOutlineIcon fontSize="small" />
         </IconButton>
       </Box>
 
-      <Box px={1} py={0.5}>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis]}>
-          <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+      <Box
+        px={1}
+        py={0.5}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+          modifiers={[restrictToVerticalAxis]}>
+          <SortableContext
+            items={itemIds}
+            strategy={verticalListSortingStrategy}>
             {items.map((item, index) => (
               <SortableItem
                 key={item.id}
@@ -353,13 +423,20 @@ const SortableGroup = React.memo(function SortableGroup({
         </DndContext>
 
         {items.length === 0 && !adding && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', py: 0.5 }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', py: 0.5 }}>
             No tasks yet.
           </Typography>
         )}
 
         {adding ? (
-          <Box display="flex" alignItems="center" gap={1} py={0.5}>
+          <Box
+            display="flex"
+            alignItems="center"
+            gap={1}
+            py={0.5}>
             <TextField
               fullWidth
               size="small"
@@ -372,15 +449,26 @@ const SortableGroup = React.memo(function SortableGroup({
               }}
               inputProps={{ 'aria-label': 'New task text' }}
             />
-            <Button size="small" variant="contained" onClick={(): void => void commitNewItem()} disabled={!newItemText.trim() || addingItem}>
+            <Button
+              size="small"
+              variant="contained"
+              onClick={(): void => void commitNewItem()}
+              disabled={!newItemText.trim() || addingItem}>
               Add
             </Button>
-            <Button size="small" onClick={(): void => setAdding(false)} disabled={addingItem}>
+            <Button
+              size="small"
+              onClick={(): void => setAdding(false)}
+              disabled={addingItem}>
               Cancel
             </Button>
           </Box>
         ) : (
-          <Button size="small" startIcon={<AddIcon />} onClick={(): void => setAdding(true)} sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
+          <Button
+            size="small"
+            startIcon={<AddIcon />}
+            onClick={(): void => setAdding(true)}
+            sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
             Add task
           </Button>
         )}
@@ -430,6 +518,28 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
 
   const selectedModel = useChatStore((s) => s.selectedModel);
   const canEdit = selectedModel.supportsTools;
+  const celebrations = useAuthStore((s) => s.checklistCelebrations);
+  const completedCount = items.filter((item) => item.checked).length;
+  const [celebrating, setCelebrating] = useState(false);
+  const completionSnapshot = useRef({
+    topicId: topic.id,
+    tabId: activeTabId,
+    loading,
+    complete: items.length > 0 && completedCount === items.length,
+  });
+  useEffect(() => {
+    const complete = items.length > 0 && completedCount === items.length;
+    const previous = completionSnapshot.current;
+    const sameView = previous.topicId === topic.id && previous.tabId === activeTabId && !previous.loading && !loading;
+    completionSnapshot.current = { topicId: topic.id, tabId: activeTabId, loading, complete };
+    if (!sameView || !complete || previous.complete || !celebrations) {
+      setCelebrating(false);
+      return;
+    }
+    setCelebrating(true);
+    const timer = setTimeout(() => setCelebrating(false), 1200);
+    return (): void => clearTimeout(timer);
+  }, [topic.id, activeTabId, loading, items.length, completedCount, celebrations]);
 
   const sensors = useDndSensors();
   const [prompt, setPrompt] = useState('');
@@ -536,7 +646,12 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
     const name = tabName.trim();
     if (!name || tabActionPending) return;
     setTabActionPending(true);
-    const succeeded = tabDialog === 'create' ? Boolean(await createTab(topic.id, name)) : activeTab ? await renameTab(activeTab.id, name) : false;
+    const succeeded =
+      tabDialog === 'create'
+        ? Boolean(await createTab(topic.id, name))
+        : activeTab
+          ? await renameTab(activeTab.id, name)
+          : false;
     setTabActionPending(false);
     if (succeeded) {
       setTabDialog(null);
@@ -554,7 +669,11 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
 
   if (loading) {
     return (
-      <Box display="flex" alignItems="center" justifyContent="center" height="100%">
+      <Box
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        height="100%">
         <CircularProgress />
       </Box>
     );
@@ -562,12 +681,24 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
 
   if (loadError) {
     return (
-      <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" gap={2} height="100%" px={2} textAlign="center">
+      <Box
+        display="flex"
+        flexDirection="column"
+        alignItems="center"
+        justifyContent="center"
+        gap={2}
+        height="100%"
+        px={2}
+        textAlign="center">
         <Typography variant="h6">Couldn&apos;t load checklist</Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography
+          variant="body2"
+          color="text.secondary">
           {loadError}
         </Typography>
-        <Button variant="contained" onClick={(): void => void loadChecklist(topic.id)}>
+        <Button
+          variant="contained"
+          onClick={(): void => void loadChecklist(topic.id)}>
           Retry
         </Button>
       </Box>
@@ -575,7 +706,11 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
   }
 
   return (
-    <Box display="flex" flexDirection="column" height="100%" overflow="hidden">
+    <Box
+      display="flex"
+      flexDirection="column"
+      height="100%"
+      overflow="hidden">
       <Box
         sx={{
           display: 'flex',
@@ -584,18 +719,21 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           borderColor: 'divider',
           px: { xs: 0.5, md: 1.5 },
           minHeight: 44,
-        }}
-      >
+        }}>
         <Tabs
           value={activeTabId ?? false}
           onChange={(_event, tabId: string): void => void switchTab(tabId)}
           variant="scrollable"
           scrollButtons="auto"
           aria-label="Checklist tabs"
-          sx={{ flexGrow: 1, minWidth: 0, minHeight: 44, '& .MuiTab-root': { minHeight: 44, textTransform: 'none' } }}
-        >
+          sx={{ flexGrow: 1, minWidth: 0, minHeight: 44, '& .MuiTab-root': { minHeight: 44, textTransform: 'none' } }}>
           {tabs.map((tab) => (
-            <Tab key={tab.id} value={tab.id} label={tab.name} disabled={editing || generating} />
+            <Tab
+              key={tab.id}
+              value={tab.id}
+              label={tab.name}
+              disabled={editing || generating}
+            />
           ))}
         </Tabs>
         <Tooltip title="Create tab">
@@ -607,15 +745,18 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
               onClick={(): void => {
                 setTabName('');
                 setTabDialog('create');
-              }}
-            >
+              }}>
               <AddIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
         <Tooltip title="Rename active tab">
           <span>
-            <IconButton size="small" aria-label="Rename active tab" disabled={!activeTab || editing || generating} onClick={openRenameTab}>
+            <IconButton
+              size="small"
+              aria-label="Rename active tab"
+              disabled={!activeTab || editing || generating}
+              onClick={openRenameTab}>
               <EditOutlinedIcon fontSize="small" />
             </IconButton>
           </span>
@@ -626,19 +767,27 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
               size="small"
               aria-label="Delete active tab"
               disabled={!activeTab || tabs.length <= 1 || editing || generating}
-              onClick={(): void => setDeletingTab(activeTab)}
-            >
+              onClick={(): void => setDeletingTab(activeTab)}>
               <DeleteOutlineIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
       </Box>
-      <Box flexGrow={1} minHeight={0} overflow="auto" px={{ xs: 1.5, md: 2 }} py={1.5}>
-        <Box aria-busy={editing} sx={{ maxWidth: 720, mx: 'auto', pointerEvents: editing ? 'none' : 'auto', opacity: editing ? 0.65 : 1 }}>
+      <Box
+        flexGrow={1}
+        minHeight={0}
+        overflow="auto"
+        px={{ xs: 1.5, md: 2 }}
+        py={1.5}>
+        <Box
+          aria-busy={editing}
+          sx={{ maxWidth: 720, mx: 'auto', pointerEvents: editing ? 'none' : 'auto', opacity: editing ? 0.65 : 1 }}>
           {generating ? (
             <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
               <CircularProgress />
-              <Typography variant="body2" color="text.secondary">
+              <Typography
+                variant="body2"
+                color="text.secondary">
                 Generating your checklist…
               </Typography>
             </Box>
@@ -651,14 +800,18 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
                 alignItems: 'center',
                 gap: 2,
                 textAlign: 'center',
-              }}
-            >
+              }}>
               <FormatListBulletedIcon sx={{ fontSize: 48, color: 'primary.main' }} />
-              <Typography variant="h6" fontWeight="bold">
+              <Typography
+                variant="h6"
+                fontWeight="bold">
                 Create a checklist
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Describe what you need a checklist for, and the AI will generate organized sections and tasks you can both edit.
+              <Typography
+                variant="body2"
+                color="text.secondary">
+                Describe what you need a checklist for, and the AI will generate organized sections and tasks you can
+                both edit.
               </Typography>
               <TextField
                 fullWidth
@@ -676,14 +829,63 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
                 inputProps={{ 'aria-label': 'Checklist prompt' }}
                 sx={{ maxWidth: 480 }}
               />
-              <Button variant="contained" onClick={handleGenerate} disabled={!prompt.trim()}>
+              <Button
+                variant="contained"
+                onClick={handleGenerate}
+                disabled={!prompt.trim()}>
                 Generate checklist
               </Button>
             </Box>
           ) : (
             <>
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGroupDragEnd} modifiers={[restrictToVerticalAxis]}>
-                <SortableContext items={groupIds} strategy={verticalListSortingStrategy}>
+              <Box sx={{ mb: 2, position: 'relative' }}>
+                <Box
+                  display="flex"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  mb={0.75}>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary">
+                    {completedCount === items.length && items.length > 0
+                      ? 'All tasks complete'
+                      : `${completedCount} of ${items.length} tasks complete`}
+                  </Typography>
+                  {celebrating && (
+                    <AutoAwesomeIcon
+                      aria-hidden="true"
+                      data-testid="checklist-celebration"
+                      sx={{
+                        position: 'absolute',
+                        right: 4,
+                        top: -4,
+                        color: 'success.main',
+                        animation: 'athena-sparkle 1100ms ease-out both',
+                        '@media (prefers-reduced-motion: reduce)': { display: 'none' },
+                      }}
+                    />
+                  )}
+                </Box>
+                <LinearProgress
+                  variant="determinate"
+                  value={items.length ? (completedCount / items.length) * 100 : 0}
+                  aria-label="Checklist completion"
+                  color={completedCount === items.length && items.length > 0 ? 'success' : 'primary'}
+                  sx={{
+                    height: 5,
+                    borderRadius: 3,
+                    '& .MuiLinearProgress-bar': { transition: 'transform 300ms ease, background-color 180ms ease' },
+                  }}
+                />
+              </Box>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleGroupDragEnd}
+                modifiers={[restrictToVerticalAxis]}>
+                <SortableContext
+                  items={groupIds}
+                  strategy={verticalListSortingStrategy}>
                   {groups.map((group, groupIndex) => (
                     <SortableGroup
                       key={group.id}
@@ -708,7 +910,11 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
               </DndContext>
 
               {creatingList ? (
-                <Box display="flex" alignItems="center" gap={1} mb={2}>
+                <Box
+                  display="flex"
+                  alignItems="center"
+                  gap={1}
+                  mb={2}>
                   <TextField
                     fullWidth
                     size="small"
@@ -725,11 +931,13 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
                     size="small"
                     variant="contained"
                     onClick={(): void => void commitNewList()}
-                    disabled={!newListTitle.trim() || pendingAction === 'create' || editing}
-                  >
+                    disabled={!newListTitle.trim() || pendingAction === 'create' || editing}>
                     Add
                   </Button>
-                  <Button size="small" onClick={(): void => setCreatingList(false)} disabled={pendingAction === 'create'}>
+                  <Button
+                    size="small"
+                    onClick={(): void => setCreatingList(false)}
+                    disabled={pendingAction === 'create'}>
                     Cancel
                   </Button>
                 </Box>
@@ -738,8 +946,7 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
                   variant="outlined"
                   startIcon={<AddIcon />}
                   onClick={(): void => setCreatingList(true)}
-                  sx={{ textTransform: 'none', mt: 0.5 }}
-                >
+                  sx={{ textTransform: 'none', mt: 0.5 }}>
                   Create new list
                 </Button>
               )}
@@ -767,8 +974,7 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           if (!tabActionPending) setTabDialog(null);
         }}
         fullWidth
-        maxWidth="xs"
-      >
+        maxWidth="xs">
         <DialogTitle>{tabDialog === 'create' ? 'Create tab' : 'Rename tab'}</DialogTitle>
         <DialogContent>
           <TextField
@@ -783,10 +989,15 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={(): void => setTabDialog(null)} disabled={tabActionPending}>
+          <Button
+            onClick={(): void => setTabDialog(null)}
+            disabled={tabActionPending}>
             Cancel
           </Button>
-          <Button onClick={(): void => void saveTab()} variant="contained" disabled={!tabName.trim() || tabActionPending}>
+          <Button
+            onClick={(): void => void saveTab()}
+            variant="contained"
+            disabled={!tabName.trim() || tabActionPending}>
             {tabDialog === 'create' ? 'Create' : 'Save'}
           </Button>
         </DialogActions>
@@ -798,19 +1009,25 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           if (!tabActionPending) setDeletingTab(null);
         }}
         fullWidth
-        maxWidth="xs"
-      >
+        maxWidth="xs">
         <DialogTitle>Delete tab</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Delete &quot;{deletingTab?.name}&quot; and all of its lists, tasks, and AI edit history? This cannot be undone.
+            Delete &quot;{deletingTab?.name}&quot; and all of its lists, tasks, and AI edit history? This cannot be
+            undone.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={(): void => setDeletingTab(null)} disabled={tabActionPending}>
+          <Button
+            onClick={(): void => setDeletingTab(null)}
+            disabled={tabActionPending}>
             Cancel
           </Button>
-          <Button onClick={(): void => void confirmDeleteTab()} variant="contained" color="error" disabled={tabActionPending}>
+          <Button
+            onClick={(): void => void confirmDeleteTab()}
+            variant="contained"
+            color="error"
+            disabled={tabActionPending}>
             Delete
           </Button>
         </DialogActions>
@@ -822,8 +1039,7 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           if (pendingAction !== 'edit') setEditingItem(null);
         }}
         fullWidth
-        maxWidth="sm"
-      >
+        maxWidth="sm">
         <DialogTitle>Edit task</DialogTitle>
         <DialogContent>
           <TextField
@@ -844,14 +1060,15 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={(): void => setEditingItem(null)} disabled={pendingAction === 'edit'}>
+          <Button
+            onClick={(): void => setEditingItem(null)}
+            disabled={pendingAction === 'edit'}>
             Cancel
           </Button>
           <Button
             onClick={(): void => void saveItemEdit()}
             variant="contained"
-            disabled={!itemForm.content.trim() || pendingAction === 'edit' || editing}
-          >
+            disabled={!itemForm.content.trim() || pendingAction === 'edit' || editing}>
             Save
           </Button>
         </DialogActions>
@@ -863,8 +1080,7 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           if (pendingAction !== 'rename') setRenamingGroup(null);
         }}
         fullWidth
-        maxWidth="sm"
-      >
+        maxWidth="sm">
         <DialogTitle>Rename list</DialogTitle>
         <DialogContent>
           <TextField
@@ -876,14 +1092,15 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={(): void => setRenamingGroup(null)} disabled={pendingAction === 'rename'}>
+          <Button
+            onClick={(): void => setRenamingGroup(null)}
+            disabled={pendingAction === 'rename'}>
             Cancel
           </Button>
           <Button
             onClick={(): void => void saveGroupRename()}
             variant="contained"
-            disabled={!groupForm.title.trim() || pendingAction === 'rename' || editing}
-          >
+            disabled={!groupForm.title.trim() || pendingAction === 'rename' || editing}>
             Save
           </Button>
         </DialogActions>
@@ -895,8 +1112,7 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           if (pendingAction !== 'delete') setDeletingGroup(null);
         }}
         fullWidth
-        maxWidth="sm"
-      >
+        maxWidth="sm">
         <DialogTitle>Delete list</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -905,10 +1121,16 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={(): void => setDeletingGroup(null)} disabled={pendingAction === 'delete' || editing}>
+          <Button
+            onClick={(): void => setDeletingGroup(null)}
+            disabled={pendingAction === 'delete' || editing}>
             Cancel
           </Button>
-          <Button onClick={(): void => void confirmDeleteGroup()} variant="contained" color="error" disabled={pendingAction === 'delete'}>
+          <Button
+            onClick={(): void => void confirmDeleteGroup()}
+            variant="contained"
+            color="error"
+            disabled={pendingAction === 'delete'}>
             Delete
           </Button>
         </DialogActions>

@@ -2,6 +2,24 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+## Interface effects
+
+Athena uses theme-colored focus glows, softly layered surfaces, a welcome-screen
+logo halo, a sliding active-conversation marker, and brief feedback for copy,
+pin, and save actions. New messages animate only as they arrive during a live
+request; opening history or loading older messages does not replay entrances.
+Streamed text is never animated token by token.
+
+Live activity labels distinguish thinking, writing, web search, reading, and
+tool execution. Debate panels highlight models while their requests are active.
+Checklists include an animated progress bar, checkmark feedback, and a small
+sparkle when every task is completed. Disable the sparkle under
+**Settings > Appearance > Celebrate completed checklists** (saved on this device).
+
+Animations and smooth scrolling respect the operating system/browser
+**prefers-reduced-motion** setting. Background gradients remain static, and
+status labels and completion counts convey state without relying on color.
+
 ## Available Scripts
 
 In the project directory, you can run:

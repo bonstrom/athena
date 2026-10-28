@@ -1,6 +1,7 @@
 import { ChecklistGroup, ChecklistItem, ChecklistHistoryEntry, ChecklistTab } from '../../database/AthenaDb';
 import { UserChatModel } from '../../types/provider';
 import { createUserChatModel } from '../../testUtils';
+import { setImmediate } from 'timers';
 
 let mockGroupsDb: ChecklistGroup[] = [];
 let mockItemsDb: ChecklistItem[] = [];
@@ -10,24 +11,34 @@ let mockTopicActiveTabIds = new Map<string, string>();
 
 const mockAskLlm = jest.fn();
 const mockOrchestrateLlmLoop = jest.fn();
-const mockAddNotification = jest.fn((title: string, message?: string, severity?: 'success' | 'info' | 'warning' | 'error'): undefined => {
-  void title;
-  void message;
-  void severity;
-  return undefined;
-});
+const mockAddNotification = jest.fn(
+  (title: string, message?: string, severity?: 'success' | 'info' | 'warning' | 'error'): undefined => {
+    void title;
+    void message;
+    void severity;
+    return undefined;
+  },
+);
 const mockGetSelectedModel = jest.fn<UserChatModel, []>();
 const mockGenerateTopicName = jest.fn<Promise<void>, [string, string]>();
 const mockUpdateTopicTimestamp = jest.fn<Promise<void>, [string]>();
 const mockLoadGroups = jest.fn<Promise<ChecklistGroup[]>, [string]>();
 const mockTopicExists = jest.fn<Promise<boolean>, [string]>();
 const mockOperationUsageAdd = jest.fn<Promise<void>, [unknown]>();
+const mockBeforeGroupAdd = jest.fn<Promise<void>, [ChecklistGroup]>();
+const mockBeforeItemAdd = jest.fn<Promise<void>, [ChecklistItem]>();
+const mockGetItem = jest.fn<Promise<ChecklistItem | undefined>, [string]>();
 
 const mockTransaction = jest.fn<Promise<void>, [string, unknown[], () => Promise<void>]>();
 
-function mockMakeWhereClause<T>(records: T[], field: string, value: unknown): { toArray: () => Promise<T[]>; delete: () => Promise<number> } {
+function mockMakeWhereClause<T>(
+  records: T[],
+  field: string,
+  value: unknown,
+): { toArray: () => Promise<T[]>; delete: () => Promise<number> } {
   return {
     toArray: (): Promise<T[]> => Promise.resolve(records.filter((r) => (r as Record<string, unknown>)[field] === value)),
+
     delete: (): Promise<number> => {
       const before = records.length;
       const idx = records.filter((r) => (r as Record<string, unknown>)[field] === value);
@@ -60,7 +71,9 @@ jest.mock('../../store/TopicStore', () => ({
 
 jest.mock('../../store/NotificationStore', () => ({
   useNotificationStore: {
-    getState: (): { addNotification: (title: string, message?: string, severity?: 'success' | 'info' | 'warning' | 'error') => void } => ({
+    getState: (): {
+      addNotification: (title: string, message?: string, severity?: 'success' | 'info' | 'warning' | 'error') => void;
+    } => ({
       addNotification: (...args: [string, string?, ('success' | 'info' | 'warning' | 'error')?]): void => {
         mockAddNotification(...args);
       },
@@ -71,6 +84,7 @@ jest.mock('../../store/NotificationStore', () => ({
 jest.mock('../../services/llmService', () => ({
   askLlm: (...args: unknown[]): ReturnType<typeof mockAskLlm> => mockAskLlm(...args),
   orchestrateLlmLoop: (...args: unknown[]): ReturnType<typeof mockOrchestrateLlmLoop> => mockOrchestrateLlmLoop(...args),
+
 }));
 
 jest.mock('../../components/ModelSelector', () => ({
@@ -112,9 +126,9 @@ jest.mock('../../database/AthenaDb', () => ({
       }),
     },
     checklistGroups: {
-      add: (g: ChecklistGroup): Promise<void> => {
+      add: async (g: ChecklistGroup): Promise<void> => {
+        await mockBeforeGroupAdd(g);
         mockGroupsDb.push(g);
-        return Promise.resolve();
       },
       bulkAdd: (gs: ChecklistGroup[]): Promise<void> => {
         mockGroupsDb.push(...gs);
@@ -133,7 +147,11 @@ jest.mock('../../database/AthenaDb', () => ({
       where: (
         field: string,
       ): {
-        equals: (value: unknown) => { toArray: () => Promise<ChecklistGroup[]>; primaryKeys: () => Promise<string[]>; delete: () => Promise<number> };
+        equals: (value: unknown) => {
+          toArray: () => Promise<ChecklistGroup[]>;
+          primaryKeys: () => Promise<string[]>;
+          delete: () => Promise<number>;
+        };
       } => ({
         equals: (value: unknown) => ({
           toArray: (): Promise<ChecklistGroup[]> =>
@@ -141,15 +159,19 @@ jest.mock('../../database/AthenaDb', () => ({
               ? mockLoadGroups(String(value))
               : Promise.resolve(mockGroupsDb.filter((g) => (g as Record<string, unknown>)[field] === value)),
           primaryKeys: (): Promise<string[]> =>
-            Promise.resolve(mockGroupsDb.filter((group) => (group as Record<string, unknown>)[field] === value).map((group) => group.id)),
+            Promise.resolve(
+              mockGroupsDb
+                .filter((group) => (group as Record<string, unknown>)[field] === value)
+                .map((group) => group.id),
+            ),
           delete: (): Promise<number> => mockMakeWhereClause(mockGroupsDb, field, value).delete(),
         }),
       }),
     },
     checklistItems: {
-      add: (item: ChecklistItem): Promise<void> => {
+      add: async (item: ChecklistItem): Promise<void> => {
+        await mockBeforeItemAdd(item);
         mockItemsDb.push(item);
-        return Promise.resolve();
       },
       bulkAdd: (items: ChecklistItem[]): Promise<void> => {
         mockItemsDb.push(...items);
@@ -168,7 +190,7 @@ jest.mock('../../database/AthenaDb', () => ({
         mockItemsDb = mockItemsDb.filter((x) => x.id !== id);
         return Promise.resolve();
       },
-      get: (id: string): Promise<ChecklistItem | undefined> => Promise.resolve(mockItemsDb.find((x) => x.id === id)),
+      get: (id: string): Promise<ChecklistItem | undefined> => mockGetItem(id),
       where: (
         field: string,
       ): {
@@ -179,6 +201,7 @@ jest.mock('../../database/AthenaDb', () => ({
           mockMakeWhereClause(mockItemsDb, field, value),
         anyOf: (values: unknown[]) => ({
           toArray: (): Promise<ChecklistItem[]> => Promise.resolve(mockItemsDb.filter((i) => values.includes((i as Record<string, unknown>)[field]))),
+
           delete: (): Promise<number> => {
             const before = mockItemsDb.length;
             mockItemsDb = mockItemsDb.filter((item) => !values.includes((item as Record<string, unknown>)[field]));
@@ -196,11 +219,16 @@ jest.mock('../../database/AthenaDb', () => ({
         mockHistoryDb = mockHistoryDb.filter((x) => !ids.includes(x.id));
         return Promise.resolve();
       },
-      where: (field: string): { equals: (value: unknown) => { sortBy: () => Promise<ChecklistHistoryEntry[]>; delete: () => Promise<number> } } => ({
+      where: (
+        field: string,
+      ): {
+        equals: (value: unknown) => { sortBy: () => Promise<ChecklistHistoryEntry[]>; delete: () => Promise<number> };
+      } => ({
         equals: (value: unknown) => ({
           sortBy: (): Promise<ChecklistHistoryEntry[]> =>
             Promise.resolve(
               mockHistoryDb.filter((e) => (e as Record<string, unknown>)[field] === value).sort((a, b) => a.created.localeCompare(b.created)),
+
             ),
           delete: (): Promise<number> => mockMakeWhereClause(mockHistoryDb, field, value).delete(),
         }),
@@ -214,6 +242,30 @@ jest.mock('../../database/AthenaDb', () => ({
 }));
 
 import { useChecklistStore } from '../ChecklistStore';
+
+function createDeferred<Value>(): {
+  promise: Promise<Value>;
+  resolve: (value: Value) => void;
+  reject: (reason: Error) => void;
+} {
+  let resolve!: (value: Value) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<Value>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+const editResult = {
+  finalContent: 'Done',
+  totalPromptTokens: 1,
+  totalCompletionTokens: 1,
+  totalCachedTokens: 0,
+  totalCacheCreationTokens: 0,
+  totalSearchCount: 0,
+  toolLoopTrace: [],
+};
 
 let uuidCounter = 0;
 
@@ -238,6 +290,13 @@ describe('ChecklistStore', () => {
     mockOperationUsageAdd.mockReset();
     mockLoadGroups.mockReset();
     mockTopicExists.mockReset();
+    mockBeforeGroupAdd.mockReset().mockResolvedValue();
+    mockBeforeItemAdd.mockReset().mockResolvedValue();
+    mockGetItem
+      .mockReset()
+      .mockImplementation(
+        (id): Promise<ChecklistItem | undefined> => Promise.resolve(mockItemsDb.find((item) => item.id === id)),
+      );
     mockGetSelectedModel.mockReturnValue(createUserChatModel());
     mockTopicExists.mockResolvedValue(true);
     mockUpdateTopicTimestamp.mockResolvedValue(undefined);
@@ -245,9 +304,11 @@ describe('ChecklistStore', () => {
     mockLoadGroups.mockImplementation((ownerId: string): Promise<ChecklistGroup[]> => {
       return Promise.resolve(mockGroupsDb.filter((group) => group.topicId === ownerId || group.tabId === ownerId));
     });
-    mockTransaction.mockImplementation(async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
-      await callback();
-    });
+    mockTransaction.mockImplementation(
+      async (_mode: string, _tables: unknown[], callback: () => Promise<void>): Promise<void> => {
+        await callback();
+      },
+    );
 
     useChecklistStore.setState({
       tabs: [],
@@ -273,6 +334,313 @@ describe('ChecklistStore', () => {
         }),
       },
       configurable: true,
+    });
+  });
+
+  describe('review concurrency regressions', () => {
+    it('CHKREV-01 admits only one same-tick AI edit', async () => {
+      await useChecklistStore.getState().loadChecklist('t1');
+      const release = createDeferred<typeof editResult>();
+      mockOrchestrateLlmLoop.mockImplementation((): Promise<typeof editResult> => release.promise);
+      const first = useChecklistStore.getState().applyLlmEdit('t1', 'First');
+      const second = useChecklistStore.getState().applyLlmEdit('t1', 'Second');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const admitted = mockOrchestrateLlmLoop.mock.calls.length;
+      release.resolve(editResult);
+      await Promise.all([first, second]);
+      expect(admitted).toBe(1);
+    });
+
+    it('CHKREV-01 keeps a replacement edit busy and stoppable after old cleanup', async () => {
+      await useChecklistStore.getState().loadChecklist('t1');
+      const firstStarted = createDeferred<null>();
+      const secondStarted = createDeferred<null>();
+      const firstResult = createDeferred<typeof editResult>();
+      const secondResult = createDeferred<typeof editResult>();
+      const signals: AbortSignal[] = [];
+      mockOrchestrateLlmLoop
+        .mockImplementationOnce((...args: unknown[]): Promise<typeof editResult> => {
+          signals.push(args[9] as AbortSignal);
+          firstStarted.resolve(null);
+          return firstResult.promise;
+        })
+        .mockImplementationOnce((...args: unknown[]): Promise<typeof editResult> => {
+          signals.push(args[9] as AbortSignal);
+          secondStarted.resolve(null);
+          return secondResult.promise;
+        });
+      const first = useChecklistStore.getState().applyLlmEdit('t1', 'First');
+      await firstStarted.promise;
+      useChecklistStore.getState().stopEdit();
+      const second = useChecklistStore.getState().applyLlmEdit('t1', 'Second');
+      await secondStarted.promise;
+      firstResult.reject(new DOMException('Stopped', 'AbortError'));
+      await first;
+      const replacementBusy = useChecklistStore.getState().editing;
+      useChecklistStore.getState().stopEdit();
+      secondResult.resolve(editResult);
+      await second;
+      expect(signals[0].aborted).toBe(true);
+      expect(replacementBusy).toBe(true);
+      expect(signals[1].aborted).toBe(true);
+    });
+
+    it('CHKREV-02 does not append a late A group to the loaded B view', async () => {
+      await useChecklistStore.getState().loadChecklist('t1');
+      mockTabsDb.push({ id: 'tab-b', topicId: 't2', name: 'Main', sortOrder: 0 });
+      mockTopicActiveTabIds.set('t2', 'tab-b');
+      const entered = createDeferred<null>();
+      const release = createDeferred<null>();
+      mockBeforeGroupAdd.mockImplementationOnce(async (): Promise<void> => {
+        entered.resolve(null);
+        await release.promise;
+      });
+      const creation = useChecklistStore.getState().createGroup('t1', 'Only A');
+      await entered.promise;
+      await useChecklistStore.getState().loadChecklist('t2');
+      release.resolve(null);
+      await creation;
+      expect(mockGroupsDb).toEqual(
+        expect.arrayContaining([expect.objectContaining({ topicId: 't1', title: 'Only A' })]),
+      );
+      expect(useChecklistStore.getState().activeTopicId).toBe('t2');
+      expect(useChecklistStore.getState().groups).toEqual([]);
+    });
+
+    it('CHKREV-03 preserves toggle intent when prerequisite lookups finish out of order (mock scheduling)', async () => {
+      await useChecklistStore.getState().loadChecklist('t1');
+      const group = await useChecklistStore.getState().createGroup('t1', 'Tasks');
+      if (!group) throw new Error('Missing group');
+      const item = await useChecklistStore.getState().addItem(group.id, 'Task');
+      if (!item) throw new Error('Missing item');
+      const lookup = createDeferred<ChecklistItem | undefined>();
+      mockGetItem.mockImplementationOnce((): Promise<ChecklistItem | undefined> => lookup.promise);
+      const first = useChecklistStore.getState().toggleItem(item.id);
+      const second = useChecklistStore.getState().toggleItem(item.id);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      lookup.resolve({ ...item });
+      await Promise.all([first, second]);
+      expect(useChecklistStore.getState().items.find(({ id }) => id === item.id)?.checked).toBe(false);
+      expect(mockItemsDb.find(({ id }) => id === item.id)?.checked).toBe(false);
+    });
+
+    it('CHKREV-04 does not interleave a manual update with a stale AI snapshot', async () => {
+      await useChecklistStore.getState().loadChecklist('t1');
+      const group = await useChecklistStore.getState().createGroup('t1', 'Tasks');
+      if (!group) throw new Error('Missing group');
+      const item = await useChecklistStore.getState().addItem(group.id, 'Before');
+      if (!item) throw new Error('Missing item');
+      const lookup = createDeferred<ChecklistItem | undefined>();
+      mockGetItem.mockImplementationOnce((): Promise<ChecklistItem | undefined> => lookup.promise);
+      const manual = useChecklistStore.getState().updateItem(item.id, { content: 'Accepted manual update' });
+      let capturedMessages: unknown;
+      const releaseEdit = createDeferred<typeof editResult>();
+      mockOrchestrateLlmLoop.mockImplementation((...args: unknown[]): Promise<typeof editResult> => {
+        capturedMessages = args[2];
+        return releaseEdit.promise;
+      });
+      const edit = useChecklistStore.getState().applyLlmEdit('t1', 'Edit this checklist');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      lookup.resolve({ ...item });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const snapshot = capturedMessages === undefined ? '' : JSON.stringify(capturedMessages);
+      const interleaved =
+        useChecklistStore.getState().editing &&
+        mockItemsDb.find(({ id }) => id === item.id)?.content === 'Accepted manual update' &&
+        !snapshot.includes('Accepted manual update');
+      releaseEdit.resolve(editResult);
+      await Promise.all([manual, edit]);
+      expect(mockItemsDb.find(({ id }) => id === item.id)?.content).toBe('Accepted manual update');
+      expect(interleaved).toBe(false);
+    });
+
+    it('CHKREV-05 persists a terminal history outcome after a committed tool and provider failure', async () => {
+      const errorSpy = jest.spyOn(console, 'error').mockImplementation((): void => undefined);
+      await useChecklistStore.getState().loadChecklist('t1');
+      mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]): Promise<typeof editResult> => {
+        const execute = args[6] as (name: string, argumentsJson: string, iteration: number) => Promise<string>;
+        await execute('add_checklist_group', JSON.stringify({ title: 'Committed group' }), 1);
+        throw new Error('Provider failed after tool commit');
+      });
+      await useChecklistStore.getState().applyLlmEdit('t1', 'Create a group');
+      expect(mockGroupsDb.map(({ title }) => title)).toContain('Committed group');
+      expect(mockAddNotification).toHaveBeenCalledWith('Failed to update checklist', expect.any(String));
+      expect(errorSpy).toHaveBeenCalled();
+      expect(mockHistoryDb.map(({ role }) => role)).toEqual(['user', 'assistant']);
+    });
+
+    it('CHKREV-06 does not publish a delayed manual item into another topic view', async () => {
+      await useChecklistStore.getState().loadChecklist('t1');
+      const group = await useChecklistStore.getState().createGroup('t1', 'Tasks');
+      if (!group) throw new Error('Missing group');
+      mockTabsDb.push({ id: 'tab-b', topicId: 't2', name: 'Main', sortOrder: 0 });
+      mockTopicActiveTabIds.set('t2', 'tab-b');
+      const entered = createDeferred<null>();
+      const release = createDeferred<null>();
+      mockBeforeItemAdd.mockImplementationOnce(async (): Promise<void> => {
+        entered.resolve(null);
+        await release.promise;
+      });
+
+      const addition = useChecklistStore.getState().addItem(group.id, 'Only A');
+      await entered.promise;
+      await useChecklistStore.getState().loadChecklist('t2');
+      release.resolve(null);
+      await addition;
+
+      expect(mockItemsDb).toEqual(expect.arrayContaining([expect.objectContaining({ content: 'Only A' })]));
+      expect(useChecklistStore.getState().activeTopicId).toBe('t2');
+      expect(useChecklistStore.getState().items).toEqual([]);
+    });
+
+    it('CHKREV-06 does not publish an in-flight AI tool mutation into another topic view', async () => {
+      await useChecklistStore.getState().loadChecklist('t1');
+      const group = await useChecklistStore.getState().createGroup('t1', 'Tasks');
+      if (!group) throw new Error('Missing group');
+      mockTabsDb.push({ id: 'tab-b', topicId: 't2', name: 'Main', sortOrder: 0 });
+      mockTopicActiveTabIds.set('t2', 'tab-b');
+      const entered = createDeferred<null>();
+      const release = createDeferred<null>();
+      mockBeforeGroupAdd.mockImplementationOnce(async (): Promise<void> => {
+        entered.resolve(null);
+        await release.promise;
+      });
+      mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]): Promise<typeof editResult> => {
+        const execute = args[6] as (name: string, argumentsJson: string, iteration: number) => Promise<string>;
+        await execute('add_checklist_group', JSON.stringify({ title: 'AI group in A' }), 1);
+        return editResult;
+      });
+
+      const edit = useChecklistStore.getState().applyLlmEdit('t1', 'Create a group');
+      await entered.promise;
+      await useChecklistStore.getState().loadChecklist('t2');
+      release.resolve(null);
+      await edit;
+
+      expect(mockGroupsDb).toEqual(expect.arrayContaining([expect.objectContaining({ title: 'AI group in A' })]));
+      expect(useChecklistStore.getState().activeTopicId).toBe('t2');
+      expect(useChecklistStore.getState().groups).toEqual([]);
+    });
+
+    it('CHKREV-07 waits for an already-admitted structural manual mutation before snapshotting', async () => {
+      await useChecklistStore.getState().loadChecklist('t1');
+      const entered = createDeferred<null>();
+      const release = createDeferred<null>();
+      mockBeforeGroupAdd.mockImplementationOnce(async (): Promise<void> => {
+        entered.resolve(null);
+        await release.promise;
+      });
+      const creation = useChecklistStore.getState().createGroup('t1', 'Manual group');
+      await entered.promise;
+      let capturedMessages: unknown;
+      mockOrchestrateLlmLoop.mockImplementation((...args: unknown[]): Promise<typeof editResult> => {
+        capturedMessages = args[2];
+        return Promise.resolve(editResult);
+      });
+
+      const edit = useChecklistStore.getState().applyLlmEdit('t1', 'Review the checklist');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(capturedMessages).toBeUndefined();
+
+      release.resolve(null);
+      await creation;
+      await edit;
+
+      expect(JSON.stringify(capturedMessages)).toContain('Manual group');
+    });
+
+    it('CHKREV-08 records a stopped edit outcome after a committed tool mutation', async () => {
+      await useChecklistStore.getState().loadChecklist('t1');
+      const toolDone = createDeferred<null>();
+      const provider = createDeferred<typeof editResult>();
+      mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]): Promise<typeof editResult> => {
+        const execute = args[6] as (name: string, argumentsJson: string, iteration: number) => Promise<string>;
+        await execute('add_checklist_group', JSON.stringify({ title: 'Committed before stop' }), 1);
+        toolDone.resolve(null);
+        return provider.promise;
+      });
+
+      const edit = useChecklistStore.getState().applyLlmEdit('t1', 'Create a group');
+      await toolDone.promise;
+      useChecklistStore.getState().stopEdit();
+      provider.reject(new DOMException('Stopped', 'AbortError'));
+      await edit;
+
+      expect(mockGroupsDb.map(({ title }) => title)).toContain('Committed before stop');
+      expect(mockHistoryDb.map(({ role }) => role)).toEqual(['user', 'assistant']);
+      expect(mockHistoryDb[1]?.content).toContain('Edit stopped after 1 successful tool operation');
+    });
+
+    it.each(['reject', 'resolve'] as const)(
+      'CHKREV-09 keeps a stopped outcome in the original tab after navigation (%s)',
+      async (settlement) => {
+        await useChecklistStore.getState().loadChecklist('t1');
+        const originalTabId = useChecklistStore.getState().activeTabId;
+        const otherTab = await useChecklistStore.getState().createTab('t1', 'Other tab');
+        if (!originalTabId || !otherTab) throw new Error('Missing checklist tabs');
+        await useChecklistStore.getState().switchTab(originalTabId);
+        const toolDone = createDeferred<null>();
+        const provider = createDeferred<typeof editResult>();
+        mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]): Promise<typeof editResult> => {
+          const execute = args[6] as (name: string, argumentsJson: string, iteration: number) => Promise<string>;
+          await execute('add_checklist_group', JSON.stringify({ title: 'Original tab mutation' }), 1);
+          toolDone.resolve(null);
+          return provider.promise;
+        });
+        const edit = useChecklistStore.getState().applyLlmEdit('t1', 'Change the original tab');
+        await toolDone.promise;
+        useChecklistStore.getState().stopEdit();
+        await useChecklistStore.getState().switchTab(otherTab.id);
+        if (settlement === 'reject') provider.reject(new DOMException('Stopped', 'AbortError'));
+        else provider.resolve(editResult);
+        await edit;
+
+        expect(mockHistoryDb.map(({ role, tabId }) => ({ role, tabId }))).toEqual([
+          { role: 'user', tabId: originalTabId },
+          { role: 'assistant', tabId: originalTabId },
+        ]);
+        expect(mockHistoryDb[1]?.content).toContain('Edit stopped after 1 successful tool operation');
+        expect(useChecklistStore.getState().activeTabId).toBe(otherTab.id);
+        expect(useChecklistStore.getState().history).toEqual([]);
+      },
+    );
+
+    it('CHKREV-08 records stopped outcomes for two requests settling out of order', async () => {
+      await useChecklistStore.getState().loadChecklist('t1');
+      const firstToolDone = createDeferred<null>();
+      const secondToolDone = createDeferred<null>();
+      const firstProvider = createDeferred<typeof editResult>();
+      const secondProvider = createDeferred<typeof editResult>();
+      mockOrchestrateLlmLoop
+        .mockImplementationOnce(async (...args: unknown[]): Promise<typeof editResult> => {
+          const execute = args[6] as (name: string, argumentsJson: string, iteration: number) => Promise<string>;
+          await execute('add_checklist_group', JSON.stringify({ title: 'First stopped group' }), 1);
+          firstToolDone.resolve(null);
+          return firstProvider.promise;
+        })
+        .mockImplementationOnce(async (...args: unknown[]): Promise<typeof editResult> => {
+          const execute = args[6] as (name: string, argumentsJson: string, iteration: number) => Promise<string>;
+          await execute('add_checklist_group', JSON.stringify({ title: 'Second stopped group' }), 1);
+          secondToolDone.resolve(null);
+          return secondProvider.promise;
+        });
+
+      const first = useChecklistStore.getState().applyLlmEdit('t1', 'First edit');
+      await firstToolDone.promise;
+      useChecklistStore.getState().stopEdit();
+      const second = useChecklistStore.getState().applyLlmEdit('t1', 'Second edit');
+      await secondToolDone.promise;
+      useChecklistStore.getState().stopEdit();
+
+      firstProvider.reject(new DOMException('Stopped', 'AbortError'));
+      secondProvider.reject(new DOMException('Stopped', 'AbortError'));
+      await Promise.all([first, second]);
+
+      const stoppedOutcomes = mockHistoryDb
+        .filter(({ role }) => role === 'assistant')
+        .map(({ content }) => content)
+        .filter((content) => content.includes('Edit stopped after 1 successful tool operation'));
+      expect(stoppedOutcomes).toHaveLength(2);
     });
   });
 
@@ -377,8 +745,20 @@ describe('ChecklistStore', () => {
 
     it('switches to only the selected tab content and history', async () => {
       const ideasTab: ChecklistTab = { id: 'tab-ideas', topicId: 't1', name: 'Ideas', sortOrder: 1 };
-      const ideasGroup: ChecklistGroup = { id: 'g-ideas', topicId: 't1', tabId: ideasTab.id, title: 'Ideas', sortOrder: 0 };
-      const ideasItem: ChecklistItem = { id: 'i-ideas', groupId: ideasGroup.id, content: 'Explore', checked: false, sortOrder: 0 };
+      const ideasGroup: ChecklistGroup = {
+        id: 'g-ideas',
+        topicId: 't1',
+        tabId: ideasTab.id,
+        title: 'Ideas',
+        sortOrder: 0,
+      };
+      const ideasItem: ChecklistItem = {
+        id: 'i-ideas',
+        groupId: ideasGroup.id,
+        content: 'Explore',
+        checked: false,
+        sortOrder: 0,
+      };
       const ideasHistory: ChecklistHistoryEntry = {
         id: 'h-ideas',
         topicId: 't1',
@@ -408,7 +788,13 @@ describe('ChecklistStore', () => {
     it('deletes tab-owned content and selects a remaining tab', async () => {
       const ideasTab: ChecklistTab = { id: 'tab-ideas', topicId: 't1', name: 'Ideas', sortOrder: 1 };
       const mainGroup: ChecklistGroup = { id: 'g-main', topicId: 't1', tabId: 'tab-main', title: 'Main', sortOrder: 0 };
-      const ideasGroup: ChecklistGroup = { id: 'g-ideas', topicId: 't1', tabId: ideasTab.id, title: 'Ideas', sortOrder: 0 };
+      const ideasGroup: ChecklistGroup = {
+        id: 'g-ideas',
+        topicId: 't1',
+        tabId: ideasTab.id,
+        title: 'Ideas',
+        sortOrder: 0,
+      };
       mockTabsDb.push(ideasTab);
       mockGroupsDb.push(mainGroup, ideasGroup);
       mockItemsDb.push(
@@ -594,8 +980,20 @@ describe('ChecklistStore', () => {
 
   describe('applyLlmEdit', () => {
     it('sends only the active tab checklist to the LLM', async () => {
-      const activeGroup: ChecklistGroup = { id: 'g-active', topicId: 't1', tabId: 'tab-main', title: 'Visible section', sortOrder: 0 };
-      const hiddenGroup: ChecklistGroup = { id: 'g-hidden', topicId: 't1', tabId: 'tab-hidden', title: 'Hidden section', sortOrder: 0 };
+      const activeGroup: ChecklistGroup = {
+        id: 'g-active',
+        topicId: 't1',
+        tabId: 'tab-main',
+        title: 'Visible section',
+        sortOrder: 0,
+      };
+      const hiddenGroup: ChecklistGroup = {
+        id: 'g-hidden',
+        topicId: 't1',
+        tabId: 'tab-hidden',
+        title: 'Hidden section',
+        sortOrder: 0,
+      };
       useChecklistStore.setState({
         tabs: [...mockTabsDb, { id: 'tab-hidden', topicId: 't1', name: 'Hidden', sortOrder: 1 }],
         activeTabId: 'tab-main',
@@ -629,7 +1027,10 @@ describe('ChecklistStore', () => {
 
       mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]): Promise<{ finalContent: string }> => {
         const onExecuteTool = args[6] as (toolName: string, argsJson: string) => Promise<string>;
-        const result = await onExecuteTool('add_checklist_item', JSON.stringify({ groupId: gid.slice(0, 8), content: 'New from AI' }));
+        const result = await onExecuteTool(
+          'add_checklist_item',
+          JSON.stringify({ groupId: gid.slice(0, 8), content: 'New from AI' }),
+        );
         expect(result).toContain('Success: Added item');
         expect(result).toContain('CURRENT CHECKLIST JSON after this tool call:');
         expect(result).toContain('New from AI');
@@ -677,7 +1078,11 @@ describe('ChecklistStore', () => {
 
       await useChecklistStore.getState().applyLlmEdit('t1', 'Delete the missing task');
 
-      expect(mockAddNotification).toHaveBeenCalledWith('Some checklist changes failed', 'delete_checklist_item: item not found.', 'warning');
+      expect(mockAddNotification).toHaveBeenCalledWith(
+        'Some checklist changes failed',
+        'delete_checklist_item: item not found.',
+        'warning',
+      );
     });
 
     it('does not notify when the model corrects a failed tool call', async () => {
@@ -710,7 +1115,10 @@ describe('ChecklistStore', () => {
 
       mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]): Promise<{ finalContent: string }> => {
         const onExecuteTool = args[6] as (toolName: string, argsJson: string) => Promise<string>;
-        const result = await onExecuteTool('reorder_checklist_items', JSON.stringify({ itemId: first.id.slice(0, 8), toIndex: 1 }));
+        const result = await onExecuteTool(
+          'reorder_checklist_items',
+          JSON.stringify({ itemId: first.id.slice(0, 8), toIndex: 1 }),
+        );
         expect(result).toContain('Success: Moved item');
         return { finalContent: 'Moved one task.' };
       });
@@ -729,7 +1137,10 @@ describe('ChecklistStore', () => {
 
       mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]): Promise<{ finalContent: string }> => {
         const onExecuteTool = args[6] as (toolName: string, argsJson: string) => Promise<string>;
-        const result = await onExecuteTool('reorder_checklist_groups', JSON.stringify({ groupId: first.id.slice(0, 8), toIndex: 1 }));
+        const result = await onExecuteTool(
+          'reorder_checklist_groups',
+          JSON.stringify({ groupId: first.id.slice(0, 8), toIndex: 1 }),
+        );
         expect(result).toContain('Success: Moved group');
         return { finalContent: 'Moved one list.' };
       });
@@ -749,7 +1160,10 @@ describe('ChecklistStore', () => {
 
       mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]): Promise<{ finalContent: string }> => {
         const onExecuteTool = args[6] as (toolName: string, argsJson: string) => Promise<string>;
-        const result = await onExecuteTool('reorder_checklist_items', JSON.stringify({ itemId: item.id.slice(0, 8), toIndex: 1 }));
+        const result = await onExecuteTool(
+          'reorder_checklist_items',
+          JSON.stringify({ itemId: item.id.slice(0, 8), toIndex: 1 }),
+        );
         expect(result).toContain('Error: destination index is out of range.');
         return { finalContent: 'Could not move the task.' };
       });
@@ -771,9 +1185,21 @@ describe('ChecklistStore', () => {
 
       mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]): Promise<{ finalContent: string }> => {
         const onExecuteTool = args[6] as (toolName: string, argsJson: string, iteration: number) => Promise<string>;
-        const first = await onExecuteTool('add_checklist_item', JSON.stringify({ groupId: group.id.slice(0, 8), content: 'First' }), 1);
-        const blocked = await onExecuteTool('add_checklist_item', JSON.stringify({ groupId: group.id.slice(0, 8), content: 'Blocked' }), 1);
-        const nextRound = await onExecuteTool('add_checklist_item', JSON.stringify({ groupId: group.id.slice(0, 8), content: 'Second' }), 2);
+        const first = await onExecuteTool(
+          'add_checklist_item',
+          JSON.stringify({ groupId: group.id.slice(0, 8), content: 'First' }),
+          1,
+        );
+        const blocked = await onExecuteTool(
+          'add_checklist_item',
+          JSON.stringify({ groupId: group.id.slice(0, 8), content: 'Blocked' }),
+          1,
+        );
+        const nextRound = await onExecuteTool(
+          'add_checklist_item',
+          JSON.stringify({ groupId: group.id.slice(0, 8), content: 'Second' }),
+          2,
+        );
         expect(first).toContain('Success: Added item');
         expect(blocked).toContain('Error: only one structural checklist change is allowed per tool round');
         expect(nextRound).toContain('Success: Added item');
@@ -864,7 +1290,9 @@ describe('ChecklistStore', () => {
       mockOrchestrateLlmLoop.mockImplementation(async (...args: unknown[]): Promise<{ finalContent: string }> => {
         const onExecuteTool = args[6] as (toolName: string, argsJson: string) => Promise<string>;
         useChecklistStore.setState({ activeTopicId: 't2', groups: [groupB], items: [] });
-        await expect(onExecuteTool('add_checklist_item', JSON.stringify({ groupId: groupB.id, content: 'Wrong topic' }))).rejects.toMatchObject({
+        await expect(
+          onExecuteTool('add_checklist_item', JSON.stringify({ groupId: groupB.id, content: 'Wrong topic' })),
+        ).rejects.toMatchObject({
           name: 'AbortError',
         });
         throw new DOMException('Checklist topic changed during edit', 'AbortError');
@@ -874,7 +1302,9 @@ describe('ChecklistStore', () => {
 
       expect(useChecklistStore.getState().items).toEqual([]);
       expect(useChecklistStore.getState().lastEditSummary).toBe('');
-      expect(useChecklistStore.getState().history.map((entry) => [entry.role, entry.content])).toEqual([['user', 'Add a task']]);
+      expect(useChecklistStore.getState().history.map((entry) => [entry.role, entry.content])).toEqual([
+        ['user', 'Add a task'],
+      ]);
     });
 
     it('ignores a final edit result after the active checklist topic changes', async () => {
@@ -891,7 +1321,9 @@ describe('ChecklistStore', () => {
 
       expect(useChecklistStore.getState().groups).toEqual([groupB]);
       expect(useChecklistStore.getState().lastEditSummary).toBe('');
-      expect(useChecklistStore.getState().history.map((entry) => [entry.role, entry.content])).toEqual([['user', 'Rename a task']]);
+      expect(useChecklistStore.getState().history.map((entry) => [entry.role, entry.content])).toEqual([
+        ['user', 'Rename a task'],
+      ]);
     });
 
     it('reorders all items in a group with set_checklist_item_order', async () => {

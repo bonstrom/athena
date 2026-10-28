@@ -10,6 +10,8 @@ interface DebateStoreSlice {
   debateModelA: unknown;
   debateModelB: unknown;
   debateSending: boolean;
+  modelAActive: boolean;
+  modelBActive: boolean;
   currentPhase: string;
   streamingContentA: string;
   streamingContentB: string;
@@ -26,6 +28,8 @@ const mockDebateStore: DebateStoreSlice = {
   debateModelA: { id: 'model-a', label: 'Model A', apiModelId: 'model-a-api' },
   debateModelB: { id: 'model-b', label: 'Model B', apiModelId: 'model-b-api' },
   debateSending: false,
+  modelAActive: false,
+  modelBActive: false,
   currentPhase: 'idle',
   streamingContentA: '',
   streamingContentB: '',
@@ -106,7 +110,8 @@ const mockUseDebateStore = useDebateStore as unknown as jest.Mock<DebateStoreSli
 const mockUseAuthStore = useAuthStore as unknown as jest.Mock<{ chatWidth: string; setChatWidth: () => void }>;
 
 function setupDebateStore(overrides?: Partial<DebateStoreSlice>): void {
-  mockUseDebateStore.mockReturnValue({ ...mockDebateStore, ...overrides });
+  const active = overrides?.debateSending === true && overrides.currentPhase !== 'consensus';
+  mockUseDebateStore.mockReturnValue({ ...mockDebateStore, modelAActive: active, modelBActive: active, ...overrides });
 }
 
 function createBaseTopic(overrides?: Partial<Topic>): Topic {
@@ -331,7 +336,23 @@ describe('DebateView', () => {
     renderWithTheme(<DebateView topic={createBaseTopic()} messages={[]} />);
 
     const indicators = screen.getAllByTestId('typing-indicator');
-    expect(indicators.length).toBeGreaterThanOrEqual(3);
+    expect(indicators).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Thinking');
+  });
+
+  it('stops showing activity for a model that has finished while the other is still writing', () => {
+    setupDebateStore({
+      debateSending: true,
+      currentPhase: 'answer',
+      modelAActive: false,
+      modelBActive: true,
+      streamingContentA: 'Completed answer',
+      streamingContentB: 'Still writing',
+    });
+    renderWithTheme(<DebateView topic={createBaseTopic()} messages={[]} />);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Writing');
+    expect(screen.getByText('Completed answer')).toBeInTheDocument();
   });
 
   it('shows Continue button when last round is incomplete', () => {
