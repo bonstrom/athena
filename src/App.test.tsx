@@ -48,6 +48,15 @@ jest.mock('./store/ChatStore', () => ({
     getState: jest.fn(() => ({ initDefaults: jest.fn() })),
   },
 }));
+jest.mock('./store/PixelStore', () => ({
+  usePixelStore: {
+    // Plain function (not jest.fn) so CRA's `resetMocks` cannot wipe it.
+    getState: (): { isLoaded: boolean; loadDocuments: () => void } => ({
+      isLoaded: true,
+      loadDocuments: jest.fn(),
+    }),
+  },
+}));
 jest.mock('./services/analyticsRollupService', () => ({
   idleDeferredRollup: jest.fn(),
   rebuildAnalyticsOwnership: jest.fn((): Promise<void> => Promise.resolve()),

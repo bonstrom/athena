@@ -2,21 +2,25 @@ import { usePixelStore } from '../PixelStore';
 import { TRANSPARENT } from '../../pixel/types';
 import { DEFAULT_PALETTE } from '../../pixel/palette';
 
+// Plain functions instead of jest.fn(): CRA's `resetMocks` wipes mock
+// implementations before every test, which would make `orderBy` return
+// undefined and log bogus persistence errors.
+function mockEmptyQuery(): { reverse: () => { toArray: () => Promise<unknown[]> } } {
+  const toArray = (): Promise<unknown[]> => Promise.resolve([]);
+  return { reverse: (): { toArray: () => Promise<unknown[]> } => ({ toArray }) };
+}
+
 jest.mock('../../database/AthenaDb', () => ({
   athenaDb: {
     pixelDocuments: {
-      put: jest.fn().mockResolvedValue(undefined),
-      delete: jest.fn().mockResolvedValue(undefined),
-      orderBy: jest.fn((): unknown => ({
-        reverse: () => ({ toArray: jest.fn().mockResolvedValue([]) }),
-      })),
+      put: (): Promise<void> => Promise.resolve(),
+      delete: (): Promise<void> => Promise.resolve(),
+      orderBy: mockEmptyQuery,
     },
     pixelPalettes: {
-      put: jest.fn().mockResolvedValue(undefined),
-      delete: jest.fn().mockResolvedValue(undefined),
-      orderBy: jest.fn((): unknown => ({
-        reverse: () => ({ toArray: jest.fn().mockResolvedValue([]) }),
-      })),
+      put: (): Promise<void> => Promise.resolve(),
+      delete: (): Promise<void> => Promise.resolve(),
+      orderBy: mockEmptyQuery,
     },
   },
 }));

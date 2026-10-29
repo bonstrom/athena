@@ -300,20 +300,28 @@ describe('ChatStore', () => {
   it.each(['retry', 'context', 'continuation'] as const)(
     'STR-02 releases request ownership after %s setup fails',
     async (path) => {
-      if (path === 'context') mockGetTopicContext.mockRejectedValueOnce(new Error('Context unavailable'));
-      await useChatStore
-        .getState()
-        .sendMessageStream(
-          'Hello',
-          'topic-1',
-          path === 'retry' ? 'missing' : undefined,
-          undefined,
-          path === 'continuation' ? 'missing' : undefined,
-        )
-        .catch((): undefined => undefined);
-      expect(useChatStore.getState().sending).toBe(false);
-      expect(useChatStore.getState().abortController).toBeNull();
-      expect(useChatStore.getState().currentRequestMessageIds).toBeNull();
+      // These failure paths are expected to log; keep the test output clean.
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation((...args: unknown[]): void => {
+        void args;
+      });
+      try {
+        if (path === 'context') mockGetTopicContext.mockRejectedValueOnce(new Error('Context unavailable'));
+        await useChatStore
+          .getState()
+          .sendMessageStream(
+            'Hello',
+            'topic-1',
+            path === 'retry' ? 'missing' : undefined,
+            undefined,
+            path === 'continuation' ? 'missing' : undefined,
+          )
+          .catch((): undefined => undefined);
+        expect(useChatStore.getState().sending).toBe(false);
+        expect(useChatStore.getState().abortController).toBeNull();
+        expect(useChatStore.getState().currentRequestMessageIds).toBeNull();
+      } finally {
+        consoleErrorSpy.mockRestore();
+      }
     },
   );
 
