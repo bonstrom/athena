@@ -102,7 +102,16 @@ code {
 }
 
 .athena-message-enter {
-  animation: athena-enter 180ms ease-out both;
+  animation: athena-enter 360ms ease-out both;
+}
+
+/* Let the question lead before revealing the answer/working indicator. */
+.athena-message-answer-enter {
+  animation-delay: 400ms;
+}
+
+.athena-topic-enter {
+  animation: athena-enter 300ms ease-out both;
 }
 
 .athena-feedback {
@@ -126,6 +135,7 @@ body,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;

@@ -1,4 +1,28 @@
-import { DEFAULT_MODELS, getPayloadOverrides, LlmProvider } from '../provider';
+import { DEFAULT_MODELS, getPayloadOverrides, resolveReasoningEffort, LlmProvider } from '../provider';
+import { createUserChatModel } from '../../testUtils/fixtures';
+
+describe('resolveReasoningEffort', () => {
+  it('defaults configurable models to medium rather than the first option', () => {
+    const model = createUserChatModel({ reasoningEffort: null, reasoningEfforts: ['none', 'low', 'medium', 'high'] });
+    expect(resolveReasoningEffort(model, null)).toBe('medium');
+  });
+
+  it('preserves an explicit none or low preference when supported', () => {
+    const model = createUserChatModel({ reasoningEffort: null, reasoningEfforts: ['none', 'low', 'high'] });
+    expect(resolveReasoningEffort(model, 'none')).toBe('none');
+    expect(resolveReasoningEffort(model, 'low')).toBe('low');
+  });
+
+  it('honors fixed model effort and clamps unsupported efforts', () => {
+    expect(resolveReasoningEffort(createUserChatModel({ reasoningEffort: 'medium' }), 'low')).toBe('medium');
+    const model = createUserChatModel({ reasoningEffort: null, reasoningEfforts: ['low', 'high'] });
+    expect(resolveReasoningEffort(model, null)).toBe('low');
+  });
+
+  it('does not add an effort parameter to native-thinking models by default', () => {
+    expect(resolveReasoningEffort(createUserChatModel({ reasoningEffort: undefined }), null)).toBeNull();
+  });
+});
 
 const baseProvider: LlmProvider = {
   id: 'provider-id',

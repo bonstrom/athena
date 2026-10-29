@@ -38,8 +38,7 @@ const DebateComposer = ({ sending, canContinue, onSend, onStop, onContinue }: De
       gap={1}
       px={2}
       py={1.5}
-      sx={{ borderTop: (theme) => `1px solid ${theme.palette.divider}`, flexShrink: 0 }}
-    >
+      sx={{ borderTop: (theme) => `1px solid ${theme.palette.divider}`, flexShrink: 0 }}>
       <ToggleButtonGroup
         value={chatWidth}
         exclusive
@@ -63,8 +62,7 @@ const DebateComposer = ({ sending, canContinue, onSend, onStop, onContinue }: De
               '&:hover': { bgcolor: 'primary.dark' },
             },
           },
-        }}
-      >
+        }}>
         <ToggleButton value="sm">S</ToggleButton>
         <ToggleButton value="md">M</ToggleButton>
         <ToggleButton value="lg">L</ToggleButton>
@@ -72,6 +70,8 @@ const DebateComposer = ({ sending, canContinue, onSend, onStop, onContinue }: De
         <ToggleButton value="full">Full</ToggleButton>
       </ToggleButtonGroup>
       <TextField
+        id="athena-debate-input"
+        InputProps={{ className: 'athena-composer-input' }}
         fullWidth
         multiline
         maxRows={6}
@@ -84,19 +84,29 @@ const DebateComposer = ({ sending, canContinue, onSend, onStop, onContinue }: De
         inputProps={{ 'aria-label': 'Debate question' }}
       />
       {sending ? (
-        <IconButton aria-label="Stop debate" color="error" onClick={onStop}>
+        <IconButton
+          aria-label="Stop debate"
+          color="error"
+          onClick={onStop}>
           <StopIcon />
         </IconButton>
       ) : (
         <>
           {canContinue && (
             <Tooltip title="Continue incomplete debate">
-              <IconButton aria-label="Continue debate" color="success" onClick={onContinue}>
+              <IconButton
+                aria-label="Continue debate"
+                color="success"
+                onClick={onContinue}>
                 <PlayArrowIcon />
               </IconButton>
             </Tooltip>
           )}
-          <IconButton aria-label="Send debate question" color="primary" onClick={handleSend} disabled={!value.trim()}>
+          <IconButton
+            aria-label="Send debate question"
+            color="primary"
+            onClick={handleSend}
+            disabled={!value.trim()}>
             <SendIcon />
           </IconButton>
         </>

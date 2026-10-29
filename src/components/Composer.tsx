@@ -61,7 +61,7 @@ import { formatCost } from '../utils/currency';
 import { ENGLISH_VOICES } from '../constants/voices';
 import { Attachment } from '../database/AthenaDb';
 import { useNotificationStore } from '../store/NotificationStore';
-import { ReasoningEffort, getReasoningEfforts } from '../types/provider';
+import { ReasoningEffort, getReasoningEfforts, resolveReasoningEffort } from '../types/provider';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const VOICE_SILENCE_TIMEOUT_MS = 2000;
@@ -70,8 +70,8 @@ const MIN_INLINE_INPUT_WIDTH = 320;
 const REASONING_EFFORT_OPTIONS: { value: ReasoningEffort; label: string; title: string }[] = [
   { value: 'none', label: 'None', title: 'No reasoning' },
   { value: 'low', label: 'Low', title: 'Low Effort' },
-  { value: 'medium', label: 'Med', title: 'Medium Effort' },
-  { value: 'high', label: 'High', title: 'High Effort (Default)' },
+  { value: 'medium', label: 'Med', title: 'Medium Effort (Default)' },
+  { value: 'high', label: 'High', title: 'High Effort' },
   { value: 'xhigh', label: 'X-Hi', title: 'Extra High Effort' },
   { value: 'max', label: 'Max', title: 'Max Effort (Best reasoning)' },
 ];
@@ -159,9 +159,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
     const efforts = getReasoningEfforts(selectedModel);
     return !efforts || efforts.includes(o.value);
   });
-  const currentEffort = effortOptions.some((o) => o.value === storedReasoningEffort)
-    ? (storedReasoningEffort ?? 'high')
-    : (effortOptions[0]?.value ?? 'high');
+  const currentEffort = resolveReasoningEffort(selectedModel, storedReasoningEffort) ?? 'medium';
   const temperature = useChatStore((s) => s.temperature);
   const setTemperature = useChatStore((s) => s.setTemperature);
   const currentTopicId = useChatStore((s) => s.currentTopicId);
@@ -1696,18 +1694,9 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                 position: 'relative',
                 width: '100%',
                 borderRadius: 2,
-                transition: 'background-color 180ms ease, box-shadow 180ms ease',
-                '&:focus-within': {
-                  boxShadow: (theme) => `0 0 24px ${alpha(theme.palette.primary.main, 0.12)}`,
-                },
-                backgroundColor: (theme) =>
-                  alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.06 : 0.025),
-                '&:hover': {
-                  backgroundColor: (theme) =>
-                    alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.09 : 0.045),
-                },
               }}>
               <TextField
+                id="athena-chat-input"
                 fullWidth
                 multiline
                 inputRef={textFieldRef}
@@ -1722,6 +1711,7 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                 onKeyDown={handleKeyDown}
                 disabled={sending}
                 InputProps={{
+                  className: 'athena-composer-input',
                   endAdornment: (
                     <InputAdornment
                       position="end"
@@ -1764,17 +1754,11 @@ const Composer: React.FC<ComposerProps> = ({ sending, onSend, isMobile, forksCol
                     paddingBottom: '6px !important',
                     fontSize: `${chatFontSize}px !important`,
                     lineHeight: '1.5 !important',
-                    backgroundColor: 'transparent',
-                    transition: 'background-color 180ms ease, box-shadow 180ms ease',
                     '& fieldset': {
                       borderColor: (theme: Theme) => alpha(theme.palette.primary.main, 0.4),
                     },
                     '&:hover fieldset': {
                       borderColor: (theme: Theme) => alpha(theme.palette.primary.main, 0.7),
-                    },
-                    '&.Mui-focused': {
-                      boxShadow: (theme: Theme) => `0 0 0 3px ${alpha(theme.palette.primary.main, 0.12)}`,
-                      '& fieldset': { borderColor: 'primary.main' },
                     },
                     '&.Mui-disabled fieldset': {
                       borderColor: 'action.disabledBackground',

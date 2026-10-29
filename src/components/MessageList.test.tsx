@@ -1,13 +1,21 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { useMediaQuery } from '@mui/material';
 import MessageList from './MessageList';
 import { useParams } from 'react-router-dom';
 import { useScrollToBottom, useSticky } from 'react-scroll-to-bottom';
 import { useChatStore } from '../store/ChatStore';
 import { useUiStore } from '../store/UiStore';
+import { useAuthStore } from '../store/AuthStore';
+import { useProviderStore } from '../store/ProviderStore';
 import type { Message } from '../database/AthenaDb';
 import { createMessage, selectorize } from '../testUtils';
 
 let mockDeferScrollChildren = false;
+
+jest.mock('@mui/material', () => ({
+  ...jest.requireActual<typeof import('@mui/material')>('@mui/material'),
+  useMediaQuery: jest.fn(),
+}));
 
 jest.mock('react-scroll-to-bottom', () => {
   const { useEffect, useState } = jest.requireActual<typeof import('react')>('react');
@@ -29,7 +37,11 @@ jest.mock('react-scroll-to-bottom', () => {
 
 jest.mock('react-router-dom', () => ({
   useParams: jest.fn(),
+  useNavigate: (): jest.Mock => jest.fn(),
 }));
+
+jest.mock('../store/AuthStore', () => ({ useAuthStore: jest.fn() }));
+jest.mock('../store/ProviderStore', () => ({ useProviderStore: jest.fn() }));
 
 jest.mock('../store/ChatStore', () => ({
   useChatStore: jest.fn(),
@@ -78,14 +90,17 @@ const mockUseUiStore = useUiStore as unknown as jest.Mock<{ showAllMessages: boo
 describe('MessageList', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(useMediaQuery).mockReturnValue(false);
     mockDeferScrollChildren = false;
     mockUseParams.mockReturnValue({ topicId: 'topic-1' });
     mockUseScrollToBottom.mockReturnValue(jest.fn());
     mockUseSticky.mockReturnValue([true]);
     selectorize(mockUseUiStore, { showAllMessages: false });
+    selectorize(jest.mocked(useAuthStore), { userName: 'Daniel' });
+    selectorize(jest.mocked(useProviderStore), { hasAnyApiKey: (): boolean => true });
   });
 
-  it('shows Athena empty state when there are no messages', () => {
+  it('reuses the home welcome screen when there are no messages', () => {
     selectorize(mockUseChatStore, {
       visibleMessageCount: 20,
       increaseVisibleMessageCount: jest.fn(),
@@ -98,8 +113,10 @@ describe('MessageList', () => {
       />,
     );
 
-    expect(screen.getByText('Athena')).toBeInTheDocument();
+    expect(screen.getByText('Hi, Daniel')).toBeInTheDocument();
+    expect(screen.getByText('What would you like to talk about?')).toBeInTheDocument();
     expect(screen.getByAltText('Athena Logo')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Write a message' })).not.toBeInTheDocument();
   });
 
   it('animates live arrivals but not history, streamed updates, or reopened conversations', () => {
@@ -215,7 +232,70 @@ describe('MessageList', () => {
       />,
     );
     expect((await screen.findByText('First question')).parentElement).toHaveClass('athena-message-enter');
+    expect(screen.getByText('First question').parentElement).not.toHaveClass('athena-message-answer-enter');
     expect(screen.getByText('First answer').parentElement).toHaveClass('athena-message-enter');
+    expect(screen.getByText('First answer').parentElement).toHaveClass('athena-message-answer-enter');
+
+    const answer = screen.getByText('First answer').parentElement;
+    rerender(
+      <MessageList
+        messages={[messages[0], { ...messages[1], content: 'Streaming answer' }]}
+        maxContextMessages={10}
+      />,
+    );
+    expect(screen.getByText('Streaming answer').parentElement).toBe(answer);
+    expect(answer).toHaveClass('athena-message-answer-enter');
+  });
+
+  it('expands new bubbles once and stages the answer after the question', async () => {
+    jest.useFakeTimers();
+    try {
+      const state = { visibleMessageCount: 20, increaseVisibleMessageCount: jest.fn() };
+      selectorize(mockUseChatStore, { ...state, currentRequestMessageIds: null });
+      const { rerender } = render(<MessageList messages={[]} maxContextMessages={10} />);
+      selectorize(mockUseChatStore, {
+        ...state,
+        currentRequestMessageIds: { userMessageId: 'q', assistantMessageId: 'a' },
+      });
+      const question = createMessage({ id: 'q', content: 'Question' });
+      const answer = createMessage({ id: 'a', type: 'assistant', parentMessageId: 'q', content: 'Answer' });
+      rerender(<MessageList messages={[question, answer]} maxContextMessages={10} />);
+      const questionEntrance = screen.getByText('Question').closest('.MuiCollapse-root');
+      const answerEntrance = screen.getByText('Answer').closest('.MuiCollapse-root');
+      expect(questionEntrance).not.toHaveClass('MuiCollapse-hidden');
+      expect(answerEntrance).toHaveClass('MuiCollapse-hidden');
+
+      await act(async (): Promise<void> => {
+        jest.advanceTimersByTime(400);
+        await Promise.resolve();
+      });
+      expect(answerEntrance).not.toHaveClass('MuiCollapse-hidden');
+      await act(async (): Promise<void> => {
+        jest.advanceTimersByTime(360);
+        await Promise.resolve();
+      });
+      expect(answerEntrance).toHaveClass('MuiCollapse-entered');
+      rerender(<MessageList messages={[question, { ...answer, content: 'Answer continues' }]} maxContextMessages={10} />);
+      expect(screen.getByText('Answer continues').closest('.MuiCollapse-root')).toBe(answerEntrance);
+      expect(answerEntrance).toHaveClass('MuiCollapse-entered');
+      expect(answerEntrance).toHaveStyle({ height: 'auto' });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('shows new answers immediately when reduced motion is enabled', () => {
+    jest.mocked(useMediaQuery).mockReturnValue(true);
+    const state = { visibleMessageCount: 20, increaseVisibleMessageCount: jest.fn() };
+    selectorize(mockUseChatStore, { ...state, currentRequestMessageIds: null });
+    const { rerender } = render(<MessageList messages={[]} maxContextMessages={10} />);
+    selectorize(mockUseChatStore, {
+      ...state,
+      currentRequestMessageIds: { userMessageId: 'q', assistantMessageId: 'a' },
+    });
+    const answer = createMessage({ id: 'a', type: 'assistant', content: 'Immediate answer' });
+    rerender(<MessageList messages={[answer]} maxContextMessages={10} />);
+    expect(screen.getByText('Immediate answer').closest('.MuiCollapse-root')).toHaveClass('MuiCollapse-entered');
   });
 
   it('shows load older button and triggers increaseVisibleMessageCount', () => {

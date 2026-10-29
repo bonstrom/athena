@@ -25,6 +25,7 @@ import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import GridOnIcon from '@mui/icons-material/GridOn';
 import SettingsIcon from '@mui/icons-material/Settings';
 import LogoutIcon from '@mui/icons-material/Logout';
+import ModeBadge from './ModeBadge';
 
 export const Sidebar = (): JSX.Element => {
   const navigate = useNavigate();
@@ -70,20 +71,26 @@ export const Sidebar = (): JSX.Element => {
   };
 
   return (
-    <Box display="flex" flexDirection="column" height="100%">
+    <Box
+      display="flex"
+      flexDirection="column"
+      height="100%">
       <SidebarHeader />
 
       <GlobalSearch />
 
-      <Box px={2} pt={0}>
-        <ButtonGroup variant="contained" fullWidth>
+      <Box
+        px={2}
+        pt={0}>
+        <ButtonGroup
+          variant="contained"
+          fullWidth>
           <Button
             startIcon={<AddIcon />}
             onClick={(): void => {
               void handleCreate();
             }}
-            sx={{ flexGrow: 1 }}
-          >
+            sx={{ flexGrow: 1 }}>
             New Topic
           </Button>
           <Button
@@ -93,8 +100,7 @@ export const Sidebar = (): JSX.Element => {
             aria-haspopup="true"
             aria-expanded={newTopicMenuAnchor ? 'true' : undefined}
             onClick={(e): void => setNewTopicMenuAnchor(e.currentTarget)}
-            sx={{ px: 0, minWidth: 'unset', width: 28, flexShrink: 0 }}
-          >
+            sx={{ px: 0, minWidth: 'unset', width: 28, flexShrink: 0 }}>
             <ArrowDropDownIcon />
           </Button>
         </ButtonGroup>
@@ -104,16 +110,19 @@ export const Sidebar = (): JSX.Element => {
           open={Boolean(newTopicMenuAnchor)}
           onClose={(): void => setNewTopicMenuAnchor(null)}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        >
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
           <MenuItem
             dense
             onClick={(): void => {
               setNewTopicMenuAnchor(null);
               void handleCreate();
             }}
-            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}
-          >
+            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}>
+            <Box
+              component="span"
+              sx={{ mr: 1 }}>
+              <ModeBadge compact />
+            </Box>{' '}
             New Topic
           </MenuItem>
           <MenuItem
@@ -121,8 +130,15 @@ export const Sidebar = (): JSX.Element => {
             onClick={(): void => {
               void handleCreateDebate();
             }}
-            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}
-          >
+            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}>
+            <Box
+              component="span"
+              sx={{ mr: 1 }}>
+              <ModeBadge
+                mode="debate"
+                compact
+              />
+            </Box>{' '}
             New Debate
           </MenuItem>
           <MenuItem
@@ -130,8 +146,15 @@ export const Sidebar = (): JSX.Element => {
             onClick={(): void => {
               void handleCreateCurator();
             }}
-            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}
-          >
+            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}>
+            <Box
+              component="span"
+              sx={{ mr: 1 }}>
+              <ModeBadge
+                mode="curator"
+                compact
+              />
+            </Box>{' '}
             New Course
           </MenuItem>
           <MenuItem
@@ -139,20 +162,34 @@ export const Sidebar = (): JSX.Element => {
             onClick={(): void => {
               void handleCreateChecklist();
             }}
-            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}
-          >
+            sx={{ fontSize: '0.8rem', minHeight: 'unset', py: 0.5 }}>
+            <Box
+              component="span"
+              sx={{ mr: 1 }}>
+              <ModeBadge
+                mode="checklist"
+                compact
+              />
+            </Box>{' '}
             New Checklist
           </MenuItem>
         </Menu>
       </Box>
 
-      <Box id="sidebar-scroll-container" flexGrow={1} overflow="auto" px={1} mt={1}>
+      <Box
+        id="sidebar-scroll-container"
+        flexGrow={1}
+        overflow="auto"
+        px={1}
+        mt={1}>
         <TopicList />
       </Box>
 
       <Divider sx={{ my: 1 }} />
 
-      <Box px={2} pb={2}>
+      <Box
+        px={2}
+        pb={2}>
         <Button
           variant="text"
           fullWidth
@@ -161,8 +198,7 @@ export const Sidebar = (): JSX.Element => {
             if (isMobile) closeDrawer();
             void navigate(`/pixel`);
           }}
-          sx={{ mb: 1, justifyContent: 'flex-start', color: 'text.secondary' }}
-        >
+          sx={{ mb: 1, justifyContent: 'flex-start', color: 'text.secondary' }}>
           Pixel Art
         </Button>
 
@@ -174,8 +210,7 @@ export const Sidebar = (): JSX.Element => {
             if (isMobile) closeDrawer();
             void navigate(`/settings`);
           }}
-          sx={{ mb: 1, justifyContent: 'flex-start', color: 'text.secondary' }}
-        >
+          sx={{ mb: 1, justifyContent: 'flex-start', color: 'text.secondary' }}>
           Settings
         </Button>
 
@@ -187,8 +222,7 @@ export const Sidebar = (): JSX.Element => {
           onClick={(): void => {
             setConfirmLogoutOpen(true);
           }}
-          sx={{ mb: 1, justifyContent: 'flex-start', color: 'text.secondary' }}
-        >
+          sx={{ mb: 1, justifyContent: 'flex-start', color: 'text.secondary' }}>
           Logout
         </Button>
 
@@ -197,10 +231,14 @@ export const Sidebar = (): JSX.Element => {
         </Box>
       </Box>
 
-      <Dialog open={confirmLogoutOpen} onClose={(): void => setConfirmLogoutOpen(false)}>
+      <Dialog
+        open={confirmLogoutOpen}
+        onClose={(): void => setConfirmLogoutOpen(false)}>
         <DialogTitle>Confirm Logout</DialogTitle>
         <DialogContent>
-          <DialogContentText>Are you sure you want to log out? You will need to enter your API key again to return.</DialogContentText>
+          <DialogContentText>
+            Are you sure you want to log out? You will need to enter your API key again to return.
+          </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={(): void => setConfirmLogoutOpen(false)}>Cancel</Button>
@@ -209,8 +247,7 @@ export const Sidebar = (): JSX.Element => {
               setConfirmLogoutOpen(false);
               logout();
             }}
-            color="error"
-          >
+            color="error">
             Logout
           </Button>
         </DialogActions>

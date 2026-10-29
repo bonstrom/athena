@@ -522,3 +522,15 @@ export function getReasoningEfforts(model: Pick<UserChatModel, 'id' | 'apiModelI
   const def = DEFAULT_MODELS.find((m) => m.id === model.id || m.apiModelId === model.apiModelId);
   return def?.reasoningEfforts;
 }
+
+/** Shared by the effort picker and payload builder so their defaults agree. */
+export function resolveReasoningEffort(
+  model: Pick<UserChatModel, 'id' | 'apiModelId' | 'reasoningEfforts' | 'reasoningEffort'>,
+  preference: ReasoningEffort | null | undefined,
+): ReasoningEffort | null {
+  const supported = getReasoningEfforts(model);
+  // Native-thinking models without an effort setting retain their provider default.
+  const defaultEffort = model.reasoningEffort === null || supported ? 'medium' : null;
+  const effort = model.reasoningEffort ?? preference ?? defaultEffort;
+  return effort && supported && !supported.includes(effort) ? (supported[0] ?? null) : effort;
+}

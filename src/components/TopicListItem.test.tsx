@@ -5,7 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useUiStore } from '../store/UiStore';
 import { useAuthStore } from '../store/AuthStore';
 import { useTopicStore } from '../store/TopicStore';
-import { createTopic } from '../testUtils';
+import { createTopic, selectorize } from '../testUtils';
 
 const mockNavigate: jest.MockedFunction<(path: string) => void> = jest.fn();
 const mockCloseDrawer: jest.MockedFunction<() => void> = jest.fn();
@@ -62,14 +62,14 @@ describe('TopicListItem', () => {
 
     mockUseNavigate.mockReturnValue(mockNavigate);
     mockUseParams.mockReturnValue({ topicId: 'topic-1' });
-    mockUseUiStore.mockReturnValue({
+    selectorize(mockUseUiStore, {
       isMobile: true,
       closeDrawer: mockCloseDrawer,
       selectedTopicIds: new Set<string>(),
       toggleTopicSelection: jest.fn(),
     });
-    mockUseAuthStore.mockReturnValue({ chatFontSize: 16 });
-    mockUseTopicStore.mockReturnValue({
+    selectorize(mockUseAuthStore, { chatFontSize: 16 });
+    selectorize(mockUseTopicStore, {
       renameTopic: (...args: [string, string]): Promise<void> => mockRenameTopic(...args),
       deleteTopic: (...args: [string]): Promise<void> => mockDeleteTopic(...args),
     });
@@ -82,6 +82,32 @@ describe('TopicListItem', () => {
 
     expect(mockCloseDrawer).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith('/chat/topic-1');
+  });
+
+  it('does not mount a context preview or rerender an unchanged row', async () => {
+    const { rerender } = render(<TopicListItem topic={testTopic} />);
+    expect(screen.queryByTestId('topic-context-dialog')).not.toBeInTheDocument();
+    const renders = mockUseAuthStore.mock.calls.length;
+    rerender(<TopicListItem topic={testTopic} />);
+    expect(mockUseAuthStore.mock.calls).toHaveLength(renders);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Topic options' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit Context' }));
+    expect(await screen.findByTestId('topic-context-dialog')).toBeInTheDocument();
+  });
+
+  it.each([undefined, 'topic'] as const)('omits the chat icon for mode %s', (mode) => {
+    render(<TopicListItem topic={createTopic({ mode })} />);
+    expect(screen.queryByRole('img', { name: 'Chat' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { mode: 'debate', label: 'Debate' },
+    { mode: 'curator', label: 'Curator' },
+    { mode: 'checklist', label: 'Checklist' },
+  ] as const)('keeps the $label icon', ({ mode, label }) => {
+    render(<TopicListItem topic={createTopic({ mode })} />);
+    expect(screen.getByRole('img', { name: label })).toBeInTheDocument();
   });
 
   it('shows the full topic name in a tooltip when the name is truncated', async () => {
@@ -114,7 +140,8 @@ describe('TopicListItem', () => {
     fireEvent.click(screen.getByLabelText('Topic options'));
     fireEvent.click(screen.getByRole('menuitem', { name: /rename/i }));
 
-    const input = screen.getByLabelText('Topic name');
+    const input = await screen.findByLabelText('Topic name');
+    expect(input).toHaveFocus();
     fireEvent.change(input, { target: { value: 'Renamed Topic' } });
     fireEvent.click(screen.getByLabelText('Save topic name'));
 
@@ -128,11 +155,59 @@ describe('TopicListItem', () => {
 
     fireEvent.click(screen.getByLabelText('Topic options'));
     fireEvent.click(screen.getByRole('menuitem', { name: /^Delete$/i }));
+    await screen.findByRole('dialog');
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
       expect(mockDeleteTopic).toHaveBeenCalledWith('topic-1');
       expect(mockNavigate).toHaveBeenCalledWith('/');
     });
+  });
+
+  it('hands focus from the menu to confirmation without hiding a focused ancestor', async () => {
+    const root = document.createElement('div');
+    root.id = 'root';
+    document.body.appendChild(root);
+    const hiddenFocusedAncestors: HTMLElement[] = [];
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- called with an explicit receiver below
+    const originalSetAttribute = HTMLElement.prototype.setAttribute;
+    const attributeSpy = jest.spyOn(HTMLElement.prototype, 'setAttribute').mockImplementation(function (
+      this: HTMLElement,
+      name: string,
+      value: string,
+    ): void {
+      if (name === 'aria-hidden' && value === 'true' && this.contains(document.activeElement)) {
+        hiddenFocusedAncestors.push(this);
+      }
+      originalSetAttribute.call(this, name, value);
+    });
+    const { unmount } = render(<TopicListItem topic={testTopic} />, { container: root });
+    try {
+      const trigger = screen.getByRole('button', { name: 'Topic options' });
+      trigger.focus();
+      fireEvent.click(trigger);
+      const deleteOption = screen.getByRole('menuitem', { name: /^Delete$/i });
+      deleteOption.focus();
+      fireEvent.click(deleteOption);
+      const dialog = await screen.findByRole('dialog');
+      await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+      expect(hiddenFocusedAncestors).toEqual([]);
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(hiddenFocusedAncestors).toEqual([]);
+    } finally {
+      unmount();
+      attributeSpy.mockRestore();
+      root.remove();
+    }
+  });
+
+  it('restores focus to the topic options button when dismissing the menu', async () => {
+    render(<TopicListItem topic={testTopic} />);
+    const trigger = screen.getByRole('button', { name: 'Topic options' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 });

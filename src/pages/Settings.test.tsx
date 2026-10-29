@@ -8,6 +8,7 @@ import { BackupService } from '../services/backupService';
 import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
 import { BackupMode, BackupStatus } from '../store/BackupStore';
 import { DEFAULT_PROVIDERS } from '../types/provider';
+import { FontId, fontOptions } from '../constants/fonts';
 
 interface PredefinedPrompt {
   id: string;
@@ -22,6 +23,8 @@ interface AuthState {
   scratchpadRules: string;
   chatWidth: string;
   chatFontSize: number;
+  fontId: FontId;
+  setFontId: jest.MockedFunction<(fontId: FontId) => void>;
   setUserName: jest.MockedFunction<(name: string) => void>;
   setBackupInterval: jest.MockedFunction<(minutes: number) => void>;
   setCustomInstructions: jest.MockedFunction<(instructions: string) => void>;
@@ -147,6 +150,8 @@ function buildAuthState(): AuthState {
     scratchpadRules: 'Rule set',
     chatWidth: 'lg',
     chatFontSize: 16,
+    fontId: 'system',
+    setFontId: jest.fn(),
     setUserName: jest.fn(),
     setBackupInterval: jest.fn(),
     setCustomInstructions: jest.fn(),
@@ -335,6 +340,26 @@ describe('Settings page', () => {
   });
 
   // ── Tab 0: General ──
+
+  it('offers five distinct font choices plus system default with an on-demand preview', async () => {
+    const authState = buildAuthState();
+    mockUseAuthStore.mockReturnValue(authState);
+    render(<Settings />);
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'App Font' }));
+    for (const font of fontOptions) {
+      const option = screen.getByRole('option', { name: `${font.label} — ${font.description}` });
+      expect(getComputedStyle(option).fontFamily).toContain(font.family.split(',')[0].replace(/"/g, ''));
+    }
+    fireEvent.click(screen.getByRole('option', { name: 'Comic Neue — Playful' }));
+    expect(authState.setFontId).toHaveBeenCalledWith('comic-neue');
+    expect(screen.queryByText(/The quick brown fox/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview font' }));
+    const preview = screen.getByRole('dialog', { name: 'Font preview' });
+    expect(screen.getByText(/The quick brown fox/)).toBeInTheDocument();
+    expect(within(preview).getByText(/The quick brown fox/)).toHaveStyle({ fontSize: '16px' });
+    fireEvent.keyDown(preview, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Font preview' })).not.toBeInTheDocument());
+  });
 
   it('shows "Settings saved successfully" after save', async () => {
     render(<Settings />);

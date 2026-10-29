@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
+import './fonts.css';
 import 'katex/dist/katex.min.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
@@ -10,9 +11,9 @@ import { useAuthStore } from './store/AuthStore';
 import DatabaseGate from './components/DatabaseGate';
 
 const AppThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { themeMode, colorTheme } = useAuthStore();
+  const { themeMode, colorTheme, fontId } = useAuthStore();
 
-  const theme = useMemo(() => getAppTheme(themeMode, colorTheme), [themeMode, colorTheme]);
+  const theme = useMemo(() => getAppTheme(themeMode, colorTheme, fontId), [themeMode, colorTheme, fontId]);
 
   return (
     <ThemeProvider theme={theme}>

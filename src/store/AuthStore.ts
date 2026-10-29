@@ -4,6 +4,7 @@ import { PredefinedPrompt, athenaDb } from '../database/AthenaDb';
 import { DEFAULT_SCRATCHPAD_RULES } from '../constants';
 import { DEFAULT_VOICE_ID } from '../constants/voices';
 import { CurrencyCode } from '../utils/currency';
+import { FontId, isFontId } from '../constants/fonts';
 
 function getDeviceId(): string {
   let deviceId = localStorage.getItem('analyticsDeviceId');
@@ -22,6 +23,7 @@ interface AuthState {
   scratchpadRules: string;
   chatWidth: 'sm' | 'md' | 'lg' | 'xl' | 'full';
   chatFontSize: number;
+  fontId: FontId;
   themeMode: 'light' | 'dark';
   colorTheme: string;
   checklistCelebrations: boolean;
@@ -66,6 +68,7 @@ interface AuthState {
   setScratchpadRules: (rules: string) => void;
   setChatWidth: (width: 'sm' | 'md' | 'lg' | 'xl' | 'full') => void;
   setChatFontSize: (size: number) => void;
+  setFontId: (fontId: FontId) => void;
   setThemeMode: (mode: 'light' | 'dark') => void;
   setColorTheme: (theme: string) => void;
   setDateFormat: (format: 'sv-SE' | 'en-GB' | 'en-US') => void;
@@ -90,6 +93,7 @@ export const useAuthStore = create<AuthState>((set) => {
   const storedScratchpadRules = localStorage.getItem('scratchpadRules') ?? DEFAULT_SCRATCHPAD_RULES;
   const storedChatWidth = (localStorage.getItem('chatWidth') as 'sm' | 'md' | 'lg' | 'full' | null) ?? 'lg';
   const storedChatFontSize = Number(localStorage.getItem('chatFontSize') ?? '16');
+  const storedFontId = localStorage.getItem('fontId');
   const storedThemeMode = (localStorage.getItem('themeMode') as 'light' | 'dark' | null) ?? 'dark';
   const storedColorTheme = localStorage.getItem('colorTheme') ?? 'default';
   const storedDateFormat = (localStorage.getItem('dateFormat') as 'sv-SE' | 'en-GB' | 'en-US' | null) ?? 'sv-SE';
@@ -119,6 +123,7 @@ export const useAuthStore = create<AuthState>((set) => {
     scratchpadRules: storedScratchpadRules,
     chatWidth: storedChatWidth,
     chatFontSize: storedChatFontSize,
+    fontId: isFontId(storedFontId) ? storedFontId : 'system',
     themeMode: storedThemeMode,
     colorTheme: storedColorTheme,
     checklistCelebrations: localStorage.getItem('checklistCelebrations') !== 'false',
@@ -150,6 +155,7 @@ export const useAuthStore = create<AuthState>((set) => {
       localStorage.removeItem('customInstructions');
       localStorage.removeItem('chatWidth');
       localStorage.removeItem('chatFontSize');
+      localStorage.removeItem('fontId');
       localStorage.removeItem('messageRetrievalEnabled');
       localStorage.removeItem('backupInterval');
       localStorage.removeItem('scratchpadRules');
@@ -179,6 +185,7 @@ export const useAuthStore = create<AuthState>((set) => {
         customInstructions: '',
         chatWidth: 'lg',
         chatFontSize: 16,
+        fontId: 'system',
         themeMode: 'dark',
         colorTheme: 'default',
         dateFormat: 'sv-SE',
@@ -283,6 +290,11 @@ export const useAuthStore = create<AuthState>((set) => {
     setChatFontSize: (size: number): void => {
       localStorage.setItem('chatFontSize', String(size));
       set({ chatFontSize: size });
+    },
+    setFontId: (fontId): void => {
+      if (!isFontId(fontId)) return;
+      localStorage.setItem('fontId', fontId);
+      set({ fontId });
     },
     setThemeMode: (mode: 'light' | 'dark'): void => {
       localStorage.setItem('themeMode', mode);

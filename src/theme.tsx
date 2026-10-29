@@ -1,4 +1,5 @@
 import { alpha, createTheme, Theme } from '@mui/material/styles';
+import { FontId, getFontFamily } from './constants/fonts';
 
 declare module '@mui/material/styles' {
   interface Palette {
@@ -124,12 +125,26 @@ export const colorPresets: ColorPreset[] = [
   },
 ];
 
-export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
+export const getAppTheme = (mode: ThemeMode, presetId: string, fontId: FontId = 'system'): Theme => {
   const preset = colorPresets.find((p) => p.id === presetId) ?? colorPresets[0];
   const palette = mode === 'light' ? preset.light : preset.dark;
+  const fontFamily = getFontFamily(fontId);
+  // Opaque, low-strength blends keep surfaces predictable at every elevation.
+  const tintSurface = (base: string, strength: number): string => {
+    const channels = [1, 3, 5].map((offset) => {
+      const neutral = parseInt(base.slice(offset, offset + 2), 16);
+      const accent = parseInt(palette.primary.slice(offset, offset + 2), 16);
+      return Math.round(neutral * (1 - strength) + accent * strength);
+    });
+    return `rgb(${channels.join(', ')})`;
+  };
+  const pageSurface = tintSurface(mode === 'dark' ? '#13151a' : '#e9ebee', mode === 'dark' ? 0.025 : 0.018);
+  // Keep panels neutral so the accent does not become a wash over the whole UI.
+  const panelSurface = mode === 'dark' ? '#1d2027' : '#f3f4f6';
 
   return createTheme({
     typography: {
+      fontFamily,
       button: { fontWeight: 600, letterSpacing: 0 },
       body1: { lineHeight: 1.65, letterSpacing: 0 },
       body2: { lineHeight: 1.6, letterSpacing: 0 },
@@ -146,13 +161,14 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
         contrastText: '#ffffff',
       },
       background: {
-        default: mode === 'dark' ? '#13151a' : '#f5f6fa',
-        paper: mode === 'dark' ? '#1d2027' : '#ffffff',
+        default: pageSurface,
+        paper: panelSurface,
       },
       text: {
         primary: mode === 'dark' ? '#ffffff' : 'rgba(0, 0, 0, 0.87)',
-        secondary: mode === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)',
+        secondary: mode === 'dark' ? '#c4c8d0' : '#4b505a',
       },
+      divider: mode === 'dark' ? '#3b404a' : '#cbd0d9',
       assistant: {
         main: palette.assistant,
         contrastText: mode === 'dark' ? '#ffffff' : 'rgba(0, 0, 0, 0.87)',
@@ -166,8 +182,9 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
       MuiCssBaseline: {
         styleOverrides: {
           body: {
+            '--font-family': fontFamily,
             '--athena-accent-soft': alpha(palette.primary, 0.16),
-            '--scrollbar-track': mode === 'dark' ? '#121212' : '#f5f5f5',
+            '--scrollbar-track': pageSurface,
             '--scrollbar-thumb': mode === 'dark' ? '#606060' : '#b0b0b0',
           },
           a: {
@@ -209,6 +226,7 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
         styleOverrides: {
           root: {
             borderRadius: 8,
+            backgroundImage: 'none',
           },
         },
       },
@@ -216,6 +234,19 @@ export const getAppTheme = (mode: ThemeMode, presetId: string): Theme => {
         styleOverrides: {
           root: {
             borderRadius: 8,
+            '&.athena-composer-input': {
+              backgroundColor: panelSurface,
+              '&:not(.Mui-disabled):hover .MuiOutlinedInput-notchedOutline': {
+                borderColor: alpha(palette.primary, 0.7),
+              },
+              '&.Mui-focused': {
+                backgroundColor: alpha(palette.primary, mode === 'dark' ? 0.05 : 0.025),
+                '& .MuiOutlinedInput-notchedOutline': {
+                  borderColor: palette.primary,
+                  borderWidth: 2,
+                },
+              },
+            },
           },
         },
       },

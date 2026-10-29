@@ -16,6 +16,9 @@ import {
   Stack,
   useMediaQuery,
   useTheme,
+  IconButton,
+  Tooltip,
+  Popover,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -25,6 +28,7 @@ import {
   Storage as StorageIcon,
   BarChart as BarChartIcon,
   Info as InfoIcon,
+  TextFields as FontPreviewIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../store/AuthStore';
 import { BackupService } from '../services/backupService';
@@ -35,6 +39,7 @@ import { DEFAULT_PROVIDERS, getApiKey as getProviderApiKey } from '../types/prov
 import { DEFAULT_SCRATCHPAD_RULES, SCRATCHPAD_LIMIT } from '../constants';
 import { formatCost, CurrencyCode } from '../utils/currency';
 import { ENGLISH_VOICES } from '../constants/voices';
+import { fontOptions, getFontFamily, isFontId } from '../constants/fonts';
 import ThemeSelector from '../components/ThemeSelector';
 import ImportDialog from '../components/ImportDialog';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -71,6 +76,7 @@ const Settings: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [activeTab, setActiveTab] = useState(0);
+  const [fontPreviewAnchor, setFontPreviewAnchor] = useState<HTMLElement | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
     title: string;
     message: string;
@@ -85,6 +91,8 @@ const Settings: React.FC = () => {
     scratchpadRules,
     chatWidth,
     chatFontSize,
+    fontId = 'system',
+    setFontId,
     setUserName,
     setBackupInterval,
     setCustomInstructions,
@@ -455,6 +463,83 @@ const Settings: React.FC = () => {
                   Appearance
                 </Typography>
                 <ThemeSelector />
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2 }}>
+                  <FormControl
+                    fullWidth
+                    size="small"
+                    sx={{ minWidth: 0 }}>
+                    <InputLabel id="app-font-label">App Font</InputLabel>
+                    <Select
+                      labelId="app-font-label"
+                      value={fontId}
+                      label="App Font"
+                      onChange={(e): void => {
+                        if (isFontId(e.target.value)) setFontId(e.target.value);
+                      }}
+                      sx={{ fontFamily: getFontFamily(fontId) }}>
+                      {fontOptions.map((font) => (
+                        <MenuItem
+                          key={font.id}
+                          value={font.id}
+                          sx={{ fontFamily: font.family }}>
+                          {font.label} — {font.description}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Tooltip title="Preview font">
+                    <IconButton
+                      aria-label="Preview font"
+                      aria-haspopup="dialog"
+                      aria-expanded={Boolean(fontPreviewAnchor)}
+                      aria-controls={fontPreviewAnchor ? 'font-preview' : undefined}
+                      onClick={(event): void => setFontPreviewAnchor(event.currentTarget)}>
+                      <FontPreviewIcon />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+                <Popover
+                  open={Boolean(fontPreviewAnchor)}
+                  anchorEl={fontPreviewAnchor}
+                  onClose={(): void => setFontPreviewAnchor(null)}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                  transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+                  <Box
+                    id="font-preview"
+                    role="dialog"
+                    aria-label="Font preview"
+                    sx={{ p: 2, width: 320, maxWidth: 'calc(100vw - 32px)', boxSizing: 'border-box' }}>
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                      {fontOptions.find((font) => font.id === fontId)?.label} · {chatFontSize}px
+                    </Typography>
+                    <Typography sx={{ fontFamily: getFontFamily(fontId), fontSize: chatFontSize }}>
+                      The quick brown fox jumps over the lazy dog. 0123456789
+                    </Typography>
+                  </Box>
+                </Popover>
+                <Typography variant="caption" color="text.secondary">
+                  Applies to the interface and conversations. Code blocks keep their monospace font.
+                </Typography>
+                <FormControl
+                  fullWidth
+                  size="small"
+                  sx={{ mt: 2 }}>
+                  <InputLabel>Chat Font Size</InputLabel>
+                  <Select
+                    value={chatFontSize}
+                    label="Chat Font Size"
+                    onChange={(e): void => setChatFontSize(e.target.value as number)}
+                    inputProps={
+                      { 'data-testid': 'chat-font-size-select' } as React.InputHTMLAttributes<HTMLInputElement>
+                    }>
+                    <MenuItem value={12}>Small (12px)</MenuItem>
+                    <MenuItem value={14}>Compact (14px)</MenuItem>
+                    <MenuItem value={16}>Standard (16px)</MenuItem>
+                    <MenuItem value={18}>Large (18px)</MenuItem>
+                    <MenuItem value={20}>Extra Large (20px)</MenuItem>
+                    <MenuItem value={24}>Huge (24px)</MenuItem>
+                  </Select>
+                </FormControl>
                 <FormControlLabel
                   sx={{ mt: 1 }}
                   control={
@@ -529,25 +614,6 @@ const Settings: React.FC = () => {
                       <MenuItem value="lg">Wide (1200px)</MenuItem>
                       <MenuItem value="md">Standard (900px)</MenuItem>
                       <MenuItem value="sm">Compact (600px)</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <FormControl
-                    fullWidth
-                    size="small">
-                    <InputLabel>Chat Font Size</InputLabel>
-                    <Select
-                      value={chatFontSize}
-                      label="Chat Font Size"
-                      onChange={(e): void => setChatFontSize(e.target.value as number)}
-                      inputProps={
-                        { 'data-testid': 'chat-font-size-select' } as React.InputHTMLAttributes<HTMLInputElement>
-                      }>
-                      <MenuItem value={12}>Small (12px)</MenuItem>
-                      <MenuItem value={14}>Compact (14px)</MenuItem>
-                      <MenuItem value={16}>Standard (16px)</MenuItem>
-                      <MenuItem value={18}>Large (18px)</MenuItem>
-                      <MenuItem value={20}>Extra Large (20px)</MenuItem>
-                      <MenuItem value={24}>Huge (24px)</MenuItem>
                     </Select>
                   </FormControl>
                 </Stack>

@@ -1,13 +1,24 @@
 import React, { useEffect } from 'react';
-import { Box, CssBaseline, Drawer, useMediaQuery, useTheme, IconButton, Tooltip, Typography, alpha } from '@mui/material';
+import {
+  Box,
+  CssBaseline,
+  Drawer,
+  useMediaQuery,
+  useTheme,
+  IconButton,
+  Tooltip,
+  Typography,
+  alpha,
+} from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useParams } from 'react-router-dom';
 import { useUiStore } from '../store/UiStore';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
 import { Sidebar } from './Sidebar';
 import { isDeepSeekPeakHours } from './ModelSelector';
+import ModeBadge from './ModeBadge';
 
 const drawerWidth = 300;
 
@@ -16,9 +27,10 @@ const ChatLayout: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const { drawerOpen, openDrawer, closeDrawer, setMobile } = useUiStore();
-  const { currentTopicId, selectedModel } = useChatStore();
+  const { topicId } = useParams();
+  const selectedModel = useChatStore((state) => state.selectedModel);
   const topicStore = useTopicStore();
-  const topic = topicStore.topics.find((t) => t.id === currentTopicId);
+  const topic = topicStore.topics.find((t) => t.id === topicId);
 
   useEffect(() => {
     setMobile(isMobile);
@@ -43,8 +55,7 @@ const ChatLayout: React.FC = () => {
             borderTopLeftRadius: 0,
             borderBottomLeftRadius: 0,
           },
-        }}
-      >
+        }}>
         <Sidebar />
       </Drawer>
 
@@ -64,17 +75,15 @@ const ChatLayout: React.FC = () => {
           flexDirection: 'column',
           maxWidth: { xs: '100%', sm: '100%', md: '100%' },
           overflow: 'hidden',
-        }}
-      >
+        }}>
         <Box
           sx={{
             flexGrow: 1,
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
-          }}
-        >
-          {!drawerOpen && (
+          }}>
+          {(topic || !drawerOpen) && (
             <Box
               sx={{
                 display: 'flex',
@@ -87,11 +96,16 @@ const ChatLayout: React.FC = () => {
                 flexShrink: 0,
                 position: 'relative',
                 zIndex: 10,
-              }}
-            >
-              <IconButton onClick={(): void => openDrawer()} aria-label="Open menu" sx={{ mr: 0.5 }}>
-                <MenuIcon />
-              </IconButton>
+              }}>
+              {!drawerOpen && (
+                <IconButton
+                  onClick={(): void => openDrawer()}
+                  aria-label="Open menu"
+                  sx={{ mr: 0.5 }}>
+                  <MenuIcon />
+                </IconButton>
+              )}
+              {topic && <ModeBadge mode={topic.mode} />}
               {topic && (
                 <Box
                   sx={{
@@ -103,8 +117,7 @@ const ChatLayout: React.FC = () => {
                     alignItems: 'center',
                     gap: 1,
                     minWidth: 0,
-                  }}
-                >
+                  }}>
                   <Box
                     sx={{
                       display: 'grid',
@@ -113,17 +126,33 @@ const ChatLayout: React.FC = () => {
                       gap: 1.5,
                       width: '100%',
                       minWidth: 0,
-                    }}
-                  >
-                    <Typography variant="subtitle2" fontWeight={600} noWrap title={topic.name || 'New Topic'} sx={{ lineHeight: 1.2, minWidth: 0 }}>
+                    }}>
+                    <Typography
+                      variant="subtitle2"
+                      fontWeight={600}
+                      noWrap
+                      title={topic.name || 'New Topic'}
+                      sx={{ lineHeight: 1.2, minWidth: 0 }}>
                       {topic.name || 'New Topic'}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap title={selectedModel.label} sx={{ minWidth: 0, lineHeight: 1.4 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      noWrap
+                      title={selectedModel.label}
+                      sx={{ minWidth: 0, lineHeight: 1.4 }}>
                       {isDeepSeekPeakHours() && selectedModel.providerId === 'builtin-deepseek' && (
                         <Tooltip title="DeepSeek peak hours — 2x pricing">
-                          <Box component="span" display="inline-flex" alignItems="center" gap={0.2}>
+                          <Box
+                            component="span"
+                            display="inline-flex"
+                            alignItems="center"
+                            gap={0.2}>
                             <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main', display: 'flex' }} />
-                            <Typography variant="caption" color="warning.main" sx={{ fontWeight: 'bold', fontSize: '0.65rem', lineHeight: 1 }}>
+                            <Typography
+                              variant="caption"
+                              color="warning.main"
+                              sx={{ fontWeight: 'bold', fontSize: '0.65rem', lineHeight: 1 }}>
                               2×
                             </Typography>
                           </Box>

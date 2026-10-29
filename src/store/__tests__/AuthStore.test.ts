@@ -1,4 +1,5 @@
 export {};
+import type { FontId } from '../../constants/fonts';
 const mockClearPredefinedPrompts = jest.fn<Promise<void>, []>(() => Promise.resolve());
 const mockAddPredefinedPrompt = jest.fn<Promise<string>, [unknown]>(() => Promise.resolve('id-1'));
 const mockPutPredefinedPrompt = jest.fn<Promise<string>, [unknown]>(() => Promise.resolve('id-1'));
@@ -19,6 +20,8 @@ jest.mock('../../database/AthenaDb', () => ({
 }));
 
 interface AuthStoreSlice {
+  fontId: FontId;
+  setFontId: (fontId: FontId) => void;
   backupInterval: number;
   themeMode: 'light' | 'dark';
   colorTheme: string;
@@ -81,6 +84,23 @@ describe('AuthStore', () => {
     const store = loadAuthStore();
 
     expect(store.getState().ragEnabled).toBe(false);
+  });
+
+  it('defaults to the system font and safely ignores invalid saved fonts', () => {
+    expect(loadAuthStore().getState().fontId).toBe('system');
+    localStorage.setItem('fontId', 'unknown-font');
+    expect(loadAuthStore().getState().fontId).toBe('system');
+  });
+
+  it.each<FontId>(['inter', 'lora', 'nunito', 'comic-neue', 'ibm-plex-mono'])('persists %s across reloads and clears it on logout', (fontId) => {
+    const store = loadAuthStore();
+    store.getState().setFontId(fontId);
+    expect(store.getState().fontId).toBe(fontId);
+    expect(localStorage.getItem('fontId')).toBe(fontId);
+    expect(loadAuthStore().getState().fontId).toBe(fontId);
+    store.getState().clearAuth();
+    expect(store.getState().fontId).toBe('system');
+    expect(localStorage.getItem('fontId')).toBeNull();
   });
 
   it('defaults celebrations on and persists the opt-out across store reloads', () => {

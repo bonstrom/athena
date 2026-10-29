@@ -73,6 +73,7 @@ jest.mock('./DebateComposer', () => ({
     onContinue: () => void;
   }): React.ReactElement => (
     <div data-testid="debate-composer">
+      <textarea id="athena-debate-input" aria-label="Debate question" />
       <button data-testid="composer-send" onClick={(): void => onSend('test question')} disabled={sending}>
         Send
       </button>
@@ -136,6 +137,9 @@ describe('DebateView', () => {
     renderWithTheme(<DebateView topic={createBaseTopic()} messages={[]} />);
 
     expect(screen.getByText(/Debates run 4 rounds/)).toBeInTheDocument();
+    expect(screen.getByText('Compare two perspectives')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Write a debate question' }));
+    expect(screen.getByRole('textbox', { name: 'Debate question' })).toHaveFocus();
   });
 
   it('does not render info banner when sending', () => {

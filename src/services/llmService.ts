@@ -2,7 +2,7 @@ import { calculateCostUSD, ChatModel } from '../components/ModelSelector';
 import { useAuthStore } from '../store/AuthStore';
 import { useProviderStore } from '../store/ProviderStore';
 import { useChatStore } from '../store/ChatStore';
-import { getApiKey as getProviderApiKey, getPayloadOverrides, getReasoningEfforts, LlmProvider } from '../types/provider';
+import { getApiKey as getProviderApiKey, getPayloadOverrides, resolveReasoningEffort, LlmProvider } from '../types/provider';
 import { estimateTokens } from './estimateTokens';
 import { RAG_CONTENT_LIMIT } from '../constants';
 
@@ -1004,7 +1004,7 @@ function buildPayload(
 
   const resolvedTemperature = resolvedModel.forceTemperature != null ? resolvedModel.forceTemperature : temperature;
   const chatStoreReasoningEffort = useChatStore.getState().reasoningEffort;
-  const resolvedReasoningEffort = resolvedModel.reasoningEffort != null ? resolvedModel.reasoningEffort : chatStoreReasoningEffort;
+  const effectiveReasoningEffort = resolveReasoningEffort(resolvedModel, chatStoreReasoningEffort);
   const chatStoreThinkingMode = useChatStore.getState().thinkingMode;
   const defaultThinkingMode = resolvedModel.thinkingToggle != null ? resolvedModel.thinkingToggle : chatStoreThinkingMode;
   // Forcing a tool call (checklist edits) is incompatible with native-thinking
@@ -1042,12 +1042,6 @@ function buildPayload(
     ...(toolsIncluded && options?.toolChoice && { tool_choice: options.toolChoice }),
     ...(resolvedModel.maxTokensOverride != null && { max_tokens: resolvedModel.maxTokensOverride }),
   };
-
-  const supportedEfforts = getReasoningEfforts(resolvedModel);
-  const effectiveReasoningEffort =
-    resolvedReasoningEffort && supportedEfforts && !supportedEfforts.includes(resolvedReasoningEffort)
-      ? supportedEfforts[0]
-      : resolvedReasoningEffort;
 
   if (toolsIncluded) {
     if (resolvedModel.apiModelId.startsWith('gpt-6') && !usesResponsesApi(providerConfig, resolvedModel)) {

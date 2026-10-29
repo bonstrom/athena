@@ -1,5 +1,5 @@
 import React, { JSX, useEffect, useRef } from 'react';
-import { ListItem, Button, Fab, Box, Typography, CircularProgress, useMediaQuery } from '@mui/material';
+import { ListItem, Button, Fab, Box, Typography, CircularProgress, Collapse, useMediaQuery } from '@mui/material';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ScrollToBottom, { useScrollToBottom, useSticky } from 'react-scroll-to-bottom';
 import { css } from '@emotion/css';
@@ -17,6 +17,7 @@ import { useUiStore } from '../store/UiStore';
 import MessageBubble from './MessageBubble';
 import SuggestedReplies from './SuggestedReplies';
 import { Message } from '../database/AthenaDb';
+import ChatWelcome from './ChatWelcome';
 
 const FollowFab = (): JSX.Element | null => {
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -59,6 +60,18 @@ const MessageItem: React.FC<{ message: Message; versions?: Message[]; showAllMes
   animate,
 }) => {
   const [enter] = React.useState(animate);
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const entranceDelay = enter && !reducedMotion && message.type === 'assistant' ? 400 : 0;
+  const [visible, setVisible] = React.useState(entranceDelay === 0);
+  useEffect(() => {
+    if (entranceDelay === 0) {
+      setVisible(true);
+      return;
+    }
+    // Visual staging only: the message stays mounted and tokens keep streaming.
+    const timer = window.setTimeout(() => setVisible(true), entranceDelay);
+    return (): void => window.clearTimeout(timer);
+  }, [entranceDelay]);
   const scrollToBottom = useScrollToBottom();
   const [sticky] = useSticky();
 
@@ -88,14 +101,24 @@ const MessageItem: React.FC<{ message: Message; versions?: Message[]; showAllMes
       : rendered;
 
   return (
-    <Box
-      className={enter ? 'athena-message-enter' : undefined}
-      sx={{ width: '100%', minWidth: 0 }}>
-      <MessageBubble
-        message={displayMessage}
-        versions={versions}
-      />
-    </Box>
+    <Collapse
+      in={visible}
+      appear={enter && !reducedMotion}
+      timeout={enter && !reducedMotion ? 360 : 0}
+      sx={{ width: '100%', flexShrink: 0 }}>
+      <Box
+        className={
+          enter
+            ? `athena-message-enter${message.type === 'assistant' ? ' athena-message-answer-enter' : ''}`
+            : undefined
+        }
+        sx={{ width: '100%', minWidth: 0 }}>
+        <MessageBubble
+          message={displayMessage}
+          versions={versions}
+        />
+      </Box>
+    </Collapse>
   );
 };
 
@@ -346,39 +369,10 @@ const MessageList: React.FC<Props> = ({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'flex-end',
+          justifyContent: 'center',
           flex: 1,
-          paddingBottom: 8,
-          opacity: 0.8,
-          animation: 'fadeIn 1.2s ease-out',
-          pointerEvents: 'none',
-          userSelect: 'none',
-          '@keyframes fadeIn': {
-            from: { opacity: 0, transform: 'translateY(20px)' },
-            to: { opacity: 0.8, transform: 'translateY(0)' },
-          },
         }}>
-        <Box
-          component="img"
-          src="/athena/icons/android-chrome-192x192.png"
-          alt="Athena Logo"
-          sx={{
-            width: 100,
-            height: 100,
-            mb: 2,
-            filter: (theme) => (theme.palette.mode === 'dark' ? 'brightness(0.8) contrast(1.2)' : 'none'),
-          }}
-        />
-        <Typography
-          variant="h3"
-          sx={{
-            fontWeight: 'bold',
-            color: 'text.primary',
-            lineHeight: 1,
-            m: 0,
-          }}>
-          Athena
-        </Typography>
+        <ChatWelcome />
       </Box>
     );
   }

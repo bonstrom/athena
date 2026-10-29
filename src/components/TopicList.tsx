@@ -19,57 +19,63 @@ import { useAuthStore } from '../store/AuthStore';
 import { useUiStore } from '../store/UiStore';
 import { useCuratorStore } from '../store/CuratorStore';
 import { TopicListItem } from './TopicListItem';
-import React, { JSX, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { JSX, useEffect, useRef, useState } from 'react';
 import { groupTopicsByDate } from '../utils/groupTopicsByDate';
 import { useNavigate, useParams } from 'react-router-dom';
 import DeleteIcon from '@mui/icons-material/Delete';
+import { TransitionGroup } from 'react-transition-group';
+import TopicListTransition, { TopicListTransitionProps } from './TopicListTransition';
+import TopicSelectionMarker from './TopicSelectionMarker';
+import { useShallow } from 'zustand/react/shallow';
 
 export const TopicList = (): JSX.Element => {
-  const { topics, loading, loadTopics, visibleTopicCount, increaseVisibleTopicCount, deleteTopics } = useTopicStore();
+  const {
+    topics,
+    loading,
+    topicsLoaded = true,
+    loadTopics,
+    visibleTopicCount,
+    increaseVisibleTopicCount,
+    deleteTopics,
+  } = useTopicStore(useShallow((state) => ({
+    topics: state.topics,
+    loading: state.loading,
+    topicsLoaded: state.topicsLoaded,
+    loadTopics: state.loadTopics,
+    visibleTopicCount: state.visibleTopicCount,
+    increaseVisibleTopicCount: state.increaseVisibleTopicCount,
+    deleteTopics: state.deleteTopics,
+  })));
   const preloadTopics = useChatStore((state) => state.preloadTopics);
   const topicPreloadCount = useAuthStore((state) => state.topicPreloadCount);
   const pixelDocuments = usePixelStore((state) => state.documents);
-  const { selectedTopicIds, selectAllTopics, clearTopicSelection, sidebarFilter } = useUiStore();
+  const { selectedTopicIds, selectAllTopics, clearTopicSelection, sidebarFilter } = useUiStore(useShallow((state) => ({
+    selectedTopicIds: state.selectedTopicIds,
+    selectAllTopics: state.selectAllTopics,
+    clearTopicSelection: state.clearTopicSelection,
+    sidebarFilter: state.sidebarFilter,
+  })));
   const { topicId } = useParams();
   const navigate = useNavigate();
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [inProgressIds, setInProgressIds] = useState<Set<string>>(new Set());
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const listRef = useRef<HTMLUListElement>(null);
-  const [marker, setMarker] = useState<{ top: number; height: number } | null>(null);
-
-  useLayoutEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-    const measure = (): void => {
-      const active = list.querySelector('[data-active-topic="true"]');
-      if (!active) {
-        setMarker(null);
-        return;
+  const liveTopicIds = new Set(topics.map((topic) => topic.id));
+  const snapshot = useRef({ topics, ids: liveTopicIds, ready: topicsLoaded });
+  const enteringIds = useRef(new Set<string>());
+  if (snapshot.current.topics !== topics) {
+    if (snapshot.current.ready && topicsLoaded && !loading) {
+      for (const id of liveTopicIds) {
+        if (!snapshot.current.ids.has(id)) enteringIds.current.add(id);
       }
-      const rect = active.getBoundingClientRect();
-      const parent = list.getBoundingClientRect();
-      const next = { top: rect.top - parent.top + 8, height: Math.max(0, rect.height - 16) };
-      setMarker((previous) => (previous?.top === next.top && previous.height === next.height ? previous : next));
-    };
-    measure();
-    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
-    resize?.observe(list);
-    const mutations = new MutationObserver(measure);
-    mutations.observe(list, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['data-active-topic'],
-    });
-    window.addEventListener('resize', measure);
-    return (): void => {
-      resize?.disconnect();
-      mutations.disconnect();
-      window.removeEventListener('resize', measure);
-    };
-  }, [topicId, topics, inProgressIds, sidebarFilter, visibleTopicCount, selectedTopicIds]);
+    }
+    snapshot.current = { topics, ids: liveTopicIds, ready: topicsLoaded };
+  } else {
+    snapshot.current.ready = topicsLoaded;
+  }
 
+  const courseRevision = topics.filter((topic) => topic.mode === 'curator').map((topic) => `${topic.id}:${topic.updatedOn}`).join('|');
   useEffect(() => {
     void loadTopics().then(() => {
       const recentIds = useTopicStore
@@ -93,7 +99,7 @@ export const TopicList = (): JSX.Element => {
       .catch(() => {
         setInProgressIds((prev) => (prev.size === 0 ? prev : new Set()));
       });
-  }, [topics]);
+  }, [courseRevision]);
 
   const topTopicUpdatedOn = topics[0]?.updatedOn;
   const topTopicId = topics[0]?.id;
@@ -126,9 +132,14 @@ export const TopicList = (): JSX.Element => {
     [filteredTopics, visibleTopicCount],
   );
 
-  const inProgressTopics = visibleTopics.filter((t) => inProgressIds.has(t.id));
-  const normalTopics = visibleTopics.filter((t) => !inProgressIds.has(t.id));
-  const grouped = groupTopicsByDate(normalTopics);
+  const sections = React.useMemo(() => {
+    const inProgressTopics = visibleTopics.filter((t) => inProgressIds.has(t.id));
+    const normalTopics = visibleTopics.filter((t) => !inProgressIds.has(t.id));
+    return [
+      ...(inProgressTopics.length > 0 ? [{ label: 'In Progress', topics: inProgressTopics, inProgress: true }] : []),
+      ...groupTopicsByDate(normalTopics).map((group) => ({ ...group, inProgress: false })),
+    ];
+  }, [visibleTopics, inProgressIds]);
 
   const hasMoreToShow = visibleTopicCount < filteredTopics.length;
   const selectionCount = selectedTopicIds.size;
@@ -194,71 +205,49 @@ export const TopicList = (): JSX.Element => {
       <List
         ref={listRef}
         sx={{ position: 'relative' }}>
-        {marker && (
-          <Box
-            component="li"
-            aria-hidden="true"
-            sx={{
-              position: 'absolute',
-              left: 8,
-              top: 0,
-              width: 3,
-              height: marker.height,
-              transform: `translateY(${marker.top}px)`,
-              borderRadius: 2,
-              bgcolor: 'primary.main',
-              pointerEvents: 'none',
-              listStyle: 'none',
-              zIndex: 1,
-              transition: 'transform 200ms ease, height 200ms ease',
-            }}
-          />
-        )}
-        {inProgressTopics.length > 0 && (
-          <React.Fragment key="in-progress">
-            <ListSubheader
-              disableSticky
-              sx={{
-                fontSize: '0.65rem',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                color: 'primary.main',
-                lineHeight: '2.5rem',
-                bgcolor: 'transparent',
-                fontWeight: 700,
-              }}>
-              In Progress
-            </ListSubheader>
-            {inProgressTopics.map((topic) => (
-              <TopicListItem
-                key={topic.id}
-                topic={topic}
-              />
-            ))}
-          </React.Fragment>
-        )}
-        {grouped.map((group) => (
-          <React.Fragment key={group.label}>
-            <ListSubheader
-              disableSticky
-              sx={{
-                fontSize: '0.65rem',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                color: 'text.secondary',
-                lineHeight: '2.5rem',
-                bgcolor: 'transparent',
-              }}>
-              {group.label}
-            </ListSubheader>
-            {group.topics.map((topic) => (
-              <TopicListItem
-                key={topic.id}
-                topic={topic}
-              />
-            ))}
-          </React.Fragment>
-        ))}
+        <TopicSelectionMarker listRef={listRef} />
+        <TransitionGroup
+          component={null}
+          childFactory={
+            (child: React.ReactElement<TopicListTransitionProps>): React.ReactElement<TopicListTransitionProps> =>
+              React.cloneElement(child, {
+                animateExit: topicsLoaded && !loading && child.props.topicIds.every((id) => !liveTopicIds.has(id)),
+              })
+          }>
+          {sections.flatMap((group) => [
+            <TopicListTransition
+              key={`header:${group.label}`}
+              topicIds={group.topics.map((topic) => topic.id)}
+              reducedMotion={reducedMotion}>
+              <ListSubheader
+                component="div"
+                disableSticky
+                sx={{
+                  fontSize: '0.65rem',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: group.inProgress ? 'primary.main' : 'text.secondary',
+                  lineHeight: '2.5rem',
+                  bgcolor: 'transparent',
+                  fontWeight: group.inProgress ? 700 : undefined,
+                }}>
+                {group.label}
+              </ListSubheader>
+            </TopicListTransition>,
+            ...group.topics.map((topic) => (
+              <TopicListTransition
+                key={`topic:${topic.id}`}
+                topicIds={[topic.id]}
+                animateEnter={enteringIds.current.has(topic.id)}
+                reducedMotion={reducedMotion}
+                onEntered={(): void => {
+                  enteringIds.current.delete(topic.id);
+                }}>
+                <TopicListItem topic={topic} />
+              </TopicListTransition>
+            )),
+          ])}
+        </TransitionGroup>
       </List>
 
       <Box

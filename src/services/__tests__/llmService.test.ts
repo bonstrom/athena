@@ -1758,6 +1758,27 @@ describe('buildPayload — reasoning_effort and tools', () => {
     Object.defineProperty(globalThis, 'fetch', { value: globalThis.fetch, writable: true });
   });
 
+  it('sends medium by default for models with configurable reasoning effort', async () => {
+    const model = createUserChatModel({
+      reasoningEffort: null,
+      reasoningEfforts: ['none', 'low', 'medium', 'high'],
+      supportsThinking: true,
+      supportsTools: false,
+      streaming: true,
+    });
+    mockProviderGetState.mockReturnValue({
+      models: [model],
+      getAvailableModels: (): UserChatModel[] => [model],
+      getProviderForModel: (): LlmProvider => provider,
+    });
+    const mockFetch = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+    Object.defineProperty(globalThis, 'fetch', { value: mockFetch, writable: true });
+    mockFetch.mockResolvedValueOnce({ ok: true, body: streamResponse() } as unknown as Response);
+    await askLlmStream(model, 0.7, [user('Hi')], (): void => undefined);
+    const body = JSON.parse(String(mockFetch.mock.calls[0][1]?.body)) as Record<string, unknown>;
+    expect(body.reasoning_effort).toBe('medium');
+  });
+
   it('omits function tools when disabled for Sol and keeps a supported Responses effort', async () => {
     const model = createUserChatModel({
       apiModelId: 'gpt-6.1-sol',

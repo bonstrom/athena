@@ -5,6 +5,7 @@ import { useUiStore } from '../store/UiStore';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
 import { useMediaQuery } from '@mui/material';
+import { selectorize } from '../testUtils';
 
 jest.mock('./Sidebar', () => ({
   Sidebar: (): React.ReactElement => <div data-testid="sidebar" />,
@@ -12,6 +13,7 @@ jest.mock('./Sidebar', () => ({
 
 jest.mock('react-router-dom', () => ({
   Outlet: (): React.ReactElement => <div data-testid="outlet" />,
+  useParams: (): { topicId: string } => ({ topicId: 'topic-1' }),
 }));
 
 jest.mock('../store/UiStore', () => ({
@@ -63,7 +65,7 @@ describe('ChatLayout', () => {
       closeDrawer: jest.fn(),
       setMobile: jest.fn(),
     });
-    mockUseChatStore.mockReturnValue({
+    selectorize(mockUseChatStore, {
       currentTopicId: 'topic-1',
       selectedModel: { label: 'GPT-5.4 Nano' },
     });
@@ -109,5 +111,18 @@ describe('ChatLayout', () => {
     expect(openDrawer).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('outlet')).toBeInTheDocument();
+  });
+
+  it('keeps the mode and topic visible when the sidebar is open', () => {
+    mockUseUiStore.mockReturnValue({
+      drawerOpen: true,
+      openDrawer: jest.fn(),
+      closeDrawer: jest.fn(),
+      setMobile: jest.fn(),
+    });
+    render(<ChatLayout />);
+    expect(screen.getByText('Chat')).toBeInTheDocument();
+    expect(screen.getByText('Topic A')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open menu' })).not.toBeInTheDocument();
   });
 });

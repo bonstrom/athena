@@ -40,6 +40,7 @@ import MarkdownWithCode from '../components/MarkdownWithCode';
 import TypingIndicator from '../components/TypingIndicator';
 import { LEARNING_SECTIONS, LearningCategory, buildCourseOutlinePrompt, buildPartGenerationPrompt, buildSingleQuestionPrompt } from '../constants';
 import { stripJsonFence } from '../utils/structuredJson';
+import ModeBadge from './ModeBadge';
 
 interface TeacherMessage {
   id: string;
@@ -1320,9 +1321,12 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           {showCategoryGrid && countsLoaded && (
             <Box px={2} pt={2} pb={1} flexShrink={0}>
               <Box display="flex" alignItems="center" gap={0.5} mb={2}>
-                <LightbulbOutlinedIcon sx={{ fontSize: '1.1rem', color: 'warning.main' }} />
+                <ModeBadge mode="curator" compact />
                 <Typography variant="subtitle2" fontWeight="bold">What would you like to learn?</Typography>
               </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Choose a category below or write your own question to build a short, guided course.
+              </Typography>
 
               <Box display="flex" flexWrap="wrap" alignItems="center" gap={0.5} mb={2}>
                 <Typography variant="caption" fontWeight="bold" color="text.secondary" sx={{ mr: 0.5 }}>
@@ -1494,6 +1498,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
               </Box>
               <Box display="flex" alignItems="center" gap={0.5} mt={1.5} pt={1} sx={{ borderTop: `1px solid ${theme.palette.divider}` }}>
                 <TextField
+                  InputProps={{ className: 'athena-composer-input' }}
                   fullWidth
                   size="small"
                   placeholder="Or write your own question..."
@@ -1729,6 +1734,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           <Box px={1.5} py={1} sx={{ borderTop: `1px solid ${theme.palette.divider}`, flexShrink: 0 }}>
             <Box display="flex" gap={1}>
               <TextField fullWidth size="small" placeholder="Ask the teacher a question..." value={teacherInput}
+                InputProps={{ className: 'athena-composer-input' }}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>): void => { setTeacherInput(e.target.value); }} onKeyDown={handleTeacherKeyDown}
                 disabled={teacherSending} multiline maxRows={4}
                 sx={{ '& .MuiOutlinedInput-root': { fontSize: '0.875rem' } }} />

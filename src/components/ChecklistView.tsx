@@ -46,7 +46,6 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import FormatListBulletedIcon from '@mui/icons-material/FormatListBulleted';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { useAuthStore } from '../store/AuthStore';
 import type { Topic, ChecklistGroup, ChecklistItem, ChecklistTab } from '../database/AthenaDb';
@@ -54,6 +53,7 @@ import { useChecklistStore } from '../store/ChecklistStore';
 import { useChatStore } from '../store/ChatStore';
 import ChecklistComposer from './ChecklistComposer';
 import MarkdownWithCode from './MarkdownWithCode';
+import ModeBadge from './ModeBadge';
 
 function useDndSensors(): ReturnType<typeof useSensors> {
   return useSensors(
@@ -323,7 +323,8 @@ const SortableGroup = React.memo(function SortableGroup({
         borderRadius: 2,
         border: (theme) => `1px solid ${theme.palette.divider}`,
         bgcolor: 'background.paper',
-        boxShadow: (theme) => `0 2px 8px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.1 : 0.03)}`,
+        boxShadow: (theme) =>
+          `0 2px 8px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.1 : 0.03)}`,
         overflow: 'hidden',
       }}>
       <Box
@@ -801,7 +802,7 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
                 gap: 2,
                 textAlign: 'center',
               }}>
-              <FormatListBulletedIcon sx={{ fontSize: 48, color: 'primary.main' }} />
+              <ModeBadge mode="checklist" />
               <Typography
                 variant="h6"
                 fontWeight="bold">
@@ -810,10 +811,10 @@ const ChecklistView = ({ topic }: ChecklistViewProps): JSX.Element => {
               <Typography
                 variant="body2"
                 color="text.secondary">
-                Describe what you need a checklist for, and the AI will generate organized sections and tasks you can
-                both edit.
+                Turn a plan into organized sections and tasks you and the AI can both edit.
               </Typography>
               <TextField
+                InputProps={{ className: 'athena-composer-input' }}
                 fullWidth
                 multiline
                 maxRows={4}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import MessageBubble from './MessageBubble';
 import { createMessage, renderWithTheme, selectorize } from '../testUtils';
 import { useAuthStore } from '../store/AuthStore';
@@ -577,6 +577,69 @@ describe('MessageBubble', () => {
   });
 
   // ─── Reasoning / Thinking ────────────────────────────────────────────────
+
+  it('reserves a capped thinking area instead of growing it with every token', () => {
+    const message = createMessage({ type: 'assistant', content: '', reasoning: 'First thought' });
+    const { rerender } = render(<MessageBubble message={message} />);
+    const panel = screen.getByText('Thought Process').parentElement;
+    expect(panel).toHaveStyle({ height: '400px', maxHeight: '45vh', overflowY: 'auto', boxSizing: 'border-box' });
+
+    rerender(<MessageBubble message={{ ...message, reasoning: 'First thought\n\nMore reasoning arrives.' }} />);
+    expect(screen.getByText('Thought Process').parentElement).toBe(panel);
+    expect(panel).toHaveStyle({ height: '400px', maxHeight: '45vh' });
+  });
+
+  it('crossfades thinking into the first answer without restarting for streamed tokens', async () => {
+    jest.useFakeTimers();
+    try {
+      const message = createMessage({ id: 'streaming-answer', type: 'assistant', content: '' });
+      const state = createChatStore();
+      selectorize(mockUseChatStore, {
+        ...state,
+        streaming: { assistantMessageId: message.id, activity: 'thinking' },
+      });
+      const { rerender } = render(<MessageBubble message={message} />);
+      expect(screen.getByRole('status')).toHaveTextContent('Thinking');
+
+      selectorize(mockUseChatStore, {
+        ...state,
+        streaming: { assistantMessageId: message.id, activity: 'writing' },
+      });
+      rerender(<MessageBubble message={{ ...message, content: 'The answer' }} />);
+      expect(screen.getByTestId('markdown-content')).toHaveTextContent('The answer');
+      expect(screen.getByText('Thinking').closest('[aria-hidden]')).toHaveAttribute('aria-hidden', 'true');
+      expect(screen.queryByText('Writing')).not.toBeInTheDocument();
+      const answer = screen.getByTestId('markdown-content').parentElement;
+
+      await act(async (): Promise<void> => {
+        jest.advanceTimersByTime(400);
+        await Promise.resolve();
+      });
+      expect(screen.queryByText('Thinking')).not.toBeInTheDocument();
+      rerender(<MessageBubble message={{ ...message, content: 'The answer keeps streaming' }} />);
+      expect(screen.getByTestId('markdown-content').parentElement).toBe(answer);
+      expect(answer).toHaveStyle({ opacity: '1' });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('shows loaded answers immediately without an entrance fade', () => {
+    renderWithTheme(<MessageBubble message={createMessage({ type: 'assistant', content: 'Loaded answer' })} />);
+    expect(screen.getByTestId('markdown-content').parentElement).toHaveStyle({ opacity: '1' });
+    expect(screen.queryByTestId('typing-indicator')).not.toBeInTheDocument();
+  });
+
+  it('keeps tool activity visible alongside existing answer text', () => {
+    const message = createMessage({ id: 'tool-answer', type: 'assistant', content: 'Let me check that.' });
+    selectorize(mockUseChatStore, {
+      ...createChatStore(),
+      streaming: { assistantMessageId: message.id, activity: 'searching' },
+    });
+    renderWithTheme(<MessageBubble message={message} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Searching the web');
+    expect(screen.getByTestId('markdown-content')).toHaveTextContent('Let me check that.');
+  });
 
   it('toggles reasoning display when thinking button is clicked', () => {
     renderWithTheme(

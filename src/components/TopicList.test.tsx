@@ -1,5 +1,6 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useMediaQuery } from '@mui/material';
 import { TopicList } from './TopicList';
 import { useTopicStore } from '../store/TopicStore';
 import { useChatStore } from '../store/ChatStore';
@@ -18,6 +19,7 @@ interface TopicLike {
 interface TopicStoreSlice {
   topics: TopicLike[];
   loading: boolean;
+  topicsLoaded?: boolean;
   visibleTopicCount: number;
   loadTopics: () => Promise<void>;
   increaseVisibleTopicCount: () => void;
@@ -45,6 +47,11 @@ const mockNavigate: jest.MockedFunction<(path: string) => void> = jest.fn();
 jest.mock('react-router-dom', () => ({
   useNavigate: jest.fn(),
   useParams: jest.fn(),
+}));
+
+jest.mock('@mui/material', () => ({
+  ...jest.requireActual<typeof import('@mui/material')>('@mui/material'),
+  useMediaQuery: jest.fn(),
 }));
 
 jest.mock('../store/UiStore', () => ({
@@ -99,6 +106,7 @@ function createTopics(): TopicLike[] {
 describe('TopicList', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(useMediaQuery).mockReturnValue(false);
     mockLoadTopics.mockImplementation((): Promise<void> => Promise.resolve());
     mockPreloadTopics.mockImplementation((): Promise<void> => Promise.resolve());
     mockDeleteTopics.mockImplementation((): Promise<void> => Promise.resolve());
@@ -150,6 +158,79 @@ describe('TopicList', () => {
       expect(mockLoadTopics).toHaveBeenCalledTimes(1);
       expect(mockPreloadTopics).toHaveBeenCalledWith(['t1', 't2']);
     });
+  });
+
+  it('animates newly created topics, but not initial history or loading older topics', () => {
+    const state = mockUseTopicStore();
+    const { container, rerender } = render(<TopicList />);
+    expect(container.querySelector('.athena-topic-enter')).toBeNull();
+    mockUseTopicStore.mockReturnValue({ ...state, visibleTopicCount: 3 });
+    rerender(<TopicList />);
+    expect(container.querySelector('.athena-topic-enter')).toBeNull();
+
+    const created = { id: 'new', name: 'New topic', updatedOn: '2026-04-18T10:00:00.000Z' };
+    mockUseTopicStore.mockReturnValue({ ...state, topics: [created, ...state.topics] });
+    rerender(<TopicList />);
+    expect(screen.getByText('New topic').closest('li')).toHaveClass('athena-topic-enter');
+    expect(screen.getByText('Topic 1').closest('li')).not.toHaveClass('athena-topic-enter');
+  });
+
+  it('does not animate asynchronously loaded history', () => {
+    const state = mockUseTopicStore();
+    mockUseTopicStore.mockReturnValue({ ...state, topics: [], loading: true, topicsLoaded: false });
+    const { container, rerender } = render(<TopicList />);
+    mockUseTopicStore.mockReturnValue({ ...state, topicsLoaded: true });
+    rerender(<TopicList />);
+    expect(container.querySelector('.athena-topic-enter')).toBeNull();
+  });
+
+  it('updates the active marker without regrouping or rerendering the topic list', async () => {
+    const { container } = render(<TopicList />);
+    const active = screen.getByText('Topic 1');
+    const groupingCalls = mockGroupTopicsByDate.mock.calls.length;
+    active.setAttribute('data-active-topic', 'true');
+    await waitFor(() => expect(container.querySelector('li[aria-hidden="true"]')).toBeInTheDocument());
+    expect(mockGroupTopicsByDate.mock.calls).toHaveLength(groupingCalls);
+  });
+
+  it.each([
+    { label: 'a single topic', removedIds: ['t1'] },
+    { label: 'bulk-deleted topics', removedIds: ['t1', 't2', 't3'] },
+  ])('fades and collapses $label before removing their rows', async ({ removedIds }) => {
+    jest.useFakeTimers();
+    try {
+      const state = mockUseTopicStore();
+      const { rerender } = render(<TopicList />);
+      mockUseTopicStore.mockReturnValue({ ...state, topics: state.topics.filter((topic) => !removedIds.includes(topic.id)) });
+      rerender(<TopicList />);
+      const removed = screen.getByText('Topic 1').closest('li');
+      expect(removed).not.toHaveAttribute('aria-hidden');
+      expect(removed).toHaveAttribute('inert');
+      expect(removed).toHaveStyle({ opacity: '0', pointerEvents: 'none' });
+      await act(async (): Promise<void> => {
+        jest.advanceTimersByTime(300);
+        await Promise.resolve();
+      });
+      expect(screen.queryByText('Topic 1')).not.toBeInTheDocument();
+      if (removedIds.includes('t2')) {
+        expect(screen.queryByText('Topic 2')).not.toBeInTheDocument();
+      } else {
+        expect(screen.getByText('Topic 2')).toBeInTheDocument();
+      }
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('skips the entrance animation for reduced motion', () => {
+    jest.mocked(useMediaQuery).mockReturnValue(true);
+    const state = mockUseTopicStore();
+    const { container, rerender } = render(<TopicList />);
+    const created = { id: 'new', name: 'New topic', updatedOn: '2026-04-18T10:00:00.000Z' };
+    mockUseTopicStore.mockReturnValue({ ...state, topics: [created, ...state.topics] });
+    rerender(<TopicList />);
+    expect(screen.getByText('New topic')).toBeInTheDocument();
+    expect(container.querySelector('.athena-topic-enter')).toBeNull();
   });
 
   it('shows Load Older Topics and calls increaseVisibleTopicCount on click', () => {

@@ -8,6 +8,7 @@ import DebateComposer from './DebateComposer';
 import MarkdownWithCode from './MarkdownWithCode';
 import { ChatModel } from './ModelSelector';
 import ActivityIndicator from './ActivityIndicator';
+import ModeEmptyState from './ModeEmptyState';
 
 interface DebateColumnProps {
   side: 'left' | 'right';
@@ -70,18 +71,31 @@ const DebateColumn = React.memo(function DebateColumn({
         borderRight: side === 'left' ? `1px solid ${theme.palette.divider}` : 'none',
         height: '100%',
         overflow: 'hidden',
-      }}
-    >
+      }}>
       {/* Column header: model selector */}
-      <Box px={1.5} py={1} sx={{ borderBottom: `1px solid ${theme.palette.divider}`, flexShrink: 0 }}>
-        {model && <ModelSelector selectedModel={model} onChange={handleModelChange} />}
+      <Box
+        px={1.5}
+        py={1}
+        sx={{ borderBottom: `1px solid ${theme.palette.divider}`, flexShrink: 0 }}>
+        {model && (
+          <ModelSelector
+            selectedModel={model}
+            onChange={handleModelChange}
+          />
+        )}
         {active && <ActivityIndicator activity={streamingContent ? 'writing' : 'thinking'} />}
       </Box>
 
       {/* Message list */}
-      <Box flexGrow={1} overflow="auto" px={1} py={1}>
+      <Box
+        flexGrow={1}
+        overflow="auto"
+        px={1}
+        py={1}>
         {messages.map((msg) => (
-          <Box key={msg.id} mb={1}>
+          <Box
+            key={msg.id}
+            mb={1}>
             {msg.type === 'assistant' && msg.debatePhase && (
               <Box mb={0.5}>
                 <Chip
@@ -98,7 +112,9 @@ const DebateColumn = React.memo(function DebateColumn({
 
         {/* Live streaming content */}
         {isStreaming && (
-          <Box mb={1} className="athena-message-enter">
+          <Box
+            mb={1}
+            className="athena-message-enter">
             <Chip
               label={currentPhase !== 'idle' ? (PHASE_LABELS[currentPhase] ?? currentPhase) : ''}
               size="small"
@@ -112,8 +128,7 @@ const DebateColumn = React.memo(function DebateColumn({
                 px: 1.5,
                 py: 1,
                 fontSize: 'inherit',
-              }}
-            >
+              }}>
               <MarkdownWithCode>{streamingContent}</MarkdownWithCode>
             </Box>
           </Box>
@@ -172,7 +187,12 @@ const DebateView = ({ topic, messages }: DebateViewProps): JSX.Element => {
       const p = roundMsgs.filter((m) => m.debatePhase === phase && m.content.trim() !== '');
       return paired ? p.some((m) => m.debateSide === 'left') && p.some((m) => m.debateSide === 'right') : p.length > 0;
     };
-    return !(hasFilled('answer', true) && hasFilled('review', true) && hasFilled('final', true) && hasFilled('consensus', false));
+    return !(
+      hasFilled('answer', true) &&
+      hasFilled('review', true) &&
+      hasFilled('final', true) &&
+      hasFilled('consensus', false)
+    );
   }, [debateSending, messages, userMessages]);
 
   // Build interleaved columns: for each user question, show its answers grouped
@@ -207,12 +227,29 @@ const DebateView = ({ topic, messages }: DebateViewProps): JSX.Element => {
   }
 
   return (
-    <Box display="flex" flexDirection="column" height="100%" overflow="hidden">
+    <Box
+      display="flex"
+      flexDirection="column"
+      height="100%"
+      overflow="hidden">
       {/* Info banner for empty debates */}
       {messages.length === 0 && !debateSending && (
-        <Alert severity="info" variant="outlined" sx={{ mx: 2, mt: 1, flexShrink: 0 }}>
-          Debates run 4 rounds (answer, review, final, consensus) and cost roughly 8× a single question. This can take a while.
+        <Box sx={{ overflowY: 'auto', maxHeight: '45%', flexShrink: 0 }}>
+        <ModeEmptyState
+          mode="debate"
+          title="Compare two perspectives"
+          description="Choose two models below, then ask a question to compare their answers, reviews, and consensus."
+          actionLabel="Write a debate question"
+          onAction={(): void => document.getElementById('athena-debate-input')?.focus()}
+        />
+        <Alert
+          severity="info"
+          variant="outlined"
+          sx={{ mx: 2, mt: 1, flexShrink: 0 }}>
+          Debates run 4 rounds (answer, review, final, consensus) and cost roughly 8× a single question. This can take a
+          while.
         </Alert>
+        </Box>
       )}
 
       {/* Phase banner */}
@@ -225,16 +262,21 @@ const DebateView = ({ topic, messages }: DebateViewProps): JSX.Element => {
             color: 'primary.contrastText',
             textAlign: 'center',
             flexShrink: 0,
-          }}
-        >
-          <Typography variant="caption" fontWeight="bold">
+          }}>
+          <Typography
+            variant="caption"
+            fontWeight="bold">
             {PHASE_BANNER[currentPhase] ?? currentPhase}
           </Typography>
         </Box>
       )}
 
       {/* Two columns */}
-      <Box display="flex" flexGrow={1} minHeight={0} sx={{ flexDirection: { xs: 'column', md: 'row' } }}>
+      <Box
+        display="flex"
+        flexGrow={1}
+        minHeight={0}
+        sx={{ flexDirection: { xs: 'column', md: 'row' } }}>
         <DebateColumn
           side="left"
           model={debateModelA}
@@ -267,11 +309,20 @@ const DebateView = ({ topic, messages }: DebateViewProps): JSX.Element => {
             flexShrink: 0,
             maxHeight: '40%',
             overflow: 'auto',
-            boxShadow: debateSending && currentPhase === 'consensus' ? (t): string => `inset 0 2px 0 ${alpha(t.palette.primary.main, 0.5)}` : 'none',
-          }}
-        >
-          <Chip label="Consensus" size="small" color="primary" sx={{ mb: 1, fontSize: '0.75rem' }} />
-          {debateSending && currentPhase === 'consensus' && <ActivityIndicator activity={streamingConsensus ? 'writing' : 'thinking'} />}
+            boxShadow:
+              debateSending && currentPhase === 'consensus'
+                ? (t): string => `inset 0 2px 0 ${alpha(t.palette.primary.main, 0.5)}`
+                : 'none',
+          }}>
+          <Chip
+            label="Consensus"
+            size="small"
+            color="primary"
+            sx={{ mb: 1, fontSize: '0.75rem' }}
+          />
+          {debateSending && currentPhase === 'consensus' && (
+            <ActivityIndicator activity={streamingConsensus ? 'writing' : 'thinking'} />
+          )}
           {messages
             .filter((m) => m.debatePhase === 'consensus')
             .map((msg) => (

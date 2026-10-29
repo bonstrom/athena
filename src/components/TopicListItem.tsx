@@ -19,7 +19,8 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { useUiStore } from '../store/UiStore';
 import { useAuthStore } from '../store/AuthStore';
-import { JSX, useEffect, useRef, useState } from 'react';
+import { JSX, memo, useEffect, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useTopicStore } from '../store/TopicStore';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Check';
@@ -31,26 +32,40 @@ import MenuItem from '@mui/material/MenuItem';
 import TopicContextDialog from './TopicContextDialog';
 import MenuBookOutlined from '@mui/icons-material/MenuBookOutlined';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
-import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
-import ChecklistIcon from '@mui/icons-material/Checklist';
+import ModeBadge from './ModeBadge';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import { Topic } from '../database/AthenaDb';
 
-export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
+export const TopicListItem = memo(function TopicListItem({ topic }: { topic: Topic }): JSX.Element {
   const { topicId } = useParams();
   const navigate = useNavigate();
-  const { isMobile, closeDrawer, selectedTopicIds, toggleTopicSelection } = useUiStore();
-  const { chatFontSize } = useAuthStore();
-  const { renameTopic, deleteTopic } = useTopicStore();
-  const isSelecting = selectedTopicIds.size > 0;
+  const { isMobile, closeDrawer, isSelecting, isSelected, toggleTopicSelection } = useUiStore(useShallow((state) => ({
+    isMobile: state.isMobile,
+    closeDrawer: state.closeDrawer,
+    isSelecting: state.selectedTopicIds.size > 0,
+    isSelected: state.selectedTopicIds.has(topic.id),
+    toggleTopicSelection: state.toggleTopicSelection,
+  })));
+  const chatFontSize = useAuthStore((state) => state.chatFontSize);
+  const renameTopic = useTopicStore((state) => state.renameTopic);
+  const deleteTopic = useTopicStore((state) => state.deleteTopic);
   const [showContextDialog, setShowContextDialog] = useState(false);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(topic.name);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const optionsButtonRef = useRef<HTMLButtonElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null);
+  const pendingMenuAction = useRef<(() => void) | null>(null);
+  const deletingRef = useRef(false);
   const topicName = topic.name || topic.id;
   const topicNameRef = useRef<HTMLSpanElement>(null);
   const [isTopicNameOverflowing, setIsTopicNameOverflowing] = useState(false);
+
+  useEffect(() => {
+    if (isEditing) renameInputRef.current?.focus();
+  }, [isEditing]);
 
   useEffect(() => {
     const topicNameElement = topicNameRef.current;
@@ -74,6 +89,8 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
   };
 
   const handleDelete = async (): Promise<void> => {
+    deletingRef.current = true;
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     setConfirmOpen(false);
     await deleteTopic(topic.id);
     if (topic.id === topicId) void navigate('/');
@@ -83,16 +100,34 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
   const openMenu = Boolean(menuAnchorEl);
 
   const handleMenuOpen = (e: React.MouseEvent<HTMLElement>): void => {
+    // MUI hides the app root before moving focus into the portal.
+    // Release the trigger first so it cannot remain inside an aria-hidden root.
+    e.currentTarget.blur();
     setMenuAnchorEl(e.currentTarget);
   };
 
-  const handleMenuClose = (): void => {
+  const handleMenuClose = (action?: () => void): void => {
+    pendingMenuAction.current = action ?? null;
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     setMenuAnchorEl(null);
+  };
+
+  const handleMenuExited = (): void => {
+    const action = pendingMenuAction.current;
+    pendingMenuAction.current = null;
+    // Open the next dialog only after the menu has released its focus trap.
+    if (action) action();
+    else optionsButtonRef.current?.focus();
+  };
+
+  const closeConfirmation = (): void => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    setConfirmOpen(false);
   };
 
   return (
     <>
-      <ListItem disablePadding>
+      <ListItem component="div" disablePadding>
         {isEditing ? (
           <Box
             display="flex"
@@ -101,6 +136,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             pl={2}
             pr={1}>
             <TextField
+              inputRef={renameInputRef}
               value={editedName}
               onChange={(e): void => setEditedName(e.target.value)}
               size="small"
@@ -133,7 +169,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             }}>
             {isSelecting && (
               <Checkbox
-                checked={selectedTopicIds.has(topic.id)}
+                checked={isSelected}
                 onChange={(): void => toggleTopicSelection(topic.id)}
                 size="small"
                 sx={{ ml: 0.5 }}
@@ -178,29 +214,11 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
                         {topicName}
                       </Box>
                     </Tooltip>
-                    {topic.mode === 'debate' && (
-                      <Box
-                        display="flex"
-                        alignItems="center"
-                        sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
-                        <CompareArrowsIcon sx={{ fontSize: '0.85rem' }} />
-                      </Box>
-                    )}
-                    {topic.mode === 'curator' && (
-                      <Box
-                        display="flex"
-                        alignItems="center"
-                        sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
-                        <MenuBookOutlined sx={{ fontSize: '0.85rem' }} />
-                      </Box>
-                    )}
-                    {topic.mode === 'checklist' && (
-                      <Box
-                        display="flex"
-                        alignItems="center"
-                        sx={{ opacity: 0.6, ml: 0.5, flexShrink: 0 }}>
-                        <ChecklistIcon sx={{ fontSize: '0.85rem' }} />
-                      </Box>
+                    {topic.mode && topic.mode !== 'topic' && (
+                      <ModeBadge
+                        mode={topic.mode}
+                        compact
+                      />
                     )}
                     {(topic.forks?.length ?? 0) > 1 && (
                       <Box
@@ -237,6 +255,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             </ListItemButton>
 
             <IconButton
+              ref={optionsButtonRef}
               className="morevert-btn"
               size="small"
               aria-label="Topic options"
@@ -249,15 +268,17 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
             </IconButton>
 
             <Menu
+              id={`menu-${topic.id}`}
               anchorEl={menuAnchorEl}
               open={openMenu}
-              onClose={handleMenuClose}
+              onClose={(): void => handleMenuClose()}
+              disableRestoreFocus
+              slotProps={{ transition: { onExited: handleMenuExited } }}
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
               transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
               <MenuItem
                 onClick={(): void => {
-                  setShowContextDialog(true);
-                  handleMenuClose();
+                  handleMenuClose(() => setShowContextDialog(true));
                 }}>
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <MenuBookOutlined fontSize="small" />
@@ -267,8 +288,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
 
               <MenuItem
                 onClick={(): void => {
-                  setIsEditing(true);
-                  handleMenuClose();
+                  handleMenuClose(() => setIsEditing(true));
                 }}>
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <EditIcon fontSize="small" />
@@ -278,8 +298,10 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
 
               <MenuItem
                 onClick={(): void => {
-                  setConfirmOpen(true);
-                  handleMenuClose();
+                  handleMenuClose(() => {
+                    deletingRef.current = false;
+                    setConfirmOpen(true);
+                  });
                 }}>
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <DeleteIcon fontSize="small" />
@@ -289,8 +311,10 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
 
               <MenuItem
                 onClick={(): void => {
-                  toggleTopicSelection(topic.id);
-                  handleMenuClose();
+                  handleMenuClose(() => {
+                    toggleTopicSelection(topic.id);
+                    optionsButtonRef.current?.focus();
+                  });
                 }}>
                 <ListItemIcon sx={{ minWidth: 28 }}>
                   <DeleteSweepIcon fontSize="small" />
@@ -304,7 +328,16 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
 
       <Dialog
         open={confirmOpen}
-        onClose={(): void => setConfirmOpen(false)}>
+        onClose={closeConfirmation}
+        disableRestoreFocus
+        slotProps={{
+          transition: {
+            onEntered: (): void => cancelDeleteRef.current?.focus(),
+            onExited: (): void => {
+              if (!deletingRef.current) optionsButtonRef.current?.focus();
+            },
+          },
+        }}>
         <DialogTitle>Delete Topic</DialogTitle>
 
         <DialogContent>
@@ -312,7 +345,7 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
         </DialogContent>
 
         <DialogActions>
-          <Button onClick={(): void => setConfirmOpen(false)}>Cancel</Button>
+          <Button ref={cancelDeleteRef} onClick={closeConfirmation}>Cancel</Button>
 
           <Button
             onClick={(): void => {
@@ -324,11 +357,13 @@ export const TopicListItem = ({ topic }: { topic: Topic }): JSX.Element => {
         </DialogActions>
       </Dialog>
 
-      <TopicContextDialog
-        open={showContextDialog}
-        topicId={topic.id}
-        onClose={(): void => setShowContextDialog(false)}
-      />
+      {showContextDialog && (
+        <TopicContextDialog
+          open
+          topicId={topic.id}
+          onClose={(): void => setShowContextDialog(false)}
+        />
+      )}
     </>
   );
-};
+});

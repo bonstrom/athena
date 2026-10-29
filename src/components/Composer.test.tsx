@@ -848,6 +848,9 @@ describe('Composer', () => {
 
     expect(screen.getByText('High')).toBeInTheDocument();
     expect(screen.getByText('Max')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Medium Effort (Default)' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'High Effort' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'No reasoning' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('shows TTS voice select when ttsEnabled is true', async () => {

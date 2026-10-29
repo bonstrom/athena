@@ -13,6 +13,9 @@ import {
   DialogContentText,
   DialogTitle,
   Zoom,
+  Fade,
+  Collapse,
+  useMediaQuery,
   alpha,
   Menu,
   MenuItem,
@@ -269,6 +272,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
   const isSpeaking = currentlySpeakingMessageId === message.id;
 
   const isAssistant = message.type === 'assistant';
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const hasAnswer = message.content !== '';
+  const showActivity =
+    isAssistant && !message.failed && (!hasAnswer || (activity !== undefined && activity !== 'writing'));
+  // Keep the outgoing status label stable while the first answer tokens arrive.
+  const lastActivity = useRef(activity);
+  if (showActivity) lastActivity.current = activity;
   const isClarification = !!message.isClarification;
   const isLong = messageTruncateChars > 0 && message.content.length > messageTruncateChars;
   const displayContent =
@@ -974,103 +984,146 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           </Box>
         </Box>
 
-        <Box sx={{ overflowX: 'auto', fontSize: `${chatFontSize}px` }}>
-          {message.type === 'aiNote' ? (
-            <Typography
-              variant="body2"
-              fontStyle="italic"
-              color="text.secondary"
-              sx={{ fontSize: 'inherit', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              {getModelLabel(message.model)}
-              {isDeepSeekPeakHours() && getModelProviderId(message.model) === 'builtin-deepseek' && (
-                <Tooltip title="DeepSeek peak hours — 2x pricing">
-                  <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
-                </Tooltip>
-              )}{' '}
-              stored a hidden note here.
-            </Typography>
-          ) : (
-            <>
-              {showRaw && message.rawResponse ? (
-                <Box
-                  component="pre"
-                  sx={{
-                    fontFamily: 'monospace',
-                    fontSize: '0.75rem',
-                    whiteSpace: 'pre-wrap',
-                    overflowWrap: 'break-word',
-                    wordBreak: 'normal',
-                    m: 0,
-                    p: 1,
-                    bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)'),
-                    borderRadius: 1,
-                    overflowX: 'auto',
-                  }}>
-                  {/* eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- IIFE in render */}
-                  {(() => {
-                    try {
-                      return JSON.stringify(JSON.parse(message.rawResponse) as unknown, null, 2);
-                    } catch {
-                      return message.rawResponse || 'Unable to parse raw response';
-                    }
-                  })()}
-                </Box>
-              ) : (
-                <MarkdownWithCode
-                  fontSize={chatFontSize}
-                  disableMermaid={isLong && !isExpanded}
-                  disableSvg={isLong && !isExpanded}
-                  onEditSvg={isAssistant && (!isLong || isExpanded) ? handleEditSvgClick : undefined}>
-                  {displayContent}
-                </MarkdownWithCode>
-              )}
-              {(isLong || message.reasoning) && (
-                <Box
-                  mt={0.5}
-                  display="flex"
-                  alignItems="center"
-                  gap={1}>
-                  {isLong && !showRaw && (
-                    <Button
-                      size="small"
-                      variant="text"
-                      startIcon={isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                      onClick={(): void => setIsExpanded((v) => !v)}
-                      sx={{ textTransform: 'none', color: 'text.secondary', fontSize: '0.75rem', px: 0.5 }}>
-                      {isExpanded ? 'Show less' : 'Show more'}
-                    </Button>
-                  )}
-                  {isLong &&
-                    !isExpanded &&
-                    !showRaw &&
-                    contentTypes.map((type) => (
-                      <Tooltip
-                        key={type}
-                        title={CONTENT_TYPE_LABELS[type]}
-                        disableTouchListener={isMobile}>
-                        {CONTENT_TYPE_ICONS[type]}
-                      </Tooltip>
-                    ))}
-                  {message.reasoning && (
-                    <Tooltip title={showReasoning ? 'Hide thoughts' : 'Show thoughts'}>
-                      <IconButton
-                        size="small"
-                        onClick={(): void => setShowReasoning(!showReasoning)}
-                        sx={{
-                          color: showReasoning ? 'primary.main' : 'text.secondary',
-                          p: 0.5,
-                          '&:hover': {
-                            bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
-                          },
-                        }}>
-                        <PsychologyIcon sx={{ fontSize: '1.2rem' }} />
-                      </IconButton>
+        <Box sx={{ position: 'relative', minHeight: isAssistant && !message.failed ? 32 : undefined }}>
+          <Fade
+            in={!isAssistant || hasAnswer}
+            appear={false}
+            timeout={reducedMotion ? 0 : 360}>
+            <Box
+              sx={{
+                overflowX: 'auto',
+                fontSize: `${chatFontSize}px`,
+                display: isAssistant && !hasAnswer ? 'none' : 'block',
+              }}>
+              {message.type === 'aiNote' ? (
+                <Typography
+                  variant="body2"
+                  fontStyle="italic"
+                  color="text.secondary"
+                  sx={{ fontSize: 'inherit', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  {getModelLabel(message.model)}
+                  {isDeepSeekPeakHours() && getModelProviderId(message.model) === 'builtin-deepseek' && (
+                    <Tooltip title="DeepSeek peak hours — 2x pricing">
+                      <WhatshotIcon sx={{ fontSize: 12, color: 'warning.main' }} />
                     </Tooltip>
+                  )}{' '}
+                  stored a hidden note here.
+                </Typography>
+              ) : (
+                <>
+                  {showRaw && message.rawResponse ? (
+                    <Box
+                      component="pre"
+                      sx={{
+                        fontFamily: 'monospace',
+                        fontSize: '0.75rem',
+                        whiteSpace: 'pre-wrap',
+                        overflowWrap: 'break-word',
+                        wordBreak: 'normal',
+                        m: 0,
+                        p: 1,
+                        bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)'),
+                        borderRadius: 1,
+                        overflowX: 'auto',
+                      }}>
+                      {/* eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- IIFE in render */}
+                      {(() => {
+                        try {
+                          return JSON.stringify(JSON.parse(message.rawResponse) as unknown, null, 2);
+                        } catch {
+                          return message.rawResponse || 'Unable to parse raw response';
+                        }
+                      })()}
+                    </Box>
+                  ) : (
+                    <MarkdownWithCode
+                      fontSize={chatFontSize}
+                      disableMermaid={isLong && !isExpanded}
+                      disableSvg={isLong && !isExpanded}
+                      onEditSvg={isAssistant && (!isLong || isExpanded) ? handleEditSvgClick : undefined}>
+                      {displayContent}
+                    </MarkdownWithCode>
+                  )}
+                  {(isLong || message.reasoning) && (
+                    <Box
+                      mt={0.5}
+                      display="flex"
+                      alignItems="center"
+                      gap={1}>
+                      {isLong && !showRaw && (
+                        <Button
+                          size="small"
+                          variant="text"
+                          startIcon={isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                          onClick={(): void => setIsExpanded((v) => !v)}
+                          sx={{ textTransform: 'none', color: 'text.secondary', fontSize: '0.75rem', px: 0.5 }}>
+                          {isExpanded ? 'Show less' : 'Show more'}
+                        </Button>
+                      )}
+                      {isLong &&
+                        !isExpanded &&
+                        !showRaw &&
+                        contentTypes.map((type) => (
+                          <Tooltip
+                            key={type}
+                            title={CONTENT_TYPE_LABELS[type]}
+                            disableTouchListener={isMobile}>
+                            {CONTENT_TYPE_ICONS[type]}
+                          </Tooltip>
+                        ))}
+                      {message.reasoning && (
+                        <Tooltip title={showReasoning ? 'Hide thoughts' : 'Show thoughts'}>
+                          <IconButton
+                            size="small"
+                            onClick={(): void => setShowReasoning(!showReasoning)}
+                            sx={{
+                              color: showReasoning ? 'primary.main' : 'text.secondary',
+                              p: 0.5,
+                              '&:hover': {
+                                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.1),
+                              },
+                            }}>
+                            <PsychologyIcon sx={{ fontSize: '1.2rem' }} />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </Box>
+                  )}
+                </>
+              )}
+            </Box>
+          </Fade>
+          <Fade
+            in={showActivity}
+            appear={false}
+            timeout={reducedMotion ? 0 : 180}
+            unmountOnExit>
+            <Box
+              aria-hidden={!showActivity}
+              sx={{
+                // Fade out in place instead of pushing the status below incoming text.
+                position: hasAnswer && !showActivity ? 'absolute' : 'relative',
+                top: 0,
+                left: 0,
+                pointerEvents: 'none',
+              }}>
+              {lastActivity.current ? (
+                <ActivityIndicator activity={lastActivity.current} />
+              ) : (
+                <Box sx={{ my: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <TypingIndicator />
+                  {message.reasoning && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ fontStyle: 'italic', animation: 'pulse 2s infinite' }}>
+                      Thinking...
+                    </Typography>
                   )}
                 </Box>
               )}
-            </>
-          )}
+            </Box>
+          </Fade>
         </Box>
 
         {message.attachments && message.attachments.length > 0 && (
@@ -1171,29 +1224,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
           </Box>
         )}
 
-        {isAssistant && activity && !message.failed && <ActivityIndicator activity={activity} />}
-        {isAssistant && !activity && message.content === '' && !message.failed && (
-          <Box
-            sx={{
-              mt: 1,
-              mb: 1,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-            }}>
-            <TypingIndicator />
-            {message.reasoning && (
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ fontStyle: 'italic', animation: 'pulse 2s infinite' }}>
-                Thinking...
-              </Typography>
-            )}
-          </Box>
-        )}
-
-        {showReasoning && message.reasoning && (
+        <Collapse
+          in={showReasoning && !!message.reasoning}
+          timeout={{ enter: 0, exit: reducedMotion ? 0 : 220 }}
+          unmountOnExit>
           <Box
             sx={{
               mt: 1.5,
@@ -1202,7 +1236,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               borderRadius: 2,
               bgcolor: (theme): string => (theme.palette.mode === 'dark' ? alpha('#fff', 0.05) : alpha('#000', 0.03)),
               borderLeft: (theme): string => `4px solid ${alpha(theme.palette.text.secondary, 0.2)}`,
-              maxHeight: '400px',
+              // Reserve the full reading area once, rather than growing on every token.
+              height: '400px',
+              maxHeight: '45vh',
+              boxSizing: 'border-box',
               overflowY: 'auto',
             }}>
             <Typography
@@ -1218,10 +1255,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
               Thought Process
             </Typography>
             <Box sx={{ fontSize: `${Math.max(11, chatFontSize - 2)}px` }}>
-              <MarkdownWithCode fontSize={Math.max(11, chatFontSize - 2)}>{message.reasoning}</MarkdownWithCode>
+              <MarkdownWithCode fontSize={Math.max(11, chatFontSize - 2)}>{message.reasoning ?? ''}</MarkdownWithCode>
             </Box>
           </Box>
-        )}
+        </Collapse>
 
         {message.failed && (
           <Box

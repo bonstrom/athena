@@ -5,7 +5,7 @@ import { useAuthStore } from '../store/AuthStore';
 import { useTopicStore } from '../store/TopicStore';
 import { useChatStore } from '../store/ChatStore';
 import { useProviderStore } from '../store/ProviderStore';
-import { selectorize } from '../testUtils';
+import { renderWithTheme, selectorize } from '../testUtils';
 
 jest.mock('react-router-dom', () => ({
   Link: ({ children }: { children: React.ReactNode }): React.ReactElement => <>{children}</>,
@@ -59,6 +59,12 @@ describe('Home page', () => {
     render(<Home />);
 
     expect(screen.getByText(/Add a provider and API key/)).toBeInTheDocument();
+  });
+
+  it('keeps the owl free of a drop shadow in dark mode', () => {
+    selectorize(mockUseProviderStore, { hasAnyApiKey: (): boolean => true });
+    renderWithTheme(<Home />);
+    expect(getComputedStyle(screen.getByAltText('Athena Logo')).filter).not.toContain('drop-shadow');
   });
 
   it('does not show the setup prompt when an API key is available', () => {
