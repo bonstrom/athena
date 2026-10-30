@@ -424,7 +424,7 @@ describe('MessageBubble', () => {
 
   // ─── Summarization ────────────────────────────────────────────────────────
 
-  it('renders summarization button when message is long enough and aiSummaryEnabled', () => {
+  it.each(['user', 'assistant'] as const)('only shows summary generation inside the popup for %s messages', (type) => {
     selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
@@ -437,13 +437,15 @@ describe('MessageBubble', () => {
     renderWithTheme(
       <MessageBubble
         message={createMessage({
-          type: 'user',
+          type,
           content: 'A'.repeat(300),
         })}
       />,
     );
 
-    expect(screen.getByLabelText('Generate summary')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Generate summary' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Message details' }));
+    expect(screen.getByRole('button', { name: 'Generate summary' })).toBeInTheDocument();
   });
 
   it('calls maybeSummarize when summarization button is clicked', () => {
@@ -470,7 +472,8 @@ describe('MessageBubble', () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText('Generate summary'));
+    fireEvent.click(screen.getByRole('button', { name: 'Message details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate summary' }));
 
     expect(maybeSummarize).toHaveBeenCalledWith('msg-summarize', 'B'.repeat(300), true);
   });
@@ -498,7 +501,9 @@ describe('MessageBubble', () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: 'Message details' }));
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Generate summary' })).toBeDisabled();
   });
 
   it('shows retry state for failed summarization', () => {
@@ -524,10 +529,14 @@ describe('MessageBubble', () => {
       />,
     );
 
-    expect(screen.getByLabelText('Summary failed — click to retry')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry summary' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Message details' }));
+    expect(screen.getByRole('button', { name: 'Retry summary' })).toBeInTheDocument();
   });
 
-  it('shows regenerate summary label when message already has summary', () => {
+  it('only shows summary regeneration inside the message details popup', () => {
+    const maybeSummarize = jest.fn((): Promise<void> => Promise.resolve());
+    selectorize(mockUseChatStore, createChatStore({ maybeSummarize }));
     selectorize(mockUseAuthStore, {
       userName: 'Alex',
       chatFontSize: 16,
@@ -540,6 +549,7 @@ describe('MessageBubble', () => {
     renderWithTheme(
       <MessageBubble
         message={createMessage({
+          id: 'msg-regenerate-summary',
           type: 'user',
           content: 'E'.repeat(300),
           summary: 'Existing summary',
@@ -547,7 +557,42 @@ describe('MessageBubble', () => {
       />,
     );
 
-    expect(screen.getByLabelText('Regenerate summary')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Regenerate summary' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Regenerate summary')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Message details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate summary' }));
+
+    expect(maybeSummarize).toHaveBeenCalledWith('msg-regenerate-summary', 'E'.repeat(300), true);
+  });
+
+  it('disables summary regeneration in the popup while it is running', () => {
+    selectorize(mockUseChatStore, createChatStore({ summarizingMessageIds: new Set(['msg-summary-busy']) }));
+    renderWithTheme(
+      <MessageBubble message={createMessage({ id: 'msg-summary-busy', summary: 'Existing summary' })} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Message details' }));
+
+    expect(screen.getByRole('button', { name: 'Regenerate summary' })).toBeDisabled();
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it('allows retrying a failed regeneration from the summary popup', () => {
+    const maybeSummarize = jest.fn((): Promise<void> => Promise.resolve());
+    selectorize(mockUseChatStore, createChatStore({
+      maybeSummarize,
+      failedSummaryMessageIds: new Set(['msg-summary-retry']),
+    }));
+    renderWithTheme(
+      <MessageBubble message={createMessage({ id: 'msg-summary-retry', content: 'Original message', summary: 'Existing summary' })} />,
+    );
+
+    expect(screen.queryByLabelText('Summary failed — click to retry')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Message details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry summary' }));
+
+    expect(maybeSummarize).toHaveBeenCalledWith('msg-summary-retry', 'Original message', true);
   });
 
   it('shows summary text in info popover', () => {

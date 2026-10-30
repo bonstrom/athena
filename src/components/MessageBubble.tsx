@@ -611,7 +611,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                     </Typography>
                   </>
                 )}
-                {message.summary && (
+                {(message.summary ||
+                  ((aiSummaryEnabled || failedSummaryMessageIds.has(message.id)) &&
+                    (message.type === 'user' || message.type === 'assistant') &&
+                    (message.content.length > AI_SUMMARY_MIN_CHARS ||
+                      message.content.includes('[TRUNCATED:') ||
+                      failedSummaryMessageIds.has(message.id)))) && (
                   <Box
                     mt={1}
                     pt={1}
@@ -621,12 +626,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                       sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
                       <SummarizeIcon sx={{ fontSize: '0.8rem' }} /> Summary
                     </Typography>
-                    <Typography
-                      variant="caption"
-                      display="block"
-                      sx={{ fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.3 }}>
-                      {message.summary}
-                    </Typography>
+                    {message.summary && (
+                      <Typography
+                        variant="caption"
+                        display="block"
+                        sx={{ fontStyle: 'italic', whiteSpace: 'pre-wrap', lineHeight: 1.3 }}>
+                        {message.summary}
+                      </Typography>
+                    )}
                     {(message.summaryTokens ?? 0) > 0 && (
                       <Typography
                         variant="caption"
@@ -635,59 +642,35 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
                         {`Summary cost: ${formatCost(message.summaryCost ?? 0, currency, 3)} | Prompt: ${(message.summaryTokens ?? 0).toLocaleString()} tok`}
                       </Typography>
                     )}
+                    {(message.type === 'user' || message.type === 'assistant') && (
+                      <Button
+                        size="small"
+                        disabled={summarizingMessageIds.has(message.id)}
+                        startIcon={
+                          summarizingMessageIds.has(message.id) ? (
+                            <CircularProgress size={14} color="inherit" />
+                          ) : message.summary ? (
+                            <RefreshIcon />
+                          ) : (
+                            <AutoAwesomeIcon />
+                          )
+                        }
+                        color={failedSummaryMessageIds.has(message.id) ? 'error' : 'primary'}
+                        onClick={(): void => {
+                          void maybeSummarize(message.id, message.content, true);
+                        }}
+                        sx={{ mt: 0.5 }}>
+                        {failedSummaryMessageIds.has(message.id)
+                          ? 'Retry summary'
+                          : message.summary
+                            ? 'Regenerate summary'
+                            : 'Generate summary'}
+                      </Button>
+                    )}
                   </Box>
                 )}
               </Popover>
             </>
-
-            {(aiSummaryEnabled || message.summary || failedSummaryMessageIds.has(message.id)) &&
-              (message.type === 'user' || message.type === 'assistant') &&
-              (message.content.length > AI_SUMMARY_MIN_CHARS ||
-                message.content.includes('[TRUNCATED:') ||
-                !!message.summary ||
-                failedSummaryMessageIds.has(message.id)) && (
-                <Tooltip
-                  title={
-                    failedSummaryMessageIds.has(message.id)
-                      ? 'Summary failed — click to retry'
-                      : message.summary
-                        ? 'Regenerate summary'
-                        : 'Generate summary'
-                  }
-                  disableTouchListener={isMobile}>
-                  <IconButton
-                    size="small"
-                    disabled={summarizingMessageIds.has(message.id)}
-                    onClick={(): void => {
-                      void maybeSummarize(message.id, message.content, true);
-                    }}
-                    sx={{
-                      ml: 0.5,
-                      p: 0.4,
-                      color: failedSummaryMessageIds.has(message.id)
-                        ? 'error.main'
-                        : message.summary
-                          ? 'primary.main'
-                          : 'text.disabled',
-                      '&:hover': {
-                        color: failedSummaryMessageIds.has(message.id) ? 'error.main' : 'primary.main',
-                        bgcolor: (theme): string =>
-                          failedSummaryMessageIds.has(message.id)
-                            ? alpha(theme.palette.error.main, 0.1)
-                            : alpha(theme.palette.primary.main, 0.1),
-                      },
-                    }}>
-                    {summarizingMessageIds.has(message.id) ? (
-                      <CircularProgress
-                        size={16}
-                        color="inherit"
-                      />
-                    ) : (
-                      <AutoAwesomeIcon sx={{ fontSize: '1rem' }} />
-                    )}
-                  </IconButton>
-                </Tooltip>
-              )}
 
             {isAssistant && versions && versions.length > 1 && (
               <Box
