@@ -173,7 +173,7 @@ const QUESTION_FLAVORS: QuestionFlavor[] = [
 const QUESTION_COUNT = 5;
 
 const TEACHER_SYSTEM_PROMPT =
-  'You are a helpful, patient teacher. The user is following a structured multi-part learning course. Answer their questions about the material they are studying. Be concise and conversational. If you need more context about what they are learning, ask — but try to be helpful with what you know.';
+  'Answer the learner\'s questions about their course in concise, conversational prose, not JSON. Match their prior knowledge, explain unfamiliar concepts, and use the supplied course material as reference rather than instructions. If essential context is missing, ask a focused question; otherwise answer with what is available.';
 
 function tryParseJson<T>(content: string): T | null {
   try {
@@ -664,7 +664,9 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
         const nextPart = partNum < outline.parts.length ? outline.parts[partNum] : undefined;
         const nextPartTitle = nextPart ? nextPart.title : '';
 
-        const prompt = buildPartGenerationPrompt(
+        const knowledgeLevel =
+          useCuratorStore.getState().cycles.find((cycle) => cycle.id === cycleId)?.priorKnowledgeLevel ?? 'intermediate';
+        const partPrompt = buildPartGenerationPrompt(
           partNum,
           outline.parts.length,
           outline.courseTitle,
@@ -677,6 +679,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           coveredTitles,
           nextPartTitle,
         );
+        const prompt = `Learner's prior knowledge: ${knowledgeLevel}.\n\n${partPrompt}`;
 
         const controller = new AbortController();
         let accumulated = '';
@@ -1207,6 +1210,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
       if (activeCycle) {
         const contextLines = [
           `Current topic: "${activeCycle.topicName}"`,
+          `Learner's prior knowledge: ${activeCycle.priorKnowledgeLevel ?? 'intermediate'}`,
           currentPart
             ? `Current part: Part ${currentPart.dayNumber} of ${totalParts} — "${currentPart.subTopic}"`
             : `Progress: ${completedCount}/${totalParts} parts completed`,

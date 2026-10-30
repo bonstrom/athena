@@ -9,6 +9,7 @@ import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
 import { BackupMode, BackupStatus } from '../store/BackupStore';
 import { DEFAULT_PROVIDERS } from '../types/provider';
 import { FontId, fontOptions } from '../constants/fonts';
+import { DEFAULT_SCRATCHPAD_RULES } from '../constants';
 
 interface PredefinedPrompt {
   id: string;
@@ -668,7 +669,7 @@ describe('Settings page', () => {
     const textarea = screen.getByLabelText(/Scratchpad Rules/i);
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     const textareaEl = textarea as HTMLTextAreaElement;
-    expect(textareaEl.value).toContain('You have a private scratchpad');
+    expect(textareaEl.value).toBe(DEFAULT_SCRATCHPAD_RULES);
   });
 
   it('edits an existing predefined prompt', async () => {

@@ -4,7 +4,6 @@ import { useProviderStore } from '../store/ProviderStore';
 import { useChatStore } from '../store/ChatStore';
 import { getApiKey as getProviderApiKey, getPayloadOverrides, resolveReasoningEffort, LlmProvider } from '../types/provider';
 import { estimateTokens } from './estimateTokens';
-import { RAG_CONTENT_LIMIT } from '../constants';
 
 export type LlmContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
@@ -110,7 +109,7 @@ export const READ_MESSAGES_TOOL: LlmTool = {
   type: 'function',
   function: {
     name: 'read_messages',
-    description: `Retrieve full content or specific lines of historical messages by their IDs. Use this when a snippet or a truncated message (messages in context are typically truncated to ${RAG_CONTENT_LIMIT} chars) is not enough. Tip: Store IDs of critical messages (like working configs) in your scratchpad for future reference.`,
+    description: 'Read historical messages by ID, in full or by line range. Use when the needed details are absent from the available summaries or previews.',
     parameters: {
       type: 'object',
       properties: {

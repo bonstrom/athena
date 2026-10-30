@@ -2,6 +2,9 @@ import type { Message, Topic } from '../../database/AthenaDb';
 import type { LlmProvider, UserChatModel } from '../../types/provider';
 import { createUserChatModel, createLlmProvider, createTopic, createMessage } from '../../testUtils';
 import * as webSearchService from '../../services/webSearchService';
+import { MESSAGE_RETRIEVAL_INSTRUCTIONS } from '../../constants';
+import { useCuratorStore } from '../CuratorStore';
+import { useTopicStore } from '../TopicStore';
 
 const mockDefaultModel: UserChatModel = createUserChatModel();
 
@@ -744,7 +747,67 @@ describe('ChatStore', () => {
     const llmContext = mockOrchestrateLlmLoop.mock.calls[0][2] as { role: string; content: string | unknown[] }[];
     const contents = llmContext.map((m) => (typeof m.content === 'string' ? m.content : ''));
     expect(contents.some((c) => c.includes('clarifying question'))).toBe(true);
-    expect(contents.some((c) => c.includes('list_messages and read_messages tools'))).toBe(true);
+    expect(contents).toContain(MESSAGE_RETRIEVAL_INSTRUCTIONS);
+  });
+
+  it('isolates Curator outline requests from chat instructions and tools', async () => {
+    const topicState = useTopicStore.getState();
+    const topicSpy = jest.spyOn(useTopicStore, 'getState').mockReturnValue({
+      ...topicState,
+      topics: [createTopic({ id: 'topic-1', mode: 'curator', scratchpad: 'Private chat memory' })],
+    });
+    const ratingsSpy = jest.spyOn(useCuratorStore.getState(), 'getPastRatingsForContext').mockResolvedValue({
+      ratingsContext: 'Prefers practical examples',
+      completedCourseNames: 'Completed course',
+    });
+    mockAuthGetState.mockReturnValue({ ...mockAuthGetState(), customInstructions: 'Always answer in pirate prose' });
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: '{}', totalPromptTokens: 1, totalCompletionTokens: 1, totalSearchCount: 0, toolLoopTrace: [],
+      lastResult: { content: '{}', rawContent: '{}', promptTokens: 1, completionTokens: 1, searchCount: 0 },
+    });
+
+    try {
+      const context = await useChatStore.getState().buildFullContext('topic-1');
+      expect(context.map((entry) => entry.sourceLabel)).toEqual(['Curator Instructions', 'Curator Context']);
+
+      await useChatStore.getState().sendMessageStream('[CURATOR] Generate an outline', 'topic-1');
+
+      const call = mockOrchestrateLlmLoop.mock.calls[0];
+      expect(call[8]).toEqual([]);
+      expect(call[10]?.includeCustomInstructions).toBe(false);
+      expect(call[2].map((message) => message.content)).not.toContainEqual(expect.stringContaining('Private chat memory'));
+    } finally {
+      topicSpy.mockRestore();
+      ratingsSpy.mockRestore();
+    }
+  });
+
+  it('sends the completed answer only once in a contextual summary request', async () => {
+    const target = 'Distinctive assistant answer about the Edinburgh inventory.';
+    const originalSummarize = useChatStore.getState().maybeSummarize;
+    const summarizeSpy = jest.spyOn(useChatStore.getState(), 'maybeSummarize').mockResolvedValue(undefined);
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: target, totalPromptTokens: 1, totalCompletionTokens: 1, totalSearchCount: 0, toolLoopTrace: [],
+      lastResult: { content: target, rawContent: target, promptTokens: 1, completionTokens: 1, searchCount: 0 },
+    });
+    mockAskLlm.mockResolvedValue({ content: 'Discusses the Edinburgh inventory.', promptTokens: 1, completionTokens: 1 });
+
+    try {
+      await useChatStore.getState().sendMessageStream('Explain handedness', 'topic-1');
+      const summaryCall = summarizeSpy.mock.calls.find((call) => call[1] === target);
+      expect(summaryCall).toBeDefined();
+      const precedingContext = summaryCall?.[3];
+      expect(precedingContext).toBeDefined();
+      expect(precedingContext).toContainEqual(expect.objectContaining({ content: 'Explain handedness' }));
+      expect(precedingContext).not.toContainEqual(expect.objectContaining({ content: target }));
+
+      await useChatStore.getState()._runSummarize('summary-target', target, precedingContext);
+      const requestMessages = mockAskLlm.mock.calls[0][2];
+      expect(JSON.stringify(requestMessages).split(target)).toHaveLength(2);
+    } finally {
+      summarizeSpy.mockRestore();
+      useChatStore.setState({ maybeSummarize: originalSummarize });
+    }
   });
 
   it('stopSending aborts, deletes pending user/assistant messages, and returns user content', async () => {
@@ -1827,7 +1890,9 @@ describe('ChatStore', () => {
     try {
       const context = await useChatStore.getState().buildFullContext('topic-1');
       expect(context.some((e) => e.sourceLabel === 'Scratchpad Content')).toBe(true);
-      expect(context.some((e) => (e.message as { content: string }).content === 'User prefers TypeScript')).toBe(true);
+      expect(context.find((e) => e.sourceLabel === 'Scratchpad Content')?.message.content).toEqual(
+        expect.stringContaining('User prefers TypeScript'),
+      );
     } finally {
       useTopicStore.getState = originalGetState;
     }

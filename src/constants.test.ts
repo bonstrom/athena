@@ -27,7 +27,15 @@ describe('buildPartGenerationPrompt', () => {
     expect(prompt).not.toContain('irresistible');
     expect(prompt).not.toContain('NEED to keep reading');
     expect(prompt).toContain('curiosity gap without exaggeration');
-    expect(prompt).toContain('Drama comes from facts');
+    expect(prompt).toContain(CURATOR_VOICE_RULES);
+  });
+
+  it.each([1, 3])('requests a bold takeaway for part %s', (partNumber) => {
+    const prompt = buildPartGenerationPrompt(
+      partNumber, 3, 'Course', 'Q?', 'Spine', 'Title', 'Idea', 'question', 'story', '', '',
+    );
+
+    expect(prompt).toMatch(/keyTakeaway: one bolded sentence/);
   });
 });
 
@@ -48,7 +56,7 @@ describe('buildSingleQuestionPrompt', () => {
 
 describe('CURATOR_VOICE_RULES', () => {
   it('contains anti-hype and specificity rules', () => {
-    expect(CURATOR_VOICE_RULES).toContain('Ban hype words');
-    expect(CURATOR_VOICE_RULES).toContain('Specific beats dramatic');
+    expect(CURATOR_VOICE_RULES).toMatch(/specific examples instead of hype/i);
+    expect(CURATOR_VOICE_RULES).toMatch(/never invent anecdotes, evidence, or certainty/i);
   });
 });

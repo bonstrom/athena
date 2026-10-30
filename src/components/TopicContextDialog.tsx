@@ -79,13 +79,13 @@ const TopicContextDialog: React.FC<TopicContextDialogProps> = ({ open, topicId, 
 
   // Compute tool schema token cost from the actual tool definitions rather than a static guess
   const toolSchemaTokens = useMemo(() => {
-    if (!selectedModel.supportsTools) return 0;
+    if (!selectedModel.supportsTools || entries.some((entry) => entry.sourceLabel === 'Curator Instructions')) return 0;
     const tools = [SCRATCHPAD_TOOL];
     if (messageRetrievalEnabled) tools.push(READ_MESSAGES_TOOL, LIST_MESSAGES_TOOL);
     if (webSearchEnabled && hasWebSearchApiKey()) tools.push(WEB_SEARCH_TOOL, FETCH_URL_TOOL);
     // Treat serialised tool JSON as a pseudo-message so estimateTokens can count it
     return estimateTokens([{ role: 'system', content: JSON.stringify(tools) }]).promptTokens;
-  }, [selectedModel.supportsTools, messageRetrievalEnabled, webSearchEnabled]);
+  }, [selectedModel.supportsTools, messageRetrievalEnabled, webSearchEnabled, entries]);
 
   const totalTokenCount = useMemo(() => {
     if (entries.length === 0) return 0;
