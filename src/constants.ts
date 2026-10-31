@@ -1,4 +1,4 @@
-export const LATEX_INSTRUCTIONS = `You can use LaTeX syntax for mathematical expressions: \`$...$\` for inline math and \`$$...$$\` for display (block) math.`;
+export const LATEX_INSTRUCTIONS = `For mathematical expressions, use LaTeX enclosed in \`$...$\` for inline math or \`$$...$$\` on separate lines for display (block) math. Always include math delimiters around LaTeX commands and expressions; ordinary parentheses alone do not start math mode. Keep code and file paths in code spans or fenced code blocks, not math delimiters.`;
 
 export const SVG_INSTRUCTIONS = `For inline-rendered SVG diagrams, use a complete SVG document inside a \`svg\` fenced code block. Close the fence on its own line after </svg>. Use viewBox and reasonable dimensions.`;
 

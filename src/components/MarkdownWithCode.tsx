@@ -578,7 +578,8 @@ function escapeCurrencyInProse(text: string): string {
   // Matches inline code spans (`...`) and valid `$...$` inline math spans.
   // Inline math must open with a non-space/non-$ char and close with a
   // non-space/non-backslash char, mirroring remark-math's rules.
-  const spanPattern = /(`+)[\s\S]*?\1|\$(?![\s$])(?:\\.|[^\\$])*?(?<![\s\\])\$/g;
+  const spanPattern =
+    /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)|(\${2,})(?!\$)[\s\S]*?(?<!\$)\2(?!\$)|\$(?![\s$])(?:\\.|[^\\$])*?(?<![\s\\])\$/g;
   const protectedIndexes = new Set<number>();
 
   let span: RegExpExecArray | null;
@@ -598,6 +599,31 @@ function escapeCurrencyInProse(text: string): string {
 }
 
 /**
+ * Support explicit LaTeX delimiters without guessing whether prose is math.
+ * One replacement pass protects code and existing math, including multiline
+ * spans, and never reprocesses the dollar-delimited math it generates.
+ * Fenced code is handled separately by preprocessMarkdown.
+ */
+function normalizeLatexDelimiters(text: string): string {
+  const spanPattern =
+    /\\[\\`$]|(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)|(?<!\$)(\$+)(?!\$)(?:\\[\s\S]|[^\\])*?(?<!\$)\2(?!\$)|\\\(((?:\\[\s\S]|[^\\])*?)\\\)|\\\[((?:\\[\s\S]|[^\\])*?)\\\]/g;
+  return text.replace(
+    spanPattern,
+    (
+      match: string,
+      _ticks: string | undefined,
+      _dollars: string | undefined,
+      inline: string | undefined,
+      display: string | undefined,
+    ): string => {
+      if (inline?.trim()) return `$${inline.trim()}$`;
+      if (display?.trim()) return `\n$$\n${display.trim()}\n$$\n`;
+      return match;
+    },
+  );
+}
+
+/**
  * Preprocesses markdown before parsing:
  *
  * 1. Balances fenced code blocks (``` and ~~~) using CommonMark matching
@@ -606,13 +632,23 @@ function escapeCurrencyInProse(text: string): string {
  * 2. Auto-closes a ```svg fence right after its </svg> tag so trailing
  *    markdown renders normally (searches the whole document for a real
  *    closing fence rather than a fixed window).
- * 3. Escapes currency-style $ (followed by a digit) only outside code fences
- *    and inline code spans.
+ * 3. Normalizes explicit LaTeX delimiters and escapes currency-style $ only
+ *    outside code fences, inline code spans, and existing math.
  */
 function preprocessMarkdown(content: string): string {
   const lines = content.split('\n');
   const result: string[] = [];
   const openFences: FenceMarker[] = [];
+  const proseLines: string[] = [];
+  let displayMathFenceLength = 0;
+
+  const flushProse = (): void => {
+    if (proseLines.length === 0) return;
+    // Resolve currency before looking for math so prices cannot hide a later
+    // explicit LaTeX delimiter inside an apparent dollar-delimited span.
+    result.push(normalizeLatexDelimiters(escapeCurrencyInProse(proseLines.join('\n'))));
+    proseLines.length = 0;
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -646,15 +682,41 @@ function preprocessMarkdown(content: string): string {
       continue;
     }
 
+    if (displayMathFenceLength > 0) {
+      result.push(line);
+      const closingMathFence = /^\${2,}\s*$/.exec(trimmed);
+      if (closingMathFence && trimmed.length >= displayMathFenceLength) displayMathFenceLength = 0;
+      continue;
+    }
+
+    // Standalone indented code is literal too. Indentation in a continuing
+    // paragraph/math span must not split the prose buffer.
+    if (/^(?: {4}|\t)/.test(line) && (proseLines.length === 0 || proseLines[proseLines.length - 1].trim() === '')) {
+      flushProse();
+      result.push(line);
+      continue;
+    }
+
+    const openingMathFence = /^(\${2,})([^$]*)$/.exec(trimmed);
+    if (openingMathFence) {
+      flushProse();
+      displayMathFenceLength = openingMathFence[1].length;
+      result.push(line);
+      continue;
+    }
+
     const marker = parseFenceMarker(trimmed);
     if (marker && isOpeningFence(marker)) {
+      flushProse();
       openFences.push(marker);
       result.push(line);
       continue;
     }
 
-    result.push(escapeCurrencyInProse(line));
+    proseLines.push(line);
   }
+
+  flushProse();
 
   while (openFences.length > 0) {
     const open = openFences.pop();
