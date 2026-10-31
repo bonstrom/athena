@@ -4,7 +4,9 @@ import Settings from './Settings';
 import { useAuthStore } from '../store/AuthStore';
 import { useProviderStore } from '../store/ProviderStore';
 import { useBackupStore } from '../store/BackupStore';
+import { useNotificationStore } from '../store/NotificationStore';
 import { BackupService } from '../services/backupService';
+import { exportAnalytics, importAnalytics } from '../services/analyticsService';
 import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
 import { BackupMode, BackupStatus } from '../store/BackupStore';
 import { DEFAULT_PROVIDERS } from '../types/provider';
@@ -97,7 +99,8 @@ jest.mock('../components/ProviderCard', () => ({
 
 jest.mock('../components/ImportDialog', () => ({
   __esModule: true,
-  default: (): React.ReactElement => <div data-testid="import-dialog" />,
+  default: ({ open }: { open: boolean }): React.ReactElement | null =>
+    open ? <div data-testid="import-dialog" /> : null,
 }));
 
 jest.mock('../store/AuthStore', () => ({
@@ -128,6 +131,15 @@ jest.mock('../services/llmService', () => ({
   getDeepSeekBalance: jest.fn(),
 }));
 
+jest.mock('../services/analyticsService', () => {
+  const actual = jest.requireActual<typeof import('../services/analyticsService')>('../services/analyticsService');
+  return {
+    ...actual,
+    exportAnalytics: jest.fn(),
+    importAnalytics: jest.fn(),
+  };
+});
+
 jest.mock('../database/AthenaDb', () => ({
   athenaDb: {
     messages: {
@@ -142,6 +154,8 @@ const mockUseBackupStore = useBackupStore as unknown as jest.Mock<BackupStoreSta
 const mockBackupService = BackupService as unknown as MockedBackupService;
 const mockGetMoonshotBalance = getMoonshotBalance as jest.MockedFunction<typeof getMoonshotBalance>;
 const mockGetDeepSeekBalance = getDeepSeekBalance as jest.MockedFunction<typeof getDeepSeekBalance>;
+const mockExportAnalytics = exportAnalytics as jest.MockedFunction<typeof exportAnalytics>;
+const mockImportAnalytics = importAnalytics as jest.MockedFunction<typeof importAnalytics>;
 
 function buildAuthState(): AuthState {
   return {
@@ -225,6 +239,7 @@ describe('Settings page', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    useNotificationStore.setState({ notifications: [] });
 
     Object.defineProperty(globalThis, 'crypto', {
       value: { randomUUID: jest.fn((): string => 'prompt-uuid') },
@@ -264,6 +279,8 @@ describe('Settings page', () => {
     mockBackupService.getInternalBackupFile.mockResolvedValue(null);
     mockGetMoonshotBalance.mockResolvedValue(null);
     mockGetDeepSeekBalance.mockResolvedValue(null);
+    mockExportAnalytics.mockResolvedValue(undefined);
+    mockImportAnalytics.mockResolvedValue({ success: true, message: 'Imported analytics.' });
   });
 
   afterEach(() => {
@@ -795,6 +812,74 @@ describe('Settings page', () => {
     }
 
     expect(screen.getByTestId('import-dialog')).toBeInTheDocument();
+  });
+
+  it('renders analytics-only export/import with a no-conversations privacy note', () => {
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole('tab', { name: /data/i }));
+
+    expect(screen.getByText('Analytics Sharing')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export Analytics Only' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import Analytics Only' })).toBeInTheDocument();
+    expect(screen.getByText(/does not include conversations/i)).toBeInTheDocument();
+  });
+
+  it('export analytics only calls exportAnalytics and not the full backup', async () => {
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole('tab', { name: /data/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Export Analytics Only' }));
+
+    await waitFor(() => expect(mockExportAnalytics).toHaveBeenCalledWith('Alex'));
+    expect(mockBackupService.downloadBackup).not.toHaveBeenCalled();
+    expect(useNotificationStore.getState().notifications).toEqual(
+      expect.arrayContaining([expect.objectContaining({ title: 'Analytics exported', severity: 'success' })]),
+    );
+  });
+
+  it('import analytics only imports without opening the full backup dialog', async () => {
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole('tab', { name: /data/i }));
+
+    const input = screen.getByTestId<HTMLInputElement>('analytics-import-input');
+    Object.defineProperty(input, 'value', { value: 'C:\\fakepath\\analytics.json', writable: true, configurable: true });
+    const file = new File(['{"format":"athena-analytics-v2"}'], 'analytics.json', { type: 'application/json' });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(mockImportAnalytics).toHaveBeenCalledWith(file));
+    expect(screen.queryByTestId('import-dialog')).not.toBeInTheDocument();
+    expect(input.value).toBe('');
+    expect(useNotificationStore.getState().notifications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: 'Analytics imported', message: 'Imported analytics.', severity: 'success' }),
+      ]),
+    );
+  });
+
+  it('shows an error notification when analytics import fails', async () => {
+    mockImportAnalytics.mockResolvedValueOnce({ success: false, message: 'Invalid analytics file format.' });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole('tab', { name: /data/i }));
+
+    const file = new File(['{}'], 'analytics.json', { type: 'application/json' });
+    fireEvent.change(screen.getByTestId('analytics-import-input'), { target: { files: [file] } });
+
+    await waitFor(() =>
+      expect(useNotificationStore.getState().notifications).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            title: 'Analytics import failed',
+            message: 'Invalid analytics file format.',
+            severity: 'error',
+          }),
+        ]),
+      ),
+    );
+    expect(screen.queryByTestId('import-dialog')).not.toBeInTheDocument();
   });
 
   it('external auto-backup toggle ON calls selectAutoBackupFile and sets backup mode', async () => {

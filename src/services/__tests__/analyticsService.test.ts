@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/explicit-function-return-type, unused-imports/no-unused-vars, @typescript-eslint/no-non-null-assertion */
-import type { AnalyticsSnapshot, LlmOperationUsage } from '../../database/AthenaDb';
+import type { AnalyticsSnapshot, LlmOperationUsage, Topic } from '../../database/AthenaDb';
 import { createLlmProvider, createUserChatModel } from '../../testUtils/fixtures';
 
 let mockSnapshots: AnalyticsSnapshot[] = [];
+let mockTopics: Topic[] = [];
 const mockSnapshotToArray = jest.fn<Promise<AnalyticsSnapshot[]>, []>();
 const mockSnapshotGet = jest.fn<Promise<AnalyticsSnapshot | undefined>, [string]>();
 const mockMessagesToArray = jest.fn<Promise<Message[]>, []>();
@@ -34,7 +35,7 @@ jest.mock('../../database/AthenaDb', () => ({
       toArray: (): Promise<LlmOperationUsage[]> => mockOperationUsagesToArray(),
     },
     topics: {
-      toArray: (): Promise<unknown[]> => Promise.resolve([]),
+      toArray: (): Promise<Topic[]> => Promise.resolve([...mockTopics]),
     },
     analyticsSnapshots: {
       toArray: (): Promise<AnalyticsSnapshot[]> => mockSnapshotToArray(),
@@ -91,6 +92,7 @@ beforeEach(() => {
   );
   mockMessagesToArray.mockResolvedValue([]);
   mockOperationUsagesToArray.mockResolvedValue([]);
+  mockTopics = [];
   mockModels.length = 0;
   mockProviders.length = 0;
 });
@@ -379,9 +381,36 @@ describe('exportAnalytics / importAnalytics backward compatibility', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { value: origRevoke, configurable: true, writable: true });
   });
 
-  it('exports with athena-analytics-v2 format', async () => {
-    mockMessagesToArray.mockResolvedValue([]);
-    mockSnapshotToArray.mockResolvedValue([]);
+  it('exports with athena-analytics-v2 format and only aggregate stats', async () => {
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({
+        content: 'TOP_SECRET_CONVERSATION',
+        reasoning: 'TOP_SECRET_REASONING',
+        rawResponse: 'TOP_SECRET_RAW_RESPONSE',
+        toolLogs: 'TOP_SECRET_TOOL_LOGS',
+        attachments: [
+          {
+            id: 'att-1',
+            name: 'TOP_SECRET_ATTACHMENT',
+            type: 'text/plain',
+            size: 10,
+            data: 'TOP_SECRET_ATTACHMENT_DATA',
+          },
+        ],
+      }),
+    ]);
+    mockTopics = [
+      {
+        id: 'topic-1',
+        name: 'TOP_SECRET_TOPIC',
+        createdOn: '2026-01-01T00:00:00.000Z',
+        updatedOn: '2026-01-02T00:00:00.000Z',
+        isDeleted: false,
+        scratchpad: 'TOP_SECRET_SCRATCHPAD',
+        forks: [{ id: 'main', name: 'TOP_SECRET_FORK', createdOn: '2026-01-01T00:00:00.000Z' }],
+        mode: 'debate',
+      },
+    ];
 
     // eslint-disable-next-line @typescript-eslint/unbound-method
     const appendChildSpy = jest.spyOn(document.body, 'appendChild').mockImplementation(jest.fn());
@@ -396,6 +425,77 @@ describe('exportAnalytics / importAnalytics backward compatibility', () => {
 
     expect(createElementSpy).toHaveBeenCalledWith('a');
     expect(clickSpy).toHaveBeenCalled();
+
+    // The exported file must contain aggregate stats only — never conversation
+    // content, prompts, or other topic data.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const createObjectURLMock = URL.createObjectURL as unknown as jest.Mock<string, [Blob]>;
+    const [blob] = createObjectURLMock.mock.calls[0];
+    const text = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (): void => resolve(String(reader.result));
+      reader.onerror = (): void => reject(reader.error ?? new Error('Failed to read exported analytics blob.'));
+      reader.readAsText(blob);
+    });
+    const payload = JSON.parse(text) as Record<string, unknown>;
+    expect(Object.keys(payload).sort()).toEqual(['appVersion', 'deviceId', 'exportedAt', 'format', 'stats', 'userId']);
+
+    const stats = payload.stats as Record<string, unknown>;
+    expect(Object.keys(stats).sort()).toEqual(
+      [
+        'assistantMessageSizeDistribution',
+        'debateTopicCount',
+        'failedMessageCount',
+        'features',
+        'firstMessageAt',
+        'lastMessageAt',
+        'latencyCount',
+        'messageSizeDistribution',
+        'messagesByModel',
+        'messagesByType',
+        'messagesWithReasoning',
+        'summaryGeneratedCount',
+        'summaryTotalCost',
+        'summaryTotalReadCount',
+        'summaryUniqueReadCount',
+        'topicsWithScratchpad',
+        'totalAttachments',
+        'totalCacheCreationTokens',
+        'totalCachedTokens',
+        'totalCompletionTokens',
+        'totalCost',
+        'totalEmbeddings',
+        'totalForks',
+        'totalLatencyMs',
+        'totalMessages',
+        'totalPromptTokens',
+        'totalWebSearches',
+        'userMessageSizeDistribution',
+      ].sort(),
+    );
+
+    // Aggregates are present, proving the fixture was processed...
+    expect(stats.totalMessages).toBe(1);
+    expect(stats.totalAttachments).toBe(1);
+    expect(stats.totalForks).toBe(1);
+    expect(stats.topicsWithScratchpad).toBe(1);
+    expect(stats.debateTopicCount).toBe(1);
+    expect(stats.messagesWithReasoning).toBe(1);
+
+    // ...but no sensitive sentinel value from messages or topics may leak in.
+    for (const sentinel of [
+      'TOP_SECRET_CONVERSATION',
+      'TOP_SECRET_REASONING',
+      'TOP_SECRET_RAW_RESPONSE',
+      'TOP_SECRET_TOOL_LOGS',
+      'TOP_SECRET_ATTACHMENT',
+      'TOP_SECRET_ATTACHMENT_DATA',
+      'TOP_SECRET_TOPIC',
+      'TOP_SECRET_SCRATCHPAD',
+      'TOP_SECRET_FORK',
+    ]) {
+      expect(text).not.toContain(sentinel);
+    }
 
     createElementSpy.mockRestore();
     appendChildSpy.mockRestore();

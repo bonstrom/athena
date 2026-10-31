@@ -29,9 +29,13 @@ import {
   BarChart as BarChartIcon,
   Info as InfoIcon,
   TextFields as FontPreviewIcon,
+  Download as DownloadIcon,
+  Upload as UploadIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../store/AuthStore';
+import { useNotificationStore } from '../store/NotificationStore';
 import { BackupService } from '../services/backupService';
+import { exportAnalytics, importAnalytics, ANALYTICS_EXPORT_PRIVACY_NOTE } from '../services/analyticsService';
 import { useBackupStore } from '../store/BackupStore';
 import { getMoonshotBalance, getDeepSeekBalance } from '../services/llmService';
 import { useProviderStore } from '../store/ProviderStore';
@@ -140,6 +144,7 @@ const Settings: React.FC = () => {
   } = useAuthStore();
 
   const { providers } = useProviderStore();
+  const { addNotification } = useNotificationStore();
 
   const [userNameInput, setUserNameInput] = useState(userName);
   const [customInstructionsInput, setCustomInstructionsInput] = useState(customInstructions);
@@ -262,6 +267,41 @@ const Settings: React.FC = () => {
 
   const handleImportComplete = (): void => {
     window.location.reload();
+  };
+
+  const analyticsInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExportAnalytics = async (): Promise<void> => {
+    try {
+      await exportAnalytics(userName);
+      addNotification('Analytics exported', 'Aggregate statistics only — no conversations included.', 'success');
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to export analytics', error);
+      }
+      addNotification(
+        'Analytics export failed',
+        error instanceof Error ? error.message : 'Could not export analytics.',
+        'error',
+      );
+    }
+  };
+
+  const handleImportAnalyticsClick = (): void => {
+    analyticsInputRef.current?.click();
+  };
+
+  const handleImportAnalyticsFile = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    void importAnalytics(file).then((result) => {
+      addNotification(
+        result.success ? 'Analytics imported' : 'Analytics import failed',
+        result.message,
+        result.success ? 'success' : 'error',
+      );
+    });
+    if (analyticsInputRef.current) analyticsInputRef.current.value = '';
   };
 
   const handleToggleAutoBackup = async (checked: boolean): Promise<void> => {
@@ -1258,6 +1298,57 @@ const Settings: React.FC = () => {
                       ref={fileInputRef}
                       onChange={(e): void => handleImport(e)}
                     />
+                  </Box>
+
+                  <Box
+                    sx={{
+                      p: 2,
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      bgcolor: (theme) =>
+                        theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
+                    }}>
+                    <Typography
+                      variant="subtitle2"
+                      sx={{ fontWeight: 'bold', mb: 1 }}>
+                      Analytics Sharing
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      component="p"
+                      sx={{ mb: 2 }}>
+                      {ANALYTICS_EXPORT_PRIVACY_NOTE}
+                    </Typography>
+                    <Box
+                      display="flex"
+                      gap={2}>
+                      <Button
+                        variant="outlined"
+                        startIcon={<DownloadIcon />}
+                        onClick={(): void => {
+                          void handleExportAnalytics();
+                        }}
+                        fullWidth>
+                        Export Analytics Only
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        startIcon={<UploadIcon />}
+                        onClick={handleImportAnalyticsClick}
+                        fullWidth>
+                        Import Analytics Only
+                      </Button>
+                      <input
+                        type="file"
+                        accept=".json"
+                        style={{ display: 'none' }}
+                        ref={analyticsInputRef}
+                        data-testid="analytics-import-input"
+                        onChange={handleImportAnalyticsFile}
+                      />
+                    </Box>
                   </Box>
 
                   <Box

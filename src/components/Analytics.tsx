@@ -38,6 +38,7 @@ import {
   computeToolUsageBreakdown,
   AnalyticsStats,
   AnalyticsExport,
+  ANALYTICS_EXPORT_PRIVACY_NOTE,
   TrendRow,
   ProviderBreakdown,
   ToolUsageRow,
@@ -283,6 +284,9 @@ const Analytics: React.FC = () => {
           Refresh
         </Button>
       </Box>
+      <Typography variant="caption" color="text.secondary">
+        {ANALYTICS_EXPORT_PRIVACY_NOTE}
+      </Typography>
 
       {/* ── Local Data ── */}
       <Box>

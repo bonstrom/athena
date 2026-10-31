@@ -42,6 +42,13 @@ export interface AnalyticsExport {
   stats: AnalyticsStats;
 }
 
+/**
+ * UI copy describing what an analytics export contains. Kept next to the
+ * payload definition so the disclosure cannot drift from the actual data.
+ */
+export const ANALYTICS_EXPORT_PRIVACY_NOTE =
+  'Aggregate usage statistics only. Includes message and token counts, message-size distributions, cost, latency, model usage, web-search and attachment counts, summary usage, counts of forks, debate topics, scratchpads, reasoning messages, and embeddings, first/last activity timestamps, feature settings, your user name, a random device ID, the app version, and the export time. It does not include conversations, message content, topic names, prompts, attachments, scratchpads, or API keys.';
+
 export interface TrendRow {
   date: string;
   messageCount: number;

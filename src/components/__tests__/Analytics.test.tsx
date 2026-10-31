@@ -43,6 +43,7 @@ jest.mock('../../services/analyticsService', () => ({
       },
     }),
   exportAnalytics: (): Promise<void> => Promise.resolve(),
+  ANALYTICS_EXPORT_PRIVACY_NOTE: 'Aggregate usage statistics only. No conversations.',
   importAnalytics: (): Promise<{ success: boolean; message: string }> => Promise.resolve({ success: true, message: 'Imported' }),
   getImportedSources: (): Record<string, unknown> => ({}),
   removeImportedSource: (): void => {
