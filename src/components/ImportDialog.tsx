@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography, Stack, Alert, CircularProgress } from '@mui/material';
 import MergeIcon from '@mui/icons-material/CallMerge';
 import RestoreIcon from '@mui/icons-material/RestoreFromTrash';
@@ -13,17 +13,30 @@ interface ImportDialogProps {
 
 type ImportMode = 'merge' | 'replace';
 
+// Backups are validated by streaming the full JSON document, then imported in
+// chunks, so the realistic ceiling is browser memory during the staged replace
+// (all rows are briefly held in JS before the live transaction). 250 MB leaves
+// headroom above real-world databases, though memory limits vary by device.
+const MAX_IMPORT_SIZE = 250 * 1024 * 1024; // 250 MB
+const LARGE_IMPORT_WARNING_SIZE = 100 * 1024 * 1024; // 100 MB
+
 const ImportDialog: React.FC<ImportDialogProps> = ({ open, file, onClose, onComplete }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
+  const fileSizeMb = file ? file.size / 1024 / 1024 : 0;
+  const fileTooLarge = file !== null && file.size > MAX_IMPORT_SIZE;
+  const isLargeFile = file !== null && file.size > LARGE_IMPORT_WARNING_SIZE;
+
+  useEffect(() => {
+    setError(fileTooLarge ? `File too large (${fileSizeMb.toFixed(1)} MB). Maximum allowed size is 250 MB.` : null);
+  }, [fileTooLarge, fileSizeMb]);
 
   const handleImport = async (mode: ImportMode): Promise<void> => {
     if (!file) return;
 
     if (file.size > MAX_IMPORT_SIZE) {
-      setError(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is 50 MB.`);
+      setError(`File too large (${fileSizeMb.toFixed(1)} MB). Maximum allowed size is 250 MB.`);
       return;
     }
 
@@ -113,6 +126,13 @@ const ImportDialog: React.FC<ImportDialogProps> = ({ open, file, onClose, onComp
                 Importing…
               </Typography>
             </Stack>
+          )}
+
+          {!fileTooLarge && isLargeFile && (
+            <Alert severity="info">
+              This backup is large ({fileSizeMb.toFixed(1)} MB). Importing may take a while and use a lot of memory, so
+              keep this tab open until it finishes.
+            </Alert>
           )}
 
           {error && <Alert severity="error">{error}</Alert>}

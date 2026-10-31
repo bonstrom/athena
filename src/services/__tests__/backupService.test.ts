@@ -2,10 +2,17 @@ import Dexie from 'dexie';
 const mockExportDB = jest.fn<Promise<Blob>, [unknown, { prettyJson: boolean }]>();
 const mockImportInto = jest.fn<Promise<void>, [unknown, File | Blob, { overwriteValues: boolean; clearTablesBeforeImport: boolean }]>();
 const mockImportDB = jest.fn<Promise<unknown>, [File | Blob, { name: string }]>();
-const mockPeakImportFile = jest.fn<
-  Promise<{ data: { databaseVersion: number; databaseName: string } }>,
-  [File | Blob]
->();
+interface PeakImportMeta {
+  formatName: 'dexie';
+  formatVersion: 1;
+  data: {
+    databaseName: string;
+    databaseVersion: number;
+    tables: { name: string; schema: string; rowCount: number }[];
+  };
+}
+
+const mockPeakImportFile = jest.fn<Promise<PeakImportMeta>, [File | Blob]>();
 const mockAthenaDb: Record<string, unknown> = {};
 const mockGet = jest.fn<Promise<unknown>, [string]>();
 const mockSet = jest.fn<Promise<void>, [string, unknown]>();
@@ -20,8 +27,7 @@ jest.mock('dexie-export-import', () => ({
   exportDB: (...args: [unknown, { prettyJson: boolean }]): Promise<Blob> => mockExportDB(...args),
   importInto: (...args: [unknown, File | Blob, { overwriteValues: boolean; clearTablesBeforeImport: boolean }]): Promise<void> => mockImportInto(...args),
   importDB: (...args: [File | Blob, { name: string }]): Promise<unknown> => mockImportDB(...args),
-  peakImportFile: (...args: [File | Blob]): Promise<{ data: { databaseVersion: number; databaseName: string } }> =>
-    mockPeakImportFile(...args),
+  peakImportFile: (...args: [File | Blob]): Promise<PeakImportMeta> => mockPeakImportFile(...args),
 }));
 
 jest.mock('idb-keyval', () => ({
@@ -108,12 +114,7 @@ function createHandle(
 }
 
 function createMockFile(content: string): File {
-  return {
-    text: jest.fn((): Promise<string> => Promise.resolve(content)),
-    name: 'backup.json',
-    size: content.length,
-    type: 'application/json',
-  } as unknown as File;
+  return new File([content], 'backup.json', { type: 'application/json' });
 }
 
 function createDexieBackup(databaseVersion = 22): File {
@@ -134,7 +135,11 @@ function createDexieBackup(databaseVersion = 22): File {
 
 beforeEach(() => {
   for (const key of Object.keys(mockAthenaDb)) Reflect.deleteProperty(mockAthenaDb, key);
-  mockPeakImportFile.mockResolvedValue({ data: { databaseVersion: 22, databaseName: 'AthenaDatabase' } });
+  mockPeakImportFile.mockResolvedValue({
+    formatName: 'dexie',
+    formatVersion: 1,
+    data: { databaseVersion: 22, databaseName: 'AthenaDatabase', tables: [] },
+  });
 });
 
 describe('BackupService.performAutoBackup', () => {
@@ -487,12 +492,14 @@ describe('BackupService download/restore/merge', () => {
 
   it('validateBackupFile validates valid backup structure', async () => {
     const service = loadBackupService();
-    const file = createMockFile(JSON.stringify({ data: { messages: [] } }));
+    const file = createMockFile(JSON.stringify({ formatName: 'dexie', formatVersion: 1, data: { tables: [] } }));
 
     await expect(service.validateBackupFile(file)).resolves.toBeUndefined();
+    expect(mockPeakImportFile).toHaveBeenCalledWith(file);
   });
 
   it('validateBackupFile rejects invalid backup (missing data key)', async () => {
+    mockPeakImportFile.mockResolvedValue({ formatName: 'dexie', formatVersion: 1 } as unknown as PeakImportMeta);
     const service = loadBackupService();
     const file = createMockFile(JSON.stringify({ other: true }));
 
@@ -500,6 +507,7 @@ describe('BackupService download/restore/merge', () => {
   });
 
   it('validateBackupFile rejects non-object JSON', async () => {
+    mockPeakImportFile.mockRejectedValue(new Error('Unexpected token'));
     const service = loadBackupService();
     const file = createMockFile('"just a string"');
 
@@ -517,12 +525,39 @@ describe('BackupService download/restore/merge', () => {
   });
 
   it('restoreBackup throws validation error on invalid file', async () => {
+    mockPeakImportFile.mockRejectedValue(new Error('Unexpected token'));
     const service = loadBackupService();
     const file = createMockFile('invalid');
 
     await expect(service.restoreBackup(file)).rejects.toThrow('Backup validation failed');
     expect(mockExportDB).not.toHaveBeenCalled(); // no safety backup created for invalid file
   });
+
+  it.each(['restoreBackup', 'mergeBackup'] as const)(
+    '%s rejects a truncated backup even when the real Dexie header reader accepts it',
+    async (operation) => {
+      const { peakImportFile } = jest.requireActual<typeof import('dexie-export-import')>('dexie-export-import');
+      mockPeakImportFile.mockImplementation(peakImportFile);
+      const content = JSON.stringify({
+        formatName: 'dexie',
+        formatVersion: 1,
+        data: {
+          databaseName: 'AthenaDatabase',
+          databaseVersion: 22,
+          tables: [{ name: 'messages', schema: 'id', rowCount: 2 }],
+          data: [{ tableName: 'messages', inbound: true, rows: [{ id: 'first' }, { id: 'second' }] }],
+        },
+      });
+      const truncated = createMockFile(content.slice(0, content.indexOf(',{"id":"second"')));
+      await expect(peakImportFile(truncated)).resolves.toMatchObject({ formatName: 'dexie' });
+
+      const service = loadBackupService();
+      await expect(service[operation](truncated)).rejects.toThrow('Backup validation failed');
+      expect(mockExportDB).not.toHaveBeenCalled();
+      expect(mockImportDB).not.toHaveBeenCalled();
+      expect(mockImportInto).not.toHaveBeenCalled();
+    },
+  );
 
   it('restoreBackup rethrows import errors', async () => {
     mockImportInto.mockRejectedValue(new Error('Import crashed'));
@@ -804,6 +839,7 @@ describe('BackupService download/restore/merge', () => {
   });
 
   it('mergeBackup throws validation error on invalid file', async () => {
+    mockPeakImportFile.mockRejectedValue(new Error('Unexpected token'));
     const service = loadBackupService();
     const file = createMockFile('bad json');
 
@@ -831,6 +867,7 @@ describe('BackupService download/restore/merge', () => {
   });
 
   it('BAK-control resumes queued backup operations after a failed validation', async () => {
+    mockPeakImportFile.mockRejectedValue(new Error('Unexpected token'));
     const service = loadBackupService();
     const restore = service.restoreBackup(createMockFile('not JSON'));
     const outcome = expect(restore).rejects.toThrow('Backup validation failed');
@@ -989,6 +1026,7 @@ describe('BackupService validateBackupFile edge cases', () => {
   });
 
   it('validateBackupFile rejects null JSON', async () => {
+    mockPeakImportFile.mockRejectedValue(new Error('Unexpected token'));
     const service = loadBackupService();
     const file = createMockFile('null');
 
@@ -996,6 +1034,11 @@ describe('BackupService validateBackupFile edge cases', () => {
   });
 
   it('validateBackupFile rejects when data property is not an object', async () => {
+    mockPeakImportFile.mockResolvedValue({
+      formatName: 'dexie',
+      formatVersion: 1,
+      data: 'not-an-object',
+    } as unknown as PeakImportMeta);
     const service = loadBackupService();
     const file = createMockFile(JSON.stringify({ data: 'not-an-object' }));
 

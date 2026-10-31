@@ -3,6 +3,7 @@ import { athenaDb } from '../database/AthenaDb';
 import { get, set } from 'idb-keyval';
 import { useBackupStore } from '../store/BackupStore';
 import { useNotificationStore } from '../store/NotificationStore';
+import { validateJsonFile } from '../utils/validateJsonFile';
 
 interface FileSystemWritableFileStream extends WritableStream {
   write(data: BufferSource | Blob | string): Promise<void>;
@@ -186,11 +187,27 @@ export const BackupService = {
 
   /**
    * Validates the structure of a backup file blob/text, throwing if invalid.
+   * Stream the entire JSON document before inspecting its export header. The
+   * Dexie importer alone can silently accept truncated JSON; neither validation
+   * step materializes the whole backup in memory.
    */
   async validateBackupFile(file: File): Promise<void> {
-    const text = await file.text();
-    const json = JSON.parse(text) as unknown;
-    if (typeof json !== 'object' || json === null || !('data' in json) || typeof (json as Record<string, unknown>).data !== 'object') {
+    let raw: unknown;
+    try {
+      await validateJsonFile(file);
+      raw = await peakImportFile(file);
+    } catch {
+      throw new Error('Invalid backup file: could not be read as JSON.');
+    }
+
+    const meta = raw as { formatName?: unknown; data?: unknown } | null;
+    const data: unknown = meta?.data;
+    if (
+      meta?.formatName !== 'dexie' ||
+      typeof data !== 'object' ||
+      data === null ||
+      !Array.isArray((data as { tables?: unknown }).tables)
+    ) {
       throw new Error('Invalid backup file: missing expected structure.');
     }
   },
