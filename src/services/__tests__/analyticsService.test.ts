@@ -169,10 +169,11 @@ describe('operation usage accounting', () => {
     expect(stats.totalWebSearches).toBe(1);
   });
 
-  it('ACC-05 includes operation cost and tokens in the no-snapshot provider fallback', async (): Promise<void> => {
+  it('ACC-05 includes operation cost and tokens in provider breakdown', async (): Promise<void> => {
     const providers = await computeProviderBreakdown();
 
     expect(providers).toHaveLength(1);
+    expect(providers[0].messages).toBe(1);
     expect(providers[0].cost).toBeCloseTo(0.3);
     expect(providers[0].tokens).toBe(45);
   });
@@ -268,47 +269,79 @@ describe('computeLatencyPercentiles', () => {
 });
 
 describe('computeProviderBreakdown', () => {
-  it('aggregates provider stats from snapshots', async () => {
-    mockSnapshots = [
-      makeSnapshot({
-        date: '2026-01-01',
-        providerStats: {
-          OpenAI: { cost: 0.5, tokens: 1000, messageCount: 5 },
-          DeepSeek: { cost: 0.2, tokens: 500, messageCount: 3 },
-        },
-      }),
-      makeSnapshot({
-        date: '2026-01-02',
-        providerStats: {
-          OpenAI: { cost: 0.3, tokens: 600, messageCount: 3 },
-        },
-      }),
-    ];
+  it('counts chat messages by provider and includes operation usage without inflating message counts', async () => {
+    mockModels.push({ id: 'm1', apiModelId: 'gpt-4', providerId: 'p1', label: 'GPT-4' } as UserChatModel);
+    mockProviders.push({ id: 'p1', name: 'OpenAI' } as LlmProvider);
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({ id: 'msg-1', model: 'gpt-4', promptTokens: 100, completionTokens: 50, totalCost: 0.01 }),
+      makeMsg({ id: 'msg-2', model: 'gpt-4', promptTokens: 200, completionTokens: 100, totalCost: 0.02 }),
+      makeMsg({ id: 'msg-3', model: 'retired-model', promptTokens: 10, completionTokens: 5, totalCost: 0.005 }),
+    ]);
+    mockOperationUsagesToArray.mockResolvedValue([
+      {
+        id: 'operation-1',
+        topicId: 'topic-1',
+        operationType: 'checklist_edit',
+        model: 'gpt-4',
+        created: '2026-01-01T12:00:00.000Z',
+        promptTokens: 30,
+        completionTokens: 20,
+        totalCost: 0.05,
+        failed: false,
+      },
+    ]);
 
     const result = await computeProviderBreakdown();
     expect(result).toHaveLength(2);
     expect(result[0].provider).toBe('OpenAI');
-    expect(result[0].cost).toBe(0.8);
-    expect(result[0].messages).toBe(8);
-    expect(result[0].tokens).toBe(1600);
-    expect(result[1].provider).toBe('DeepSeek');
-    expect(result[1].cost).toBe(0.2);
+    expect(result[0].messages).toBe(2);
+    expect(result[0].cost).toBeCloseTo(0.08);
+    expect(result[0].tokens).toBe(500);
+    expect(result[1].provider).toBe('Unknown');
+    expect(result[1].messages).toBe(1);
+    expect(result[1].cost).toBeCloseTo(0.005);
+    expect(result[1].tokens).toBe(15);
   });
 
-  it('falls back to message scan when no snapshots', async () => {
-    mockSnapshots = [];
+  it('uses source records instead of potentially stale snapshot provider stats', async () => {
+    mockSnapshots = [
+      makeSnapshot({
+        providerStats: { OpenAI: { cost: 99, tokens: 999, messageCount: 99 } },
+      }),
+    ];
     mockModels.push({ id: 'm1', apiModelId: 'gpt-4', providerId: 'p1', label: 'GPT-4' } as UserChatModel);
     mockProviders.push({ id: 'p1', name: 'OpenAI' } as LlmProvider);
     mockMessagesToArray.mockResolvedValue([
       makeMsg({ model: 'gpt-4', promptTokens: 100, completionTokens: 50, totalCost: 0.01 }),
-      makeMsg({ model: 'gpt-4', promptTokens: 200, completionTokens: 100, totalCost: 0.02 }),
     ]);
 
     const result = await computeProviderBreakdown();
-    expect(result).toHaveLength(1);
-    expect(result[0].provider).toBe('OpenAI');
-    expect(result[0].messages).toBe(2);
-    expect(result[0].cost).toBe(0.03);
+    expect(result).toEqual([{ provider: 'OpenAI', messages: 1, cost: 0.01, tokens: 150 }]);
+  });
+
+  it('keeps provider message totals equal to the model breakdown', async () => {
+    mockModels.push({ id: 'm1', apiModelId: 'gpt-4', providerId: 'p1', label: 'GPT-4' } as UserChatModel);
+    mockProviders.push({ id: 'p1', name: 'OpenAI' } as LlmProvider);
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({ id: 'msg-1', model: 'gpt-4' }),
+      makeMsg({ id: 'msg-2', model: 'gpt-4' }),
+      makeMsg({ id: 'msg-3', model: 'retired-model' }),
+      makeMsg({ id: 'msg-4', model: 'gpt-4' }),
+    ]);
+
+    const stats = await computeLocalStats();
+    const providers = await computeProviderBreakdown();
+    const modelTotal = Object.values(stats.messagesByModel).reduce((sum, count) => sum + count, 0);
+    const providerTotal = providers.reduce((sum, row) => sum + row.messages, 0);
+
+    expect(stats.providerBreakdown).toEqual(providers);
+    expect(providerTotal).toBe(modelTotal);
+    expect(providerTotal).toBe(4);
+  });
+
+  it('returns an empty breakdown when there are no messages or operations', async () => {
+    const result = await computeProviderBreakdown();
+    expect(result).toEqual([]);
   });
 });
 
@@ -454,6 +487,7 @@ describe('exportAnalytics / importAnalytics backward compatibility', () => {
         'messagesByModel',
         'messagesByType',
         'messagesWithReasoning',
+        'providerBreakdown',
         'summaryGeneratedCount',
         'summaryTotalCost',
         'summaryTotalReadCount',

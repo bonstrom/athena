@@ -44,7 +44,7 @@ import {
   ToolUsageRow,
   LatencyPercentiles,
 } from '../services/analyticsService';
-import { rollupAnalytics } from '../services/analyticsRollupService';
+import { rollupAnalytics, resolveProviderName } from '../services/analyticsRollupService';
 import { useAuthStore } from '../store/AuthStore';
 import { formatCost as formatCostForCurrency } from '../utils/currency';
 
@@ -136,6 +136,8 @@ const Analytics: React.FC = () => {
       setStats(s);
       setImportedSources(getImportedSources());
 
+      const providersPromise = s.providerBreakdown ? Promise.resolve(s.providerBreakdown) : computeProviderBreakdown();
+
       let trendPromise: Promise<TrendRow[]>;
       if (trendMode === 'all') {
         trendPromise = computeTrendsRange();
@@ -148,7 +150,7 @@ const Analytics: React.FC = () => {
       const [trendData, percData, provData, toolData] = await Promise.all([
         trendPromise,
         computeLatencyPercentiles(),
-        computeProviderBreakdown(),
+        providersPromise,
         computeToolUsageBreakdown(),
       ]);
       setTrends(trendData);
@@ -237,6 +239,7 @@ const Analytics: React.FC = () => {
         messageSizeDistribution: mergeRecordSum(total.messageSizeDistribution, s.messageSizeDistribution),
         userMessageSizeDistribution: mergeRecordSum(total.userMessageSizeDistribution, s.userMessageSizeDistribution),
         assistantMessageSizeDistribution: mergeRecordSum(total.assistantMessageSizeDistribution, s.assistantMessageSizeDistribution),
+        providerBreakdown: mergeProviderBreakdown(total.providerBreakdown, s.providerBreakdown),
         features: {},
         firstMessageAt: total.firstMessageAt
           ? s.firstMessageAt && s.firstMessageAt < total.firstMessageAt
@@ -250,6 +253,31 @@ const Analytics: React.FC = () => {
   };
 
   const combined = computeCombinedTotals();
+
+  // Provider aggregates already carry authoritative message counts for local
+  // data and for imports created by versions that include a provider
+  // breakdown. Only legacy imports (which lack that field) need their message
+  // counts derived from the model table, using the local provider mapping.
+  const byProvider = new Map<string, ProviderBreakdown>();
+  // Seed with the local fallback first so local providers are never dropped
+  // when only some imported sources carry a provider breakdown.
+  for (const row of providers) {
+    byProvider.set(row.provider, { ...row });
+  }
+  for (const row of combined?.providerBreakdown ?? []) {
+    byProvider.set(row.provider, { ...row });
+  }
+  for (const source of Object.values(importedSources)) {
+    if (source.stats.providerBreakdown) continue;
+    for (const [model, count] of Object.entries(source.stats.messagesByModel)) {
+      const provider = resolveProviderName(model) ?? 'Unknown';
+      const row = byProvider.get(provider) ?? { provider, messages: 0, cost: 0, tokens: 0 };
+      row.messages += count;
+      byProvider.set(provider, row);
+    }
+  }
+  const providerRows: ProviderBreakdown[] = [...byProvider.values()].sort((a, b) => b.messages - a.messages);
+  const hasLegacyImportedSources = Object.values(importedSources).some((s) => !s.stats.providerBreakdown);
 
   if (loading) {
     return (
@@ -507,14 +535,24 @@ const Analytics: React.FC = () => {
       )}
 
       {/* ── By Provider ── */}
-      {providers.length > 0 && (
+      {providerRows.length > 0 && (
         <Box>
           <SectionHeader>By Provider</SectionHeader>
+          <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
+            Chat messages grouped by the provider of each message&apos;s model, including aggregated sources. Cost
+            and tokens also include background LLM operations.
+          </Typography>
+          {hasLegacyImportedSources && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Some imported analytics files were created by an older version and do not include provider cost/token
+              detail. Their message counts are still included below.
+            </Alert>
+          )}
           <Box sx={{ mb: 2 }}>
             <BarChart
-              xAxis={[{ data: providers.map((p) => p.provider), scaleType: 'band' }]}
+              xAxis={[{ data: providerRows.map((p) => p.provider), scaleType: 'band' }]}
               series={[
-                { data: providers.map((p) => p.messages), label: 'Messages', color: '#1976d2' },
+                { data: providerRows.map((p) => p.messages), label: 'Messages', color: '#1976d2' },
               ]}
               height={250}
             />
@@ -530,7 +568,7 @@ const Analytics: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {providers.map((p) => (
+                {providerRows.map((p) => (
                   <TableRow key={p.provider}>
                     <TableCell>{p.provider}</TableCell>
                     <TableCell align="right">{p.messages}</TableCell>
@@ -628,9 +666,12 @@ const Analytics: React.FC = () => {
         <SectionHeader>Message Size Distribution</SectionHeader>
         {combined ? (
           <>
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
+              Message length in characters, grouped into buckets (for example, 0-100 characters).
+            </Typography>
             <Box sx={{ mb: 2 }}>
               <BarChart
-                xAxis={[{ data: SIZE_BUCKET_ORDER, scaleType: 'band' }]}
+                xAxis={[{ data: SIZE_BUCKET_ORDER.map((bucket) => `${bucket} chars`), scaleType: 'band' }]}
                 series={[
                   { data: SIZE_BUCKET_ORDER.map((b) => combined.userMessageSizeDistribution[b] || 0), label: 'User', color: '#1976d2' },
                   { data: SIZE_BUCKET_ORDER.map((b) => combined.assistantMessageSizeDistribution[b] || 0), label: 'LLM', color: '#4caf50' },
@@ -650,7 +691,11 @@ const Analytics: React.FC = () => {
       <Box>
         <SectionHeader>Messages by Model</SectionHeader>
         {combined && Object.keys(combined.messagesByModel).length > 0 ? (
-          <TableContainer component={Paper} variant="outlined">
+          <>
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
+              Chat messages with a recorded model, including aggregated sources.
+            </Typography>
+            <TableContainer component={Paper} variant="outlined">
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -672,6 +717,7 @@ const Analytics: React.FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+          </>
         ) : (
           <Typography variant="body2" color="text.secondary">
             No data available.
@@ -772,6 +818,22 @@ const Analytics: React.FC = () => {
     </Stack>
   );
 };
+
+function mergeProviderBreakdown(
+  a: ProviderBreakdown[] | undefined,
+  b: ProviderBreakdown[] | undefined,
+): ProviderBreakdown[] | undefined {
+  if (!a && !b) return undefined;
+  const merged = new Map<string, ProviderBreakdown>();
+  for (const row of [...(a ?? []), ...(b ?? [])]) {
+    const existing = merged.get(row.provider) ?? { provider: row.provider, messages: 0, cost: 0, tokens: 0 };
+    existing.messages += row.messages;
+    existing.cost += row.cost;
+    existing.tokens += row.tokens;
+    merged.set(row.provider, existing);
+  }
+  return [...merged.values()];
+}
 
 function mergeRecordSum(a: Record<string, number> | undefined, b: Record<string, number> | undefined): Record<string, number> {
   const result: Record<string, number> = { ...a ?? {} };

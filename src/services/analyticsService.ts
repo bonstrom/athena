@@ -1,4 +1,5 @@
 import { athenaDb } from '../database/AthenaDb';
+import type { LlmOperationUsage, Message } from '../database/AthenaDb';
 import { useAuthStore } from '../store/AuthStore';
 import { resolveProviderName } from './analyticsRollupService';
 
@@ -31,6 +32,11 @@ export interface AnalyticsStats {
   firstMessageAt: string | null;
   lastMessageAt: string | null;
   features: Record<string, string>;
+  /**
+   * Optional so analytics files exported by older versions still import.
+   * New exports include provider-level message/cost/token totals.
+   */
+  providerBreakdown?: ProviderBreakdown[];
 }
 
 export interface AnalyticsExport {
@@ -47,7 +53,7 @@ export interface AnalyticsExport {
  * payload definition so the disclosure cannot drift from the actual data.
  */
 export const ANALYTICS_EXPORT_PRIVACY_NOTE =
-  'Aggregate usage statistics only. Includes message and token counts, message-size distributions, cost, latency, model usage, web-search and attachment counts, summary usage, counts of forks, debate topics, scratchpads, reasoning messages, and embeddings, first/last activity timestamps, feature settings, your user name, a random device ID, the app version, and the export time. It does not include conversations, message content, topic names, prompts, attachments, scratchpads, or API keys.';
+  'Aggregate usage statistics only. Includes message and token counts, message-size distributions, cost, latency, model and provider usage, web-search and attachment counts, summary usage, counts of forks, debate topics, scratchpads, reasoning messages, and embeddings, first/last activity timestamps, feature settings, your user name, a random device ID, the app version, and the export time. It does not include conversations, message content, topic names, prompts, attachments, scratchpads, or API keys.';
 
 export interface TrendRow {
   date: string;
@@ -93,6 +99,41 @@ function bucketSize(length: number): string {
     if (length >= bucket.min && length <= bucket.max) return bucket.label;
   }
   return '8000+';
+}
+
+function aggregateProviderBreakdown(
+  messages: Message[],
+  operationUsages: LlmOperationUsage[],
+): ProviderBreakdown[] {
+  const merged: Record<string, { messages: number; cost: number; tokens: number }> = {};
+  const addUsage = (provider: string): { messages: number; cost: number; tokens: number } => {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    merged[provider] = merged[provider] ?? { messages: 0, cost: 0, tokens: 0 };
+    return merged[provider];
+  };
+
+  // Message counts use the same records as messagesByModel so the provider
+  // table and the model table always reconcile. Models that no longer resolve
+  // to a configured provider are grouped under "Unknown" instead of dropped.
+  for (const m of messages) {
+    if (!m.model) continue;
+    const entry = addUsage(resolveProviderName(m.model) ?? 'Unknown');
+    entry.messages++;
+    entry.cost += m.totalCost;
+    entry.tokens += m.promptTokens + m.completionTokens;
+  }
+
+  // Background operations add real cost and tokens, but they are not chat
+  // messages, so they must not inflate the message counts.
+  for (const operation of operationUsages) {
+    const entry = addUsage(resolveProviderName(operation.model) ?? 'Unknown');
+    entry.cost += operation.totalCost;
+    entry.tokens += operation.promptTokens + operation.completionTokens;
+  }
+
+  return Object.entries(merged)
+    .map(([provider, stats]) => ({ provider, ...stats }))
+    .sort((a, b) => b.cost - a.cost);
 }
 
 export async function computeLocalStats(): Promise<AnalyticsStats> {
@@ -192,6 +233,8 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
     stats.totalCost += operation.totalCost;
     stats.totalWebSearches += operation.searchCount ?? 0;
   }
+
+  stats.providerBreakdown = aggregateProviderBreakdown(messages, operationUsages);
 
   for (const t of topics) {
     if (t.scratchpad) stats.topicsWithScratchpad++;
@@ -303,27 +346,11 @@ export async function computeLatencyPercentiles(): Promise<LatencyPercentiles> {
 }
 
 export async function computeProviderBreakdown(): Promise<ProviderBreakdown[]> {
-  const snapshots = await athenaDb.analyticsSnapshots.toArray();
-
-  if (snapshots.length === 0) {
-    return computeProviderBreakdownFromMessages();
-  }
-
-  const merged: Record<string, { messages: number; cost: number; tokens: number }> = {};
-  for (const snap of snapshots) {
-    for (const [provider, stats] of Object.entries(snap.providerStats ?? {})) {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      merged[provider] = merged[provider] ?? { messages: 0, cost: 0, tokens: 0 };
-      merged[provider].messages += stats.messageCount;
-      merged[provider].cost += stats.cost;
-      merged[provider].tokens += stats.tokens;
-    }
-  }
-
-  return Object.entries(merged)
-    .map(([provider, stats]) => ({ provider, ...stats }))
-    .filter((p) => p.provider !== 'unknown')
-    .sort((a, b) => b.cost - a.cost);
+  const [messages, operationUsages] = await Promise.all([
+    athenaDb.messages.toArray(),
+    athenaDb.llmOperationUsages.toArray(),
+  ]);
+  return aggregateProviderBreakdown(messages, operationUsages);
 }
 
 export async function computeToolUsageBreakdown(): Promise<ToolUsageRow[]> {
@@ -356,35 +383,6 @@ export async function computeToolUsageBreakdown(): Promise<ToolUsageRow[]> {
       errors: stats.errors,
     }))
     .sort((a, b) => b.calls - a.calls);
-}
-
-async function computeProviderBreakdownFromMessages(): Promise<ProviderBreakdown[]> {
-  const messages = await athenaDb.messages.toArray();
-  const operationUsages = await athenaDb.llmOperationUsages.toArray();
-
-  const merged: Record<string, { messages: number; cost: number; tokens: number }> = {};
-  for (const m of messages) {
-    const name = resolveProviderName(m.model);
-    if (name === null) continue;
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    merged[name] = merged[name] ?? { messages: 0, cost: 0, tokens: 0 };
-    merged[name].messages++;
-    merged[name].cost += m.totalCost;
-    merged[name].tokens += m.promptTokens + m.completionTokens;
-  }
-  for (const operation of operationUsages) {
-    const name = resolveProviderName(operation.model);
-    if (name === null) continue;
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    merged[name] = merged[name] ?? { messages: 0, cost: 0, tokens: 0 };
-    merged[name].cost += operation.totalCost;
-    merged[name].tokens += operation.promptTokens + operation.completionTokens;
-  }
-
-  return Object.entries(merged)
-    .map(([provider, stats]) => ({ provider, ...stats }))
-    .filter((p) => p.provider !== 'unknown')
-    .sort((a, b) => b.cost - a.cost);
 }
 
 async function computeToolUsageFromMessages(): Promise<ToolUsageRow[]> {
