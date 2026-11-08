@@ -471,6 +471,15 @@ export async function computeTrendsRange(
     .map(toTrendRow);
 }
 
+/**
+ * Whether any daily snapshot rows exist. Used for the "run a rollup" prompt:
+ * calendar trends may legitimately be all zero rows for the selected window
+ * even when snapshots for older dates exist.
+ */
+export async function hasAnalyticsSnapshots(): Promise<boolean> {
+  return (await athenaDb.analyticsSnapshots.count()) > 0;
+}
+
 export async function computeLatencyPercentiles(): Promise<LatencyPercentiles> {
   const snapshots = await athenaDb.analyticsSnapshots.toArray();
   const allSamples = snapshots.flatMap((s) => s.latencySamples ?? []);

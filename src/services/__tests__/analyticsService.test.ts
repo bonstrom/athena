@@ -6,6 +6,7 @@ let mockSnapshots: AnalyticsSnapshot[] = [];
 let mockTopics: Topic[] = [];
 const mockSnapshotToArray = jest.fn<Promise<AnalyticsSnapshot[]>, []>();
 const mockSnapshotGet = jest.fn<Promise<AnalyticsSnapshot | undefined>, [string]>();
+const mockSnapshotCount = jest.fn<Promise<number>, []>();
 const mockMessagesToArray = jest.fn<Promise<Message[]>, []>();
 const mockOperationUsagesToArray = jest.fn<Promise<LlmOperationUsage[]>, []>();
 const mockReverseLimitToArray = jest.fn<Promise<AnalyticsSnapshot[]>, []>();
@@ -40,6 +41,7 @@ jest.mock('../../database/AthenaDb', () => ({
     analyticsSnapshots: {
       toArray: (): Promise<AnalyticsSnapshot[]> => mockSnapshotToArray(),
       get: (date: string): Promise<AnalyticsSnapshot | undefined> => mockSnapshotGet(date),
+      count: (): Promise<number> => mockSnapshotCount(),
       reverse: () => ({
         sortBy: (): Promise<AnalyticsSnapshot[]> => mockSnapshotToArray(),
       }),
@@ -88,6 +90,7 @@ import {
   exportAnalytics,
   percentileNearestRank,
   cacheHitRateForFormat,
+  hasAnalyticsSnapshots,
 } from '../analyticsService';
 
 beforeEach(() => {
@@ -309,6 +312,18 @@ describe('percentileNearestRank', () => {
   it('clamps out-of-range percentiles', (): void => {
     expect(percentileNearestRank([10, 20], -5)).toBe(10);
     expect(percentileNearestRank([10, 20], 150)).toBe(20);
+  });
+});
+
+describe('hasAnalyticsSnapshots', () => {
+  it('is true when at least one snapshot row exists', async (): Promise<void> => {
+    mockSnapshotCount.mockResolvedValue(1);
+    await expect(hasAnalyticsSnapshots()).resolves.toBe(true);
+  });
+
+  it('is false when the snapshots table is empty', async (): Promise<void> => {
+    mockSnapshotCount.mockResolvedValue(0);
+    await expect(hasAnalyticsSnapshots()).resolves.toBe(false);
   });
 });
 

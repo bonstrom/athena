@@ -14,6 +14,7 @@ const mockComputeLocalStats = jest.fn<Promise<AnalyticsStats>, []>();
 const mockGetImportedSources = jest.fn<Record<string, AnalyticsExport>, []>();
 const mockComputeProviderBreakdown = jest.fn<Promise<ProviderBreakdown[]>, []>();
 const mockResolveProviderName = jest.fn<string | null, [string | undefined]>();
+const mockHasAnalyticsSnapshots = jest.fn<Promise<boolean>, []>();
 
 jest.mock('../../services/analyticsService', () => ({
   computeLocalStats: (): Promise<AnalyticsStats> => mockComputeLocalStats(),
@@ -42,6 +43,7 @@ jest.mock('../../services/analyticsService', () => ({
       { date: '2026-01-02', messageCount: 15, cost: 0.75, tokens: 2000, failPercent: 6, p50Latency: 450, p95Latency: 850 },
     ]),
   computeLatencyPercentiles: (): Promise<object> => Promise.resolve({ p50: 500, p95: 900 }),
+  hasAnalyticsSnapshots: (): Promise<boolean> => mockHasAnalyticsSnapshots(),
   computeProviderBreakdown: (): Promise<ProviderBreakdown[]> => mockComputeProviderBreakdown(),
   computeToolUsageBreakdown: (): Promise<unknown[]> =>
     Promise.resolve([
@@ -146,6 +148,7 @@ describe('Analytics', () => {
     localStorage.clear();
     mockComputeLocalStats.mockResolvedValue(createStats());
     mockGetImportedSources.mockReturnValue({});
+    mockHasAnalyticsSnapshots.mockResolvedValue(true);
     mockComputeProviderBreakdown.mockResolvedValue([{ provider: 'OpenAI', messages: 21, cost: 1.5, tokens: 15000 }]);
     mockResolveProviderName.mockImplementation((model?: string): string | null => (model === 'gpt-4' ? 'OpenAI' : null));
   });
@@ -169,6 +172,21 @@ describe('Analytics', () => {
     renderWithTheme(<Analytics />);
 
     expect(await screen.findByText('Trends')).toBeInTheDocument();
+  });
+
+  it('shows the rollup prompt only when no snapshot rows exist', async () => {
+    mockHasAnalyticsSnapshots.mockResolvedValue(false);
+    renderWithTheme(<Analytics />);
+
+    expect(await screen.findByText(/No snapshot data yet/)).toBeInTheDocument();
+  });
+
+  it('does not show the rollup prompt when snapshots exist even if the selected window is empty', async () => {
+    mockHasAnalyticsSnapshots.mockResolvedValue(true);
+    renderWithTheme(<Analytics />);
+
+    expect(await screen.findByText('Trends')).toBeInTheDocument();
+    expect(screen.queryByText(/No snapshot data yet/)).not.toBeInTheDocument();
   });
 
   it('renders per-format cache shares and aligned throughput', async () => {

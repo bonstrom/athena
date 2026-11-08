@@ -40,6 +40,7 @@ import {
   computeTrends,
   computeTrendsRange,
   computeLatencyPercentiles,
+  hasAnalyticsSnapshots,
   computeProviderBreakdown,
   computeToolUsageBreakdown,
   cacheHitRateForFormat,
@@ -532,21 +533,21 @@ const Analytics: React.FC = () => {
         trendPromise = computeTrends(trendDays);
       }
 
-      const [trendData, percData, provData, toolData] = await Promise.all([
+      const [trendData, percData, provData, toolData, snapshotData] = await Promise.all([
         trendPromise,
         computeLatencyPercentiles(),
         providersPromise,
         computeToolUsageBreakdown(),
+        hasAnalyticsSnapshots(),
       ]);
       setTrends(trendData);
       setLatencyPerc(percData);
       setProviders(provData);
       setToolUsage(toolData);
-      // Calendar trends include zero rows for inactive dates, so row count no
-      // longer proves that snapshot data exists.
-      setSnapshotReady(
-        trendData.some((row) => row.messageCount > 0 || row.cost > 0 || row.tokens > 0 || row.p50Latency != null),
-      );
+      // The prompt is about the snapshots table being empty, not about the
+      // selected window: calendar trends can be all zero rows while older
+      // snapshot data exists.
+      setSnapshotReady(snapshotData);
     } catch {
       setSnack({ open: true, message: 'Failed to load analytics.', severity: 'error' });
     } finally {
