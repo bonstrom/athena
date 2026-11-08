@@ -185,6 +185,24 @@ describe('operation usage accounting', () => {
   });
 });
 
+describe('summary accounting', () => {
+  it('sums stored summary tokens and reads from messages that currently hold a summary', async (): Promise<void> => {
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({ summary: 'first', summaryCost: 0.02, summaryTokens: 120, summaryReadCount: 1 }),
+      makeMsg({ id: 'msg-2', summary: 'second', summaryCost: 0.03, summaryTokens: 80, summaryReadCount: 0 }),
+      makeMsg({ id: 'msg-3' }),
+    ]);
+
+    const stats = await computeLocalStats();
+
+    expect(stats.summaryGeneratedCount).toBe(2);
+    expect(stats.summaryTotalCost).toBeCloseTo(0.05);
+    expect(stats.summaryTotalTokens).toBe(200);
+    expect(stats.summaryTotalReadCount).toBe(1);
+    expect(stats.summaryUniqueReadCount).toBe(1);
+  });
+});
+
 describe('computeTrends', () => {
   it('returns trend rows from snapshots', async () => {
     mockSnapshots = [
@@ -490,6 +508,7 @@ describe('exportAnalytics / importAnalytics backward compatibility', () => {
         'providerBreakdown',
         'summaryGeneratedCount',
         'summaryTotalCost',
+        'summaryTotalTokens',
         'summaryTotalReadCount',
         'summaryUniqueReadCount',
         'topicsWithScratchpad',

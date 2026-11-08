@@ -6,6 +6,8 @@ import { resolveProviderName } from './analyticsRollupService';
 export interface AnalyticsStats {
   summaryGeneratedCount: number;
   summaryTotalCost: number;
+  /** Sum of stored summary prompt+completion tokens (latest generation per message). */
+  summaryTotalTokens: number;
   summaryTotalReadCount: number;
   summaryUniqueReadCount: number;
   totalMessages: number;
@@ -144,6 +146,7 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
   const stats: AnalyticsStats = {
     summaryGeneratedCount: 0,
     summaryTotalCost: 0,
+    summaryTotalTokens: 0,
     summaryTotalReadCount: 0,
     summaryUniqueReadCount: 0,
     totalMessages: messages.length,
@@ -210,6 +213,7 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
     if (m.summary) {
       stats.summaryGeneratedCount++;
       stats.summaryTotalCost += m.summaryCost ?? 0;
+      stats.summaryTotalTokens += m.summaryTokens ?? 0;
       const reads = m.summaryReadCount ?? 0;
       stats.summaryTotalReadCount += reads;
       if (reads > 0) stats.summaryUniqueReadCount++;
@@ -513,6 +517,7 @@ export function getCombinedStats(local?: AnalyticsStats): CombinedStats {
     local: local ?? {
       summaryGeneratedCount: 0,
       summaryTotalCost: 0,
+      summaryTotalTokens: 0,
       summaryTotalReadCount: 0,
       summaryUniqueReadCount: 0,
       totalMessages: 0,

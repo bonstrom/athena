@@ -1,6 +1,13 @@
 import { renderWithTheme } from '../../testUtils';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import type { AnalyticsExport, AnalyticsStats, ProviderBreakdown } from '../../services/analyticsService';
+import type {
+  AnalyticsExport,
+  AnalyticsStats,
+  LatencyPercentiles,
+  ProviderBreakdown,
+  ToolUsageRow,
+  TrendRow,
+} from '../../services/analyticsService';
 
 const mockComputeLocalStats = jest.fn<Promise<AnalyticsStats>, []>();
 const mockGetImportedSources = jest.fn<Record<string, AnalyticsExport>, []>();
@@ -50,12 +57,13 @@ jest.mock('../../store/AuthStore', () => {
   return { useAuthStore };
 });
 
-import Analytics from '../Analytics';
+import Analytics, { buildAnalyticsReport } from '../Analytics';
 
 function createStats(overrides: Partial<AnalyticsStats> = {}): AnalyticsStats {
   return {
     summaryGeneratedCount: 5,
     summaryTotalCost: 0.25,
+    summaryTotalTokens: 1234,
     summaryTotalReadCount: 10,
     summaryUniqueReadCount: 3,
     totalMessages: 42,
@@ -140,8 +148,8 @@ describe('Analytics', () => {
     renderWithTheme(<Analytics />);
 
     expect(await screen.findByText('Performance')).toBeInTheDocument();
-    expect(screen.getByText('p50 Latency')).toBeInTheDocument();
-    expect(screen.getByText('p95 Latency')).toBeInTheDocument();
+    expect(screen.getByText('p50 latency (this device, local snapshots)')).toBeInTheDocument();
+    expect(screen.getByText('p95 latency (this device, local snapshots)')).toBeInTheDocument();
   });
 
   it('renders trends section', async () => {
@@ -188,6 +196,8 @@ describe('Analytics', () => {
     expect(report).toContain('| OpenAI | 21 |');
     expect(report).toContain('## Tool Usage');
     expect(report).toContain('| update_scratchpad | 20 | 90% |');
+    expect(report).toContain('Stored summary tokens (latest generation per message)');
+    expect(report).toContain('| Date (UTC) | Usage events |');
     expect(await screen.findByText('Analytics report copied to clipboard.')).toBeInTheDocument();
   });
 
@@ -243,7 +253,7 @@ describe('Analytics', () => {
 
     renderWithTheme(<Analytics />);
 
-    expect(await screen.findByText(/do not include provider cost\/token detail/i)).toBeInTheDocument();
+    expect(await screen.findByText(/predate provider-level cost\/token tracking/i)).toBeInTheDocument();
     expect(messageCount(getRow('OpenAI'))).toBe(26);
   });
 
@@ -278,5 +288,129 @@ describe('Analytics', () => {
     expect(await screen.findByText(/Message length in characters/)).toBeInTheDocument();
     expect(screen.getByText('0-100 chars')).toBeInTheDocument();
     expect(screen.getByText('8000+ chars')).toBeInTheDocument();
+  });
+});
+
+describe('buildAnalyticsReport', () => {
+  const trends: TrendRow[] = [
+    {
+      date: '2026-01-01',
+      messageCount: 10,
+      cost: 0.5,
+      tokens: 1500,
+      failPercent: 10,
+      p50Latency: 500,
+      p95Latency: 900,
+    },
+  ];
+  const toolUsage: ToolUsageRow[] = [{ tool: 'update_scratchpad', calls: 20, successRate: 90, errors: [] }];
+  const latencyPerc: LatencyPercentiles = { p50: 500, p95: 900 };
+
+  function build(
+    overrides: {
+      stats?: AnalyticsStats;
+      combined?: AnalyticsStats | null;
+      importedSources?: Record<string, AnalyticsExport>;
+      providerRows?: ProviderBreakdown[];
+      trendRangeLabel?: string;
+    } = {},
+  ): string {
+    const stats = overrides.stats ?? createStats();
+    return buildAnalyticsReport({
+      stats,
+      combined: overrides.combined ?? null,
+      importedSources: overrides.importedSources ?? {},
+      trends,
+      providerRows: overrides.providerRows ?? [{ provider: 'OpenAI', messages: 21, cost: 1.5, tokens: 15000 }],
+      toolUsage,
+      latencyPerc,
+      dateFormat: 'en-US',
+      userName: 'TestUser',
+      trendRangeLabel: overrides.trendRangeLabel,
+    });
+  }
+
+  it('uses precise recorded-cost and stored-summary terminology', (): void => {
+    const report = build();
+
+    expect(report).toContain('Recorded tokens (messages + operations)');
+    expect(report).toContain('Recorded cost (messages + tracked operations)');
+    expect(report).toContain('Stored summary cost (latest generation per message)');
+    expect(report).toContain('| Stored summary tokens (latest generation per message) | 1.2K |');
+    expect(report).toContain('| Recorded subtotal incl. stored summary cost | $1.75 |');
+    expect(report).toContain(
+      'Media generation, topic naming, reply prediction, and Curator direct calls are not tracked',
+    );
+  });
+
+  it('lists stored-summary reads and retrieval scope precisely', (): void => {
+    const report = build();
+
+    expect(report).toContain('| Messages with a stored summary | 5 |');
+    expect(report).toContain('| Messages with ≥1 tracked retrieval (truncation/RAG only) | 3/5 (60%) |');
+    expect(report).toContain('| Tracked retrieval events | 10 |');
+    expect(report).toContain('history-directory previews are not counted');
+  });
+
+  it('reports dynamic legacy-provider cost and token coverage', (): void => {
+    const report = build({
+      combined: createStats({
+        totalMessages: 47,
+        totalCost: 2,
+        totalPromptTokens: 20000,
+        totalCompletionTokens: 10000,
+      }),
+      importedSources: {
+        'device-2': createSource(createStats({ totalMessages: 5, totalCost: 0.5, providerBreakdown: undefined }), {
+          userId: 'Legacy Device',
+        }),
+      },
+      providerRows: [{ provider: 'OpenAI', messages: 26, cost: 1.5, tokens: 15000 }],
+    });
+
+    expect(report).toContain('Legacy imports (Legacy Device) predate provider-level cost/token tracking.');
+    expect(report).toContain('provider rows cover 75.0% of recorded cost and 50.0% of recorded tokens');
+  });
+
+  it('includes source format, export date, and app version from imported files', (): void => {
+    const exported = new Date('2026-02-03T12:00:00.000Z').toLocaleDateString('en-US');
+    const report = build({
+      combined: createStats(),
+      importedSources: {
+        'device-2': createSource(createStats({ totalMessages: 10, totalCost: 5 }), {
+          format: 'athena-analytics-v1',
+          exportedAt: '2026-02-03T12:00:00.000Z',
+          appVersion: '2.1.0',
+          userId: 'Phone',
+        }),
+      },
+    });
+
+    expect(report).toContain('| Source | Messages | Cost | Format | Exported | App |');
+    expect(report).toContain(`| Phone | 10 | $5.00 | athena-analytics-v1 | ${exported} | 2.1.0 |`);
+  });
+
+  it('labels trends as active UTC usage events from local snapshots', (): void => {
+    const report = build({ trendRangeLabel: 'Last 7 active UTC dates (this device)' });
+
+    expect(report).toContain('Range: Last 7 active UTC dates (this device)');
+    expect(report).toContain('Scope: this device only (local snapshot data).');
+    expect(report).toContain('| Date (UTC) | Usage events | Cost | Tokens | Fail % | p50 latency | p95 latency |');
+  });
+
+  it('scopes provider, tool, feature, and performance metrics precisely', (): void => {
+    const report = build();
+
+    expect(report).toContain('| Provider | Assistant messages | Cost | Tokens |');
+    expect(report).toContain('"Unknown" groups models that no longer resolve to a configured provider');
+    expect(report).toContain('Scope: this device only (local tool logs).');
+    expect(report).toContain('Scope: this device only (current setting values, not historical).');
+    expect(report).toContain('p50 latency (this device, local snapshots)');
+    expect(report).toContain('Average tokens per second (approximate)');
+    expect(report).toContain('Cache hit rate (estimate; cached / (cached + cache creation + prompt))');
+  });
+
+  it('formats the error rate with two decimals', (): void => {
+    expect(build()).toContain('| Error rate | 4.76% |');
   });
 });

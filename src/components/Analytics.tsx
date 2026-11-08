@@ -62,6 +62,21 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
+/** Legacy imports predate summaryTotalTokens, so read it defensively. */
+function storedSummaryTokens(stats: AnalyticsStats): number {
+  return (stats as { summaryTotalTokens?: number }).summaryTotalTokens ?? 0;
+}
+
+/** Read source metadata defensively because v1 files may omit newer fields. */
+function sourceMetadata(source: AnalyticsExport): { format: string; exportedAt: string | undefined; appVersion: string } {
+  const raw = source as { format?: string; exportedAt?: string; appVersion?: string };
+  return {
+    format: raw.format ?? 'unknown',
+    exportedAt: raw.exportedAt,
+    appVersion: raw.appVersion ?? 'unknown',
+  };
+}
+
 function formatCost(n: number): string {
   return formatCostForCurrency(n, useAuthStore.getState().currency);
 }
@@ -126,6 +141,13 @@ function mdTable(headers: string[], rows: (string | number)[][]): string {
   return [mdRow(headers), `| ${headers.map(() => '---').join(' | ')} |`, ...rows.map(mdRow)].join('\n');
 }
 
+/** Render an export timestamp, tolerating legacy files that lack one. */
+function formatSourceDate(value: string | undefined, dateFormat: string): string {
+  if (!value) return 'Unknown';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 'Unknown' : parsed.toLocaleDateString(dateFormat);
+}
+
 interface AnalyticsReportInput {
   stats: AnalyticsStats;
   combined: AnalyticsStats | null;
@@ -150,10 +172,18 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
   const total = combined ?? stats;
   const lines: string[] = [];
 
+  const importedSourceEntries = Object.entries(importedSources);
+  const legacySources = importedSourceEntries.filter(([, source]) => !source.stats.providerBreakdown);
+  const recordedTokens = total.totalPromptTokens + total.totalCompletionTokens;
+  const providerCost = providerRows.reduce((sum, row) => sum + row.cost, 0);
+  const providerTokens = providerRows.reduce((sum, row) => sum + row.tokens, 0);
+  const costCoverage = total.totalCost > 0 ? Math.min(100, (providerCost / total.totalCost) * 100) : 0;
+  const tokenCoverage = recordedTokens > 0 ? Math.min(100, (providerTokens / recordedTokens) * 100) : 0;
+
   lines.push('# Athena Usage Analytics');
   lines.push('');
   lines.push(`Generated: ${new Date().toLocaleDateString(dateFormat)}`);
-  lines.push(`Source: ${userName || 'This device'}${Object.keys(importedSources).length > 0 ? ' plus aggregated imports' : ''}`);
+  lines.push(`Source: ${userName || 'This device'}${importedSourceEntries.length > 0 ? ' plus aggregated imports' : ''}`);
   if (total.firstMessageAt) {
     lines.push(`First activity: ${new Date(total.firstMessageAt).toLocaleDateString(dateFormat)}`);
   }
@@ -161,23 +191,38 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
     lines.push(`Last activity: ${new Date(total.lastMessageAt).toLocaleDateString(dateFormat)}`);
   }
   lines.push('');
-  lines.push('> Aggregate usage statistics only. No conversation content, topic names, prompts, or API keys are included.');
+  lines.push(`> ${ANALYTICS_EXPORT_PRIVACY_NOTE}`);
   lines.push('');
 
   // ── Aggregated sources ──
-  if (Object.keys(importedSources).length > 0) {
+  if (importedSourceEntries.length > 0) {
     lines.push('## Aggregated Sources');
     lines.push('');
     const rows: (string | number)[][] = [
-      [userName || 'You', stats.totalMessages, formatCost(stats.totalCost)],
-      ...Object.values(importedSources).map((source) => [
-        source.userId || 'Unknown',
-        source.stats.totalMessages,
-        formatCost(source.stats.totalCost),
-      ]),
-      ['Combined', total.totalMessages, formatCost(total.totalCost)],
+      [
+        `${userName || 'This device'} (this device)`,
+        stats.totalMessages,
+        formatCost(stats.totalCost),
+        'local',
+        'now',
+        process.env.REACT_APP_VERSION ?? 'unknown',
+      ],
+      ...importedSourceEntries.map(([, source]) => {
+        const meta = sourceMetadata(source);
+        return [
+          source.userId || source.deviceId || 'Unknown',
+          source.stats.totalMessages,
+          formatCost(source.stats.totalCost),
+          meta.format,
+          formatSourceDate(meta.exportedAt, dateFormat),
+          meta.appVersion,
+        ];
+      }),
+      ['Combined', total.totalMessages, formatCost(total.totalCost), '', '', ''],
     ];
-    lines.push(mdTable(['Source', 'Messages', 'Cost'], rows));
+    lines.push(mdTable(['Source', 'Messages', 'Cost', 'Format', 'Exported', 'App'], rows));
+    lines.push('');
+    lines.push('Source metadata is read from each export file; the local row describes this device.');
     lines.push('');
   }
 
@@ -190,14 +235,21 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
       [
         ['Messages', total.totalMessages],
         ['Failed messages', total.failedMessageCount],
-        ['Prompt tokens', formatTokens(total.totalPromptTokens)],
-        ['Completion tokens', formatTokens(total.totalCompletionTokens)],
+        ['Prompt tokens (messages + operations)', formatTokens(total.totalPromptTokens)],
+        ['Completion tokens (messages + operations)', formatTokens(total.totalCompletionTokens)],
         ['Cached tokens', formatTokens(total.totalCachedTokens)],
         ['Cache creation tokens', formatTokens(total.totalCacheCreationTokens)],
-        ['Total tokens', formatTokens(total.totalPromptTokens + total.totalCompletionTokens)],
-        ['Total cost', formatCost(total.totalCost)],
+        ['Recorded tokens (messages + operations)', formatTokens(recordedTokens)],
+        ['Recorded cost (messages + tracked operations)', formatCost(total.totalCost)],
+        ['Stored summary cost (latest generation per message)', formatCost(total.summaryTotalCost)],
+        ['Stored summary tokens (latest generation per message)', formatTokens(storedSummaryTokens(total))],
+        ['Recorded subtotal incl. stored summary cost', formatCost(total.totalCost + total.summaryTotalCost)],
       ],
     ),
+  );
+  lines.push('');
+  lines.push(
+    'Recorded cost covers chat messages plus tracked background operations. Media generation, topic naming, reply prediction, and Curator direct calls are not tracked. Stored summary cost is a separate subtotal, not part of recorded cost.',
   );
   lines.push('');
 
@@ -209,9 +261,11 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
       lines.push(`Range: ${trendRangeLabel}`);
       lines.push('');
     }
+    lines.push('Scope: this device only (local snapshot data).');
+    lines.push('');
     lines.push(
       mdTable(
-        ['Date', 'Messages', 'Cost', 'Tokens', 'Fail %', 'p50 latency', 'p95 latency'],
+        ['Date (UTC)', 'Usage events', 'Cost', 'Tokens', 'Fail %', 'p50 latency', 'p95 latency'],
         trends.map((t) => [
           t.date,
           t.messageCount,
@@ -224,6 +278,10 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
       ),
     );
     lines.push('');
+    lines.push(
+      'Rows are active UTC dates only; dates without recorded activity are omitted. Usage events include background operations, not just chat messages. Latency percentiles use local snapshot samples only.',
+    );
+    lines.push('');
   }
 
   // ── By provider ──
@@ -231,10 +289,27 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
     lines.push('## By Provider');
     lines.push('');
     lines.push(
+      'Assistant messages with a recorded model, grouped by the provider that model currently maps to, including aggregated sources.',
+    );
+    lines.push('');
+    lines.push(
       mdTable(
-        ['Provider', 'Messages', 'Cost', 'Tokens'],
+        ['Provider', 'Assistant messages', 'Cost', 'Tokens'],
         providerRows.map((p) => [p.provider, p.messages, formatCost(p.cost), formatTokens(p.tokens)]),
       ),
+    );
+    if (legacySources.length > 0) {
+      const legacyNames = legacySources.map(([, source]) => source.userId || source.deviceId || 'Unknown').join(', ');
+      lines.push('');
+      lines.push(
+        `Legacy imports (${legacyNames}) predate provider-level cost/token tracking. Their message counts are included, but provider rows cover ${costCoverage.toFixed(
+          1,
+        )}% of recorded cost and ${tokenCoverage.toFixed(1)}% of recorded tokens in the combined totals.`,
+      );
+    }
+    lines.push('');
+    lines.push(
+      'Cost and tokens include tracked background operations in addition to messages. "Unknown" groups models that no longer resolve to a configured provider; it is not a real provider.',
     );
     lines.push('');
   }
@@ -244,13 +319,19 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
   if (modelEntries.length > 0) {
     lines.push('## Messages by Model');
     lines.push('');
+    lines.push('Assistant messages with a recorded model.');
+    lines.push('');
     lines.push(mdTable(['Model', 'Messages'], modelEntries));
+    lines.push('');
+    lines.push('Counts use recorded model IDs; model IDs are not retroactively remapped.');
     lines.push('');
   }
 
   // ── Tool usage ──
   if (toolUsage.length > 0) {
     lines.push('## Tool Usage');
+    lines.push('');
+    lines.push('Scope: this device only (local tool logs).');
     lines.push('');
     lines.push(
       mdTable(
@@ -259,28 +340,35 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
       ),
     );
     lines.push('');
+    lines.push('Tool names appear as recorded; renamed tools may show as separate rows.');
+    lines.push('');
   }
 
   // ── Summary effectiveness ──
   lines.push('## Summary Effectiveness');
   lines.push('');
+  const readPercent =
+    total.summaryGeneratedCount > 0
+      ? `${Math.round((total.summaryUniqueReadCount / total.summaryGeneratedCount) * 100)}%`
+      : '0%';
   lines.push(
     mdTable(
       ['Metric', 'Value'],
       [
-        ['Summaries generated', total.summaryGeneratedCount],
-        ['Total generation cost', formatCost(total.summaryTotalCost)],
+        ['Messages with a stored summary', total.summaryGeneratedCount],
+        ['Stored summary cost (latest generation per message)', formatCost(total.summaryTotalCost)],
+        ['Stored summary tokens (latest generation per message)', formatTokens(storedSummaryTokens(total))],
         [
-          'Summaries read by LLM',
-          total.summaryGeneratedCount > 0
-            ? `${total.summaryUniqueReadCount}/${total.summaryGeneratedCount} (${Math.round(
-                (total.summaryUniqueReadCount / total.summaryGeneratedCount) * 100,
-              )}%)`
-            : '0/0 (0%)',
+          'Messages with ≥1 tracked retrieval (truncation/RAG only)',
+          `${total.summaryUniqueReadCount}/${total.summaryGeneratedCount} (${readPercent})`,
         ],
-        ['Total read events', total.summaryTotalReadCount],
+        ['Tracked retrieval events', total.summaryTotalReadCount],
       ],
     ),
+  );
+  lines.push('');
+  lines.push(
+    'Regenerating a summary overwrites its stored cost and tokens. Retrieval counts cover summaries injected by history truncation/RAG; history-directory previews are not counted.',
   );
   lines.push('');
 
@@ -313,19 +401,31 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
     mdTable(
       ['Metric', 'Value'],
       [
-        ['Average latency', avgLatency != null ? formatLatency(avgLatency) : 'N/A'],
-        ['p50 latency', latencyPerc.p50 != null ? formatLatency(latencyPerc.p50) : 'N/A'],
-        ['p95 latency', latencyPerc.p95 != null ? formatLatency(latencyPerc.p95) : 'N/A'],
-        ['Average tokens per second', avgTps ?? 'N/A'],
-        ['Cache hit rate', cacheTotal > 0 ? `${Math.round((total.totalCachedTokens / cacheTotal) * 100)}%` : '0%'],
+        [
+          'Average latency (messages with recorded latency, combined)',
+          avgLatency != null ? formatLatency(avgLatency) : 'N/A',
+        ],
+        ['p50 latency (this device, local snapshots)', latencyPerc.p50 != null ? formatLatency(latencyPerc.p50) : 'N/A'],
+        ['p95 latency (this device, local snapshots)', latencyPerc.p95 != null ? formatLatency(latencyPerc.p95) : 'N/A'],
+        ['Average tokens per second (approximate)', avgTps ?? 'N/A'],
+        [
+          'Cache hit rate (estimate; cached / (cached + cache creation + prompt))',
+          cacheTotal > 0 ? `${Math.round((total.totalCachedTokens / cacheTotal) * 100)}%` : '0%',
+        ],
       ],
     ),
+  );
+  lines.push('');
+  lines.push(
+    'Latency percentiles use local snapshot samples only, while the combined average uses message-level latency. Tokens per second is approximate because it divides all completion tokens by latency-bearing records only. Cache share is a token-ratio estimate, not a request-level hit rate.',
   );
   lines.push('');
 
   // ── Content stats ──
   const byType = total.messagesByType;
   lines.push('## Content Stats');
+  lines.push('');
+  lines.push('Scope: combined aggregated sources.');
   lines.push('');
   lines.push(
     mdTable(
@@ -338,7 +438,9 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
         ['Failed messages', total.failedMessageCount],
         [
           'Error rate',
-          total.totalMessages > 0 ? `${Math.round((total.failedMessageCount / total.totalMessages) * 100)}%` : '0%',
+          total.totalMessages > 0
+            ? `${((total.failedMessageCount / total.totalMessages) * 100).toFixed(2)}%`
+            : '0.00%',
         ],
         ['Messages with reasoning', total.messagesWithReasoning],
         ['Messages with embeddings', total.totalEmbeddings],
@@ -356,6 +458,8 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
   const featureEntries = Object.entries(stats.features);
   if (featureEntries.length > 0) {
     lines.push('## Active Features');
+    lines.push('');
+    lines.push('Scope: this device only (current setting values, not historical).');
     lines.push('');
     lines.push(mdTable(['Feature', 'Value'], featureEntries));
     lines.push('');
@@ -473,6 +577,7 @@ const Analytics: React.FC = () => {
         ...total,
         summaryGeneratedCount: total.summaryGeneratedCount + s.summaryGeneratedCount,
         summaryTotalCost: total.summaryTotalCost + s.summaryTotalCost,
+        summaryTotalTokens: storedSummaryTokens(total) + storedSummaryTokens(s),
         summaryTotalReadCount: total.summaryTotalReadCount + s.summaryTotalReadCount,
         summaryUniqueReadCount: total.summaryUniqueReadCount + s.summaryUniqueReadCount,
         totalMessages: total.totalMessages + s.totalMessages,
@@ -535,15 +640,25 @@ const Analytics: React.FC = () => {
   }
   const providerRows: ProviderBreakdown[] = [...byProvider.values()].sort((a, b) => b.messages - a.messages);
   const hasLegacyImportedSources = Object.values(importedSources).some((s) => !s.stats.providerBreakdown);
+  const legacySourceNames = Object.values(importedSources)
+    .filter((s) => !s.stats.providerBreakdown)
+    .map((s) => s.userId || s.deviceId || 'Unknown');
+  const providerCostTotal = providerRows.reduce((sum, row) => sum + row.cost, 0);
+  const providerTokenTotal = providerRows.reduce((sum, row) => sum + row.tokens, 0);
+  const combinedRecordedTokens = combined ? combined.totalPromptTokens + combined.totalCompletionTokens : 0;
+  const providerCostCoverage =
+    combined && combined.totalCost > 0 ? Math.min(100, (providerCostTotal / combined.totalCost) * 100) : 0;
+  const providerTokenCoverage =
+    combinedRecordedTokens > 0 ? Math.min(100, (providerTokenTotal / combinedRecordedTokens) * 100) : 0;
 
   const handleCopyForLlm = (): void => {
     if (!stats) return;
     const trendRangeLabel =
       trendMode === 'all'
-        ? 'All time'
+        ? 'All time, active UTC dates (this device)'
         : trendMode === 'custom'
-          ? `Custom (${customFrom || 'start'} to ${customTo || 'now'})`
-          : `Last ${trendDays} days`;
+          ? `Custom range (${customFrom || 'start'} to ${customTo || 'now'}), active UTC dates (this device)`
+          : `Last ${trendDays} active UTC dates (this device)`;
     const report = buildAnalyticsReport({
       stats,
       combined,
@@ -610,8 +725,8 @@ const Analytics: React.FC = () => {
       <Box>
         <SectionHeader>Local Data (this device)</SectionHeader>
         <StatRow label="Messages" value={stats.totalMessages.toLocaleString()} />
-        <StatRow label="Total Tokens" value={formatTokens(stats.totalPromptTokens + stats.totalCompletionTokens)} />
-        <StatRow label="Total Cost" value={formatCost(stats.totalCost)} />
+        <StatRow label="Recorded tokens" value={formatTokens(stats.totalPromptTokens + stats.totalCompletionTokens)} />
+        <StatRow label="Recorded cost" value={formatCost(stats.totalCost)} />
         {stats.firstMessageAt && (
           <StatRow label="First message" value={new Date(stats.firstMessageAt).toLocaleDateString(dateFormat)} />
         )}
@@ -635,6 +750,10 @@ const Analytics: React.FC = () => {
       {Object.keys(importedSources).length > 0 && (
         <Box>
           <SectionHeader>Aggregated Sources</SectionHeader>
+          <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
+            Each imported source records its export format, export date, and app version; hover a source name to see
+            them.
+          </Typography>
           <TableContainer component={Paper} variant="outlined">
             <Table size="small">
               <TableHead>
@@ -642,7 +761,7 @@ const Analytics: React.FC = () => {
                   <TableCell>Source</TableCell>
                   <TableCell align="right">Msgs</TableCell>
                   <TableCell align="right">Cost</TableCell>
-                  <TableCell align="right">Summaries</TableCell>
+                  <TableCell align="right">Summary reads</TableCell>
                   <TableCell align="right" />
                 </TableRow>
               </TableHead>
@@ -652,33 +771,45 @@ const Analytics: React.FC = () => {
                   <TableCell align="right">{stats.totalMessages}</TableCell>
                   <TableCell align="right">{formatCost(stats.totalCost)}</TableCell>
                   <TableCell align="right">
-                    {stats.summaryGeneratedCount}/{stats.summaryUniqueReadCount} (
+                    {stats.summaryUniqueReadCount}/{stats.summaryGeneratedCount} (
                     {stats.summaryGeneratedCount > 0 ? Math.round((stats.summaryUniqueReadCount / stats.summaryGeneratedCount) * 100) : 0}
                     %)
                   </TableCell>
                   <TableCell align="right" />
                 </TableRow>
-                {Object.entries(importedSources).map(([deviceId, source]) => (
-                  <TableRow key={deviceId}>
-                    <TableCell>{source.userId || 'Unknown'}</TableCell>
-                    <TableCell align="right">{source.stats.totalMessages}</TableCell>
-                    <TableCell align="right">{formatCost(source.stats.totalCost)}</TableCell>
-                    <TableCell align="right">
-                      {source.stats.summaryGeneratedCount}/{source.stats.summaryUniqueReadCount} (
-                      {source.stats.summaryGeneratedCount > 0
-                        ? Math.round((source.stats.summaryUniqueReadCount / source.stats.summaryGeneratedCount) * 100)
-                        : 0}
-                      %)
-                    </TableCell>
-                    <TableCell align="right">
-                      <Tooltip title="Remove source">
-                        <Button size="small" color="error" onClick={(): void => handleRemoveSource(deviceId)}>
-                          <DeleteIcon fontSize="small" />
-                        </Button>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {Object.entries(importedSources).map(([deviceId, source]) => {
+                  const meta = sourceMetadata(source);
+                  return (
+                    <TableRow key={deviceId}>
+                      <TableCell>
+                        <Tooltip
+                          title={`${meta.format} · exported ${formatSourceDate(
+                            meta.exportedAt,
+                            dateFormat,
+                          )} · v${meta.appVersion}`}
+                        >
+                          <span>{source.userId || 'Unknown'}</span>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell align="right">{source.stats.totalMessages}</TableCell>
+                      <TableCell align="right">{formatCost(source.stats.totalCost)}</TableCell>
+                      <TableCell align="right">
+                        {source.stats.summaryUniqueReadCount}/{source.stats.summaryGeneratedCount} (
+                        {source.stats.summaryGeneratedCount > 0
+                          ? Math.round((source.stats.summaryUniqueReadCount / source.stats.summaryGeneratedCount) * 100)
+                          : 0}
+                        %)
+                      </TableCell>
+                      <TableCell align="right">
+                        <Tooltip title="Remove source">
+                          <Button size="small" color="error" onClick={(): void => handleRemoveSource(deviceId)}>
+                            <DeleteIcon fontSize="small" />
+                          </Button>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
                 {Object.keys(importedSources).length > 0 && combined && (
                   <TableRow sx={{ '& td': { borderTop: '2px solid', borderColor: 'divider' } }}>
                     <TableCell><strong>Combined</strong></TableCell>
@@ -686,7 +817,7 @@ const Analytics: React.FC = () => {
                     <TableCell align="right"><strong>{formatCost(combined.totalCost)}</strong></TableCell>
                     <TableCell align="right">
                       <strong>
-                        {combined.summaryGeneratedCount}/{combined.summaryUniqueReadCount} (
+                        {combined.summaryUniqueReadCount}/{combined.summaryGeneratedCount} (
                         {combined.summaryGeneratedCount > 0
                           ? Math.round((combined.summaryUniqueReadCount / combined.summaryGeneratedCount) * 100)
                           : 0}
@@ -768,7 +899,7 @@ const Analytics: React.FC = () => {
             <LineChart
               xAxis={[{ data: trends.map((t) => dateLabel(t.date)), scaleType: 'band' }]}
               series={[
-                { data: trends.map((t) => t.messageCount), label: 'Messages', color: '#1976d2' },
+                { data: trends.map((t) => t.messageCount), label: 'Usage events', color: '#1976d2' },
               ]}
               height={200}
             />
@@ -793,12 +924,16 @@ const Analytics: React.FC = () => {
               height={200}
             />
           </Box>
+          <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
+            This device only, from local snapshot data. Rows are active UTC dates; inactive dates are omitted. Usage
+            events include background operations. Latency percentiles use local snapshot samples only.
+          </Typography>
           <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 400 }}>
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
-                  <TableCell>Date</TableCell>
-                  <TableCell align="right">Messages</TableCell>
+                  <TableCell>Date (UTC)</TableCell>
+                  <TableCell align="right">Usage events</TableCell>
                   <TableCell align="right">Cost</TableCell>
                   <TableCell align="right">Tokens</TableCell>
                   <TableCell align="right">Fail %</TableCell>
@@ -829,20 +964,21 @@ const Analytics: React.FC = () => {
         <Box>
           <SectionHeader>By Provider</SectionHeader>
           <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
-            Chat messages grouped by the provider of each message&apos;s model, including aggregated sources. Cost
-            and tokens also include background LLM operations.
+            Assistant messages with a recorded model, grouped by the provider that model currently maps to, including
+            aggregated sources. Cost and tokens include tracked background operations.
           </Typography>
           {hasLegacyImportedSources && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              Some imported analytics files were created by an older version and do not include provider cost/token
-              detail. Their message counts are still included below.
+              Legacy imports ({legacySourceNames.join(', ')}) predate provider-level cost/token tracking. Their message
+              counts are still included, but provider rows cover {providerCostCoverage.toFixed(1)}% of recorded cost and{' '}
+              {providerTokenCoverage.toFixed(1)}% of recorded tokens.
             </Alert>
           )}
           <Box sx={{ mb: 2 }}>
             <BarChart
               xAxis={[{ data: providerRows.map((p) => p.provider), scaleType: 'band' }]}
               series={[
-                { data: providerRows.map((p) => p.messages), label: 'Messages', color: '#1976d2' },
+                { data: providerRows.map((p) => p.messages), label: 'Assistant messages', color: '#1976d2' },
               ]}
               height={250}
             />
@@ -852,7 +988,7 @@ const Analytics: React.FC = () => {
               <TableHead>
                 <TableRow>
                   <TableCell>Provider</TableCell>
-                  <TableCell align="right">Messages</TableCell>
+                  <TableCell align="right">Assistant messages</TableCell>
                   <TableCell align="right">Cost</TableCell>
                   <TableCell align="right">Tokens</TableCell>
                 </TableRow>
@@ -869,6 +1005,9 @@ const Analytics: React.FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+          <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
+            &quot;Unknown&quot; groups models that no longer resolve to a configured provider; it is not a real provider.
+          </Typography>
         </Box>
       )}
 
@@ -876,6 +1015,10 @@ const Analytics: React.FC = () => {
       {toolUsage.length > 0 && (
         <Box>
           <SectionHeader>Tool Usage</SectionHeader>
+          <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
+            This device only, from local tool logs. Tool names appear as recorded, so renamed tools may show as
+            separate rows.
+          </Typography>
           <Box sx={{ mb: 2 }}>
             <BarChart
               xAxis={[{ data: toolUsage.map((t) => t.tool), scaleType: 'band' }]}
@@ -935,14 +1078,25 @@ const Analytics: React.FC = () => {
         <SectionHeader>Summary Effectiveness</SectionHeader>
         {combined ? (
           <>
-            <StatRow label="Summaries Generated" value={combined.summaryGeneratedCount} />
-            <StatRow label="Total Generation Cost" value={formatCost(combined.summaryTotalCost)} />
+            <StatRow label="Messages with a stored summary" value={combined.summaryGeneratedCount} />
+            <StatRow
+              label="Stored summary cost (latest generation per message)"
+              value={formatCost(combined.summaryTotalCost)}
+            />
+            <StatRow
+              label="Stored summary tokens (latest generation per message)"
+              value={formatTokens(storedSummaryTokens(combined))}
+            />
             <ProgressRow
-              label="Summaries Read by LLM"
+              label="Messages with ≥1 tracked retrieval (truncation/RAG only)"
               value={combined.summaryUniqueReadCount}
               total={combined.summaryGeneratedCount}
             />
-            <StatRow label="Total Read Events" value={combined.summaryTotalReadCount} />
+            <StatRow label="Tracked retrieval events" value={combined.summaryTotalReadCount} />
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
+              Regenerating a summary overwrites its stored cost and tokens. Retrieval counts cover summaries injected by
+              history truncation/RAG; history-directory previews are not counted.
+            </Typography>
           </>
         ) : (
           <Typography variant="body2" color="text.secondary">
@@ -983,7 +1137,8 @@ const Analytics: React.FC = () => {
         {combined && Object.keys(combined.messagesByModel).length > 0 ? (
           <>
             <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
-              Chat messages with a recorded model, including aggregated sources.
+              Assistant messages with a recorded model, including aggregated sources. Counts use recorded model IDs;
+              model IDs are not retroactively remapped.
             </Typography>
             <TableContainer component={Paper} variant="outlined">
             <Table size="small">
@@ -1020,6 +1175,9 @@ const Analytics: React.FC = () => {
         <SectionHeader>Active Features</SectionHeader>
         {Object.keys(stats.features).length > 0 ? (
           <>
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
+              This device only, showing current setting values rather than historical settings.
+            </Typography>
             {Object.entries(stats.features).map(([key, value]) => (
               <StatRow key={key} label={key} value={value} />
             ))}
@@ -1037,19 +1195,19 @@ const Analytics: React.FC = () => {
         {combined ? (
           <>
             <StatRow
-              label="Average Latency"
+              label="Average latency (messages with recorded latency, combined)"
               value={combined.latencyCount > 0 ? formatLatency(combined.totalLatencyMs / combined.latencyCount) : 'N/A'}
             />
             <StatRow
-              label="p50 Latency"
+              label="p50 latency (this device, local snapshots)"
               value={latencyPerc.p50 != null ? formatLatency(latencyPerc.p50) : 'N/A'}
             />
             <StatRow
-              label="p95 Latency"
+              label="p95 latency (this device, local snapshots)"
               value={latencyPerc.p95 != null ? formatLatency(latencyPerc.p95) : 'N/A'}
             />
             <StatRow
-              label="Average TPS"
+              label="Average tokens per second (approximate)"
               value={
                 combined.latencyCount > 0 && combined.totalCompletionTokens > 0
                   ? Math.round(combined.totalCompletionTokens / (combined.totalLatencyMs / 1000))
@@ -1057,10 +1215,15 @@ const Analytics: React.FC = () => {
               }
             />
             <ProgressRow
-              label="Cache Hit Rate"
+              label="Cache hit rate (estimate; cached / (cached + cache creation + prompt))"
               value={combined.totalCachedTokens}
               total={combined.totalCachedTokens + combined.totalCacheCreationTokens + combined.totalPromptTokens}
             />
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
+              Percentiles use local snapshot samples only, while the combined average uses message-level latency.
+              Tokens per second is approximate because it divides all completion tokens by latency-bearing records only.
+              Cache share is a token-ratio estimate, not a request-level hit rate.
+            </Typography>
           </>
         ) : (
           <Typography variant="body2" color="text.secondary">
@@ -1074,12 +1237,22 @@ const Analytics: React.FC = () => {
         <SectionHeader>Content Stats</SectionHeader>
         {combined ? (
           <>
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
+              Combined aggregated sources.
+            </Typography>
             <StatRow label="User Messages" value={combined.messagesByType.user || 0} />
             <StatRow label="Assistant Messages" value={combined.messagesByType.assistant || 0} />
             <StatRow label="System Messages" value={combined.messagesByType.system || 0} />
             <StatRow label="AI Notes" value={combined.messagesByType.aiNote || 0} />
             <StatRow label="Failed Messages" value={combined.failedMessageCount} />
-            <StatRow label="Error Rate" value={combined.totalMessages > 0 ? `${Math.round((combined.failedMessageCount / combined.totalMessages) * 100)}%` : '0%'} />
+            <StatRow
+              label="Error Rate"
+              value={
+                combined.totalMessages > 0
+                  ? `${((combined.failedMessageCount / combined.totalMessages) * 100).toFixed(2)}%`
+                  : '0.00%'
+              }
+            />
             <StatRow label="Messages with Reasoning" value={combined.messagesWithReasoning} />
             <StatRow label="Messages with Embeddings" value={combined.totalEmbeddings} />
             <StatRow label="Total Attachments" value={combined.totalAttachments} />
