@@ -805,7 +805,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
         }
       }
     },
-    [],
+    [topic.id],
   );
 
   useEffect(() => {
