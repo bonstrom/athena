@@ -76,7 +76,7 @@ jest.mock('../../store/ProviderStore', () => ({
 }));
 
 import type { UserChatModel, LlmProvider } from '../../types/provider';
-import { rollupAnalytics, resolveProviderName, rebuildAnalyticsOwnership } from '../analyticsRollupService';
+import { rollupAnalytics, resolveProviderName, resolveProviderFormat, rebuildAnalyticsOwnership } from '../analyticsRollupService';
 
 const localStorageBackup = { ...localStorage };
 
@@ -91,6 +91,8 @@ beforeEach(() => {
     }
   });
   userSettingsStore.clear();
+  mockModels.length = 0;
+  mockProviders.length = 0;
   mockMessagesToArray.mockResolvedValue([]);
   mockOperationUsagesToArray.mockResolvedValue([]);
   mockWhereAboveOrEqual.mockReturnValue({ toArray: (): Promise<Message[]> => mockMessagesToArray() });
@@ -193,6 +195,25 @@ describe('resolveProviderName', () => {
 
   it('returns null when modelApiId is undefined', () => {
     expect(resolveProviderName(undefined)).toBeNull();
+  });
+});
+
+describe('resolveProviderFormat', () => {
+  it('returns the provider message format for a configured model', () => {
+    mockModels.push({ id: 'm1', apiModelId: 'gpt-4', providerId: 'p1', label: 'GPT-4' } as UserChatModel);
+    mockModels.push({ id: 'm2', apiModelId: 'claude-4', providerId: 'p2', label: 'Claude' } as UserChatModel);
+    mockProviders.push({ id: 'p1', name: 'OpenAI', messageFormat: 'openai' } as LlmProvider);
+    mockProviders.push({ id: 'p2', name: 'Anthropic', messageFormat: 'anthropic' } as LlmProvider);
+    mockGetState.mockReturnValue({ models: mockModels, providers: mockProviders });
+
+    expect(resolveProviderFormat('gpt-4')).toBe('openai');
+    expect(resolveProviderFormat('claude-4')).toBe('anthropic');
+  });
+
+  it('returns null when the model or provider cannot be resolved', () => {
+    mockGetState.mockReturnValue({ models: [], providers: [] });
+    expect(resolveProviderFormat('nonexistent')).toBeNull();
+    expect(resolveProviderFormat(undefined)).toBeNull();
   });
 });
 

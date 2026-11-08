@@ -97,6 +97,19 @@ export function resolveProviderName(modelApiId: string | undefined): string | nu
   return provider?.name ?? null;
 }
 
+/**
+ * Resolve the API message format of the provider that currently owns a model.
+ * Returns null when the model no longer maps to a configured provider, so
+ * format-specific metrics can exclude unattributed records instead of guessing.
+ */
+export function resolveProviderFormat(modelApiId: string | undefined): 'openai' | 'anthropic' | null {
+  if (!modelApiId) return null;
+  const { models, providers } = useProviderStore.getState();
+  const model = models.find((m) => m.apiModelId === modelApiId);
+  if (!model) return null;
+  return providers.find((p) => p.id === model.providerId)?.messageFormat ?? null;
+}
+
 function parseToolUsage(rawResponse: string | undefined): Record<string, { calls: number; successCount: number; errors: string[] }> {
   const result: Record<string, { calls: number; successCount: number; errors: string[] }> = {};
   if (!rawResponse) return result;

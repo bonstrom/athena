@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type {
   AnalyticsExport,
   AnalyticsStats,
+  CacheFormatTotals,
   LatencyPercentiles,
   ProviderBreakdown,
   ToolUsageRow,
@@ -22,6 +23,13 @@ jest.mock('../../services/analyticsService', () => ({
   getImportedSources: (): Record<string, AnalyticsExport> => mockGetImportedSources(),
   removeImportedSource: (): void => {
     /* mock */
+  },
+  cacheHitRateForFormat: (format: 'openai' | 'anthropic', totals: CacheFormatTotals): number | null => {
+    if (format === 'openai') {
+      return totals.promptTokens > 0 ? totals.cachedTokens / totals.promptTokens : null;
+    }
+    const denominator = totals.promptTokens + totals.cachedTokens + totals.cacheCreationTokens;
+    return denominator > 0 ? totals.cachedTokens / denominator : null;
   },
   computeTrends: (): Promise<unknown[]> =>
     Promise.resolve([
@@ -87,6 +95,7 @@ function createStats(overrides: Partial<AnalyticsStats> = {}): AnalyticsStats {
     totalEmbeddings: 30,
     totalLatencyMs: 42000,
     latencyCount: 20,
+    latencyCompletionTokens: 4000,
     firstMessageAt: '2025-01-01T00:00:00.000Z',
     lastMessageAt: '2026-06-15T00:00:00.000Z',
     features: {
@@ -98,6 +107,10 @@ function createStats(overrides: Partial<AnalyticsStats> = {}): AnalyticsStats {
       ttsEnabled: 'OFF',
       maxContextTokens: '128000',
       defaultMaxContextMessages: '20',
+    },
+    cacheByFormat: {
+      openai: { recordCount: 20, promptTokens: 10000, cachedTokens: 2000, cacheCreationTokens: 0 },
+      anthropic: { recordCount: 2, promptTokens: 500, cachedTokens: 100, cacheCreationTokens: 50 },
     },
     providerBreakdown: [{ provider: 'OpenAI', messages: 21, cost: 1.5, tokens: 15000 }],
     ...overrides,
@@ -156,6 +169,27 @@ describe('Analytics', () => {
     renderWithTheme(<Analytics />);
 
     expect(await screen.findByText('Trends')).toBeInTheDocument();
+  });
+
+  it('renders per-format cache shares and aligned throughput', async () => {
+    renderWithTheme(<Analytics />);
+
+    expect(await screen.findByText('Cache read share, OpenAI-style records (this device)')).toBeInTheDocument();
+    expect(screen.getByText('Cache read share, Anthropic-style records (this device)')).toBeInTheDocument();
+    expect(screen.getByText('20.0%')).toBeInTheDocument();
+    expect(screen.getByText('15.4%')).toBeInTheDocument();
+    expect(screen.getByText('Average end-to-end tokens/second (messages with latency, combined)')).toBeInTheDocument();
+  });
+
+  it('labels fork entries and summary read ordering explicitly', async () => {
+    mockGetImportedSources.mockReturnValue({
+      'device-2': createSource(createStats({ totalMessages: 5, totalCost: 0.5 }), { deviceId: 'device-2', userId: 'Phone' }),
+    });
+
+    renderWithTheme(<Analytics />);
+
+    expect(await screen.findByText('Fork entries (incl. Main)')).toBeInTheDocument();
+    expect(screen.getByText('Tracked reads / summaries')).toBeInTheDocument();
   });
 
   it('renders by provider section', async () => {
@@ -390,12 +424,13 @@ describe('buildAnalyticsReport', () => {
     expect(report).toContain(`| Phone | 10 | $5.00 | athena-analytics-v1 | ${exported} | 2.1.0 |`);
   });
 
-  it('labels trends as active UTC usage events from local snapshots', (): void => {
-    const report = build({ trendRangeLabel: 'Last 7 active UTC dates (this device)' });
+  it('labels trends as UTC calendar days with zero rows for inactive dates', (): void => {
+    const report = build({ trendRangeLabel: 'Last 7 calendar days in UTC, including inactive dates (this device)' });
 
-    expect(report).toContain('Range: Last 7 active UTC dates (this device)');
+    expect(report).toContain('Range: Last 7 calendar days in UTC, including inactive dates (this device)');
     expect(report).toContain('Scope: this device only (local snapshot data).');
     expect(report).toContain('| Date (UTC) | Usage events | Cost | Tokens | Fail % | p50 latency | p95 latency |');
+    expect(report).toContain('Preset ranges include inactive dates as zero rows');
   });
 
   it('scopes provider, tool, feature, and performance metrics precisely', (): void => {
@@ -406,8 +441,56 @@ describe('buildAnalyticsReport', () => {
     expect(report).toContain('Scope: this device only (local tool logs).');
     expect(report).toContain('Scope: this device only (current setting values, not historical).');
     expect(report).toContain('p50 latency (this device, local snapshots)');
-    expect(report).toContain('Average tokens per second (approximate)');
-    expect(report).toContain('Cache hit rate (estimate; cached / (cached + cache creation + prompt))');
+    expect(report).toContain('Average end-to-end tokens per second (messages with latency, combined)');
+    expect(report).toContain('Cache read share, OpenAI-style records (this device; cached / prompt tokens)');
+    expect(report).toContain(
+      'Cache read share, Anthropic-style records (this device; cached / (input + cache read + cache creation))',
+    );
+    expect(report).not.toContain('Cache hit rate');
+  });
+
+  it('computes per-format cache shares instead of a blended rate', (): void => {
+    const report = build();
+
+    // OpenAI-style: 2,000 cached / 10,000 prompt tokens.
+    expect(report).toContain('| Cache read share, OpenAI-style records (this device; cached / prompt tokens) | 20.0% |');
+    // Anthropic-style: 100 cached / (500 input + 100 cached + 50 created).
+    expect(report).toContain(
+      '| Cache read share, Anthropic-style records (this device; cached / (input + cache read + cache creation)) | 15.4% |',
+    );
+  });
+
+  it('reports N/A when format-specific cache data is unavailable', (): void => {
+    const report = build({ stats: createStats({ cacheByFormat: undefined }) });
+
+    expect(report).toContain('| Cache read share, OpenAI-style records (this device; cached / prompt tokens) | N/A |');
+    expect(report).toContain(
+      '| Cache read share, Anthropic-style records (this device; cached / (input + cache read + cache creation)) | N/A |',
+    );
+  });
+
+  it('uses aligned latency/completion records for throughput', (): void => {
+    const report = build();
+
+    // 4,000 completion tokens over 42 seconds.
+    expect(report).toContain('| Average end-to-end tokens per second (messages with latency, combined) | 95 |');
+  });
+
+  it('reports throughput as N/A when an imported source lacks aligned latency totals', (): void => {
+    const legacyStats = createStats({ latencyCompletionTokens: undefined });
+    const report = build({
+      combined: createStats({ totalMessages: 84, latencyCompletionTokens: 8000 }),
+      importedSources: {
+        'device-2': createSource(legacyStats, { deviceId: 'device-2', userId: 'Legacy Device' }),
+      },
+    });
+
+    expect(report).toContain('| Average end-to-end tokens per second (messages with latency, combined) | N/A |');
+    expect(report).toContain('Some imported sources lack aligned token/latency totals');
+  });
+
+  it('labels fork totals as entries including the implicit Main fork', (): void => {
+    expect(build()).toContain('| Fork entries (incl. Main) | 2 |');
   });
 
   it('formats the error rate with two decimals', (): void => {

@@ -68,6 +68,12 @@ jest.mock('../../services/analyticsRollupService', () => ({
     const provider = mockProviders.find((p) => p.id === model.providerId);
     return provider?.name ?? null;
   },
+  resolveProviderFormat: (modelApiId: string | undefined): 'openai' | 'anthropic' | null => {
+    if (!modelApiId) return null;
+    const model = mockModels.find((m) => m.apiModelId === modelApiId);
+    if (!model) return null;
+    return mockProviders.find((p) => p.id === model.providerId)?.messageFormat ?? null;
+  },
 }));
 
 import type { Message } from '../../database/AthenaDb';
@@ -80,6 +86,8 @@ import {
   computeToolUsageBreakdown,
   importAnalytics,
   exportAnalytics,
+  percentileNearestRank,
+  cacheHitRateForFormat,
 } from '../analyticsService';
 
 beforeEach(() => {
@@ -185,6 +193,80 @@ describe('operation usage accounting', () => {
   });
 });
 
+describe('cache format accounting', () => {
+  it('groups local records by current provider format and excludes unresolved models', async (): Promise<void> => {
+    mockModels.push(createUserChatModel({ apiModelId: 'gpt-4', providerId: 'p1' }));
+    mockModels.push(createUserChatModel({ apiModelId: 'claude-4', providerId: 'p2' }));
+    mockProviders.push(createLlmProvider({ id: 'p1', name: 'OpenAI', messageFormat: 'openai' }));
+    mockProviders.push(createLlmProvider({ id: 'p2', name: 'Anthropic', messageFormat: 'anthropic' }));
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({ model: 'gpt-4', promptTokens: 100, cachedTokens: 20 }),
+      makeMsg({ id: 'msg-2', model: 'claude-4', promptTokens: 50, cachedTokens: 10, cacheCreationTokens: 5 }),
+      makeMsg({ id: 'msg-3', model: 'retired-model', promptTokens: 999, cachedTokens: 999 }),
+    ]);
+    mockOperationUsagesToArray.mockResolvedValue([
+      {
+        id: 'operation-1',
+        topicId: 'topic-1',
+        operationType: 'checklist_edit',
+        model: 'gpt-4',
+        created: '2026-01-01T12:00:00.000Z',
+        promptTokens: 30,
+        completionTokens: 10,
+        cachedTokens: 10,
+        totalCost: 0.01,
+        failed: false,
+      },
+    ]);
+
+    const stats = await computeLocalStats();
+
+    expect(stats.cacheByFormat).toEqual({
+      openai: { recordCount: 2, promptTokens: 130, cachedTokens: 30, cacheCreationTokens: 0 },
+      anthropic: { recordCount: 1, promptTokens: 50, cachedTokens: 10, cacheCreationTokens: 5 },
+    });
+    expect(cacheHitRateForFormat('openai', stats.cacheByFormat!.openai)).toBeCloseTo(30 / 130);
+    expect(cacheHitRateForFormat('anthropic', stats.cacheByFormat!.anthropic)).toBeCloseTo(10 / 65);
+  });
+
+  it('returns null rates when a format has no token data', (): void => {
+    const empty = { recordCount: 0, promptTokens: 0, cachedTokens: 0, cacheCreationTokens: 0 };
+    expect(cacheHitRateForFormat('openai', empty)).toBeNull();
+    expect(cacheHitRateForFormat('anthropic', empty)).toBeNull();
+  });
+});
+
+describe('latency and throughput populations', () => {
+  it('sums completion tokens only for message records that also recorded latency', async (): Promise<void> => {
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({ id: 'msg-1', completionTokens: 50, latencyMs: 1000 }),
+      makeMsg({ id: 'msg-2', completionTokens: 999 }),
+      makeMsg({ id: 'msg-3', completionTokens: 100, latencyMs: 0 }),
+    ]);
+    mockOperationUsagesToArray.mockResolvedValue([
+      {
+        id: 'operation-1',
+        topicId: 'topic-1',
+        operationType: 'checklist_edit',
+        model: 'gpt-4',
+        created: '2026-01-01T12:00:00.000Z',
+        promptTokens: 10,
+        completionTokens: 500,
+        totalCost: 0.01,
+        latencyMs: 1000,
+        failed: false,
+      },
+    ]);
+
+    const stats = await computeLocalStats();
+
+    expect(stats.latencyCount).toBe(1);
+    expect(stats.totalLatencyMs).toBe(1000);
+    expect(stats.latencyCompletionTokens).toBe(50);
+    expect(stats.totalCompletionTokens).toBe(1649);
+  });
+});
+
 describe('summary accounting', () => {
   it('sums stored summary tokens and reads from messages that currently hold a summary', async (): Promise<void> => {
     mockMessagesToArray.mockResolvedValue([
@@ -203,8 +285,37 @@ describe('summary accounting', () => {
   });
 });
 
+describe('percentileNearestRank', () => {
+  it('returns null for an empty sample', (): void => {
+    expect(percentileNearestRank([], 95)).toBeNull();
+  });
+
+  it('returns the only value for a one-element sample', (): void => {
+    expect(percentileNearestRank([42], 50)).toBe(42);
+    expect(percentileNearestRank([42], 95)).toBe(42);
+  });
+
+  it('uses nearest rank for a two-element sample so p95 is the maximum', (): void => {
+    expect(percentileNearestRank([10, 20], 50)).toBe(10);
+    expect(percentileNearestRank([10, 20], 95)).toBe(20);
+  });
+
+  it('uses nearest rank for larger samples without interpolation', (): void => {
+    const samples = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+    expect(percentileNearestRank(samples, 50)).toBe(50);
+    expect(percentileNearestRank(samples, 95)).toBe(100);
+  });
+
+  it('clamps out-of-range percentiles', (): void => {
+    expect(percentileNearestRank([10, 20], -5)).toBe(10);
+    expect(percentileNearestRank([10, 20], 150)).toBe(20);
+  });
+});
+
 describe('computeTrends', () => {
-  it('returns trend rows from snapshots', async () => {
+  const reference = new Date('2026-01-02T12:00:00.000Z');
+
+  it('returns calendar rows and fills inactive dates with zero rows', async () => {
     mockSnapshots = [
       makeSnapshot({
         date: '2026-01-01',
@@ -226,26 +337,59 @@ describe('computeTrends', () => {
       }),
     ];
 
-    const trends = await computeTrends(7);
+    const trends = await computeTrends(7, reference);
 
-    expect(trends).toHaveLength(2);
-    expect(trends[0].date).toBe('2026-01-01');
-    expect(trends[0].messageCount).toBe(5);
-    expect(trends[0].cost).toBe(0.25);
-    expect(trends[0].tokens).toBe(750);
-    expect(trends[0].failPercent).toBe(20);
-    expect(trends[1].date).toBe('2026-01-02');
-    expect(trends[1].messageCount).toBe(10);
-    expect(trends[1].failPercent).toBe(0);
+    expect(trends.map((row) => row.date)).toEqual([
+      '2025-12-27',
+      '2025-12-28',
+      '2025-12-29',
+      '2025-12-30',
+      '2025-12-31',
+      '2026-01-01',
+      '2026-01-02',
+    ]);
+
+    const inactive = trends[0];
+    expect(inactive.messageCount).toBe(0);
+    expect(inactive.cost).toBe(0);
+    expect(inactive.tokens).toBe(0);
+    expect(inactive.failPercent).toBe(0);
+    expect(inactive.p50Latency).toBeNull();
+    expect(inactive.p95Latency).toBeNull();
+
+    const first = trends.find((row) => row.date === '2026-01-01');
+    expect(first?.messageCount).toBe(5);
+    expect(first?.cost).toBe(0.25);
+    expect(first?.tokens).toBe(750);
+    expect(first?.failPercent).toBe(20);
+    expect(first?.p50Latency).toBe(100);
+    expect(first?.p95Latency).toBe(200);
+
+    const second = trends.find((row) => row.date === '2026-01-02');
+    expect(second?.messageCount).toBe(10);
+    expect(second?.failPercent).toBe(0);
   });
 
-  it('returns empty array when no snapshots', async () => {
+  it('anchors the calendar window to the reference date in UTC', async () => {
+    // 23:30 at UTC-5 is already the next UTC day.
+    const trends = await computeTrends(3, new Date('2026-01-02T23:30:00-05:00'));
+    expect(trends.map((row) => row.date)).toEqual(['2026-01-01', '2026-01-02', '2026-01-03']);
+    expect(trends.every((row) => row.messageCount === 0)).toBe(true);
+  });
+
+  it('returns zero rows, not an empty array, when no snapshots exist', async () => {
     mockSnapshots = [];
-    const trends = await computeTrends(7);
-    expect(trends).toEqual([]);
+    const trends = await computeTrends(7, reference);
+    expect(trends).toHaveLength(7);
+    expect(trends.every((row) => row.messageCount === 0)).toBe(true);
   });
 
-  it('computes p50 and p95 from latency samples', async () => {
+  it('returns no rows for a non-positive day count', async () => {
+    mockSnapshots = [makeSnapshot({ date: '2026-01-01' })];
+    expect(await computeTrends(0, reference)).toEqual([]);
+  });
+
+  it('computes p50 and p95 with nearest rank', async () => {
     mockSnapshots = [
       makeSnapshot({
         date: '2026-01-01',
@@ -253,14 +397,14 @@ describe('computeTrends', () => {
       }),
     ];
 
-    const trends = await computeTrends(7);
+    const trends = await computeTrends(1, new Date('2026-01-01T00:00:00.000Z'));
     expect(trends[0].p50Latency).toBe(50);
-    expect(trends[0].p95Latency).toBe(90);
+    expect(trends[0].p95Latency).toBe(100);
   });
 
   it('returns null percentiles when no samples', async () => {
     mockSnapshots = [makeSnapshot({ date: '2026-01-01', latencySamples: [] })];
-    const trends = await computeTrends(7);
+    const trends = await computeTrends(1, new Date('2026-01-01T00:00:00.000Z'));
     expect(trends[0].p50Latency).toBeNull();
     expect(trends[0].p95Latency).toBeNull();
   });
@@ -275,7 +419,7 @@ describe('computeLatencyPercentiles', () => {
 
     const result = await computeLatencyPercentiles();
     expect(result.p50).toBe(50);
-    expect(result.p95).toBe(90);
+    expect(result.p95).toBe(100);
   });
 
   it('returns null when no samples', async () => {
@@ -495,12 +639,14 @@ describe('exportAnalytics / importAnalytics backward compatibility', () => {
     expect(Object.keys(stats).sort()).toEqual(
       [
         'assistantMessageSizeDistribution',
+        'cacheByFormat',
         'debateTopicCount',
         'failedMessageCount',
         'features',
         'firstMessageAt',
         'lastMessageAt',
         'latencyCount',
+        'latencyCompletionTokens',
         'messageSizeDistribution',
         'messagesByModel',
         'messagesByType',

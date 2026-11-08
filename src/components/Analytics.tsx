@@ -42,9 +42,11 @@ import {
   computeLatencyPercentiles,
   computeProviderBreakdown,
   computeToolUsageBreakdown,
+  cacheHitRateForFormat,
   AnalyticsStats,
   AnalyticsExport,
   ANALYTICS_EXPORT_PRIVACY_NOTE,
+  CacheFormatTotals,
   TrendRow,
   ProviderBreakdown,
   ToolUsageRow,
@@ -84,6 +86,13 @@ function formatCost(n: number): string {
 function formatLatency(ms: number): string {
   if (ms >= 1000) return (ms / 1000).toFixed(1) + 's';
   return `${Math.round(ms)}ms`;
+}
+
+/** Format a per-format cache-read share, or N/A when the format has no data. */
+function formatCacheRate(format: 'openai' | 'anthropic', totals: CacheFormatTotals | undefined): string {
+  if (!totals) return 'N/A';
+  const rate = cacheHitRateForFormat(format, totals);
+  return rate == null ? 'N/A' : `${(rate * 100).toFixed(1)}%`;
 }
 
 function SectionHeader({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -271,7 +280,7 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
           t.messageCount,
           formatCost(t.cost),
           formatTokens(t.tokens),
-          `${t.failPercent}%`,
+          `${t.failPercent.toFixed(2)}%`,
           t.p50Latency != null ? formatLatency(t.p50Latency) : 'N/A',
           t.p95Latency != null ? formatLatency(t.p95Latency) : 'N/A',
         ]),
@@ -279,7 +288,7 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
     );
     lines.push('');
     lines.push(
-      'Rows are active UTC dates only; dates without recorded activity are omitted. Usage events include background operations, not just chat messages. Latency percentiles use local snapshot samples only.',
+      'Dates are UTC. Preset ranges include inactive dates as zero rows; custom and all-time ranges show recorded dates only. Usage events include background operations, not just chat messages. Latency percentiles use local snapshot samples only.',
     );
     lines.push('');
   }
@@ -390,11 +399,15 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
 
   // ── Performance ──
   const avgLatency = total.latencyCount > 0 ? total.totalLatencyMs / total.latencyCount : null;
+  const hasAlignedLatencyTokens = importedSourceEntries.every(
+    ([, source]) => typeof source.stats.latencyCompletionTokens === 'number',
+  );
+  const latencyCompletionTokens = total.latencyCompletionTokens ?? 0;
   const avgTps =
-    total.latencyCount > 0 && total.totalCompletionTokens > 0
-      ? Math.round(total.totalCompletionTokens / (total.totalLatencyMs / 1000))
+    hasAlignedLatencyTokens && total.latencyCount > 0 && total.totalLatencyMs > 0 && latencyCompletionTokens > 0
+      ? Math.round(latencyCompletionTokens / (total.totalLatencyMs / 1000))
       : null;
-  const cacheTotal = total.totalCachedTokens + total.totalCacheCreationTokens + total.totalPromptTokens;
+  const cache = stats.cacheByFormat;
   lines.push('## Performance');
   lines.push('');
   lines.push(
@@ -407,17 +420,28 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
         ],
         ['p50 latency (this device, local snapshots)', latencyPerc.p50 != null ? formatLatency(latencyPerc.p50) : 'N/A'],
         ['p95 latency (this device, local snapshots)', latencyPerc.p95 != null ? formatLatency(latencyPerc.p95) : 'N/A'],
-        ['Average tokens per second (approximate)', avgTps ?? 'N/A'],
+        ['Average end-to-end tokens per second (messages with latency, combined)', avgTps ?? 'N/A'],
         [
-          'Cache hit rate (estimate; cached / (cached + cache creation + prompt))',
-          cacheTotal > 0 ? `${Math.round((total.totalCachedTokens / cacheTotal) * 100)}%` : '0%',
+          'Cache read share, OpenAI-style records (this device; cached / prompt tokens)',
+          formatCacheRate('openai', cache?.openai),
+        ],
+        [
+          'Cache read share, Anthropic-style records (this device; cached / (input + cache read + cache creation))',
+          formatCacheRate('anthropic', cache?.anthropic),
         ],
       ],
     ),
   );
   lines.push('');
+  const throughputNote = hasAlignedLatencyTokens
+    ? ''
+    : ' Some imported sources lack aligned token/latency totals, so combined throughput is not reported.';
   lines.push(
-    'Latency percentiles use local snapshot samples only, while the combined average uses message-level latency. Tokens per second is approximate because it divides all completion tokens by latency-bearing records only. Cache share is a token-ratio estimate, not a request-level hit rate.',
+    `Latency percentiles use local snapshot samples only, while the combined average uses message-level latency. Throughput uses completion tokens from the same message records that recorded latency; background operations and latency-less messages are excluded. It measures end-to-end throughput, not model decoding speed.${throughputNote}`,
+  );
+  lines.push('');
+  lines.push(
+    'Per-format cache shares use this device\'s records grouped by each model\'s current provider format. Imported sources are excluded, and records whose model no longer resolves to a configured provider are not attributed.',
   );
   lines.push('');
 
@@ -446,7 +470,7 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
         ['Messages with embeddings', total.totalEmbeddings],
         ['Total attachments', total.totalAttachments],
         ['Web searches', total.totalWebSearches],
-        ['Forks (branches)', total.totalForks],
+        ['Fork entries (incl. Main)', total.totalForks],
         ['Debate topics', total.debateTopicCount],
         ['Topics with scratchpad', total.topicsWithScratchpad],
       ],
@@ -518,7 +542,11 @@ const Analytics: React.FC = () => {
       setLatencyPerc(percData);
       setProviders(provData);
       setToolUsage(toolData);
-      setSnapshotReady(trendData.length > 0);
+      // Calendar trends include zero rows for inactive dates, so row count no
+      // longer proves that snapshot data exists.
+      setSnapshotReady(
+        trendData.some((row) => row.messageCount > 0 || row.cost > 0 || row.tokens > 0 || row.p50Latency != null),
+      );
     } catch {
       setSnack({ open: true, message: 'Failed to load analytics.', severity: 'error' });
     } finally {
@@ -596,6 +624,7 @@ const Analytics: React.FC = () => {
         totalEmbeddings: total.totalEmbeddings + s.totalEmbeddings,
         totalLatencyMs: total.totalLatencyMs + s.totalLatencyMs,
         latencyCount: total.latencyCount + s.latencyCount,
+        latencyCompletionTokens: (total.latencyCompletionTokens ?? 0) + (s.latencyCompletionTokens ?? 0),
         messagesByType: mergeRecordSum(total.messagesByType, s.messagesByType),
         messagesByModel: mergeRecordSum(total.messagesByModel, s.messagesByModel),
         messageSizeDistribution: mergeRecordSum(total.messageSizeDistribution, s.messageSizeDistribution),
@@ -650,15 +679,18 @@ const Analytics: React.FC = () => {
     combined && combined.totalCost > 0 ? Math.min(100, (providerCostTotal / combined.totalCost) * 100) : 0;
   const providerTokenCoverage =
     combinedRecordedTokens > 0 ? Math.min(100, (providerTokenTotal / combinedRecordedTokens) * 100) : 0;
+  const hasAlignedLatencyTokens = Object.values(importedSources).every(
+    (source) => typeof source.stats.latencyCompletionTokens === 'number',
+  );
 
   const handleCopyForLlm = (): void => {
     if (!stats) return;
     const trendRangeLabel =
       trendMode === 'all'
-        ? 'All time, active UTC dates (this device)'
+        ? 'All time, recorded UTC dates (this device)'
         : trendMode === 'custom'
-          ? `Custom range (${customFrom || 'start'} to ${customTo || 'now'}), active UTC dates (this device)`
-          : `Last ${trendDays} active UTC dates (this device)`;
+          ? `Custom range (${customFrom || 'start'} to ${customTo || 'now'}), recorded UTC dates (this device)`
+          : `Last ${trendDays} calendar days in UTC, including inactive dates (this device)`;
     const report = buildAnalyticsReport({
       stats,
       combined,
@@ -761,7 +793,7 @@ const Analytics: React.FC = () => {
                   <TableCell>Source</TableCell>
                   <TableCell align="right">Msgs</TableCell>
                   <TableCell align="right">Cost</TableCell>
-                  <TableCell align="right">Summary reads</TableCell>
+                  <TableCell align="right">Tracked reads / summaries</TableCell>
                   <TableCell align="right" />
                 </TableRow>
               </TableHead>
@@ -925,8 +957,9 @@ const Analytics: React.FC = () => {
             />
           </Box>
           <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
-            This device only, from local snapshot data. Rows are active UTC dates; inactive dates are omitted. Usage
-            events include background operations. Latency percentiles use local snapshot samples only.
+            This device only, from local snapshot data. Preset ranges cover the last N calendar days in UTC and include
+            inactive dates as zero rows; custom and all-time ranges show recorded dates only. Usage events include
+            background operations. Latency percentiles use local snapshot samples only.
           </Typography>
           <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 400 }}>
             <Table size="small" stickyHeader>
@@ -948,7 +981,7 @@ const Analytics: React.FC = () => {
                     <TableCell align="right">{t.messageCount}</TableCell>
                     <TableCell align="right">{formatCost(t.cost)}</TableCell>
                     <TableCell align="right">{formatTokens(t.tokens)}</TableCell>
-                    <TableCell align="right">{t.failPercent}%</TableCell>
+                    <TableCell align="right">{t.failPercent.toFixed(2)}%</TableCell>
                     <TableCell align="right">{t.p50Latency != null ? formatLatency(t.p50Latency) : 'N/A'}</TableCell>
                     <TableCell align="right">{t.p95Latency != null ? formatLatency(t.p95Latency) : 'N/A'}</TableCell>
                   </TableRow>
@@ -1207,22 +1240,33 @@ const Analytics: React.FC = () => {
               value={latencyPerc.p95 != null ? formatLatency(latencyPerc.p95) : 'N/A'}
             />
             <StatRow
-              label="Average tokens per second (approximate)"
+              label="Average end-to-end tokens/second (messages with latency, combined)"
               value={
-                combined.latencyCount > 0 && combined.totalCompletionTokens > 0
-                  ? Math.round(combined.totalCompletionTokens / (combined.totalLatencyMs / 1000))
+                hasAlignedLatencyTokens &&
+                combined.latencyCount > 0 &&
+                combined.totalLatencyMs > 0 &&
+                (combined.latencyCompletionTokens ?? 0) > 0
+                  ? Math.round((combined.latencyCompletionTokens ?? 0) / (combined.totalLatencyMs / 1000))
                   : 'N/A'
               }
             />
-            <ProgressRow
-              label="Cache hit rate (estimate; cached / (cached + cache creation + prompt))"
-              value={combined.totalCachedTokens}
-              total={combined.totalCachedTokens + combined.totalCacheCreationTokens + combined.totalPromptTokens}
+            <StatRow
+              label="Cache read share, OpenAI-style records (this device)"
+              value={formatCacheRate('openai', stats.cacheByFormat?.openai)}
+            />
+            <StatRow
+              label="Cache read share, Anthropic-style records (this device)"
+              value={formatCacheRate('anthropic', stats.cacheByFormat?.anthropic)}
             />
             <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
               Percentiles use local snapshot samples only, while the combined average uses message-level latency.
-              Tokens per second is approximate because it divides all completion tokens by latency-bearing records only.
-              Cache share is a token-ratio estimate, not a request-level hit rate.
+              Throughput uses completion tokens from the same message records that recorded latency; background
+              operations and latency-less messages are excluded. It measures end-to-end throughput, not model decoding
+              speed.
+              {!hasAlignedLatencyTokens &&
+                ' Some imported sources lack aligned token/latency totals, so combined throughput is not reported.'}
+              {' '}Per-format cache shares use this device&apos;s records grouped by each model&apos;s current provider
+              format; imports and records whose model no longer resolves are excluded.
             </Typography>
           </>
         ) : (
@@ -1257,7 +1301,7 @@ const Analytics: React.FC = () => {
             <StatRow label="Messages with Embeddings" value={combined.totalEmbeddings} />
             <StatRow label="Total Attachments" value={combined.totalAttachments} />
             <StatRow label="Web Searches" value={combined.totalWebSearches} />
-            <StatRow label="Forks (branches)" value={combined.totalForks} />
+            <StatRow label="Fork entries (incl. Main)" value={combined.totalForks} />
             <StatRow label="Debate Topics" value={combined.debateTopicCount} />
             <StatRow label="Topics with Scratchpad" value={combined.topicsWithScratchpad} />
           </>

@@ -1,7 +1,20 @@
 import { athenaDb } from '../database/AthenaDb';
-import type { LlmOperationUsage, Message } from '../database/AthenaDb';
+import type { AnalyticsSnapshot, LlmOperationUsage, Message } from '../database/AthenaDb';
 import { useAuthStore } from '../store/AuthStore';
-import { resolveProviderName } from './analyticsRollupService';
+import { resolveProviderFormat, resolveProviderName } from './analyticsRollupService';
+
+export type CacheFormat = 'openai' | 'anthropic';
+
+export interface CacheFormatTotals {
+  /** Number of local records attributed to this provider format. */
+  recordCount: number;
+  /** Provider-reported prompt/input tokens, using that format's convention. */
+  promptTokens: number;
+  cachedTokens: number;
+  cacheCreationTokens: number;
+}
+
+export type CacheByFormat = Record<CacheFormat, CacheFormatTotals>;
 
 export interface AnalyticsStats {
   summaryGeneratedCount: number;
@@ -31,9 +44,22 @@ export interface AnalyticsStats {
   totalEmbeddings: number;
   totalLatencyMs: number;
   latencyCount: number;
+  /**
+   * Completion tokens from exactly the message records that contributed to
+   * `totalLatencyMs`/`latencyCount`. Used for end-to-end throughput so the
+   * numerator and denominator cover the same population. Optional so files
+   * exported by older versions still import.
+   */
+  latencyCompletionTokens?: number;
   firstMessageAt: string | null;
   lastMessageAt: string | null;
   features: Record<string, string>;
+  /**
+   * Local records grouped by their provider's current message format. Cache
+   * semantics differ by format, so rates are never blended. Optional so
+   * analytics files exported by older versions still import.
+   */
+  cacheByFormat?: CacheByFormat;
   /**
    * Optional so analytics files exported by older versions still import.
    * New exports include provider-level message/cost/token totals.
@@ -103,6 +129,66 @@ function bucketSize(length: number): string {
   return '8000+';
 }
 
+function createEmptyCacheFormatTotals(): CacheFormatTotals {
+  return { recordCount: 0, promptTokens: 0, cachedTokens: 0, cacheCreationTokens: 0 };
+}
+
+export function createEmptyCacheByFormat(): CacheByFormat {
+  return {
+    openai: createEmptyCacheFormatTotals(),
+    anthropic: createEmptyCacheFormatTotals(),
+  };
+}
+
+/**
+ * Nearest-rank percentile.
+ *
+ * Definition: sort the samples ascending, compute rank = ceil(p / 100 * n),
+ * and return the value at 1-based rank (clamped to the sample size). No
+ * interpolation is performed. This is the definition used by both trend rows
+ * and the pooled latency summary.
+ *
+ * Returns null for an empty sample or a non-finite percentile.
+ */
+export function percentileNearestRank(samples: readonly number[], p: number): number | null {
+  if (samples.length === 0 || !Number.isFinite(p)) return null;
+  const clamped = Math.min(100, Math.max(0, p));
+  const sorted = [...samples].sort((a, b) => a - b);
+  const rank = Math.max(1, Math.ceil((clamped / 100) * sorted.length));
+  return sorted[Math.min(rank, sorted.length) - 1];
+}
+
+/**
+ * Cache-read share for a provider message format.
+ *
+ * OpenAI-style `prompt_tokens` already includes cached tokens, so the
+ * denominator is the prompt total. Anthropic-style `input_tokens` excludes
+ * cache reads and cache creation, so both must be added to the denominator.
+ */
+export function cacheHitRateForFormat(format: CacheFormat, totals: CacheFormatTotals): number | null {
+  if (format === 'openai') {
+    return totals.promptTokens > 0 ? totals.cachedTokens / totals.promptTokens : null;
+  }
+  const denominator = totals.promptTokens + totals.cachedTokens + totals.cacheCreationTokens;
+  return denominator > 0 ? totals.cachedTokens / denominator : null;
+}
+
+function addCacheUsage(
+  cache: CacheByFormat,
+  model: string | undefined,
+  promptTokens: number,
+  cachedTokens: number,
+  cacheCreationTokens: number,
+): void {
+  const format = resolveProviderFormat(model);
+  if (!format) return;
+  const entry = cache[format];
+  entry.recordCount++;
+  entry.promptTokens += promptTokens;
+  entry.cachedTokens += cachedTokens;
+  entry.cacheCreationTokens += cacheCreationTokens;
+}
+
 function aggregateProviderBreakdown(
   messages: Message[],
   operationUsages: LlmOperationUsage[],
@@ -142,6 +228,7 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
   const messages = await athenaDb.messages.toArray();
   const operationUsages = await athenaDb.llmOperationUsages.toArray();
   const topics = await athenaDb.topics.toArray();
+  const cacheByFormat = createEmptyCacheByFormat();
 
   const stats: AnalyticsStats = {
     summaryGeneratedCount: 0,
@@ -170,9 +257,11 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
     totalEmbeddings: 0,
     totalLatencyMs: 0,
     latencyCount: 0,
+    latencyCompletionTokens: 0,
     firstMessageAt: null,
     lastMessageAt: null,
     features: {},
+    cacheByFormat,
   };
 
   for (const m of messages) {
@@ -205,10 +294,13 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
     if (m.reasoning) stats.messagesWithReasoning++;
     if (m.embedding) stats.totalEmbeddings++;
 
-    if (m.latencyMs != null) {
+    if (m.latencyMs != null && m.latencyMs > 0) {
       stats.totalLatencyMs += m.latencyMs;
       stats.latencyCount++;
+      stats.latencyCompletionTokens = (stats.latencyCompletionTokens ?? 0) + m.completionTokens;
     }
+
+    addCacheUsage(cacheByFormat, m.model, m.promptTokens, m.cachedTokens ?? 0, m.cacheCreationTokens ?? 0);
 
     if (m.summary) {
       stats.summaryGeneratedCount++;
@@ -236,6 +328,13 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
     stats.totalCacheCreationTokens += operation.cacheCreationTokens ?? 0;
     stats.totalCost += operation.totalCost;
     stats.totalWebSearches += operation.searchCount ?? 0;
+    addCacheUsage(
+      cacheByFormat,
+      operation.model,
+      operation.promptTokens,
+      operation.cachedTokens ?? 0,
+      operation.cacheCreationTokens ?? 0,
+    );
   }
 
   stats.providerBreakdown = aggregateProviderBreakdown(messages, operationUsages);
@@ -292,60 +391,93 @@ export function removeImportedSource(deviceId: string): void {
   localStorage.setItem('analyticsImportedSources', JSON.stringify(rest));
 }
 
-export async function computeTrends(days: number): Promise<TrendRow[]> {
-  return computeTrendsRange(days);
+const DAY_MS = 86_400_000;
+
+function utcDateString(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
-export async function computeTrendsRange(maxDaysOrFrom?: number | string, toDate?: string): Promise<TrendRow[]> {
+/** Shift a `YYYY-MM-DD` date by whole days in UTC. */
+function shiftUtcDate(date: string, days: number): string {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+function emptySnapshot(date: string): AnalyticsSnapshot {
+  return {
+    date,
+    messageCount: 0,
+    failedCount: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    cost: 0,
+    latencySamples: [],
+    providerStats: {},
+    toolStats: {},
+  };
+}
+
+function toTrendRow(snap: AnalyticsSnapshot): TrendRow {
+  return {
+    date: snap.date,
+    messageCount: snap.messageCount,
+    cost: snap.cost,
+    tokens: snap.promptTokens + snap.completionTokens,
+    // Error rates use two decimals so small failure counts are not shown as 0%.
+    failPercent: snap.messageCount > 0 ? Math.round((snap.failedCount / snap.messageCount) * 10000) / 100 : 0,
+    p50Latency: percentileNearestRank(snap.latencySamples ?? [], 50),
+    p95Latency: percentileNearestRank(snap.latencySamples ?? [], 95),
+  };
+}
+
+/**
+ * Preset trends cover the last `days` calendar dates in UTC, ending on the
+ * reference date's UTC date. Dates without a snapshot are included as zero
+ * rows so the chart represents elapsed time rather than active days only.
+ */
+export async function computeTrends(days: number, now: Date = new Date()): Promise<TrendRow[]> {
+  return computeTrendsRange(days, undefined, now);
+}
+
+export async function computeTrendsRange(
+  maxDaysOrFrom?: number | string,
+  toDate?: string,
+  now: Date = new Date(),
+): Promise<TrendRow[]> {
   const snapshots = await athenaDb.analyticsSnapshots.orderBy('date').reverse().toArray();
 
-  let filtered: typeof snapshots;
-
   if (typeof maxDaysOrFrom === 'number' && toDate === undefined) {
-    // days mode: take last N days
-    filtered = snapshots.slice(0, maxDaysOrFrom);
-  } else {
-    // custom range mode or "all time" — snapshots are descending, reverse to ascending
-    filtered = snapshots.reverse();
-    const fromDate = typeof maxDaysOrFrom === 'string' ? maxDaysOrFrom : undefined;
+    const dayCount = Math.floor(maxDaysOrFrom);
+    if (dayCount <= 0) return [];
 
-    if (fromDate !== undefined) {
-      filtered = filtered.filter((s) => s.date >= fromDate);
-    }
-    if (toDate !== undefined) {
-      filtered = filtered.filter((s) => s.date <= toDate);
-    }
+    const byDate = new Map(snapshots.map((snapshot) => [snapshot.date, snapshot]));
+    const endDate = utcDateString(now);
+    const startDate = shiftUtcDate(endDate, -(dayCount - 1));
+
+    return Array.from({ length: dayCount }, (_, index) => {
+      const date = shiftUtcDate(startDate, index);
+      return toTrendRow(byDate.get(date) ?? emptySnapshot(date));
+    });
   }
 
-  // Ensure ascending order for chart display
-  const sorted = filtered.length > 0 && filtered[0]?.date > (filtered[filtered.length - 1]?.date ?? '') ? filtered.reverse() : filtered;
+  // Custom range mode or "all time" — snapshots are descending, so reverse to
+  // ascending. These modes still show recorded (active) dates only.
+  const ascending = [...snapshots].reverse();
+  const fromDate = typeof maxDaysOrFrom === 'string' ? maxDaysOrFrom : undefined;
 
-  return sorted.map((snap) => {
-    const latencies = [...(snap.latencySamples ?? [])].sort((a, b) => a - b);
-    const n = latencies.length;
-    const p50 = n > 0 ? latencies[Math.floor((n - 1) * 0.5)] : null;
-    const p95 = n > 0 ? latencies[Math.floor((n - 1) * 0.95)] : null;
-
-    return {
-      date: snap.date,
-      messageCount: snap.messageCount,
-      cost: snap.cost,
-      tokens: snap.promptTokens + snap.completionTokens,
-      failPercent: snap.messageCount > 0 ? Math.round((snap.failedCount / snap.messageCount) * 100) : 0,
-      p50Latency: p50,
-      p95Latency: p95,
-    };
-  });
+  return ascending
+    .filter((snapshot) => fromDate === undefined || snapshot.date >= fromDate)
+    .filter((snapshot) => toDate === undefined || snapshot.date <= toDate)
+    .map(toTrendRow);
 }
 
 export async function computeLatencyPercentiles(): Promise<LatencyPercentiles> {
   const snapshots = await athenaDb.analyticsSnapshots.toArray();
-  const allSamples = snapshots.flatMap((s) => s.latencySamples ?? []).sort((a, b) => a - b);
-  const n = allSamples.length;
+  const allSamples = snapshots.flatMap((s) => s.latencySamples ?? []);
 
   return {
-    p50: n > 0 ? allSamples[Math.floor((n - 1) * 0.5)] : null,
-    p95: n > 0 ? allSamples[Math.floor((n - 1) * 0.95)] : null,
+    p50: percentileNearestRank(allSamples, 50),
+    p95: percentileNearestRank(allSamples, 95),
   };
 }
 
@@ -541,9 +673,11 @@ export function getCombinedStats(local?: AnalyticsStats): CombinedStats {
       totalEmbeddings: 0,
       totalLatencyMs: 0,
       latencyCount: 0,
+      latencyCompletionTokens: 0,
       firstMessageAt: null,
       lastMessageAt: null,
       features: {},
+      cacheByFormat: createEmptyCacheByFormat(),
     },
     imported: getImportedSourcesRaw(),
   };
