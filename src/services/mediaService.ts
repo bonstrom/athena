@@ -2,7 +2,7 @@ import { Attachment } from '../database/AthenaDb';
 import { generateMinimaxImage, generateMinimaxMusic, generateMinimaxSpeech } from './llmService';
 import { useAuthStore } from '../store/AuthStore';
 import { useUiStore } from '../store/UiStore';
-import { trackOperationUsage } from './usageTrackingService';
+import { trackOperationFailure, trackOperationUsage } from './usageTrackingService';
 
 export interface MediaResult {
   content: string;
@@ -130,7 +130,10 @@ export function stopSpeech(): void {
 
 export async function generateSpeech(text: string, signal?: AbortSignal, topicId?: string): Promise<string> {
   const { ttsVoiceId } = useAuthStore.getState();
-  const { audioHex } = await generateMinimaxSpeech(text, ttsVoiceId, signal);
+  const request = generateMinimaxSpeech(text, ttsVoiceId, signal);
+  const { audioHex } = await (topicId
+    ? trackOperationFailure({ topicId, operationType: 'media_speech', apiModelId: 'speech-2.8-turbo' }, request)
+    : request);
   if (topicId) {
     void trackOperationUsage({
       topicId,

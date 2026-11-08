@@ -41,7 +41,7 @@ import {
   getQuestionGenModel,
   getRecordedPeakMultiplier,
 } from '../components/ModelSelector';
-import { trackOperationUsage } from '../services/usageTrackingService';
+import { trackOperationFailure, trackOperationUsage } from '../services/usageTrackingService';
 import ModelSelector from '../components/ModelSelector';
 import MessageBubble from '../components/MessageBubble';
 import MarkdownWithCode from '../components/MarkdownWithCode';
@@ -723,7 +723,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
         let accumulated = '';
         const partModel = getDefaultModel();
         const startedAt = Date.now();
-        const result = await askLlmStream(
+        const result = await trackOperationFailure({ topicId: topic.id, operationType: 'curator_course', model: partModel }, askLlmStream(
           partModel,
           1.0,
           [{ role: 'system', content: 'You are generating course content. Output ONLY the requested JSON.' }, { role: 'user', content: prompt }],
@@ -732,7 +732,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           undefined,
           controller.signal,
           { includeCustomInstructions: false },
-        );
+        ));
         trackCuratorUsage('curator_course', topic.id, partModel, result, startedAt);
 
         let finalContent = accumulated || result.content;
@@ -742,7 +742,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
         if (parsed === null || typeof parsed !== 'object') {
           let repairAccumulated = '';
           const repairStartedAt = Date.now();
-          const repairResult = await askLlmStream(
+          const repairResult = await trackOperationFailure({ topicId: topic.id, operationType: 'curator_course', model: partModel }, askLlmStream(
             partModel,
             1.0,
             [
@@ -754,7 +754,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             undefined,
             controller.signal,
             { includeCustomInstructions: false },
-          );
+          ));
           trackCuratorUsage('curator_course', topic.id, partModel, repairResult, repairStartedAt);
           finalContent = repairAccumulated || repairResult.content;
           parsed = tryParseJson<unknown>(finalContent);
@@ -952,7 +952,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           let accumulated = '';
           const questionModel = getQuestionGenModel();
           const startedAt = Date.now();
-          const result = await askLlmStream(
+          const result = await trackOperationFailure({ topicId: topic.id, operationType: 'curator_question', model: questionModel }, askLlmStream(
             questionModel,
             1.0,
             [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
@@ -961,7 +961,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             undefined,
             controller.signal,
             { includeCustomInstructions: false },
-          );
+          ));
           trackCuratorUsage('curator_question', topic.id, questionModel, result, startedAt);
           const finalContent = accumulated || result.content;
           const parsed = tryParseJson<unknown>(finalContent);
@@ -1019,14 +1019,14 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           let accumulated = '';
           const questionModel = getQuestionGenModel();
           const startedAt = Date.now();
-          const result = await askLlmStream(
+          const result = await trackOperationFailure({ topicId: topic.id, operationType: 'curator_question', model: questionModel }, askLlmStream(
             questionModel,
             1.0,
             [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
             (token: string): void => { accumulated += token; },
             undefined, undefined, controller.signal,
             { includeCustomInstructions: false },
-          );
+          ));
           trackCuratorUsage('curator_question', topic.id, questionModel, result, startedAt);
           const finalContent = accumulated || result.content;
           const parsed = tryParseJson<unknown>(finalContent);
@@ -1094,14 +1094,14 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
               let accumulated = '';
               const questionModel = getQuestionGenModel();
               const startedAt = Date.now();
-              const result = await askLlmStream(
+              const result = await trackOperationFailure({ topicId: topic.id, operationType: 'curator_question', model: questionModel }, askLlmStream(
                 questionModel,
                 1.0,
                 [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
                 (token: string): void => { accumulated += token; },
                 undefined, undefined, controller.signal,
                 { includeCustomInstructions: false },
-              );
+              ));
               trackCuratorUsage('curator_question', topic.id, questionModel, result, startedAt);
               const finalContent = accumulated || result.content;
               const parsed = tryParseJson<unknown>(finalContent);
@@ -1282,12 +1282,12 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
       llmMessages.push({ role: 'user', content });
 
       const startedAt = Date.now();
-      const result = await askLlmStream(
+      const result = await trackOperationFailure({ topicId: topic.id, operationType: 'curator_teacher', model: teacherModel }, askLlmStream(
         teacherModel, 1.0, llmMessages,
         (token: string): void => { accumulated += token; setTeacherStreaming(accumulated); },
         undefined, undefined, controller.signal,
         { includeCustomInstructions: false },
-      );
+      ));
       trackCuratorUsage('curator_teacher', topic.id, teacherModel, result, startedAt);
 
       const finalContent = accumulated || result.content;

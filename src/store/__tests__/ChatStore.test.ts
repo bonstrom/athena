@@ -2257,6 +2257,50 @@ describe('ChatStore', () => {
 
   // ========== maybeSummarize ==========
 
+  it('drops queued lazy summaries when summaries are disabled', async () => {
+    mockAuthGetState.mockReturnValue({ ...mockAuthGetState(), aiSummaryEnabled: true });
+    mockDbGet.mockImplementation((id) => Promise.resolve(createMessage({ id, content: 'x'.repeat(600) })));
+    let finish: () => void = () => undefined;
+    const first = new Promise<void>((resolve) => { finish = resolve; });
+    const original = useChatStore.getState()._runSummarize;
+    const run = jest.fn().mockReturnValue(first);
+    useChatStore.setState({ _runSummarize: run, summarizingMessageIds: new Set() });
+    try {
+      const one = useChatStore.getState().maybeSummarize('one', 'x'.repeat(600));
+      const two = useChatStore.getState().maybeSummarize('two', 'x'.repeat(600));
+      await Promise.resolve();
+      expect(run).toHaveBeenCalledTimes(1);
+      mockAuthGetState.mockReturnValue({ ...mockAuthGetState(), aiSummaryEnabled: false });
+      finish();
+      await Promise.all([one, two]);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(useChatStore.getState().summarizingMessageIds.size).toBe(0);
+    } finally {
+      useChatStore.setState({ _runSummarize: original });
+    }
+  });
+
+  it('uses the model captured at scheduling time for queued summaries', async () => {
+    mockAuthGetState.mockReturnValue({ ...mockAuthGetState(), aiSummaryEnabled: true });
+    mockDbGet.mockImplementation((id) => Promise.resolve(createMessage({ id, content: 'x'.repeat(600) })));
+    let finish: () => void = () => undefined;
+    const first = new Promise<void>((resolve) => { finish = resolve; });
+    const original = useChatStore.getState()._runSummarize;
+    const model = createUserChatModel({ id: 'first' });
+    const run = jest.fn().mockReturnValueOnce(first).mockResolvedValue(undefined);
+    useChatStore.setState({ _runSummarize: run, selectedModel: model, summarizingMessageIds: new Set() });
+    try {
+      const one = useChatStore.getState().maybeSummarize('one', 'x'.repeat(600));
+      const two = useChatStore.getState().maybeSummarize('two', 'x'.repeat(600));
+      useChatStore.setState({ selectedModel: createUserChatModel({ id: 'second' }) });
+      finish();
+      await Promise.all([one, two]);
+      expect(run).toHaveBeenNthCalledWith(2, 'two', 'x'.repeat(600), undefined, model);
+    } finally {
+      useChatStore.setState({ _runSummarize: original });
+    }
+  });
+
   it('maybeSummarize returns early when aiSummaryEnabled is false and not forced', async () => {
     mockAuthGetState.mockReturnValue({
       customInstructions: '',

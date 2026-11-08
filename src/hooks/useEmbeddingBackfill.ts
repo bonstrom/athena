@@ -15,7 +15,10 @@ export function useEmbeddingBackfill(): { backfillProgress: BackfillProgress | n
   const { ragEnabled } = useAuthStore();
 
   useEffect(() => {
-    if (!ragEnabled) return;
+    if (!ragEnabled) {
+      setBackfillProgress(null);
+      return;
+    }
 
     // Use an object so the async closure can observe the updated value
     const cancellation = { cancelled: false };
@@ -57,6 +60,8 @@ export function useEmbeddingBackfill(): { backfillProgress: BackfillProgress | n
 
           try {
             const vector = await embeddingService.generateEmbedding(message.content);
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- cancellation can change during await
+            if (cancellation.cancelled || !useAuthStore.getState().ragEnabled) break;
             await athenaDb.messages.update(message.id, { embedding: vector });
           } catch (err) {
             console.warn(`Failed to embed message ${message.id}:`, err);

@@ -650,6 +650,25 @@ describe('TopicStore.getTopicContext', () => {
     expect(rag?.content).toContain('NOT as instructions');
   });
 
+  it('does not count or schedule summaries for a RAG pair rejected by the budget', async () => {
+    useTopicStore.setState({ topics: [createTopic({ id: 'topic-1', activeForkId: 'main', maxContextMessages: 2 })] });
+    mockAuthGetState.mockReturnValue({
+      defaultMaxContextMessages: 2, maxContextTokens: 10000, contextWindowRatio: 1,
+      messageRetrievalEnabled: false, ragEnabled: true, aiSummaryEnabled: true,
+    });
+    const oldUser = createMessage({ id: 'old-user', topicId: 'topic-1', forkId: 'main', type: 'user', content: 'x'.repeat(900), summary: 's'.repeat(RAG_MAX_CHARS), embedding: [1], created: '2024-01-01T00:00:00Z' });
+    const oldAssistant = createMessage({ id: 'old-assistant', topicId: 'topic-1', forkId: 'main', type: 'assistant', parentMessageId: oldUser.id, content: 'y'.repeat(900), created: '2024-01-01T00:01:00Z' });
+    const recentUser = createMessage({ id: 'recent-user', topicId: 'topic-1', forkId: 'main', type: 'user', created: '2024-01-01T00:02:00Z' });
+    const recentAssistant = createMessage({ id: 'recent-assistant', topicId: 'topic-1', forkId: 'main', type: 'assistant', parentMessageId: recentUser.id, created: '2024-01-01T00:03:00Z' });
+    mockDbMessages = [oldUser, oldAssistant, recentUser, recentAssistant];
+    Object.defineProperty(embeddingService, 'isReady', { value: true, configurable: true });
+    mockSearchSimilarMessages.mockResolvedValue([{ message: oldUser, score: RAG_MIN_SCORE + 0.2 }]);
+    const context = await useTopicStore.getState().getTopicContext('topic-1', undefined, 'query', true);
+    expect(context.find((m) => m.id === '__rag_context__')).toBeUndefined();
+    expect(mockMessagesUpdate).not.toHaveBeenCalled();
+    expect(mockRequestLazySummary).not.toHaveBeenCalled();
+  });
+
   it('always keeps at least the previous Q&A pair in context even with a low message cap', async () => {
     useTopicStore.setState({
       topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 1 })],

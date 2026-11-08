@@ -12,7 +12,7 @@ import {
   getProviderFormatForModel,
   getRecordedPeakMultiplier,
 } from '../components/ModelSelector';
-import { trackOperationUsage } from '../services/usageTrackingService';
+import { trackOperationFailure, trackOperationUsage } from '../services/usageTrackingService';
 import { requestLazySummary } from '../services/summaryScheduler';
 import { SHORTENED_ID_LENGTH, SCRATCHPAD_LIMIT, RAG_TOP_K, RAG_MIN_SCORE, RAG_MAX_CHARS, RAG_CONTENT_LIMIT } from '../constants';
 
@@ -407,11 +407,6 @@ export const useTopicStore = create<TopicState>((set, get) => ({
             const processedMessages = messages.map((m) => {
               if (m.content.length > RAG_CONTENT_LIMIT) {
                 const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
-                if (m.summary) {
-                  if (trackSummaryUsage) retrievedSummaryIds.add(m.id);
-                } else {
-                  noteSummaryCandidate(m);
-                }
                 return {
                   ...m,
                   content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, SHORTENED_ID_LENGTH)} to reach full content]`,
@@ -422,6 +417,14 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
             const pairChars = processedMessages.reduce((sum, m) => sum + m.content.length, 0);
             if (usedChars + pairChars > RAG_MAX_CHARS) break;
+            for (const m of messages) {
+              if (m.content.length <= RAG_CONTENT_LIMIT) continue;
+              if (m.summary) {
+                if (trackSummaryUsage) retrievedSummaryIds.add(m.id);
+              } else {
+                noteSummaryCandidate(m);
+              }
+            }
             budgetedMessages.push(...processedMessages);
             usedChars += pairChars;
           }
@@ -551,7 +554,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     try {
       const model = getDefaultTopicNameModel();
       const startedAt = Date.now();
-      const result = await askLlm(
+      const result = await trackOperationFailure({ topicId, operationType: 'topic_name', model }, askLlm(
         model,
         1.0,
         [
@@ -567,7 +570,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         undefined,
         undefined,
         { includeCustomInstructions: false },
-      );
+      ));
       const peakMultiplier = getRecordedPeakMultiplier(model);
       void trackOperationUsage({
         topicId,

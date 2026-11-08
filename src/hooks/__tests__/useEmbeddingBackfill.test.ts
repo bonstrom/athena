@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 interface TestMessage {
   id: string;
@@ -16,7 +16,9 @@ const mockUpdate = jest.fn<Promise<number>, [string, { embedding: number[] }]>()
 let mockRagEnabledState = false;
 
 jest.mock('../../store/AuthStore', () => ({
-  useAuthStore: (): { ragEnabled: boolean } => ({ ragEnabled: mockRagEnabledState }),
+  useAuthStore: Object.assign((): { ragEnabled: boolean } => ({ ragEnabled: mockRagEnabledState }), {
+    getState: (): { ragEnabled: boolean } => ({ ragEnabled: mockRagEnabledState }),
+  }),
 }));
 
 jest.mock('../../services/embeddingService', () => ({
@@ -107,5 +109,18 @@ describe('useEmbeddingBackfill', () => {
       expect(mockGenerateEmbedding).not.toHaveBeenCalled();
       expect(mockUpdate).not.toHaveBeenCalled();
     });
+  });
+
+  it('does not write an embedding when RAG is disabled during generation', async () => {
+    mockRagEnabledState = true;
+    mockToArray.mockResolvedValue([{ id: 'm1', content: 'Embed', isDeleted: false }]);
+    let resolveEmbedding: (vector: number[]) => void = () => undefined;
+    mockGenerateEmbedding.mockImplementation(() => new Promise<number[]>((resolve) => { resolveEmbedding = resolve; }));
+    const { rerender } = renderHook(() => useEmbeddingBackfill());
+    await waitFor(() => expect(mockGenerateEmbedding).toHaveBeenCalled());
+    mockRagEnabledState = false;
+    rerender();
+    await act(async () => { resolveEmbedding([1]); await Promise.resolve(); });
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

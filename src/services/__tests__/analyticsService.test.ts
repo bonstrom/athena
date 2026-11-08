@@ -321,6 +321,42 @@ describe('operation usage accounting', () => {
   });
 });
 
+describe('split message attribution', () => {
+  it('pairs a single legacy response and uses recorded prompt tokens for newer retries', async () => {
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({ id: 'u1', type: 'user', model: undefined, promptTokens: 100, completionTokens: 0 }),
+      makeMsg({ id: 'a1', parentMessageId: 'u1', model: 'gpt', providerName: 'Provider A', providerFormat: 'openai', promptTokens: 0, cachedTokens: 40 }),
+      makeMsg({ id: 'u2', type: 'user', model: undefined, promptTokens: 200, completionTokens: 0 }),
+      makeMsg({ id: 'a2', parentMessageId: 'u2', model: 'gpt', providerName: 'Provider B', providerFormat: 'openai', promptTokens: 0, cachedTokens: 30, usagePromptTokens: 150 }),
+      makeMsg({ id: 'a3', parentMessageId: 'u2', model: 'gpt', providerName: 'Provider B', providerFormat: 'openai', promptTokens: 0, cachedTokens: 50 }),
+    ]);
+    const stats = await computeLocalStats();
+    expect(stats.cacheByFormat!.openai).toMatchObject({ promptTokens: 250, cachedTokens: 70, recordCount: 2 });
+    expect(stats.modelUsage!.find((row) => row.provider === 'Provider A')!.promptTokens).toBe(100);
+    expect(stats.modelUsage!.find((row) => row.provider === 'Provider B')!.promptTokens).toBe(150);
+  });
+
+  it('attributes summaries independently of the message model', async () => {
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({ id: 'u', type: 'user', model: undefined, summary: 'user summary', summaryModel: 'summarizer', summaryProviderName: 'Provider', summaryCost: 2 }),
+      makeMsg({ id: 'a', model: 'response-model', summary: 'legacy', summaryCost: 3 }),
+    ]);
+    const stats = await computeLocalStats();
+    expect(stats.modelUsage!.find((row) => row.model === 'summarizer')).toMatchObject({ provider: 'Provider', summaryCalls: 1, summaryCost: 2 });
+    expect(stats.modelUsage!.find((row) => row.model === 'Unknown model')).toMatchObject({ summaryCalls: 1, summaryCost: 3 });
+  });
+
+  it('keeps models from providers with the same name but different IDs separate', async () => {
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({ id: 'a', model: 'shared', providerName: 'Gateway', providerId: 'first' }),
+      makeMsg({ id: 'b', model: 'shared', providerName: 'Gateway', providerId: 'second' }),
+    ]);
+    const stats = await computeLocalStats();
+    expect(stats.modelUsage).toHaveLength(2);
+    expect(stats.modelUsage!.map((row) => row.providerId).sort()).toEqual(['first', 'second']);
+  });
+});
+
 describe('cache format accounting', () => {
   it('groups local records by current provider format and excludes unresolved models', async (): Promise<void> => {
     mockModels.push(createUserChatModel({ apiModelId: 'gpt-4', providerId: 'p1' }));
@@ -928,6 +964,21 @@ describe('exportAnalytics / importAnalytics backward compatibility', () => {
     const result = await importAnalytics(file);
     expect(result.success).toBe(false);
     expect(result.message).toContain('Invalid analytics file format');
+  });
+
+  it('rejects v3 files without a USD cost unit', async () => {
+    for (const costUnit of [undefined, 'SEK']) {
+      const data = JSON.stringify({ format: 'athena-analytics-v3', deviceId: 'd', stats: {}, costUnit });
+      const result = await importAnalytics(new File([data], 'test.json'));
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('cost unit');
+    }
+  });
+
+  it('rejects explicitly non-USD legacy files', async () => {
+    const data = JSON.stringify({ format: 'athena-analytics-v2', deviceId: 'd', stats: {}, costUnit: 'SEK' });
+    const result = await importAnalytics(new File([data], 'test.json'));
+    expect(result.success).toBe(false);
   });
 
   it('importAnalytics rejects missing required fields', async () => {

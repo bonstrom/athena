@@ -7,6 +7,7 @@ import {
   UserChatModel,
 } from '../types/provider';
 import type { LlmProvider } from '../types/provider';
+import { idleDeferredRollup } from './analyticsRollupService';
 
 export interface OperationUsageInput {
   topicId: string;
@@ -78,7 +79,18 @@ export async function trackOperationUsage(input: OperationUsageInput): Promise<v
   try {
     const providers = useProviderStore.getState().providers;
     await athenaDb.llmOperationUsages.add(buildOperationUsage(input, providers));
+    idleDeferredRollup();
   } catch (err) {
     console.warn('[usage-tracking] Failed to record LLM operation', input.operationType, err);
+  }
+}
+
+/** Record failed requests separately; their provider-reported usage is unavailable. */
+export async function trackOperationFailure<T>(input: OperationUsageInput, request: Promise<T>): Promise<T> {
+  try {
+    return await request;
+  } catch (err) {
+    void trackOperationUsage({ ...input, failed: true, usageUnknown: true });
+    throw err;
   }
 }

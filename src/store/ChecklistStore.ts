@@ -4,6 +4,8 @@ import { useNotificationStore } from './NotificationStore';
 import { useChatStore } from './ChatStore';
 import { useTopicStore } from './TopicStore';
 import { askLlm, orchestrateLlmLoop, LlmMessage } from '../services/llmService';
+import { trackOperationFailure } from '../services/usageTrackingService';
+import { idleDeferredRollup } from '../services/analyticsRollupService';
 import { CHECKLIST_TOOLS } from '../services/checklistTools';
 import { parseChecklistGroups } from '../utils/structuredJson';
 import { CHECKLIST_GENERATION_PROMPT, CHECKLIST_EDITING_INSTRUCTIONS, SHORTENED_ID_LENGTH } from '../constants';
@@ -310,6 +312,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
         ...(peakMultiplier !== undefined ? { peakMultiplier } : {}),
       });
     });
+    idleDeferredRollup();
   };
 
   /**
@@ -1103,7 +1106,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
         if (get().activeTopicId !== topicId || get().activeTabId !== tabId) return;
         const existingGroups = await athenaDb.checklistGroups.where('tabId').equals(tabId).toArray();
         if (existingGroups.length > 0) return;
-        const result = await askLlm(
+        const result = await trackOperationFailure({ topicId, operationType: 'checklist_generate', model }, askLlm(
           model,
           0.7,
           [
@@ -1113,7 +1116,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           undefined,
           undefined,
           { includeCustomInstructions: false },
-        );
+        ));
 
         await recordOperationUsage(
           topicId,
@@ -1273,7 +1276,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           { role: 'user', content: trimmed },
         ];
 
-        const result = await orchestrateLlmLoop(
+        const result = await trackOperationFailure({ topicId, operationType: 'checklist_edit', model }, orchestrateLlmLoop(
           model,
           0.2,
           messages,
@@ -1317,7 +1320,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
           editController.signal,
           { includeCustomInstructions: false, toolChoice: 'required', disableThinking: true },
           false,
-        );
+        ));
 
         throwIfEditAborted();
         if (unresolvedToolErrors.size > 0) {

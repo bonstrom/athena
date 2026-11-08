@@ -337,7 +337,7 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
     }
     lines.push('');
     lines.push(
-      'Cost and tokens include tracked background operations in addition to messages. "Unknown" groups models that no longer resolve to a configured provider; it is not a real provider.',
+      'Cost and tokens include tracked background operations. Legacy request tokens that cannot be attributed unambiguously are omitted. "Unknown" groups models that no longer resolve to a configured provider; it is not a real provider.',
     );
     lines.push('');
   }
@@ -348,12 +348,12 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
     lines.push('## By Model');
     lines.push('');
     lines.push(
-      'Cost and tokens cover chat messages plus background operations, matching recorded cost. Summary cost is a separate subtotal attributed to the model that generated the summary.',
+      'Cost and tokens cover attributed chat messages and background operations. Legacy request tokens that cannot be attributed unambiguously are omitted. Summary cost is a separate subtotal; unknown summary models are grouped separately.',
     );
     lines.push('');
     lines.push(
       mdTable(
-        ['Model', 'Provider', 'Messages', 'Operations', 'Prompt tokens', 'Completion tokens', 'Cost', 'Summary calls', 'Summary cost'],
+        ['Model', 'Provider', 'Messages', 'Operations', 'Prompt tokens', 'Completion tokens', 'Cost', 'Stored summaries', 'Summary cost'],
         modelUsageRows.map((row) => [
           row.model,
           row.provider,
@@ -509,7 +509,7 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
   );
   lines.push('');
   lines.push(
-    'Per-format cache shares use this device\'s records grouped by the provider format recorded at write time, falling back to the model\'s current provider. Imported sources are excluded, and records whose provider cannot be resolved are not attributed.',
+    'Per-format cache shares use local records grouped by recorded provider format, falling back to the current provider. Imports, unresolved providers, ambiguous request token counts, and invalid OpenAI cache counts are excluded.',
   );
   lines.push('');
 
@@ -1251,9 +1251,8 @@ const Analytics: React.FC = () => {
         {(combined?.modelUsage ?? []).length > 0 ? (
           <>
             <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
-              Cost and tokens cover chat messages plus background operations, matching recorded cost. Summary cost is a
-              separate subtotal attributed to the model that generated the summary. Imported files created before the
-              v3 export format do not include per-model breakdowns.
+              Cost and tokens cover attributed chat messages and operations; ambiguous legacy request tokens are omitted.
+              Summary cost is a separate subtotal, with unknown models grouped separately. Pre-v3 imports lack model rows.
             </Typography>
             <TableContainer component={Paper} variant="outlined">
               <Table size="small" data-testid="model-usage-table">
@@ -1265,13 +1264,13 @@ const Analytics: React.FC = () => {
                     <TableCell align="right">Operations</TableCell>
                     <TableCell align="right">Tokens</TableCell>
                     <TableCell align="right">Cost</TableCell>
-                    <TableCell align="right">Summary calls</TableCell>
+                    <TableCell align="right">Stored summaries</TableCell>
                     <TableCell align="right">Summary cost</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {(combined?.modelUsage ?? []).map((row) => (
-                    <TableRow key={row.model}>
+                    <TableRow key={JSON.stringify([row.model, row.providerId ?? row.provider])}>
                       <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {row.model}
                       </TableCell>
@@ -1400,8 +1399,8 @@ const Analytics: React.FC = () => {
               speed.
               {!hasAlignedLatencyTokens &&
                 ' Some imported sources lack aligned token/latency totals, so combined throughput is not reported.'}
-              {' '}Per-format cache shares use this device&apos;s records grouped by each model&apos;s current provider
-              format; imports and records whose model no longer resolves are excluded.
+              {' '}Cache shares use recorded provider formats where available. Imports, unresolved formats, ambiguous
+              request tokens, and invalid OpenAI cache counts are excluded.
             </Typography>
           </>
         ) : (
@@ -1492,9 +1491,11 @@ function mergeModelUsage(
   if (!a && !b) return undefined;
   const merged = new Map<string, ModelUsageRow>();
   for (const row of [...(a ?? []), ...(b ?? [])]) {
-    const existing = merged.get(row.model) ?? {
+    const key = JSON.stringify([row.model, row.providerId ?? row.provider]);
+    const existing = merged.get(key) ?? {
       model: row.model,
       provider: row.provider,
+      ...(row.providerId ? { providerId: row.providerId } : {}),
       messages: 0,
       operations: 0,
       promptTokens: 0,
@@ -1506,7 +1507,6 @@ function mergeModelUsage(
       summaryCalls: 0,
       summaryCost: 0,
     };
-    if (!existing.provider || existing.provider === 'Unknown') existing.provider = row.provider;
     existing.messages += row.messages;
     existing.operations += row.operations;
     existing.promptTokens += row.promptTokens;
@@ -1517,7 +1517,7 @@ function mergeModelUsage(
     existing.usageUnknownCount += row.usageUnknownCount;
     existing.summaryCalls += row.summaryCalls;
     existing.summaryCost += row.summaryCost;
-    merged.set(row.model, existing);
+    merged.set(key, existing);
   }
   return [...merged.values()].sort((a, b) => b.cost - a.cost || b.messages - a.messages || a.model.localeCompare(b.model));
 }

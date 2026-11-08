@@ -595,6 +595,8 @@ export interface Message {
   providerId?: string;
   providerName?: string;
   providerFormat?: ProviderMessageFormat;
+  /** Request input tokens for attribution; already included in the user message's promptTokens. */
+  usagePromptTokens?: number;
   /** DeepSeek peak-price multiplier applied to this record (1 or 2). */
   peakMultiplier?: number;
   /** Summary generation attribution. Summary cost/tokens stay separate from `totalCost`. */

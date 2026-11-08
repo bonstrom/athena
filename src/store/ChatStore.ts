@@ -32,7 +32,7 @@ import type { PixelDocument } from '../pixel/types';
 import { athenaDb } from '../database/AthenaDb';
 import { BackupService } from '../services/backupService';
 import { rollupAnalytics } from '../services/analyticsRollupService';
-import { trackOperationUsage } from '../services/usageTrackingService';
+import { trackOperationFailure, trackOperationUsage } from '../services/usageTrackingService';
 import { registerLazySummaryHandler } from '../services/summaryScheduler';
 import { useAuthStore } from './AuthStore';
 import { getLegacyBuiltInAttribution } from '../types/provider';
@@ -239,7 +239,7 @@ interface ChatStore {
     force?: boolean,
     contextMessages?: LlmMessage[],
   ) => Promise<void>;
-  _runSummarize: (messageId: string, content: string, contextMessages?: LlmMessage[]) => Promise<void>;
+  _runSummarize: (messageId: string, content: string, contextMessages?: LlmMessage[], model?: ChatModel) => Promise<void>;
   summarizingMessageIds: Set<string>;
   failedSummaryMessageIds: Set<string>;
   highlightedMessageId: string | null;
@@ -1008,7 +1008,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           content: resultContent,
           attachment,
           model: resultModel,
-        } = await generateImage(content, controller.signal);
+        } = await trackOperationFailure({ topicId, operationType: 'media_image', apiModelId: 'image-01' }, generateImage(content, controller.signal));
         const mediaAttribution = getLegacyBuiltInAttribution(resultModel);
         const finalizedAssistant: Partial<Message> = {
           content: resultContent,
@@ -1081,7 +1081,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           content: resultContent,
           attachment,
           model: resultModel,
-        } = await generateMusic(content, controller.signal);
+        } = await trackOperationFailure({ topicId, operationType: 'media_music', apiModelId: 'music-2.6' }, generateMusic(content, controller.signal));
         const mediaAttribution = getLegacyBuiltInAttribution(resultModel);
         const finalizedAssistant: Partial<Message> = {
           content: resultContent,
@@ -1509,6 +1509,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         totalCost: finalTotalCost,
         failed: false,
         model: effectiveModel.apiModelId,
+        usagePromptTokens: totalPromptTokens,
         cachedTokens: dbCachedTokens,
         cacheCreationTokens: dbCacheCreationTokens,
         latencyMs,
@@ -1620,9 +1621,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                     .getState()
                     .models.find((m) => m.id === replyPredictionModel || m.apiModelId === replyPredictionModel) ??
                   selectedModel);
-            const result = await askLlm(targetModel, 0.7, suggestionContext, undefined, undefined, {
+            const result = await trackOperationFailure({ topicId, operationType: 'reply_prediction', model: targetModel }, askLlm(targetModel, 0.7, suggestionContext, undefined, undefined, {
               includeCustomInstructions: false,
-            });
+            }));
             const peakMultiplier = getRecordedPeakMultiplier(targetModel);
             void trackOperationUsage({
               topicId,
@@ -1802,6 +1803,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { summarizingMessageIds } = get();
     if (!force && (!aiSummaryEnabled || content.length <= 500)) return;
     if (summarizingMessageIds.has(messageId)) return;
+    const model = get().selectedModel;
 
     set((state) => ({
       summarizingMessageIds: new Set(state.summarizingMessageIds).add(messageId),
@@ -1819,22 +1821,30 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       await new Promise<void>((resolve) => {
         summarizePending.push(resolve);
       });
-      // Re-check dedup after wait — a prior run may have already summarized this msg
-      if (!get().summarizingMessageIds.has(messageId)) return;
+    } else {
+      summarizeBusy = true;
     }
 
-    summarizeBusy = true;
     try {
-      await get()._runSummarize(messageId, content, contextMessages ? [...contextMessages] : undefined);
+      const message = await athenaDb.messages.get(messageId);
+      if (!message || message.isDeleted || (!force && (!useAuthStore.getState().aiSummaryEnabled || message.summary))) {
+        return;
+      }
+      await get()._runSummarize(messageId, content, contextMessages ? [...contextMessages] : undefined, model);
     } finally {
-      summarizeBusy = false;
+      set((state) => {
+        const nextIds = new Set(state.summarizingMessageIds);
+        nextIds.delete(messageId);
+        return { summarizingMessageIds: nextIds };
+      });
       const next = summarizePending.shift();
       if (next) next();
+      else summarizeBusy = false;
     }
   },
 
-  _runSummarize: async (messageId: string, content: string, contextMessages?: LlmMessage[]): Promise<void> => {
-    const { selectedModel } = get();
+  _runSummarize: async (messageId: string, content: string, contextMessages?: LlmMessage[], model?: ChatModel): Promise<void> => {
+    const selectedModel = model ?? get().selectedModel;
 
     try {
       // Always read from DB to get full content — message.content in context may be truncated

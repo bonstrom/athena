@@ -1,7 +1,8 @@
 import { athenaDb } from '../../database/AthenaDb';
 import type { LlmProvider } from '../../types/provider';
 import { createLlmProvider, createUserChatModel } from '../../testUtils/fixtures';
-import { buildOperationUsage, trackOperationUsage } from '../usageTrackingService';
+import { buildOperationUsage, trackOperationFailure, trackOperationUsage } from '../usageTrackingService';
+import { idleDeferredRollup } from '../analyticsRollupService';
 
 const mockGetState = jest.fn<{ providers: LlmProvider[] }, []>();
 
@@ -18,6 +19,8 @@ jest.mock('../../store/ProviderStore', () => ({
     getState: (): { providers: LlmProvider[] } => mockGetState(),
   },
 }));
+
+jest.mock('../analyticsRollupService', () => ({ idleDeferredRollup: jest.fn() }));
 
 // eslint-disable-next-line @typescript-eslint/unbound-method
 const mockAdd = athenaDb.llmOperationUsages.add as jest.MockedFunction<typeof athenaDb.llmOperationUsages.add>;
@@ -123,6 +126,7 @@ describe('trackOperationUsage', () => {
         providerName: 'OpenAI',
       }),
     );
+    expect(idleDeferredRollup).toHaveBeenCalledTimes(1);
   });
 
   it('never throws when analytics persistence fails', async () => {
@@ -135,5 +139,15 @@ describe('trackOperationUsage', () => {
     expect(warn).toHaveBeenCalled();
 
     warn.mockRestore();
+  });
+
+  it('records failed calls without inventing usage and rethrows the error', async () => {
+    mockAdd.mockResolvedValue('operation-1');
+    const error = new Error('request failed');
+    await expect(trackOperationFailure(
+      { topicId: 'topic-1', operationType: 'curator_course', apiModelId: 'gpt-6.1-sol' },
+      Promise.reject(error),
+    )).rejects.toBe(error);
+    expect(mockAdd).toHaveBeenCalledWith(expect.objectContaining({ failed: true, usageUnknown: true, totalCost: 0 }));
   });
 });

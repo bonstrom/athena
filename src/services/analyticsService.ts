@@ -127,6 +127,7 @@ export interface ProviderBreakdown {
 export interface ModelUsageRow {
   model: string;
   provider: string;
+  providerId?: string;
   messages: number;
   operations: number;
   promptTokens: number;
@@ -243,11 +244,34 @@ function addCacheUsage(
   entry.cacheCreationTokens += cacheCreationTokens;
 }
 
+/** Recover split chat usage only when the parent has exactly one response. */
+function attributedPromptTokens(messages: Message[]): Map<string, number> {
+  const byId = new Map(messages.map((message) => [message.id, message]));
+  const children = new Map<string, number>();
+  for (const message of messages) {
+    if (message.type === 'assistant' && message.parentMessageId && !message.failed) {
+      children.set(message.parentMessageId, (children.get(message.parentMessageId) ?? 0) + 1);
+    }
+  }
+  const result = new Map<string, number>();
+  for (const message of messages) {
+    if (!message.model || message.failed) continue;
+    if (message.usagePromptTokens !== undefined) result.set(message.id, message.usagePromptTokens);
+    else if (message.promptTokens > 0) result.set(message.id, message.promptTokens);
+    else if (message.parentMessageId && children.get(message.parentMessageId) === 1) {
+      const parent = byId.get(message.parentMessageId);
+      if (parent?.type === 'user' && parent.promptTokens > 0) result.set(message.id, parent.promptTokens);
+    }
+  }
+  return result;
+}
+
 function aggregateProviderBreakdown(
   messages: Message[],
   operationUsages: LlmOperationUsage[],
 ): ProviderBreakdown[] {
   const merged: Record<string, { messages: number; cost: number; tokens: number }> = {};
+  const promptTokens = attributedPromptTokens(messages);
   const addUsage = (provider: string): { messages: number; cost: number; tokens: number } => {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     merged[provider] = merged[provider] ?? { messages: 0, cost: 0, tokens: 0 };
@@ -262,7 +286,7 @@ function aggregateProviderBreakdown(
     const entry = addUsage(m.providerName ?? resolveProviderName(m.model) ?? 'Unknown');
     entry.messages++;
     entry.cost += m.totalCost;
-    entry.tokens += m.promptTokens + m.completionTokens;
+    entry.tokens += (promptTokens.get(m.id) ?? 0) + m.completionTokens;
   }
 
   // Background operations add real cost and tokens, but they are not chat
@@ -297,38 +321,35 @@ function createEmptyModelUsageRow(model: string): ModelUsageRow {
 
 function aggregateModelUsage(messages: Message[], operationUsages: LlmOperationUsage[]): ModelUsageRow[] {
   const merged: Record<string, ModelUsageRow> = {};
-  const ensure = (model: string): ModelUsageRow => {
+  const promptTokens = attributedPromptTokens(messages);
+  const ensure = (model: string, provider: string, providerId?: string): ModelUsageRow => {
+    const key = JSON.stringify([model, providerId ?? provider]);
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    merged[model] = merged[model] ?? createEmptyModelUsageRow(model);
-    return merged[model];
-  };
-  const recordProvider = (entry: ModelUsageRow, provider: string | null | undefined): void => {
-    if (!entry.provider && provider && provider !== 'Unknown') entry.provider = provider;
+    merged[key] = merged[key] ?? { ...createEmptyModelUsageRow(model), provider, ...(providerId ? { providerId } : {}) };
+    return merged[key];
   };
 
   for (const m of messages) {
-    if (!m.model) continue;
-    const entry = ensure(m.model);
-    recordProvider(entry, m.providerName ?? resolveProviderName(m.model));
-    entry.messages++;
-    entry.promptTokens += m.promptTokens;
-    entry.completionTokens += m.completionTokens;
-    entry.cachedTokens += m.cachedTokens ?? 0;
-    entry.cacheCreationTokens += m.cacheCreationTokens ?? 0;
-    entry.cost += m.totalCost;
+    if (m.model) {
+      const entry = ensure(m.model, m.providerName ?? resolveProviderName(m.model) ?? 'Unknown', m.providerId);
+      entry.messages++;
+      entry.promptTokens += promptTokens.get(m.id) ?? 0;
+      entry.completionTokens += m.completionTokens;
+      entry.cachedTokens += m.cachedTokens ?? 0;
+      entry.cacheCreationTokens += m.cacheCreationTokens ?? 0;
+      entry.cost += m.totalCost;
+    }
 
     if (m.summary) {
-      const summaryModel = m.summaryModel ?? m.model;
-      const summaryEntry = ensure(summaryModel);
-      recordProvider(summaryEntry, m.summaryProviderName ?? resolveProviderName(summaryModel));
+      const summaryModel = m.summaryModel ?? 'Unknown model';
+      const summaryEntry = ensure(summaryModel, m.summaryProviderName ?? resolveProviderName(m.summaryModel) ?? 'Unknown', m.summaryProviderId);
       summaryEntry.summaryCalls++;
       summaryEntry.summaryCost += m.summaryCost ?? 0;
     }
   }
 
   for (const operation of operationUsages) {
-    const entry = ensure(operation.model ?? 'Unknown model');
-    recordProvider(entry, operation.providerName ?? resolveProviderName(operation.model));
+    const entry = ensure(operation.model ?? 'Unknown model', operation.providerName ?? resolveProviderName(operation.model) ?? 'Unknown', operation.providerId);
     entry.operations++;
     entry.promptTokens += operation.promptTokens;
     entry.completionTokens += operation.completionTokens;
@@ -374,6 +395,7 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
   const operationUsages = await athenaDb.llmOperationUsages.toArray();
   const topics = await athenaDb.topics.toArray();
   const cacheByFormat = createEmptyCacheByFormat();
+  const promptTokensByMessage = attributedPromptTokens(messages);
 
   const stats: AnalyticsStats = {
     summaryGeneratedCount: 0,
@@ -445,7 +467,11 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
       stats.latencyCompletionTokens = (stats.latencyCompletionTokens ?? 0) + m.completionTokens;
     }
 
-    addCacheUsage(cacheByFormat, m.providerFormat ?? resolveProviderFormat(m.model), m.promptTokens, m.cachedTokens ?? 0, m.cacheCreationTokens ?? 0);
+    const attributedPrompt = promptTokensByMessage.get(m.id);
+    const format = m.providerFormat ?? resolveProviderFormat(m.model);
+    if (attributedPrompt !== undefined && (format !== 'openai' || (m.cachedTokens ?? 0) <= attributedPrompt)) {
+      addCacheUsage(cacheByFormat, format, attributedPrompt, m.cachedTokens ?? 0, m.cacheCreationTokens ?? 0);
+    }
 
     if (m.summary) {
       stats.summaryGeneratedCount++;
@@ -473,13 +499,10 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
     stats.totalCacheCreationTokens += operation.cacheCreationTokens ?? 0;
     stats.totalCost += operation.totalCost;
     stats.totalWebSearches += operation.searchCount ?? 0;
-    addCacheUsage(
-      cacheByFormat,
-      operation.providerFormat ?? resolveProviderFormat(operation.model),
-      operation.promptTokens,
-      operation.cachedTokens ?? 0,
-      operation.cacheCreationTokens ?? 0,
-    );
+    const format = operation.providerFormat ?? resolveProviderFormat(operation.model);
+    if (format !== 'openai' || (operation.cachedTokens ?? 0) <= operation.promptTokens) {
+      addCacheUsage(cacheByFormat, format, operation.promptTokens, operation.cachedTokens ?? 0, operation.cacheCreationTokens ?? 0);
+    }
   }
 
   stats.providerBreakdown = aggregateProviderBreakdown(messages, operationUsages);
@@ -774,6 +797,10 @@ export function importAnalytics(file: File): Promise<{ success: boolean; message
           return;
         }
         const sourceData = raw as Record<string, unknown>;
+        if ((format === 'athena-analytics-v3' || sourceData.costUnit !== undefined) && sourceData.costUnit !== 'USD') {
+          resolve({ success: false, message: 'Unsupported or missing analytics cost unit.' });
+          return;
+        }
         if (typeof sourceData.deviceId !== 'string' || !sourceData.stats) {
           resolve({ success: false, message: 'Missing required fields in analytics file.' });
           return;
