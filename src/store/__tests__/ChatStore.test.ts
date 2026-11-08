@@ -5,6 +5,7 @@ import * as webSearchService from '../../services/webSearchService';
 import { MESSAGE_RETRIEVAL_INSTRUCTIONS } from '../../constants';
 import { useCuratorStore } from '../CuratorStore';
 import { useTopicStore } from '../TopicStore';
+import { requestLazySummary } from '../../services/summaryScheduler';
 
 const mockDefaultModel: UserChatModel = createUserChatModel();
 
@@ -12,7 +13,12 @@ const testProvider: LlmProvider = createLlmProvider();
 
 interface TopicStoreState {
   topics: Topic[];
-  getTopicContext: (topicId: string, excludeAfterId?: string, userQuery?: string) => Promise<Message[]>;
+  getTopicContext: (
+    topicId: string,
+    excludeAfterId?: string,
+    userQuery?: string,
+    trackSummaryUsage?: boolean,
+  ) => Promise<Message[]>;
   updateTopicTimestamp: (topicId: string) => Promise<void>;
   generateTopicName: (topicId: string, userMessage: string) => Promise<void>;
   updateTopicScratchpad: (topicId: string, scratchpad: string) => Promise<void>;
@@ -32,6 +38,7 @@ interface AuthStoreState {
   predefinedPrompts: unknown[];
   messageRetrievalEnabled: boolean;
   aiSummaryEnabled: boolean;
+  ragEnabled?: boolean;
   summaryModel?: string;
   replyPredictionEnabled: boolean;
   replyPredictionModel: string;
@@ -63,7 +70,10 @@ interface LlmLoopResult {
 type AskLlmResult = unknown;
 type LlmLoopArgs = Parameters<typeof import('../../services/llmService').orchestrateLlmLoop>;
 
-const mockGetTopicContext = jest.fn<Promise<Message[]>, [string, string | undefined, string | undefined]>();
+const mockGetTopicContext = jest.fn<
+  Promise<Message[]>,
+  [string, string | undefined, string | undefined, boolean | undefined]
+>();
 const mockUpdateTopicTimestamp = jest.fn<Promise<void>, [string]>();
 const mockGenerateTopicName = jest.fn<Promise<void>, [string, string]>();
 const mockUpdateTopicScratchpad = jest.fn<Promise<void>, [string, string]>();
@@ -111,7 +121,9 @@ jest.mock('../../store/TopicStore', () => ({
   useTopicStore: {
     getState: (): TopicStoreState => ({
       topics: [mockBaseTopic],
-      getTopicContext: (...args: [string, string | undefined, string | undefined]) => mockGetTopicContext(...args),
+      getTopicContext: (
+        ...args: [string, string | undefined, string | undefined, boolean | undefined]
+      ) => mockGetTopicContext(...args),
       updateTopicTimestamp: (...args: [string]) => mockUpdateTopicTimestamp(...args),
       generateTopicName: (...args: [string, string]) => mockGenerateTopicName(...args),
       updateTopicScratchpad: (...args: [string, string]) => mockUpdateTopicScratchpad(...args),
@@ -253,6 +265,7 @@ describe('ChatStore', () => {
       predefinedPrompts: [],
       messageRetrievalEnabled: true,
       aiSummaryEnabled: false,
+      ragEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
       llmModelSelected: 'qwen3.5-0.8b',
@@ -755,6 +768,7 @@ describe('ChatStore', () => {
       predefinedPrompts: [],
       messageRetrievalEnabled: true,
       aiSummaryEnabled: false,
+      ragEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
       llmModelSelected: 'qwen3.5-0.8b',
@@ -814,28 +828,40 @@ describe('ChatStore', () => {
 
   it('sends the completed answer only once in a contextual summary request', async () => {
     const target = 'Distinctive assistant answer about the Edinburgh inventory.';
-    const originalSummarize = useChatStore.getState().maybeSummarize;
-    const summarizeSpy = jest.spyOn(useChatStore.getState(), 'maybeSummarize').mockResolvedValue(undefined);
-    mockOrchestrateLlmLoop.mockResolvedValue({
-      finalContent: target, totalPromptTokens: 1, totalCompletionTokens: 1, totalSearchCount: 0, toolLoopTrace: [],
-      lastResult: { content: target, rawContent: target, promptTokens: 1, completionTokens: 1, searchCount: 0 },
-    });
+    const precedingContext = [{ role: 'user' as const, content: 'Explain handedness' }];
     mockAskLlm.mockResolvedValue({ content: 'Discusses the Edinburgh inventory.', promptTokens: 1, completionTokens: 1 });
+
+    await useChatStore.getState()._runSummarize('summary-target', target, precedingContext);
+    const requestMessages = mockAskLlm.mock.calls[0][2];
+    expect(JSON.stringify(requestMessages).split(target)).toHaveLength(2);
+  });
+
+  it('does not eagerly summarize messages when a chat response completes', async () => {
+    // Spy on the live store through setState. Zustand's set() replaces the state
+    // object, so restoring a spy installed on the old object would leave the mock
+    // behind for later tests.
+    const originalSummarize = useChatStore.getState().maybeSummarize;
+    const summarizeSpy = jest.fn<Promise<void>, [string, string]>().mockResolvedValue(undefined);
+    useChatStore.setState({ maybeSummarize: summarizeSpy });
+    mockOrchestrateLlmLoop.mockResolvedValue({
+      finalContent: 'An answer long enough to be summarized later.',
+      totalPromptTokens: 1,
+      totalCompletionTokens: 1,
+      totalSearchCount: 0,
+      toolLoopTrace: [],
+      lastResult: {
+        content: 'An answer long enough to be summarized later.',
+        rawContent: 'An answer long enough to be summarized later.',
+        promptTokens: 1,
+        completionTokens: 1,
+        searchCount: 0,
+      },
+    });
 
     try {
       await useChatStore.getState().sendMessageStream('Explain handedness', 'topic-1');
-      const summaryCall = summarizeSpy.mock.calls.find((call) => call[1] === target);
-      expect(summaryCall).toBeDefined();
-      const precedingContext = summaryCall?.[3];
-      expect(precedingContext).toBeDefined();
-      expect(precedingContext).toContainEqual(expect.objectContaining({ content: 'Explain handedness' }));
-      expect(precedingContext).not.toContainEqual(expect.objectContaining({ content: target }));
-
-      await useChatStore.getState()._runSummarize('summary-target', target, precedingContext);
-      const requestMessages = mockAskLlm.mock.calls[0][2];
-      expect(JSON.stringify(requestMessages).split(target)).toHaveLength(2);
+      expect(summarizeSpy).not.toHaveBeenCalled();
     } finally {
-      summarizeSpy.mockRestore();
       useChatStore.setState({ maybeSummarize: originalSummarize });
     }
   });
@@ -1665,6 +1691,7 @@ describe('ChatStore', () => {
       embeddingService: { isReady: boolean };
     };
     embeddingService.isReady = true;
+    mockAuthGetState.mockReturnValue({ ...mockAuthGetState(), ragEnabled: true });
     mockGenerateEmbedding.mockRejectedValueOnce(new Error('Embedding failed'));
 
     const message: Message = {
@@ -1694,6 +1721,102 @@ describe('ChatStore', () => {
 
     embeddingService.isReady = false;
     warnSpy.mockRestore();
+  });
+
+  it('does not generate embeddings while RAG is disabled', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { embeddingService } = require('../../services/embeddingService') as {
+      embeddingService: { isReady: boolean };
+    };
+    embeddingService.isReady = true;
+    mockAuthGetState.mockReturnValue({ ...mockAuthGetState(), ragEnabled: false });
+
+    await useChatStore.getState().addMessage({
+      id: 'msg-rag-off',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'No embedding should be generated',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    });
+
+    expect(mockGenerateEmbedding).not.toHaveBeenCalled();
+    embeddingService.isReady = false;
+  });
+
+  it('generates embeddings when RAG is enabled', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { embeddingService } = require('../../services/embeddingService') as {
+      embeddingService: { isReady: boolean };
+    };
+    embeddingService.isReady = true;
+    mockAuthGetState.mockReturnValue({ ...mockAuthGetState(), ragEnabled: true });
+    mockGenerateEmbedding.mockResolvedValueOnce([0.1, 0.2]);
+
+    await useChatStore.getState().addMessage({
+      id: 'msg-rag-on',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'Generate an embedding for this message',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(mockGenerateEmbedding).toHaveBeenCalledWith('Generate an embedding for this message');
+    expect(mockDbUpdate).toHaveBeenCalledWith('msg-rag-on', { embedding: [0.1, 0.2] });
+    embeddingService.isReady = false;
+  });
+
+  it('discards an embedding when RAG is disabled before it is written', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { embeddingService } = require('../../services/embeddingService') as {
+      embeddingService: { isReady: boolean };
+    };
+    embeddingService.isReady = true;
+    mockAuthGetState.mockReturnValue({ ...mockAuthGetState(), ragEnabled: true });
+
+    let resolveEmbedding: ((vector: number[]) => void) | undefined;
+    mockGenerateEmbedding.mockReturnValueOnce(
+      new Promise<number[]>((resolve) => {
+        resolveEmbedding = resolve;
+      }),
+    );
+
+    await useChatStore.getState().addMessage({
+      id: 'msg-rag-toggle',
+      topicId: 'topic-1',
+      forkId: 'main',
+      type: 'user',
+      content: 'RAG is about to be disabled',
+      created: '2024-01-01T00:00:00.000Z',
+      isDeleted: false,
+      includeInContext: false,
+      failed: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalCost: 0,
+    });
+
+    // Simulate the user disabling RAG while the local model is still encoding.
+    mockAuthGetState.mockReturnValue({ ...mockAuthGetState(), ragEnabled: false });
+    resolveEmbedding?.([0.3, 0.4]);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(mockDbUpdate).not.toHaveBeenCalledWith('msg-rag-toggle', { embedding: [0.3, 0.4] });
+    embeddingService.isReady = false;
   });
 
   it('setHighlightedMessageId sets and clears highlighted message id', () => {
@@ -2002,6 +2125,7 @@ describe('ChatStore', () => {
       predefinedPrompts: [],
       messageRetrievalEnabled: true,
       aiSummaryEnabled: false,
+      ragEnabled: false,
       replyPredictionEnabled: false,
       replyPredictionModel: 'same',
       llmModelSelected: 'qwen3.5-0.8b',
@@ -2113,6 +2237,22 @@ describe('ChatStore', () => {
     const context = await useChatStore.getState().buildFullContext('nonexistent');
 
     expect(context.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // ========== Lazy summary scheduling ==========
+  it('routes lazy summary requests to maybeSummarize', async () => {
+    const originalSummarize = useChatStore.getState().maybeSummarize;
+    const summarizeSpy = jest.fn<Promise<void>, [string, string, boolean?, unknown[]?]>().mockResolvedValue(undefined);
+    useChatStore.setState({ maybeSummarize: summarizeSpy });
+
+    try {
+      requestLazySummary('msg-lazy', 'Long message content');
+      await Promise.resolve();
+
+      expect(summarizeSpy).toHaveBeenCalledWith('msg-lazy', 'Long message content');
+    } finally {
+      useChatStore.setState({ maybeSummarize: originalSummarize });
+    }
   });
 
   // ========== maybeSummarize ==========

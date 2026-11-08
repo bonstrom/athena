@@ -478,9 +478,9 @@ describe('buildAnalyticsReport', () => {
     const report = build();
 
     expect(report).toContain('| Messages with a stored summary | 5 |');
-    expect(report).toContain('| Messages with ≥1 tracked retrieval (truncation/RAG only) | 3/5 (60%) |');
+    expect(report).toContain('| Messages with ≥1 tracked retrieval (directory, truncation, or RAG) | 3/5 (60%) |');
     expect(report).toContain('| Tracked retrieval events | 10 |');
-    expect(report).toContain('history-directory previews are not counted');
+    expect(report).toContain('Summaries are generated lazily when a long message is first represented');
   });
 
   it('reports dynamic legacy-provider cost and token coverage', (): void => {

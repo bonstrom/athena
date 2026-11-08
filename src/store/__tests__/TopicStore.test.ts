@@ -35,6 +35,9 @@ const mockChecklistHistoryAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 const mockLlmOperationUsagesAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 const mockLlmOperationUsagesAdd = jest.fn<Promise<void>, [unknown]>();
 const mockOperationLeasesAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
+const mockMessagesGet = jest.fn<Promise<Message | undefined>, [string]>();
+const mockMessagesUpdate = jest.fn<Promise<number>, [string, Partial<Message>]>();
+const mockRequestLazySummary = jest.fn<undefined, [string, string]>();
 
 jest.mock('gpt-tokenizer', () => ({
   encode: jest.fn((text: string): number[] => new Array<number>(text.length).fill(0)),
@@ -74,6 +77,12 @@ jest.mock('../../store/ProviderStore', () => ({
 
 jest.mock('../../services/llmService', () => ({
   askLlm: jest.fn(),
+}));
+
+jest.mock('../../services/summaryScheduler', () => ({
+  requestLazySummary: (...args: [string, string]): void => {
+    mockRequestLazySummary(...args);
+  },
 }));
 
 jest.mock('../../components/ModelSelector', () => ({
@@ -147,6 +156,8 @@ jest.mock('../../database/AthenaDb', () => ({
       }),
       bulkAdd: (...args: [Message[]]): Promise<void> => mockDbBulkAdd(...args),
       toArray: (): Promise<Message[]> => mockMessagesToArray(),
+      get: (...args: [string]): Promise<Message | undefined> => mockMessagesGet(...args),
+      update: (...args: [string, Partial<Message>]): Promise<number> => mockMessagesUpdate(...args),
     },
     checklistGroups: {
       where: (): {
@@ -228,6 +239,9 @@ describe('TopicStore.getTopicContext', () => {
     mockChecklistHistoryAnyOfDelete.mockReset();
     mockLlmOperationUsagesAnyOfDelete.mockReset();
     mockOperationLeasesAnyOfDelete.mockReset();
+    mockMessagesGet.mockReset();
+    mockMessagesUpdate.mockReset();
+    mockRequestLazySummary.mockReset();
     mockHasAnyApiKey.mockReset();
     mockAskLlm.mockReset();
     mockGetDefaultTopicNameModel.mockReset();
@@ -259,6 +273,16 @@ describe('TopicStore.getTopicContext', () => {
     mockLlmOperationUsagesAnyOfDelete.mockResolvedValue(0);
     mockLlmOperationUsagesAdd.mockResolvedValue(undefined);
     mockOperationLeasesAnyOfDelete.mockResolvedValue(0);
+    mockMessagesGet.mockImplementation((id: string): Promise<Message | undefined> => {
+      return Promise.resolve(mockDbMessages.find((m) => m.id === id));
+    });
+    mockMessagesUpdate.mockImplementation((id: string, patch: Partial<Message>): Promise<number> => {
+      const index = mockDbMessages.findIndex((m) => m.id === id);
+      if (index >= 0) {
+        mockDbMessages[index] = { ...mockDbMessages[index], ...patch };
+      }
+      return Promise.resolve(index >= 0 ? 1 : 0);
+    });
 
     const uuidSequence = ['uuid-default-1', 'uuid-default-2', 'uuid-default-3'];
     let uuidIndex = 0;
@@ -980,6 +1004,309 @@ describe('TopicStore.getTopicContext', () => {
     expect(directory?.content).not.toContain('u17|U|');
     expect(directory?.content).not.toContain('a17|A|');
     expect(context.map((m) => m.id)).toEqual(['u17', 'a17', '__history_directory__']);
+  });
+
+  it('counts a history-directory summary as a tracked retrieval only for prompt builds', async () => {
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })],
+    });
+    mockAuthGetState.mockReturnValue({
+      defaultMaxContextMessages: 2,
+      maxContextTokens: 10000,
+      contextWindowRatio: 0.75,
+      messageRetrievalEnabled: true,
+      ragEnabled: false,
+      aiSummaryEnabled: true,
+    });
+
+    mockDbMessages = [
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u1',
+        type: 'user',
+        content: 'Question 1',
+        summary: 'Stored summary for question 1',
+        created: '2024-01-01T00:00:00.000Z',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'a1',
+        type: 'assistant',
+        content: 'Answer 1',
+        created: '2024-01-01T00:01:00.000Z',
+        parentMessageId: 'u1',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u2',
+        type: 'user',
+        content: 'Question 2',
+        created: '2024-01-01T00:02:00.000Z',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'a2',
+        type: 'assistant',
+        content: 'Answer 2',
+        created: '2024-01-01T00:03:00.000Z',
+        parentMessageId: 'u2',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u3',
+        type: 'user',
+        content: 'Question 3',
+        created: '2024-01-01T00:04:00.000Z',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'a3',
+        type: 'assistant',
+        content: 'Answer 3',
+        created: '2024-01-01T00:05:00.000Z',
+        parentMessageId: 'u3',
+      }),
+    ];
+
+    const context = await useTopicStore.getState().getTopicContext('topic-1');
+    expect(context.find((m) => m.id === '__history_directory__')?.content).toContain('[S] Stored summary');
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(mockMessagesUpdate).not.toHaveBeenCalled();
+
+    await useTopicStore.getState().getTopicContext('topic-1', undefined, undefined, true);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(mockMessagesUpdate).toHaveBeenCalledWith('u1', { summaryReadCount: 1 });
+  });
+
+  it('requests a lazy summary for a long directory message only when building a prompt', async () => {
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })],
+    });
+    mockAuthGetState.mockReturnValue({
+      defaultMaxContextMessages: 2,
+      maxContextTokens: 10000,
+      contextWindowRatio: 0.75,
+      messageRetrievalEnabled: true,
+      ragEnabled: false,
+      aiSummaryEnabled: true,
+    });
+
+    const longContent = 'L'.repeat(600);
+    mockDbMessages = [
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u1',
+        type: 'user',
+        content: longContent,
+        created: '2024-01-01T00:00:00.000Z',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'a1',
+        type: 'assistant',
+        content: 'Answer 1',
+        created: '2024-01-01T00:01:00.000Z',
+        parentMessageId: 'u1',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u2',
+        type: 'user',
+        content: 'Question 2',
+        created: '2024-01-01T00:02:00.000Z',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'a2',
+        type: 'assistant',
+        content: 'Answer 2',
+        created: '2024-01-01T00:03:00.000Z',
+        parentMessageId: 'u2',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u3',
+        type: 'user',
+        content: 'Question 3',
+        created: '2024-01-01T00:04:00.000Z',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'a3',
+        type: 'assistant',
+        content: 'Answer 3',
+        created: '2024-01-01T00:05:00.000Z',
+        parentMessageId: 'u3',
+      }),
+    ];
+
+    await useTopicStore.getState().getTopicContext('topic-1');
+    expect(mockRequestLazySummary).not.toHaveBeenCalled();
+
+    await useTopicStore.getState().getTopicContext('topic-1', undefined, undefined, true);
+    expect(mockRequestLazySummary).toHaveBeenCalledTimes(1);
+    expect(mockRequestLazySummary).toHaveBeenCalledWith('u1', longContent);
+  });
+
+  it('counts truncated summaries and requests lazy summaries for long truncated messages', async () => {
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 10 })],
+    });
+    mockAuthGetState.mockReturnValue({
+      defaultMaxContextMessages: 10,
+      maxContextTokens: 10000,
+      contextWindowRatio: 0.75,
+      messageRetrievalEnabled: true,
+      ragEnabled: false,
+      aiSummaryEnabled: true,
+    });
+
+    const summaryContent = 'S'.repeat(RAG_CONTENT_LIMIT + 40);
+    const longContent = 'L'.repeat(RAG_CONTENT_LIMIT + 40);
+    mockDbMessages = [
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u1',
+        type: 'user',
+        content: summaryContent,
+        summary: 'Stored summary for the long message',
+        created: '2024-01-01T00:00:00.000Z',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'a1',
+        type: 'assistant',
+        content: longContent,
+        created: '2024-01-01T00:01:00.000Z',
+        parentMessageId: 'u1',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u2',
+        type: 'user',
+        content: 'Question 2',
+        created: '2024-01-01T00:02:00.000Z',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'a2',
+        type: 'assistant',
+        content: 'Answer 2',
+        created: '2024-01-01T00:03:00.000Z',
+        parentMessageId: 'u2',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u3',
+        type: 'user',
+        content: 'Question 3',
+        created: '2024-01-01T00:04:00.000Z',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'a3',
+        type: 'assistant',
+        content: 'Answer 3',
+        created: '2024-01-01T00:05:00.000Z',
+        parentMessageId: 'u3',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u4',
+        type: 'user',
+        content: 'Question 4',
+        created: '2024-01-01T00:06:00.000Z',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'a4',
+        type: 'assistant',
+        content: 'Answer 4',
+        created: '2024-01-01T00:07:00.000Z',
+        parentMessageId: 'u4',
+      }),
+    ];
+
+    await useTopicStore.getState().getTopicContext('topic-1', undefined, undefined, true);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(mockMessagesUpdate).toHaveBeenCalledWith('u1', { summaryReadCount: 1 });
+    expect(mockRequestLazySummary).toHaveBeenCalledWith('a1', longContent);
+  });
+
+  it('counts a RAG summary as a tracked retrieval when building a prompt', async () => {
+    useTopicStore.setState({
+      topics: [createTopic({ id: 'topic-1', name: 'Topic', activeForkId: 'main', maxContextMessages: 2 })],
+    });
+    mockAuthGetState.mockReturnValue({
+      defaultMaxContextMessages: 2,
+      maxContextTokens: 10000,
+      contextWindowRatio: 0.75,
+      messageRetrievalEnabled: false,
+      ragEnabled: true,
+      aiSummaryEnabled: true,
+    });
+
+    const longContent = 'R'.repeat(RAG_CONTENT_LIMIT + 40);
+    const retrieved = createMessage({
+      topicId: 'topic-1',
+      forkId: 'main',
+      id: 'u1',
+      type: 'user',
+      content: longContent,
+      summary: 'Stored summary for the retrieved message',
+      embedding: [0.1],
+      created: '2024-01-01T00:00:00.000Z',
+    });
+    mockDbMessages = [
+      retrieved,
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'u2',
+        type: 'user',
+        content: 'Recent question',
+        created: '2024-01-01T00:02:00.000Z',
+      }),
+      createMessage({
+        topicId: 'topic-1',
+        forkId: 'main',
+        id: 'a2',
+        type: 'assistant',
+        content: 'Recent answer',
+        created: '2024-01-01T00:03:00.000Z',
+        parentMessageId: 'u2',
+      }),
+    ];
+
+    Object.defineProperty(embeddingService, 'isReady', { value: true, configurable: true });
+    mockSearchSimilarMessages.mockResolvedValue([{ message: retrieved, score: 0.92 }]);
+
+    await useTopicStore.getState().getTopicContext('topic-1', undefined, 'Earlier question', true);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(mockMessagesUpdate).toHaveBeenCalledWith('u1', { summaryReadCount: 1 });
   });
 
   it('getTopicContext respects window token budget beyond the always-kept last pair', async () => {

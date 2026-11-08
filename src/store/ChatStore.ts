@@ -33,6 +33,7 @@ import { athenaDb } from '../database/AthenaDb';
 import { BackupService } from '../services/backupService';
 import { rollupAnalytics } from '../services/analyticsRollupService';
 import { trackOperationUsage } from '../services/usageTrackingService';
+import { registerLazySummaryHandler } from '../services/summaryScheduler';
 import { useAuthStore } from './AuthStore';
 import { getLegacyBuiltInAttribution } from '../types/provider';
 import { embeddingService } from '../services/embeddingService';
@@ -611,11 +612,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     await athenaDb.messages.put(message);
 
-    // Fire-and-forget embedding
-    if (embeddingService.isReady && message.content.trim()) {
+    // Fire-and-forget embedding. Only RAG uses embeddings, so do not spend
+    // local compute on them while retrieval is disabled.
+    if (useAuthStore.getState().ragEnabled && embeddingService.isReady && message.content.trim()) {
       void embeddingService
         .generateEmbedding(message.content)
-        .then((vector) => athenaDb.messages.update(message.id, { embedding: vector }))
+        .then((vector) => {
+          if (useAuthStore.getState().ragEnabled) {
+            return athenaDb.messages.update(message.id, { embedding: vector });
+          }
+          return undefined;
+        })
         .catch((err: unknown) => {
           console.warn(
             '[ChatStore] Failed to generate embedding for message',
@@ -636,9 +643,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       };
     });
-
-    // Fire-and-forget summarization
-    void get().maybeSummarize(message.id, message.content);
   },
 
   addMessages: async (messages: Message[]): Promise<void> => {
@@ -662,11 +666,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         },
       };
     });
-
-    // Summarize new messages if needed
-    for (const msg of newMessages) {
-      void get().maybeSummarize(msg.id, msg.content);
-    }
   },
 
   updateMessage: async (id, patch): Promise<void> => {
@@ -858,6 +857,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       topicId,
       isRetry ? messageId : undefined,
       content.trim(),
+      true,
     );
     // The request may have been stopped and replaced while setup was pending.
     if (!canContinueRequest()) return;
@@ -1034,14 +1034,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         get().updateMessageStateOnly(assistantId, finalizedAssistant);
         set({ imageGenerationEnabled: false }); // Auto-disable after use
 
-        // Finalize topic state (naming and summarization)
-        if (!isRetry) {
-          void get().maybeSummarize(userMessage.id, userMessage.content);
-        }
-        void get().maybeSummarize(assistantId, finalizedAssistant.content ?? '', undefined, [
-          ...llmContext,
-          { role: 'assistant', content: finalizedAssistant.content ?? '' },
-        ]);
+        // Summaries are generated lazily when a later prompt needs them.
         void topicStoreState.generateTopicName(topicId, content);
         void rollupAnalytics();
       } catch (err) {
@@ -1114,14 +1107,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         get().updateMessageStateOnly(assistantId, finalizedAssistant);
         set({ musicGenerationEnabled: false });
 
-        // Finalize topic state (naming and summarization)
-        if (!isRetry) {
-          void get().maybeSummarize(userMessage.id, userMessage.content);
-        }
-        void get().maybeSummarize(assistantId, finalizedAssistant.content ?? '', undefined, [
-          ...llmContext,
-          { role: 'assistant', content: finalizedAssistant.content ?? '' },
-        ]);
+        // Summaries are generated lazily when a later prompt needs them.
         void topicStoreState.generateTopicName(topicId, content);
         void rollupAnalytics();
       } catch (err) {
@@ -1167,10 +1153,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
 
       // Fire-and-forget embedding for the new user message (not a retry or continuation)
-      if (!isRetry && !isContinuation && embeddingService.isReady && userMessage.content.trim()) {
-        void embeddingService
-          .generateEmbedding(userMessage.content)
-          .then((vector) => athenaDb.messages.update(userMessage.id, { embedding: vector }));
+      if (
+        !isRetry &&
+        !isContinuation &&
+        useAuthStore.getState().ragEnabled &&
+        embeddingService.isReady &&
+        userMessage.content.trim()
+      ) {
+        void embeddingService.generateEmbedding(userMessage.content).then((vector) => {
+          if (useAuthStore.getState().ragEnabled) {
+            return athenaDb.messages.update(userMessage.id, { embedding: vector });
+          }
+          return undefined;
+        });
       }
 
       // Update state once for both messages
@@ -1541,10 +1536,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       if (!canContinueRequest()) return;
       // Fire-and-forget embedding for the finalized assistant response
-      if (embeddingService.isReady && assistantContent.trim()) {
+      if (useAuthStore.getState().ragEnabled && embeddingService.isReady && assistantContent.trim()) {
         void embeddingService
           .generateEmbedding(assistantContent)
-          .then((vector) => athenaDb.messages.update(assistantId, { embedding: vector }))
+          .then((vector) => {
+            if (useAuthStore.getState().ragEnabled) {
+              return athenaDb.messages.update(assistantId, { embedding: vector });
+            }
+            return undefined;
+          })
           .catch((err: unknown) => {
             console.warn(
               '[ChatStore] Failed to generate embedding for assistant response',
@@ -1576,14 +1576,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         });
       }
 
-      // Fire-and-forget summarization for user and assistant messages
-      if (!isRetry && !isContinuation) {
-        void get().maybeSummarize(userMessage.id, userMessage.content);
-      }
-      if (assistantContent.trim()) {
-        // The summarizer supplies the explicit target; pass only the preceding context.
-        void get().maybeSummarize(assistantId, assistantContent, undefined, llmContext);
-      }
+      // Fire-and-forget summarization is intentionally not started here. Long
+      // messages are summarized lazily when a prompt actually needs to
+      // represent them with a summary or truncated preview.
 
       void topicStoreState.generateTopicName(topicId, content);
 
@@ -1973,6 +1968,8 @@ Prefer concise descriptions such as "Discusses...", "Compares...", or "Asks abou
     await updateMessage(userMessageId, { activeResponseId: assistantId });
   },
 }));
+
+registerLazySummaryHandler((messageId, content) => useChatStore.getState().maybeSummarize(messageId, content));
 
 const sortMessages = function (messages: Message[]): Message[] {
   return messages.sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());

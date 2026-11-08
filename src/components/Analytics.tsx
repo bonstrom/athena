@@ -436,7 +436,7 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
         ['Stored summary cost (latest generation per message)', formatCost(total.summaryTotalCost)],
         ['Stored summary tokens (latest generation per message)', formatTokens(storedSummaryTokens(total))],
         [
-          'Messages with ≥1 tracked retrieval (truncation/RAG only)',
+          'Messages with ≥1 tracked retrieval (directory, truncation, or RAG)',
           `${total.summaryUniqueReadCount}/${total.summaryGeneratedCount} (${readPercent})`,
         ],
         ['Tracked retrieval events', total.summaryTotalReadCount],
@@ -445,7 +445,7 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
   );
   lines.push('');
   lines.push(
-    'Regenerating a summary overwrites its stored cost and tokens. Retrieval counts cover summaries injected by history truncation/RAG; history-directory previews are not counted.',
+    'Summaries are generated lazily when a long message is first represented by a directory preview, truncation preview, or RAG block. Regenerating a summary overwrites its stored cost and tokens. Retrieval counts cover summaries injected by those three paths.',
   );
   lines.push('');
 
@@ -1201,14 +1201,15 @@ const Analytics: React.FC = () => {
               value={formatTokens(storedSummaryTokens(combined))}
             />
             <ProgressRow
-              label="Messages with ≥1 tracked retrieval (truncation/RAG only)"
+              label="Messages with ≥1 tracked retrieval (directory, truncation, or RAG)"
               value={combined.summaryUniqueReadCount}
               total={combined.summaryGeneratedCount}
             />
             <StatRow label="Tracked retrieval events" value={combined.summaryTotalReadCount} />
             <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
-              Regenerating a summary overwrites its stored cost and tokens. Retrieval counts cover summaries injected by
-              history truncation/RAG; history-directory previews are not counted.
+              Summaries are generated lazily when a long message is first represented by a directory preview,
+              truncation preview, or RAG block. Regenerating a summary overwrites its stored cost and tokens. Retrieval
+              counts cover summaries injected by those three paths.
             </Typography>
           </>
         ) : (

@@ -927,7 +927,9 @@ const Settings: React.FC = () => {
                         <Typography
                           variant="caption"
                           color="text.secondary">
-                          Automatically generates a short AI summary for messages exceeding 500 characters.
+                          Generates a short AI summary the first time a long message is needed for retrieval. Summaries
+                          are created lazily to avoid spending on messages that are never used outside the recent
+                          context.
                         </Typography>
                       </Box>
                     }

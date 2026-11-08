@@ -13,6 +13,7 @@ import {
   getRecordedPeakMultiplier,
 } from '../components/ModelSelector';
 import { trackOperationUsage } from '../services/usageTrackingService';
+import { requestLazySummary } from '../services/summaryScheduler';
 import { SHORTENED_ID_LENGTH, SCRATCHPAD_LIMIT, RAG_TOP_K, RAG_MIN_SCORE, RAG_MAX_CHARS, RAG_CONTENT_LIMIT } from '../constants';
 
 function updateTopicAndSort(topics: Topic[], id: string, patch: Partial<Topic>, now: string): Topic[] {
@@ -101,7 +102,7 @@ interface TopicState {
   generateTopicName(topicId: string, userMessage: string): Promise<void>;
   deleteTopic: (id: string) => Promise<void>;
   deleteTopics: (ids: string[]) => Promise<void>;
-  getTopicContext(topicId: string, excludeAfterId?: string, userQuery?: string): Promise<Message[]>;
+  getTopicContext(topicId: string, excludeAfterId?: string, userQuery?: string, trackSummaryUsage?: boolean): Promise<Message[]>;
   updateTopicScratchpad: (id: string, scratchpad: string) => Promise<void>;
   updateTopicTimestamp: (id: string) => Promise<void>;
   forkTopic: (topicId: string, messageId: string) => Promise<void>;
@@ -217,7 +218,12 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     }
   },
 
-  async getTopicContext(topicId: string, excludeAfterId?: string, userQuery?: string): Promise<Message[]> {
+  async getTopicContext(
+    topicId: string,
+    excludeAfterId?: string,
+    userQuery?: string,
+    trackSummaryUsage = false,
+  ): Promise<Message[]> {
     const topic = get().topics.find((t) => t.id === topicId);
     if (!topic) return [];
 
@@ -318,13 +324,23 @@ export const useTopicStore = create<TopicState>((set, get) => ({
     // Pinned messages (includeInContext) are never truncated.
     const KEEP_FULL_COUNT = 4;
     const retrievedSummaryIds = new Set<string>();
+    const lazySummaryCandidates = new Map<string, string>();
+    const aiSummaryEnabled = useAuthStore.getState().aiSummaryEnabled;
+    const noteSummaryCandidate = (m: Message): void => {
+      if (!trackSummaryUsage || !aiSummaryEnabled || m.summary || m.content.length <= 500) return;
+      lazySummaryCandidates.set(m.id, m.content);
+    };
     const retrievalEnabled = useAuthStore.getState().messageRetrievalEnabled;
     if (retrievalEnabled) {
       base = base.map((m, idx) => {
         const isVeryRecent = idx >= base.length - KEEP_FULL_COUNT;
         if (!isVeryRecent && !m.includeInContext && (m.type === 'user' || m.type === 'assistant') && m.content.length > RAG_CONTENT_LIMIT) {
           const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
-          if (m.summary) retrievedSummaryIds.add(m.id);
+          if (m.summary) {
+            if (trackSummaryUsage) retrievedSummaryIds.add(m.id);
+          } else {
+            noteSummaryCandidate(m);
+          }
           return {
             ...m,
             content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, SHORTENED_ID_LENGTH)} to reach full content]`,
@@ -391,7 +407,11 @@ export const useTopicStore = create<TopicState>((set, get) => ({
             const processedMessages = messages.map((m) => {
               if (m.content.length > RAG_CONTENT_LIMIT) {
                 const summaryPart = m.summary ? `[SUMMARY]: ${m.summary}\n\n` : '';
-                if (m.summary) retrievedSummaryIds.add(m.id);
+                if (m.summary) {
+                  if (trackSummaryUsage) retrievedSummaryIds.add(m.id);
+                } else {
+                  noteSummaryCandidate(m);
+                }
                 return {
                   ...m,
                   content: `${summaryPart}${m.content.slice(0, RAG_CONTENT_LIMIT)}...\n\n[TRUNCATED: Use 'read_messages' with ID ${m.id.slice(0, SHORTENED_ID_LENGTH)} to reach full content]`,
@@ -444,6 +464,11 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         const visibleDirectory = directoryMessages.slice(-30);
         const directoryLines = visibleDirectory.map((m) => {
           const preview = m.summary ? `[S] ${m.summary}` : m.content.substring(0, 100).replace(/\n/g, ' ').trim();
+          if (m.summary) {
+            if (trackSummaryUsage) retrievedSummaryIds.add(m.id);
+          } else {
+            noteSummaryCandidate(m);
+          }
           const sizeTag = `(${m.content.length}c)`;
           const hasCode = m.content.includes('```');
           const isLarge = m.content.length > 2000 || hasCode;
@@ -485,6 +510,10 @@ export const useTopicStore = create<TopicState>((set, get) => ({
           console.warn('Failed to update summary read counts:', err);
         }
       })();
+    }
+
+    for (const [id, content] of lazySummaryCandidates) {
+      requestLazySummary(id, content);
     }
 
     if (ragMessage) {
