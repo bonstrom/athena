@@ -57,6 +57,9 @@ jest.mock('./ModelSelector', () => ({
   __esModule: true, default: (): null => null,
   getDefaultModel: (): typeof mockModel => mockModel,
   getQuestionGenModel: (): typeof mockModel => mockModel,
+  calculateCostUSD: jest.fn((): number => 0),
+  getProviderFormatForModel: jest.fn((): string => 'openai'),
+  getRecordedPeakMultiplier: jest.fn((): undefined => undefined),
 }));
 jest.mock('./MessageBubble', () => (): null => null);
 jest.mock('./MarkdownWithCode', () => (): null => null);

@@ -50,6 +50,8 @@ import {
   CacheFormatTotals,
   TrendRow,
   ProviderBreakdown,
+  ModelUsageRow,
+  OperationUsageRow,
   ToolUsageRow,
   LatencyPercentiles,
 } from '../services/analyticsService';
@@ -184,6 +186,7 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
 
   const importedSourceEntries = Object.entries(importedSources);
   const legacySources = importedSourceEntries.filter(([, source]) => !source.stats.providerBreakdown);
+  const missingCostUnitSources = importedSourceEntries.filter(([, source]) => !source.costUnit);
   const recordedTokens = total.totalPromptTokens + total.totalCompletionTokens;
   const providerCost = providerRows.reduce((sum, row) => sum + row.cost, 0);
   const providerTokens = providerRows.reduce((sum, row) => sum + row.tokens, 0);
@@ -213,6 +216,7 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
         `${userName || 'This device'} (this device)`,
         stats.totalMessages,
         formatCost(stats.totalCost),
+        'USD',
         'local',
         'now',
         process.env.REACT_APP_VERSION ?? 'unknown',
@@ -223,14 +227,15 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
           source.userId || source.deviceId || 'Unknown',
           source.stats.totalMessages,
           formatCost(source.stats.totalCost),
+          source.costUnit ?? 'not stated',
           meta.format,
           formatSourceDate(meta.exportedAt, dateFormat),
           meta.appVersion,
         ];
       }),
-      ['Combined', total.totalMessages, formatCost(total.totalCost), '', '', ''],
+      ['Combined', total.totalMessages, formatCost(total.totalCost), '', '', '', ''],
     ];
-    lines.push(mdTable(['Source', 'Messages', 'Cost', 'Format', 'Exported', 'App'], rows));
+    lines.push(mdTable(['Source', 'Messages', 'Cost', 'Cost unit', 'Format', 'Exported', 'App'], rows));
     lines.push('');
     lines.push('Source metadata is read from each export file; the local row describes this device.');
     lines.push('');
@@ -259,8 +264,21 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
   );
   lines.push('');
   lines.push(
-    'Recorded cost covers chat messages plus tracked background operations. Media generation, topic naming, reply prediction, and Curator direct calls are not tracked. Stored summary cost is a separate subtotal, not part of recorded cost.',
+    'Recorded cost covers chat messages plus tracked background operations (checklist edits, pixel edits, topic naming, reply prediction, Curator calls, and media calls). Media calls do not report token or cost usage, so they add operation counts but no cost. Stored summary cost is a separate subtotal, not part of recorded cost.',
   );
+  lines.push('');
+  lines.push(
+    'Cost figures are shown in the display currency selected in Settings, converted from USD. Exports record costUnit "USD".',
+  );
+  if (missingCostUnitSources.length > 0) {
+    const names = missingCostUnitSources
+      .map(([, source]) => source.userId || source.deviceId || 'Unknown')
+      .join(', ');
+    lines.push('');
+    lines.push(
+      `Imported files created before the v3 export format do not state a cost unit (${names}); their costs are assumed to be USD.`,
+    );
+  }
   lines.push('');
 
   // ── Trends ──
@@ -299,7 +317,7 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
     lines.push('## By Provider');
     lines.push('');
     lines.push(
-      'Assistant messages with a recorded model, grouped by the provider that model currently maps to, including aggregated sources.',
+      'Assistant messages with a recorded model, grouped by the provider name recorded when the response was written, falling back to the provider the model currently maps to. Includes aggregated sources.',
     );
     lines.push('');
     lines.push(
@@ -324,16 +342,65 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
     lines.push('');
   }
 
-  // ── Messages by model ──
-  const modelEntries = Object.entries(total.messagesByModel).sort(([, a], [, b]) => b - a);
-  if (modelEntries.length > 0) {
-    lines.push('## Messages by Model');
+  // ── By model ──
+  const modelUsageRows = total.modelUsage ?? [];
+  if (modelUsageRows.length > 0) {
+    lines.push('## By Model');
     lines.push('');
-    lines.push('Assistant messages with a recorded model.');
+    lines.push(
+      'Cost and tokens cover chat messages plus background operations, matching recorded cost. Summary cost is a separate subtotal attributed to the model that generated the summary.',
+    );
     lines.push('');
-    lines.push(mdTable(['Model', 'Messages'], modelEntries));
+    lines.push(
+      mdTable(
+        ['Model', 'Provider', 'Messages', 'Operations', 'Prompt tokens', 'Completion tokens', 'Cost', 'Summary calls', 'Summary cost'],
+        modelUsageRows.map((row) => [
+          row.model,
+          row.provider,
+          row.messages,
+          row.operations,
+          formatTokens(row.promptTokens),
+          formatTokens(row.completionTokens),
+          formatCost(row.cost),
+          row.summaryCalls,
+          formatCost(row.summaryCost),
+        ]),
+      ),
+    );
     lines.push('');
-    lines.push('Counts use recorded model IDs; model IDs are not retroactively remapped.');
+    lines.push(
+      'Model IDs are recorded as written and are not retroactively remapped. Imported files created before the v3 export format do not include per-model breakdowns; their usage is included in totals but not in this table.',
+    );
+    lines.push('');
+  }
+
+  // ── By operation ──
+  const operationUsageRows = total.operationUsage ?? [];
+  if (operationUsageRows.length > 0) {
+    lines.push('## By Operation');
+    lines.push('');
+    lines.push(
+      'Background LLM and media calls. Operation rows never contribute to message counts. "Unknown usage" marks calls whose provider did not report tokens or cost.',
+    );
+    lines.push('');
+    lines.push(
+      mdTable(
+        ['Operation', 'Calls', 'Failed', 'Prompt tokens', 'Completion tokens', 'Cost', 'Unknown usage'],
+        operationUsageRows.map((row) => [
+          row.operation,
+          row.calls,
+          row.failedCount,
+          formatTokens(row.promptTokens),
+          formatTokens(row.completionTokens),
+          formatCost(row.cost),
+          row.usageUnknownCount,
+        ]),
+      ),
+    );
+    lines.push('');
+    lines.push(
+      'Imported files created before the v3 export format do not include per-operation breakdowns; their operation cost is included in totals but not in this table.',
+    );
     lines.push('');
   }
 
@@ -442,7 +509,7 @@ export function buildAnalyticsReport(input: AnalyticsReportInput): string {
   );
   lines.push('');
   lines.push(
-    'Per-format cache shares use this device\'s records grouped by each model\'s current provider format. Imported sources are excluded, and records whose model no longer resolves to a configured provider are not attributed.',
+    'Per-format cache shares use this device\'s records grouped by the provider format recorded at write time, falling back to the model\'s current provider. Imported sources are excluded, and records whose provider cannot be resolved are not attributed.',
   );
   lines.push('');
 
@@ -632,6 +699,8 @@ const Analytics: React.FC = () => {
         userMessageSizeDistribution: mergeRecordSum(total.userMessageSizeDistribution, s.userMessageSizeDistribution),
         assistantMessageSizeDistribution: mergeRecordSum(total.assistantMessageSizeDistribution, s.assistantMessageSizeDistribution),
         providerBreakdown: mergeProviderBreakdown(total.providerBreakdown, s.providerBreakdown),
+        modelUsage: mergeModelUsage(total.modelUsage, s.modelUsage),
+        operationUsage: mergeOperationUsage(total.operationUsage, s.operationUsage),
         features: {},
         firstMessageAt: total.firstMessageAt
           ? s.firstMessageAt && s.firstMessageAt < total.firstMessageAt
@@ -766,6 +835,10 @@ const Analytics: React.FC = () => {
         {stats.lastMessageAt && (
           <StatRow label="Last message" value={new Date(stats.lastMessageAt).toLocaleDateString(dateFormat)} />
         )}
+        <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
+          Cost is shown in the display currency selected in Settings, converted from USD. Exports record costUnit
+          &quot;USD&quot;.
+        </Typography>
       </Box>
 
       {/* ── Empty snapshot notice ── */}
@@ -787,6 +860,12 @@ const Analytics: React.FC = () => {
             Each imported source records its export format, export date, and app version; hover a source name to see
             them.
           </Typography>
+          {Object.values(importedSources).some((source) => !source.costUnit) && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Some imported files predate the v3 export format and do not state a cost unit. Their costs are assumed to
+              be USD.
+            </Alert>
+          )}
           <TableContainer component={Paper} variant="outlined">
             <Table size="small">
               <TableHead>
@@ -1018,7 +1097,7 @@ const Analytics: React.FC = () => {
             />
           </Box>
           <TableContainer component={Paper} variant="outlined">
-            <Table size="small">
+            <Table size="small" data-testid="provider-breakdown-table">
               <TableHead>
                 <TableRow>
                   <TableCell>Provider</TableCell>
@@ -1165,41 +1244,95 @@ const Analytics: React.FC = () => {
         )}
       </Box>
 
-      {/* ── Messages by Model ── */}
+      {/* ── By Model ── */}
       <Box>
-        <SectionHeader>Messages by Model</SectionHeader>
-        {combined && Object.keys(combined.messagesByModel).length > 0 ? (
+        <SectionHeader>By Model</SectionHeader>
+        {(combined?.modelUsage ?? []).length > 0 ? (
           <>
             <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
-              Assistant messages with a recorded model, including aggregated sources. Counts use recorded model IDs;
-              model IDs are not retroactively remapped.
+              Cost and tokens cover chat messages plus background operations, matching recorded cost. Summary cost is a
+              separate subtotal attributed to the model that generated the summary. Imported files created before the
+              v3 export format do not include per-model breakdowns.
             </Typography>
             <TableContainer component={Paper} variant="outlined">
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Model</TableCell>
-                  <TableCell align="right">Messages</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {Object.entries(combined.messagesByModel)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([model, count]) => (
-                    <TableRow key={model}>
+              <Table size="small" data-testid="model-usage-table">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Model</TableCell>
+                    <TableCell>Provider</TableCell>
+                    <TableCell align="right">Messages</TableCell>
+                    <TableCell align="right">Operations</TableCell>
+                    <TableCell align="right">Tokens</TableCell>
+                    <TableCell align="right">Cost</TableCell>
+                    <TableCell align="right">Summary calls</TableCell>
+                    <TableCell align="right">Summary cost</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {(combined?.modelUsage ?? []).map((row) => (
+                    <TableRow key={row.model}>
                       <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {model}
+                        {row.model}
                       </TableCell>
-                      <TableCell align="right">{count}</TableCell>
+                      <TableCell>{row.provider}</TableCell>
+                      <TableCell align="right">{row.messages}</TableCell>
+                      <TableCell align="right">{row.operations}</TableCell>
+                      <TableCell align="right">{formatTokens(row.promptTokens + row.completionTokens)}</TableCell>
+                      <TableCell align="right">{formatCost(row.cost)}</TableCell>
+                      <TableCell align="right">{row.summaryCalls}</TableCell>
+                      <TableCell align="right">{formatCost(row.summaryCost)}</TableCell>
                     </TableRow>
                   ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                </TableBody>
+              </Table>
+            </TableContainer>
           </>
         ) : (
           <Typography variant="body2" color="text.secondary">
-            No data available.
+            No per-model data available.
+          </Typography>
+        )}
+      </Box>
+
+      {/* ── By Operation ── */}
+      <Box>
+        <SectionHeader>By Operation</SectionHeader>
+        {(combined?.operationUsage ?? []).length > 0 ? (
+          <>
+            <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 2 }}>
+              Background LLM and media calls. Operations never contribute to message counts. &quot;Unknown usage&quot;
+              marks calls whose provider did not report tokens or cost.
+            </Typography>
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small" data-testid="operation-usage-table">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Operation</TableCell>
+                    <TableCell align="right">Calls</TableCell>
+                    <TableCell align="right">Failed</TableCell>
+                    <TableCell align="right">Tokens</TableCell>
+                    <TableCell align="right">Cost</TableCell>
+                    <TableCell align="right">Unknown usage</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {(combined?.operationUsage ?? []).map((row) => (
+                    <TableRow key={row.operation}>
+                      <TableCell>{row.operation}</TableCell>
+                      <TableCell align="right">{row.calls}</TableCell>
+                      <TableCell align="right">{row.failedCount}</TableCell>
+                      <TableCell align="right">{formatTokens(row.promptTokens + row.completionTokens)}</TableCell>
+                      <TableCell align="right">{formatCost(row.cost)}</TableCell>
+                      <TableCell align="right">{row.usageUnknownCount}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </>
+        ) : (
+          <Typography variant="body2" color="text.secondary">
+            No per-operation data available.
           </Typography>
         )}
       </Box>
@@ -1349,6 +1482,70 @@ function mergeRecordSum(a: Record<string, number> | undefined, b: Record<string,
     result[key] = (result[key] || 0) + value;
   }
   return result;
+}
+
+function mergeModelUsage(
+  a: ModelUsageRow[] | undefined,
+  b: ModelUsageRow[] | undefined,
+): ModelUsageRow[] | undefined {
+  if (!a && !b) return undefined;
+  const merged = new Map<string, ModelUsageRow>();
+  for (const row of [...(a ?? []), ...(b ?? [])]) {
+    const existing = merged.get(row.model) ?? {
+      model: row.model,
+      provider: row.provider,
+      messages: 0,
+      operations: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      cachedTokens: 0,
+      cacheCreationTokens: 0,
+      cost: 0,
+      usageUnknownCount: 0,
+      summaryCalls: 0,
+      summaryCost: 0,
+    };
+    if (!existing.provider || existing.provider === 'Unknown') existing.provider = row.provider;
+    existing.messages += row.messages;
+    existing.operations += row.operations;
+    existing.promptTokens += row.promptTokens;
+    existing.completionTokens += row.completionTokens;
+    existing.cachedTokens += row.cachedTokens;
+    existing.cacheCreationTokens += row.cacheCreationTokens;
+    existing.cost += row.cost;
+    existing.usageUnknownCount += row.usageUnknownCount;
+    existing.summaryCalls += row.summaryCalls;
+    existing.summaryCost += row.summaryCost;
+    merged.set(row.model, existing);
+  }
+  return [...merged.values()].sort((a, b) => b.cost - a.cost || b.messages - a.messages || a.model.localeCompare(b.model));
+}
+
+function mergeOperationUsage(
+  a: OperationUsageRow[] | undefined,
+  b: OperationUsageRow[] | undefined,
+): OperationUsageRow[] | undefined {
+  if (!a && !b) return undefined;
+  const merged = new Map<string, OperationUsageRow>();
+  for (const row of [...(a ?? []), ...(b ?? [])]) {
+    const existing = merged.get(row.operation) ?? {
+      operation: row.operation,
+      calls: 0,
+      failedCount: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      cost: 0,
+      usageUnknownCount: 0,
+    };
+    existing.calls += row.calls;
+    existing.failedCount += row.failedCount;
+    existing.promptTokens += row.promptTokens;
+    existing.completionTokens += row.completionTokens;
+    existing.cost += row.cost;
+    existing.usageUnknownCount += row.usageUnknownCount;
+    merged.set(row.operation, existing);
+  }
+  return [...merged.values()].sort((a, b) => b.calls - a.calls || a.operation.localeCompare(b.operation));
 }
 
 export default Analytics;

@@ -65,14 +65,33 @@ export interface AnalyticsStats {
    * New exports include provider-level message/cost/token totals.
    */
   providerBreakdown?: ProviderBreakdown[];
+  /**
+   * Optional so analytics files exported by older versions still import.
+   * New exports include per-model totals for messages, operations, and the
+   * separately-reported summary subtotal.
+   */
+  modelUsage?: ModelUsageRow[];
+  /**
+   * Optional so analytics files exported by older versions still import.
+   * New exports include per-operation totals for background LLM/media calls.
+   */
+  operationUsage?: OperationUsageRow[];
 }
 
+/**
+ * Cost figures in this version are US dollars. An export always states its
+ * unit so imported files cannot be silently added to locally-computed costs.
+ */
+export type AnalyticsCostUnit = 'USD';
+
 export interface AnalyticsExport {
-  format: 'athena-analytics-v1' | 'athena-analytics-v2';
+  format: 'athena-analytics-v1' | 'athena-analytics-v2' | 'athena-analytics-v3';
   deviceId: string;
   userId: string;
   exportedAt: string;
   appVersion: string;
+  /** Present on v3+ exports. v1/v2 files never stated a unit. */
+  costUnit?: AnalyticsCostUnit;
   stats: AnalyticsStats;
 }
 
@@ -81,7 +100,7 @@ export interface AnalyticsExport {
  * payload definition so the disclosure cannot drift from the actual data.
  */
 export const ANALYTICS_EXPORT_PRIVACY_NOTE =
-  'Aggregate usage statistics only. Includes message and token counts, message-size distributions, cost, latency, model and provider usage, web-search and attachment counts, summary usage, counts of forks, debate topics, scratchpads, reasoning messages, and embeddings, first/last activity timestamps, feature settings, your user name, a random device ID, the app version, and the export time. It does not include conversations, message content, topic names, prompts, attachments, scratchpads, or API keys.';
+  'Aggregate usage statistics only. Includes message and token counts, message-size distributions, cost (in USD), latency, model, provider, and background-operation usage, web-search and attachment counts, summary usage, counts of forks, debate topics, scratchpads, reasoning messages, and embeddings, first/last activity timestamps, feature settings, your user name, a random device ID, the app version, and the export time. It does not include conversations, message content, topic names, prompts, attachments, scratchpads, or API keys.';
 
 export interface TrendRow {
   date: string;
@@ -98,6 +117,42 @@ export interface ProviderBreakdown {
   messages: number;
   cost: number;
   tokens: number;
+}
+
+/**
+ * Per-model usage. `cost` covers chat messages and background operations, the
+ * same population as `AnalyticsStats.totalCost`. Summary generation is reported
+ * separately (`summaryCalls`/`summaryCost`) because it is a separate subtotal.
+ */
+export interface ModelUsageRow {
+  model: string;
+  provider: string;
+  messages: number;
+  operations: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+  cacheCreationTokens: number;
+  cost: number;
+  /** Records whose provider did not report tokens or cost (for example media). */
+  usageUnknownCount: number;
+  summaryCalls: number;
+  summaryCost: number;
+}
+
+/**
+ * Per-operation usage for background LLM/media calls. These are not chat
+ * messages, so they never contribute to message counts.
+ */
+export interface OperationUsageRow {
+  operation: string;
+  calls: number;
+  failedCount: number;
+  promptTokens: number;
+  completionTokens: number;
+  cost: number;
+  /** Calls whose provider did not report tokens or cost (for example media). */
+  usageUnknownCount: number;
 }
 
 export interface ToolUsageRow {
@@ -175,12 +230,11 @@ export function cacheHitRateForFormat(format: CacheFormat, totals: CacheFormatTo
 
 function addCacheUsage(
   cache: CacheByFormat,
-  model: string | undefined,
+  format: CacheFormat | null,
   promptTokens: number,
   cachedTokens: number,
   cacheCreationTokens: number,
 ): void {
-  const format = resolveProviderFormat(model);
   if (!format) return;
   const entry = cache[format];
   entry.recordCount++;
@@ -205,7 +259,7 @@ function aggregateProviderBreakdown(
   // to a configured provider are grouped under "Unknown" instead of dropped.
   for (const m of messages) {
     if (!m.model) continue;
-    const entry = addUsage(resolveProviderName(m.model) ?? 'Unknown');
+    const entry = addUsage(m.providerName ?? resolveProviderName(m.model) ?? 'Unknown');
     entry.messages++;
     entry.cost += m.totalCost;
     entry.tokens += m.promptTokens + m.completionTokens;
@@ -214,7 +268,7 @@ function aggregateProviderBreakdown(
   // Background operations add real cost and tokens, but they are not chat
   // messages, so they must not inflate the message counts.
   for (const operation of operationUsages) {
-    const entry = addUsage(resolveProviderName(operation.model) ?? 'Unknown');
+    const entry = addUsage(operation.providerName ?? resolveProviderName(operation.model) ?? 'Unknown');
     entry.cost += operation.totalCost;
     entry.tokens += operation.promptTokens + operation.completionTokens;
   }
@@ -222,6 +276,97 @@ function aggregateProviderBreakdown(
   return Object.entries(merged)
     .map(([provider, stats]) => ({ provider, ...stats }))
     .sort((a, b) => b.cost - a.cost);
+}
+
+function createEmptyModelUsageRow(model: string): ModelUsageRow {
+  return {
+    model,
+    provider: '',
+    messages: 0,
+    operations: 0,
+    promptTokens: 0,
+    completionTokens: 0,
+    cachedTokens: 0,
+    cacheCreationTokens: 0,
+    cost: 0,
+    usageUnknownCount: 0,
+    summaryCalls: 0,
+    summaryCost: 0,
+  };
+}
+
+function aggregateModelUsage(messages: Message[], operationUsages: LlmOperationUsage[]): ModelUsageRow[] {
+  const merged: Record<string, ModelUsageRow> = {};
+  const ensure = (model: string): ModelUsageRow => {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    merged[model] = merged[model] ?? createEmptyModelUsageRow(model);
+    return merged[model];
+  };
+  const recordProvider = (entry: ModelUsageRow, provider: string | null | undefined): void => {
+    if (!entry.provider && provider && provider !== 'Unknown') entry.provider = provider;
+  };
+
+  for (const m of messages) {
+    if (!m.model) continue;
+    const entry = ensure(m.model);
+    recordProvider(entry, m.providerName ?? resolveProviderName(m.model));
+    entry.messages++;
+    entry.promptTokens += m.promptTokens;
+    entry.completionTokens += m.completionTokens;
+    entry.cachedTokens += m.cachedTokens ?? 0;
+    entry.cacheCreationTokens += m.cacheCreationTokens ?? 0;
+    entry.cost += m.totalCost;
+
+    if (m.summary) {
+      const summaryModel = m.summaryModel ?? m.model;
+      const summaryEntry = ensure(summaryModel);
+      recordProvider(summaryEntry, m.summaryProviderName ?? resolveProviderName(summaryModel));
+      summaryEntry.summaryCalls++;
+      summaryEntry.summaryCost += m.summaryCost ?? 0;
+    }
+  }
+
+  for (const operation of operationUsages) {
+    const entry = ensure(operation.model ?? 'Unknown model');
+    recordProvider(entry, operation.providerName ?? resolveProviderName(operation.model));
+    entry.operations++;
+    entry.promptTokens += operation.promptTokens;
+    entry.completionTokens += operation.completionTokens;
+    entry.cachedTokens += operation.cachedTokens ?? 0;
+    entry.cacheCreationTokens += operation.cacheCreationTokens ?? 0;
+    entry.cost += operation.totalCost;
+    if (operation.usageUnknown) entry.usageUnknownCount++;
+  }
+
+  return Object.values(merged)
+    .map((row) => ({ ...row, provider: row.provider || 'Unknown' }))
+    .sort((a, b) => b.cost - a.cost || b.messages - a.messages || a.model.localeCompare(b.model));
+}
+
+function aggregateOperationUsage(operationUsages: LlmOperationUsage[]): OperationUsageRow[] {
+  const merged: Record<string, OperationUsageRow> = {};
+  for (const operation of operationUsages) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const entry = (merged[operation.operationType] ??= {
+      operation: operation.operationType,
+      calls: 0,
+      failedCount: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      cost: 0,
+      usageUnknownCount: 0,
+    });
+    entry.calls++;
+    if (operation.failed) entry.failedCount++;
+    entry.promptTokens += operation.promptTokens;
+    entry.completionTokens += operation.completionTokens;
+    entry.cost += operation.totalCost;
+    if (operation.usageUnknown) entry.usageUnknownCount++;
+  }
+
+  return Object.values(merged).sort(
+    (a, b) => b.calls - a.calls || a.operation.localeCompare(b.operation),
+  );
 }
 
 export async function computeLocalStats(): Promise<AnalyticsStats> {
@@ -300,7 +445,7 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
       stats.latencyCompletionTokens = (stats.latencyCompletionTokens ?? 0) + m.completionTokens;
     }
 
-    addCacheUsage(cacheByFormat, m.model, m.promptTokens, m.cachedTokens ?? 0, m.cacheCreationTokens ?? 0);
+    addCacheUsage(cacheByFormat, m.providerFormat ?? resolveProviderFormat(m.model), m.promptTokens, m.cachedTokens ?? 0, m.cacheCreationTokens ?? 0);
 
     if (m.summary) {
       stats.summaryGeneratedCount++;
@@ -330,7 +475,7 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
     stats.totalWebSearches += operation.searchCount ?? 0;
     addCacheUsage(
       cacheByFormat,
-      operation.model,
+      operation.providerFormat ?? resolveProviderFormat(operation.model),
       operation.promptTokens,
       operation.cachedTokens ?? 0,
       operation.cacheCreationTokens ?? 0,
@@ -338,6 +483,8 @@ export async function computeLocalStats(): Promise<AnalyticsStats> {
   }
 
   stats.providerBreakdown = aggregateProviderBreakdown(messages, operationUsages);
+  stats.modelUsage = aggregateModelUsage(messages, operationUsages);
+  stats.operationUsage = aggregateOperationUsage(operationUsages);
 
   for (const t of topics) {
     if (t.scratchpad) stats.topicsWithScratchpad++;
@@ -589,11 +736,12 @@ async function computeToolUsageFromMessages(): Promise<ToolUsageRow[]> {
 export function exportAnalytics(userId: string): Promise<void> {
   return computeLocalStats().then((stats) => {
     const data: AnalyticsExport = {
-      format: 'athena-analytics-v2',
+      format: 'athena-analytics-v3',
       deviceId: useAuthStore.getState().deviceId,
       userId,
       exportedAt: new Date().toISOString(),
       appVersion: process.env.REACT_APP_VERSION ?? 'unknown',
+      costUnit: 'USD',
       stats,
     };
 
@@ -621,7 +769,7 @@ export function importAnalytics(file: File): Promise<{ success: boolean; message
           return;
         }
         const format = (raw as Record<string, unknown>).format;
-        if (format !== 'athena-analytics-v1' && format !== 'athena-analytics-v2') {
+        if (format !== 'athena-analytics-v1' && format !== 'athena-analytics-v2' && format !== 'athena-analytics-v3') {
           resolve({ success: false, message: 'Invalid analytics file format.' });
           return;
         }
@@ -687,6 +835,8 @@ export function getCombinedStats(local?: AnalyticsStats): CombinedStats {
       lastMessageAt: null,
       features: {},
       cacheByFormat: createEmptyCacheByFormat(),
+      modelUsage: [],
+      operationUsage: [],
     },
     imported: getImportedSourcesRaw(),
   };

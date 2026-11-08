@@ -1,6 +1,31 @@
 import Dexie, { Table } from 'dexie';
 import type { PixelDocument, SavedPixelPalette } from '../pixel/types';
 import { normalizePixelDocument } from '../pixel/ops';
+import { getLegacyBuiltInAttribution } from '../types/provider';
+import type { ProviderMessageFormat } from '../types/provider';
+
+/**
+ * API IDs of models the user defined themselves. The v23 alias backfill skips
+ * these so a custom model that happens to reuse a built-in API ID is not
+ * misattributed to a built-in provider.
+ */
+function readCustomApiModelIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem('athena_models');
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    const ids = new Set<string>();
+    for (const entry of parsed) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const model = entry as Record<string, unknown>;
+      if (model.isBuiltIn === false && typeof model.apiModelId === 'string') ids.add(model.apiModelId);
+    }
+    return ids;
+  } catch {
+    return new Set();
+  }
+}
 
 class AthenaDatabase extends Dexie {
   topics!: Table<Topic, string>;
@@ -448,6 +473,50 @@ class AthenaDatabase extends Dexie {
       pixelPalettes: 'id, name, updatedOn',
     });
 
+    // Version 23: persist provider attribution and peak-pricing metadata at
+    // write time. Existing records get a best-effort built-in alias backfill;
+    // custom models and unreported legacy aggregate costs remain unattributed.
+    this.version(23)
+      .stores({
+        topics: 'id, userId, name, createdOn, updatedOn, isDeleted, activeForkId, maxContextMessages, mode, modelId',
+        messages: 'id, topicId, forkId, type, created, isDeleted, includeInContext, parentMessageId',
+        predefinedPrompts: 'id, name',
+        userSettings: 'id',
+        analyticsSnapshots: 'date',
+        learningCycles: 'id, topicId, phase, weekStart',
+        learningDays: 'id, cycleId, dayNumber',
+        checklistTabs: 'id, topicId, sortOrder',
+        checklistGroups: 'id, topicId, tabId, sortOrder',
+        checklistItems: 'id, groupId, sortOrder',
+        checklistHistory: 'id, topicId, tabId, seq',
+        llmOperationUsages: 'id, topicId, created, operationType',
+        operationLeases: 'id, topicId, expiresAt',
+        pixelDocuments: 'id, name, updatedOn',
+        pixelPalettes: 'id, name, updatedOn',
+      })
+      .upgrade(async (trans) => {
+        try {
+          const customApiModelIds = readCustomApiModelIds();
+
+          const messages = (await trans.table('messages').toArray()) as Message[];
+          for (const message of messages) {
+            if (message.providerName || !message.model || customApiModelIds.has(message.model)) continue;
+            const attribution = getLegacyBuiltInAttribution(message.model);
+            if (attribution) await trans.table('messages').update(message.id, attribution);
+          }
+
+          const operations = (await trans.table('llmOperationUsages').toArray()) as LlmOperationUsage[];
+          for (const operation of operations) {
+            if (operation.providerName || !operation.model || customApiModelIds.has(operation.model)) continue;
+            const attribution = getLegacyBuiltInAttribution(operation.model);
+            if (attribution) await trans.table('llmOperationUsages').update(operation.id, attribution);
+          }
+        } catch (err) {
+          console.error('[migration-error] AthenaDb v23 migration failed', err);
+          throw err;
+        }
+      });
+
   }
 
   analyticsSnapshots!: Table<AnalyticsSnapshot, string>;
@@ -522,6 +591,22 @@ export interface Message {
   summaryCost?: number;
   summaryReadCount?: number;
   rawResponse?: string;
+  /** Provider identity captured when the response was written. */
+  providerId?: string;
+  providerName?: string;
+  providerFormat?: ProviderMessageFormat;
+  /** DeepSeek peak-price multiplier applied to this record (1 or 2). */
+  peakMultiplier?: number;
+  /** Summary generation attribution. Summary cost/tokens stay separate from `totalCost`. */
+  summaryModel?: string;
+  summaryProviderId?: string;
+  summaryProviderName?: string;
+  summaryProviderFormat?: ProviderMessageFormat;
+  summaryPeakMultiplier?: number;
+  summaryPromptTokens?: number;
+  summaryCompletionTokens?: number;
+  summaryCachedTokens?: number;
+  summaryCacheCreationTokens?: number;
   // Debate fields
   debateSide?: DebateSide;
   debatePhase?: DebatePhase;
@@ -632,10 +717,24 @@ export interface AnalyticsSnapshot {
   toolStats?: Record<string, { calls: number; successCount: number; errors: string[] }>;
 }
 
+export type LlmOperationType =
+  | 'checklist_generate'
+  | 'checklist_edit'
+  | 'pixel_edit'
+  | 'pixel_review'
+  | 'topic_name'
+  | 'reply_prediction'
+  | 'curator_course'
+  | 'curator_question'
+  | 'curator_teacher'
+  | 'media_image'
+  | 'media_music'
+  | 'media_speech';
+
 export interface LlmOperationUsage {
   id: string;
   topicId: string;
-  operationType: 'checklist_generate' | 'checklist_edit' | 'pixel_edit' | 'pixel_review';
+  operationType: LlmOperationType;
   model?: string;
   created: string;
   promptTokens: number;
@@ -647,6 +746,17 @@ export interface LlmOperationUsage {
   latencyMs?: number;
   failed: boolean;
   rawResponse?: string;
+  /** Provider identity captured when the operation ran. */
+  providerId?: string;
+  providerName?: string;
+  providerFormat?: ProviderMessageFormat;
+  /** DeepSeek peak-price multiplier applied to this record (1 or 2). */
+  peakMultiplier?: number;
+  /**
+   * True when the provider did not report token/cost usage (for example the
+   * MiniMax media endpoints). Such records still count as operations.
+   */
+  usageUnknown?: boolean;
 }
 
 export interface OperationLease {

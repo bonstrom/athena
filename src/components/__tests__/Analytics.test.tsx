@@ -115,6 +115,33 @@ function createStats(overrides: Partial<AnalyticsStats> = {}): AnalyticsStats {
       anthropic: { recordCount: 2, promptTokens: 500, cachedTokens: 100, cacheCreationTokens: 50 },
     },
     providerBreakdown: [{ provider: 'OpenAI', messages: 21, cost: 1.5, tokens: 15000 }],
+    modelUsage: [
+      {
+        model: 'gpt-4',
+        provider: 'OpenAI',
+        messages: 21,
+        operations: 0,
+        promptTokens: 10000,
+        completionTokens: 5000,
+        cachedTokens: 2000,
+        cacheCreationTokens: 500,
+        cost: 1.5,
+        usageUnknownCount: 0,
+        summaryCalls: 5,
+        summaryCost: 0.25,
+      },
+    ],
+    operationUsage: [
+      {
+        operation: 'topic_name',
+        calls: 4,
+        failedCount: 0,
+        promptTokens: 100,
+        completionTokens: 20,
+        cost: 0.02,
+        usageUnknownCount: 0,
+      },
+    ],
     ...overrides,
   };
 }
@@ -138,6 +165,19 @@ function getRow(label: string): HTMLElement {
   return row;
 }
 
+function getRowInTable(testId: string, label: string): HTMLElement {
+  const table = screen.getByTestId(testId);
+  const cell = within(table).getByRole('cell', { name: label });
+  const row = cell.closest('tr');
+  if (!row) throw new Error(`Could not find a row for ${label} in ${testId}`);
+  return row;
+}
+
+function modelMessageCount(row: HTMLElement): number {
+  const cells = within(row).getAllByRole('cell');
+  return Number(cells[2].textContent);
+}
+
 function messageCount(row: HTMLElement): number {
   const cells = within(row).getAllByRole('cell');
   return Number(cells[1].textContent);
@@ -158,6 +198,14 @@ describe('Analytics', () => {
 
     const found = await screen.findByText('42', {}, { timeout: 3000 });
     expect(found).toBeInTheDocument();
+  });
+
+  it('renders per-model and per-operation sections', async () => {
+    renderWithTheme(<Analytics />);
+
+    expect(await screen.findByText('By Model')).toBeInTheDocument();
+    expect(screen.getByText('By Operation')).toBeInTheDocument();
+    expect(screen.getByText('topic_name')).toBeInTheDocument();
   });
 
   it('renders performance section with p50/p95', async () => {
@@ -306,7 +354,7 @@ describe('Analytics', () => {
     renderWithTheme(<Analytics />);
 
     expect(await screen.findByText(/predate provider-level cost\/token tracking/i)).toBeInTheDocument();
-    expect(messageCount(getRow('OpenAI'))).toBe(26);
+    expect(messageCount(getRowInTable('provider-breakdown-table', 'OpenAI'))).toBe(26);
   });
 
   it('combines local and imported provider breakdowns and keeps the tables reconciled', async () => {
@@ -316,6 +364,22 @@ describe('Analytics', () => {
           totalMessages: 12,
           totalCost: 0.5,
           messagesByModel: { 'deepseek-v4-pro': 12 },
+          modelUsage: [
+            {
+              model: 'deepseek-v4-pro',
+              provider: 'DeepSeek',
+              messages: 12,
+              operations: 0,
+              promptTokens: 2000,
+              completionTokens: 500,
+              cachedTokens: 0,
+              cacheCreationTokens: 0,
+              cost: 0.5,
+              usageUnknownCount: 0,
+              summaryCalls: 0,
+              summaryCost: 0,
+            },
+          ],
           providerBreakdown: [{ provider: 'DeepSeek', messages: 12, cost: 0.5, tokens: 2500 }],
         }),
         { deviceId: 'device-2', userId: 'Laptop' },
@@ -326,9 +390,11 @@ describe('Analytics', () => {
 
     await screen.findByText('By Provider');
     const providerTotal =
-      messageCount(getRow('OpenAI')) + messageCount(getRow('DeepSeek'));
+      messageCount(getRowInTable('provider-breakdown-table', 'OpenAI')) +
+      messageCount(getRowInTable('provider-breakdown-table', 'DeepSeek'));
     const modelTotal =
-      messageCount(getRow('gpt-4')) + messageCount(getRow('deepseek-v4-pro'));
+      modelMessageCount(getRowInTable('model-usage-table', 'gpt-4')) +
+      modelMessageCount(getRowInTable('model-usage-table', 'deepseek-v4-pro'));
 
     expect(providerTotal).toBe(33);
     expect(modelTotal).toBe(providerTotal);
@@ -391,8 +457,21 @@ describe('buildAnalyticsReport', () => {
     expect(report).toContain('| Stored summary tokens (latest generation per message) | 1.2K |');
     expect(report).toContain('| Recorded subtotal incl. stored summary cost | $1.75 |');
     expect(report).toContain(
-      'Media generation, topic naming, reply prediction, and Curator direct calls are not tracked',
+      'Recorded cost covers chat messages plus tracked background operations',
     );
+    expect(report).toContain('Media calls do not report token or cost usage');
+    expect(report).toContain('costUnit "USD"');
+  });
+
+  it('includes per-model and per-operation breakdowns with explicit cost unit', (): void => {
+    const report = build();
+
+    expect(report).toContain('## By Model');
+    expect(report).toContain('| Model | Provider | Messages | Operations |');
+    expect(report).toContain('| gpt-4 | OpenAI | 21 | 0 |');
+    expect(report).toContain('## By Operation');
+    expect(report).toContain('| topic_name | 4 | 0 |');
+    expect(report).toContain('Imported files created before the v3 export format do not include per-model breakdowns');
   });
 
   it('lists stored-summary reads and retrieval scope precisely', (): void => {
@@ -438,8 +517,11 @@ describe('buildAnalyticsReport', () => {
       },
     });
 
-    expect(report).toContain('| Source | Messages | Cost | Format | Exported | App |');
-    expect(report).toContain(`| Phone | 10 | $5.00 | athena-analytics-v1 | ${exported} | 2.1.0 |`);
+    expect(report).toContain('| Source | Messages | Cost | Cost unit | Format | Exported | App |');
+    expect(report).toContain(
+      `| Phone | 10 | $5.00 | not stated | athena-analytics-v1 | ${exported} | 2.1.0 |`,
+    );
+    expect(report).toContain('do not state a cost unit (Phone); their costs are assumed to be USD');
   });
 
   it('labels trends as UTC calendar days with zero rows for inactive dates', (): void => {

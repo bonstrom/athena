@@ -6,7 +6,13 @@ import { useAuthStore } from './AuthStore';
 import { useProviderStore } from './ProviderStore';
 import { askLlm } from '../services/llmService';
 import { embeddingService, ScoredMessage } from '../services/embeddingService';
-import { getDefaultTopicNameModel } from '../components/ModelSelector';
+import {
+  calculateCostUSD,
+  getDefaultTopicNameModel,
+  getProviderFormatForModel,
+  getRecordedPeakMultiplier,
+} from '../components/ModelSelector';
+import { trackOperationUsage } from '../services/usageTrackingService';
 import { SHORTENED_ID_LENGTH, SCRATCHPAD_LIMIT, RAG_TOP_K, RAG_MIN_SCORE, RAG_MAX_CHARS, RAG_CONTENT_LIMIT } from '../constants';
 
 function updateTopicAndSort(topics: Topic[], id: string, patch: Partial<Topic>, now: string): Topic[] {
@@ -515,6 +521,7 @@ export const useTopicStore = create<TopicState>((set, get) => ({
 
     try {
       const model = getDefaultTopicNameModel();
+      const startedAt = Date.now();
       const result = await askLlm(
         model,
         1.0,
@@ -532,6 +539,26 @@ export const useTopicStore = create<TopicState>((set, get) => ({
         undefined,
         { includeCustomInstructions: false },
       );
+      const peakMultiplier = getRecordedPeakMultiplier(model);
+      void trackOperationUsage({
+        topicId,
+        operationType: 'topic_name',
+        model,
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        cachedTokens: result.promptTokensDetails?.cached_tokens ?? 0,
+        cacheCreationTokens: result.promptTokensDetails?.cache_creation_tokens ?? 0,
+        totalCost: calculateCostUSD(
+          model,
+          result.promptTokens,
+          result.completionTokens,
+          result.promptTokensDetails,
+          peakMultiplier,
+          getProviderFormatForModel(model),
+        ),
+        latencyMs: Date.now() - startedAt,
+        peakMultiplier,
+      });
 
       const name = result.content
         .trim()

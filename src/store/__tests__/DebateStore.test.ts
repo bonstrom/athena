@@ -68,6 +68,9 @@ jest.mock('../../components/ModelSelector', () => ({
   getDefaultModel: (): unknown => mockGetDefaultModel(),
   calculateCostUSD: (...args: unknown[]): number => mockCalculateCostUSD(...args),
   getPeakMultiplier: (...args: unknown[]): number => mockGetPeakMultiplier(...args),
+  getProviderAttributionForModel: jest.fn((): null => null),
+  getProviderFormatForModel: jest.fn((): string => 'openai'),
+  getRecordedPeakMultiplier: jest.fn((): undefined => undefined),
 }));
 
 jest.mock('../../store/TopicStore', () => ({
@@ -129,6 +132,7 @@ const modelB = { id: 'model-b', apiModelId: 'api-b', label: 'Model B' };
 
 // ---- import store after mocks ----
 import { useDebateStore } from '../DebateStore';
+import { getProviderAttributionForModel, getRecordedPeakMultiplier } from '../../components/ModelSelector';
 
 // ---- setup ----
 function resetStore(): void {
@@ -153,6 +157,12 @@ beforeEach(() => {
   mockMessagesDelete.mockResolvedValue(undefined);
   mockTopicsUpdate.mockResolvedValue(1);
   mockCalculateCostUSD.mockReturnValue(0.5);
+  jest.mocked(getProviderAttributionForModel).mockReturnValue({
+    providerId: 'p1',
+    providerName: 'Test Provider',
+    providerFormat: 'openai',
+  });
+  jest.mocked(getRecordedPeakMultiplier).mockReturnValue(1);
   resetStore();
 
   Object.defineProperty(globalThis, 'crypto', {
@@ -311,6 +321,12 @@ describe('DebateStore – sendDebateRound happy path', () => {
 
     // 2 per phase × 3 phases = 6, plus 1 consensus = 7
     expect(mockMessagesUpdate).toHaveBeenCalledTimes(7);
+    expect(mockMessagesUpdate.mock.calls[0][1]).toMatchObject({
+      providerId: 'p1',
+      providerName: 'Test Provider',
+      providerFormat: 'openai',
+      peakMultiplier: 1,
+    });
   });
 
   it('calls generateTopicName when topic name is "New Debate"', async () => {

@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import {
   calculateCostUSD,
-  getPeakMultiplier,
+  getProviderAttributionForModel,
+  getProviderFormatForModel,
+  getRecordedPeakMultiplier,
   ChatModel,
   getDefaultModel,
   getAvailableModels,
@@ -30,7 +32,9 @@ import type { PixelDocument } from '../pixel/types';
 import { athenaDb } from '../database/AthenaDb';
 import { BackupService } from '../services/backupService';
 import { rollupAnalytics } from '../services/analyticsRollupService';
+import { trackOperationUsage } from '../services/usageTrackingService';
 import { useAuthStore } from './AuthStore';
+import { getLegacyBuiltInAttribution } from '../types/provider';
 import { embeddingService } from '../services/embeddingService';
 import { useCuratorStore } from './CuratorStore';
 import { executeWebSearch, executeFetch, hasWebSearchApiKey } from '../services/webSearchService';
@@ -1005,12 +1009,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           attachment,
           model: resultModel,
         } = await generateImage(content, controller.signal);
+        const mediaAttribution = getLegacyBuiltInAttribution(resultModel);
         const finalizedAssistant: Partial<Message> = {
           content: resultContent,
           attachments: [attachment],
           model: resultModel,
           failed: false,
+          ...(mediaAttribution
+            ? {
+                providerId: mediaAttribution.providerId,
+                providerName: mediaAttribution.providerName,
+                providerFormat: mediaAttribution.providerFormat,
+              }
+            : {}),
         };
+        void trackOperationUsage({
+          topicId,
+          operationType: 'media_image',
+          apiModelId: resultModel,
+          usageUnknown: true,
+        });
 
         await athenaDb.messages.update(assistantId, finalizedAssistant);
         get().updateMessageStateOnly(assistantId, finalizedAssistant);
@@ -1071,12 +1089,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           attachment,
           model: resultModel,
         } = await generateMusic(content, controller.signal);
+        const mediaAttribution = getLegacyBuiltInAttribution(resultModel);
         const finalizedAssistant: Partial<Message> = {
           content: resultContent,
           attachments: [attachment],
           model: resultModel,
           failed: false,
+          ...(mediaAttribution
+            ? {
+                providerId: mediaAttribution.providerId,
+                providerName: mediaAttribution.providerName,
+                providerFormat: mediaAttribution.providerFormat,
+              }
+            : {}),
         };
+        void trackOperationUsage({
+          topicId,
+          operationType: 'media_music',
+          apiModelId: resultModel,
+          usageUnknown: true,
+        });
 
         await athenaDb.messages.update(assistantId, finalizedAssistant);
         get().updateMessageStateOnly(assistantId, finalizedAssistant);
@@ -1422,13 +1454,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         totalCachedTokens > 0 || totalCacheCreationTokens > 0
           ? { cached_tokens: totalCachedTokens, cache_creation_tokens: totalCacheCreationTokens }
           : undefined;
+      const providerFormat = getProviderFormatForModel(effectiveModel);
+      const peakMultiplier = getRecordedPeakMultiplier(effectiveModel);
+      const providerAttribution = getProviderAttributionForModel(effectiveModel);
       const finalTotalCost =
         calculateCostUSD(
           effectiveModel,
           totalPromptTokens,
           totalCompletionTokens,
           promptTokensDetails,
-          getPeakMultiplier(effectiveModel),
+          peakMultiplier,
+          providerFormat,
         ) +
         billableSearchCalls * SEARCH_COST_PER_CALL +
         billableFetchCalls * FETCH_COST_PER_CALL;
@@ -1483,6 +1519,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         latencyMs,
         searchCount: totalSearchCalls,
         rawResponse: JSON.stringify(debugPayload),
+        ...(providerAttribution
+          ? {
+              providerId: providerAttribution.providerId,
+              providerName: providerAttribution.providerName,
+              providerFormat: providerAttribution.providerFormat,
+            }
+          : {}),
+        ...(peakMultiplier !== undefined ? { peakMultiplier } : {}),
       };
 
       await athenaDb.transaction('rw', athenaDb.messages, async () => {
@@ -1527,7 +1571,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Fire-and-forget TTS if enabled and auto-read is on
       if (useAuthStore.getState().ttsEnabled && get().autoReadEnabled && assistantContent.trim()) {
         const ttsText = stripMarkdown(assistantContent.trim());
-        void speakText(ttsText, assistantId).catch((err: unknown) => {
+        void speakText(ttsText, assistantId, topicId).catch((err: unknown) => {
           console.warn('TTS playback failed:', err);
         });
       }
@@ -1583,6 +1627,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
                   selectedModel);
             const result = await askLlm(targetModel, 0.7, suggestionContext, undefined, undefined, {
               includeCustomInstructions: false,
+            });
+            const peakMultiplier = getRecordedPeakMultiplier(targetModel);
+            void trackOperationUsage({
+              topicId,
+              operationType: 'reply_prediction',
+              model: targetModel,
+              promptTokens: result.promptTokens,
+              completionTokens: result.completionTokens,
+              cachedTokens: result.promptTokensDetails?.cached_tokens ?? 0,
+              cacheCreationTokens: result.promptTokensDetails?.cache_creation_tokens ?? 0,
+              totalCost: calculateCostUSD(
+                targetModel,
+                result.promptTokens,
+                result.completionTokens,
+                result.promptTokensDetails,
+                peakMultiplier,
+                getProviderFormatForModel(targetModel),
+              ),
+              peakMultiplier,
             });
             const raw = result.content.trim();
             const suggestions = parseStringArray(raw)?.slice(0, 3) ?? null;
@@ -1814,12 +1877,18 @@ Prefer concise descriptions such as "Discusses...", "Compares...", or "Asks abou
       });
       const rawSummary = result.content;
       const summaryTokens = result.promptTokens + result.completionTokens;
+      const summaryPeakMultiplier = getRecordedPeakMultiplier(selectedModel);
+      const summaryProviderFormat = getProviderFormatForModel(selectedModel);
+      const summaryAttribution = getProviderAttributionForModel(selectedModel);
+      const summaryCachedTokens = result.promptTokensDetails?.cached_tokens ?? 0;
+      const summaryCacheCreationTokens = result.promptTokensDetails?.cache_creation_tokens ?? 0;
       const summaryCost = calculateCostUSD(
         selectedModel,
         result.promptTokens,
         result.completionTokens,
         result.promptTokensDetails,
-        getPeakMultiplier(selectedModel),
+        summaryPeakMultiplier,
+        summaryProviderFormat,
       );
 
       // ── Verification: Summary generation ──
@@ -1845,7 +1914,25 @@ Prefer concise descriptions such as "Discusses...", "Compares...", or "Asks abou
           return;
         }
 
-        await athenaDb.messages.update(messageId, { summary: cleanSummary, summaryTokens, summaryCost });
+        const summaryPatch: Partial<Message> = {
+          summary: cleanSummary,
+          summaryTokens,
+          summaryCost,
+          summaryModel: selectedModel.apiModelId,
+          summaryPromptTokens: result.promptTokens,
+          summaryCompletionTokens: result.completionTokens,
+          summaryCachedTokens,
+          summaryCacheCreationTokens,
+          ...(summaryAttribution
+            ? {
+                summaryProviderId: summaryAttribution.providerId,
+                summaryProviderName: summaryAttribution.providerName,
+                summaryProviderFormat: summaryAttribution.providerFormat,
+              }
+            : {}),
+          ...(summaryPeakMultiplier !== undefined ? { summaryPeakMultiplier } : {}),
+        };
+        await athenaDb.messages.update(messageId, summaryPatch);
 
         set((state) => {
           const { currentTopicId, messagesByTopic } = state;
@@ -1859,7 +1946,7 @@ Prefer concise descriptions such as "Discusses...", "Compares...", or "Asks abou
             messagesByTopic: {
               ...messagesByTopic,
               [currentTopicId]: (messagesByTopic[currentTopicId] ?? []).map((m) =>
-                m.id === messageId ? { ...m, summary: cleanSummary, summaryTokens, summaryCost } : m,
+                m.id === messageId ? { ...m, ...summaryPatch } : m,
               ),
             },
           };

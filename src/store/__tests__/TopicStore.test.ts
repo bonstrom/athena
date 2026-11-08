@@ -33,6 +33,7 @@ const mockChecklistGroupsAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 const mockChecklistItemsAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 const mockChecklistHistoryAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 const mockLlmOperationUsagesAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
+const mockLlmOperationUsagesAdd = jest.fn<Promise<void>, [unknown]>();
 const mockOperationLeasesAnyOfDelete = jest.fn<Promise<number>, [string[]]>();
 
 jest.mock('gpt-tokenizer', () => ({
@@ -64,7 +65,10 @@ jest.mock('../../store/NotificationStore', () => ({
 
 jest.mock('../../store/ProviderStore', () => ({
   useProviderStore: {
-    getState: (): { hasAnyApiKey: () => boolean } => ({ hasAnyApiKey: (): boolean => mockHasAnyApiKey() }),
+    getState: (): { hasAnyApiKey: () => boolean; providers: [] } => ({
+      hasAnyApiKey: (): boolean => mockHasAnyApiKey(),
+      providers: [],
+    }),
   },
 }));
 
@@ -74,6 +78,9 @@ jest.mock('../../services/llmService', () => ({
 
 jest.mock('../../components/ModelSelector', () => ({
   getDefaultTopicNameModel: jest.fn(),
+  calculateCostUSD: jest.fn((): number => 0),
+  getProviderFormatForModel: jest.fn((): string => 'openai'),
+  getRecordedPeakMultiplier: jest.fn((): undefined => undefined),
 }));
 
 jest.mock('../../database/AthenaDb', () => ({
@@ -173,6 +180,7 @@ jest.mock('../../database/AthenaDb', () => ({
       }),
     },
     llmOperationUsages: {
+      add: (usage: unknown): Promise<void> => mockLlmOperationUsagesAdd(usage),
       where: (): { anyOf: (ids: string[]) => { delete: () => Promise<number> } } => ({
         anyOf: (ids: string[]): { delete: () => Promise<number> } => ({
           delete: (): Promise<number> => mockLlmOperationUsagesAnyOfDelete(ids),
@@ -249,6 +257,7 @@ describe('TopicStore.getTopicContext', () => {
     mockChecklistItemsAnyOfDelete.mockResolvedValue(0);
     mockChecklistHistoryAnyOfDelete.mockResolvedValue(0);
     mockLlmOperationUsagesAnyOfDelete.mockResolvedValue(0);
+    mockLlmOperationUsagesAdd.mockResolvedValue(undefined);
     mockOperationLeasesAnyOfDelete.mockResolvedValue(0);
 
     const uuidSequence = ['uuid-default-1', 'uuid-default-2', 'uuid-default-3'];
@@ -1427,6 +1436,16 @@ describe('TopicStore actions', () => {
     expect(mockTopicsUpdate).toHaveBeenCalledTimes(2);
     expect(mockTopicsUpdate.mock.calls[1][1]).toMatchObject({ name: 'Short AI Title' });
     expect(useTopicStore.getState().topics.find((t) => t.id === 't1')?.name).toBe('Short AI Title');
+    expect(mockLlmOperationUsagesAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topicId: 't1',
+        operationType: 'topic_name',
+        model: model.apiModelId,
+        promptTokens: 12,
+        completionTokens: 3,
+        providerName: 'DeepSeek',
+      }),
+    );
   });
 
   it('generateTopicName falls back to message preview when LLM call fails', async () => {

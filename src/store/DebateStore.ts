@@ -3,7 +3,9 @@ import { athenaDb, DebatePhase, Message } from '../database/AthenaDb';
 import {
   ChatModel,
   calculateCostUSD,
-  getPeakMultiplier,
+  getProviderAttributionForModel,
+  getProviderFormatForModel,
+  getRecordedPeakMultiplier,
   getAvailableModels,
   getDefaultModel,
 } from '../components/ModelSelector';
@@ -222,19 +224,25 @@ async function runDebatePhase(
     throw err;
   }
 
+  const peakA = getRecordedPeakMultiplier(debateModelA);
+  const peakB = getRecordedPeakMultiplier(debateModelB);
+  const attributionA = getProviderAttributionForModel(debateModelA);
+  const attributionB = getProviderAttributionForModel(debateModelB);
   const costA = calculateCostUSD(
     debateModelA,
     resultA.promptTokens,
     resultA.completionTokens,
     resultA.promptTokensDetails,
-    getPeakMultiplier(debateModelA),
+    peakA,
+    getProviderFormatForModel(debateModelA),
   );
   const costB = calculateCostUSD(
     debateModelB,
     resultB.promptTokens,
     resultB.completionTokens,
     resultB.promptTokensDetails,
-    getPeakMultiplier(debateModelB),
+    peakB,
+    getProviderFormatForModel(debateModelB),
   );
 
   await Promise.all([
@@ -244,6 +252,14 @@ async function runDebatePhase(
       completionTokens: resultA.completionTokens,
       totalCost: costA,
       reasoning: resultA.reasoning,
+      ...(attributionA
+        ? {
+            providerId: attributionA.providerId,
+            providerName: attributionA.providerName,
+            providerFormat: attributionA.providerFormat,
+          }
+        : {}),
+      ...(peakA !== undefined ? { peakMultiplier: peakA } : {}),
     }),
     updateMessage(msgIdB, {
       content: resultB.content,
@@ -251,6 +267,14 @@ async function runDebatePhase(
       completionTokens: resultB.completionTokens,
       totalCost: costB,
       reasoning: resultB.reasoning,
+      ...(attributionB
+        ? {
+            providerId: attributionB.providerId,
+            providerName: attributionB.providerName,
+            providerFormat: attributionB.providerFormat,
+          }
+        : {}),
+      ...(peakB !== undefined ? { peakMultiplier: peakB } : {}),
     }),
   ]);
 
@@ -460,12 +484,15 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         controller.signal,
         { includeCustomInstructions: false },
       );
+      const consensusPeak = getRecordedPeakMultiplier(debateModelA);
+      const consensusAttribution = getProviderAttributionForModel(debateModelA);
       const consensusCost = calculateCostUSD(
         debateModelA,
         consensusResult.promptTokens,
         consensusResult.completionTokens,
         consensusResult.promptTokensDetails,
-        getPeakMultiplier(debateModelA),
+        consensusPeak,
+        getProviderFormatForModel(debateModelA),
       );
       await updateMessage(consensusId, {
         content: consensusResult.content,
@@ -473,6 +500,14 @@ export const useDebateStore = create<DebateState>((set, get) => ({
         completionTokens: consensusResult.completionTokens,
         totalCost: consensusCost,
         reasoning: consensusResult.reasoning,
+        ...(consensusAttribution
+          ? {
+              providerId: consensusAttribution.providerId,
+              providerName: consensusAttribution.providerName,
+              providerFormat: consensusAttribution.providerFormat,
+            }
+          : {}),
+        ...(consensusPeak !== undefined ? { peakMultiplier: consensusPeak } : {}),
       });
       set({ streamingConsensus: '' });
       await refreshDebateMessages(topicId);
@@ -696,12 +731,15 @@ export const useDebateStore = create<DebateState>((set, get) => ({
           controller.signal,
           { includeCustomInstructions: false },
         );
+        const consensusPeak = getRecordedPeakMultiplier(debateModelA);
+        const consensusAttribution = getProviderAttributionForModel(debateModelA);
         const consensusCost = calculateCostUSD(
           debateModelA,
           consensusResult.promptTokens,
           consensusResult.completionTokens,
           consensusResult.promptTokensDetails,
-          getPeakMultiplier(debateModelA),
+          consensusPeak,
+          getProviderFormatForModel(debateModelA),
         );
         await updateMessage(consensusId, {
           content: consensusResult.content,
@@ -709,6 +747,14 @@ export const useDebateStore = create<DebateState>((set, get) => ({
           completionTokens: consensusResult.completionTokens,
           totalCost: consensusCost,
           reasoning: consensusResult.reasoning,
+          ...(consensusAttribution
+            ? {
+                providerId: consensusAttribution.providerId,
+                providerName: consensusAttribution.providerName,
+                providerFormat: consensusAttribution.providerFormat,
+              }
+            : {}),
+          ...(consensusPeak !== undefined ? { peakMultiplier: consensusPeak } : {}),
         });
         set({ streamingConsensus: '' });
         await refreshDebateMessages(topicId);

@@ -7,7 +7,13 @@ import { askLlm, orchestrateLlmLoop, LlmMessage } from '../services/llmService';
 import { CHECKLIST_TOOLS } from '../services/checklistTools';
 import { parseChecklistGroups } from '../utils/structuredJson';
 import { CHECKLIST_GENERATION_PROMPT, CHECKLIST_EDITING_INSTRUCTIONS, SHORTENED_ID_LENGTH } from '../constants';
-import { calculateCostUSD, ChatModel, getPeakMultiplier } from '../components/ModelSelector';
+import {
+  calculateCostUSD,
+  ChatModel,
+  getProviderAttributionForModel,
+  getProviderFormatForModel,
+  getRecordedPeakMultiplier,
+} from '../components/ModelSelector';
 
 const HISTORY_LIMIT = 20;
 const MAX_GENERATION_RESPONSE_CHARS = 1_048_576;
@@ -268,6 +274,8 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
   ): Promise<void> => {
     const promptTokensDetails =
       cachedTokens > 0 || cacheCreationTokens > 0 ? { cached_tokens: cachedTokens, cache_creation_tokens: cacheCreationTokens } : undefined;
+    const peakMultiplier = getRecordedPeakMultiplier(model);
+    const attribution = getProviderAttributionForModel(model);
     await athenaDb.transaction('rw', [athenaDb.topics, athenaDb.llmOperationUsages], async () => {
       await requireTopic(topicId);
       await athenaDb.llmOperationUsages.add({
@@ -280,11 +288,26 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
         completionTokens,
         cachedTokens,
         cacheCreationTokens,
-        totalCost: calculateCostUSD(model, promptTokens, completionTokens, promptTokensDetails, getPeakMultiplier(model)),
+        totalCost: calculateCostUSD(
+          model,
+          promptTokens,
+          completionTokens,
+          promptTokensDetails,
+          peakMultiplier,
+          getProviderFormatForModel(model),
+        ),
         searchCount,
         latencyMs,
         failed: false,
         rawResponse,
+        ...(attribution
+          ? {
+              providerId: attribution.providerId,
+              providerName: attribution.providerName,
+              providerFormat: attribution.providerFormat,
+            }
+          : {}),
+        ...(peakMultiplier !== undefined ? { peakMultiplier } : {}),
       });
     });
   };

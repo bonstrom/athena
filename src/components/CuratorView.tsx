@@ -32,8 +32,16 @@ import { athenaDb } from '../database/AthenaDb';
 import { useCuratorStore } from '../store/CuratorStore';
 import { useChatStore } from '../store/ChatStore';
 import { useTopicStore } from '../store/TopicStore';
-import { askLlmStream, LlmMessage } from '../services/llmService';
-import { ChatModel, getDefaultModel, getQuestionGenModel } from '../components/ModelSelector';
+import { askLlmStream, LlmMessage, LlmResult } from '../services/llmService';
+import {
+  calculateCostUSD,
+  ChatModel,
+  getDefaultModel,
+  getProviderFormatForModel,
+  getQuestionGenModel,
+  getRecordedPeakMultiplier,
+} from '../components/ModelSelector';
+import { trackOperationUsage } from '../services/usageTrackingService';
 import ModelSelector from '../components/ModelSelector';
 import MessageBubble from '../components/MessageBubble';
 import MarkdownWithCode from '../components/MarkdownWithCode';
@@ -429,6 +437,36 @@ async function recordPartTiming(modelId: string, elapsedMs: number): Promise<voi
   await athenaDb.userSettings.put({ id: 'partGenTimings', value: allTimings });
 }
 
+/** Track a paid Curator call without letting analytics failures affect the UI. */
+function trackCuratorUsage(
+  operationType: 'curator_course' | 'curator_question' | 'curator_teacher',
+  topicId: string,
+  model: ChatModel,
+  result: LlmResult,
+  startedAt: number,
+): void {
+  const peakMultiplier = getRecordedPeakMultiplier(model);
+  void trackOperationUsage({
+    topicId,
+    operationType,
+    model,
+    promptTokens: result.promptTokens,
+    completionTokens: result.completionTokens,
+    cachedTokens: result.promptTokensDetails?.cached_tokens ?? 0,
+    cacheCreationTokens: result.promptTokensDetails?.cache_creation_tokens ?? 0,
+    totalCost: calculateCostUSD(
+      model,
+      result.promptTokens,
+      result.completionTokens,
+      result.promptTokensDetails,
+      peakMultiplier,
+      getProviderFormatForModel(model),
+    ),
+    latencyMs: Date.now() - startedAt,
+    peakMultiplier,
+  });
+}
+
 const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -683,8 +721,10 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
 
         const controller = new AbortController();
         let accumulated = '';
+        const partModel = getDefaultModel();
+        const startedAt = Date.now();
         const result = await askLlmStream(
-          getDefaultModel(),
+          partModel,
           1.0,
           [{ role: 'system', content: 'You are generating course content. Output ONLY the requested JSON.' }, { role: 'user', content: prompt }],
           (token: string): void => { accumulated += token; },
@@ -693,6 +733,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           controller.signal,
           { includeCustomInstructions: false },
         );
+        trackCuratorUsage('curator_course', topic.id, partModel, result, startedAt);
 
         let finalContent = accumulated || result.content;
         let parsed = tryParseJson<unknown>(finalContent);
@@ -700,8 +741,9 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
         // One repair retry when the model returned malformed JSON.
         if (parsed === null || typeof parsed !== 'object') {
           let repairAccumulated = '';
+          const repairStartedAt = Date.now();
           const repairResult = await askLlmStream(
-            getDefaultModel(),
+            partModel,
             1.0,
             [
               { role: 'system', content: 'You are generating course content. Output ONLY the requested JSON.' },
@@ -713,6 +755,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             controller.signal,
             { includeCustomInstructions: false },
           );
+          trackCuratorUsage('curator_course', topic.id, partModel, repairResult, repairStartedAt);
           finalContent = repairAccumulated || repairResult.content;
           parsed = tryParseJson<unknown>(finalContent);
         }
@@ -907,8 +950,10 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
       void (async (): Promise<void> => {
         try {
           let accumulated = '';
+          const questionModel = getQuestionGenModel();
+          const startedAt = Date.now();
           const result = await askLlmStream(
-            getQuestionGenModel(),
+            questionModel,
             1.0,
             [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
             (token: string): void => { accumulated += token; },
@@ -917,6 +962,7 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
             controller.signal,
             { includeCustomInstructions: false },
           );
+          trackCuratorUsage('curator_question', topic.id, questionModel, result, startedAt);
           const finalContent = accumulated || result.content;
           const parsed = tryParseJson<unknown>(finalContent);
           const card = parseQuestionStrict(parsed, expectedDifficulty(priorKnowledgeLevel));
@@ -971,14 +1017,17 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
         const controller = new AbortController();
         try {
           let accumulated = '';
+          const questionModel = getQuestionGenModel();
+          const startedAt = Date.now();
           const result = await askLlmStream(
-            getQuestionGenModel(),
+            questionModel,
             1.0,
             [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
             (token: string): void => { accumulated += token; },
             undefined, undefined, controller.signal,
             { includeCustomInstructions: false },
           );
+          trackCuratorUsage('curator_question', topic.id, questionModel, result, startedAt);
           const finalContent = accumulated || result.content;
           const parsed = tryParseJson<unknown>(finalContent);
           const card = parseQuestionStrict(parsed, expectedDifficulty(priorKnowledgeLevel));
@@ -1043,14 +1092,17 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
           void (async (): Promise<void> => {
             try {
               let accumulated = '';
+              const questionModel = getQuestionGenModel();
+              const startedAt = Date.now();
               const result = await askLlmStream(
-                getQuestionGenModel(),
+                questionModel,
                 1.0,
                 [{ role: 'system', content: 'You generate a single learning question. Output ONLY a JSON object. No markdown, no preamble.' }, { role: 'user', content: prompt }],
                 (token: string): void => { accumulated += token; },
                 undefined, undefined, controller.signal,
                 { includeCustomInstructions: false },
               );
+              trackCuratorUsage('curator_question', topic.id, questionModel, result, startedAt);
               const finalContent = accumulated || result.content;
               const parsed = tryParseJson<unknown>(finalContent);
               const card = parseQuestionStrict(parsed, expectedDifficulty(priorKnowledgeLevel));
@@ -1229,12 +1281,14 @@ const CuratorView = ({ topic, messages }: CuratorViewProps): JSX.Element => {
       for (const msg of teacherMessages) llmMessages.push({ role: msg.role, content: msg.content });
       llmMessages.push({ role: 'user', content });
 
+      const startedAt = Date.now();
       const result = await askLlmStream(
         teacherModel, 1.0, llmMessages,
         (token: string): void => { accumulated += token; setTeacherStreaming(accumulated); },
         undefined, undefined, controller.signal,
         { includeCustomInstructions: false },
       );
+      trackCuratorUsage('curator_teacher', topic.id, teacherModel, result, startedAt);
 
       const finalContent = accumulated || result.content;
       setTeacherMessages((prev) => [...prev, { id: assistantId, role: 'assistant', content: finalContent }]);

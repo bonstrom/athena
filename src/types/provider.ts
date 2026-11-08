@@ -4,6 +4,19 @@ import { SecurityUtils } from '../utils/security';
 
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
+export type ProviderMessageFormat = 'openai' | 'anthropic';
+
+/**
+ * Provider identity captured alongside a usage record. Persisting the values at
+ * write time keeps analytics stable when a model is renamed, moved to another
+ * provider, or deleted later.
+ */
+export interface ProviderAttribution {
+  providerId: string;
+  providerName: string;
+  providerFormat: ProviderMessageFormat;
+}
+
 export interface LlmProvider {
   id: string;
   name: string;
@@ -533,4 +546,76 @@ export function resolveReasoningEffort(
   const defaultEffort = model.reasoningEffort === null || supported ? 'medium' : null;
   const effort = model.reasoningEffort ?? preference ?? defaultEffort;
   return effort && supported && !supported.includes(effort) ? (supported[0] ?? null) : effort;
+}
+
+/**
+ * API model IDs that were shipped by a built-in provider but no longer appear
+ * in DEFAULT_MODELS. Used only as a best-effort attribution fallback for records
+ * written before provider attribution was persisted. Custom model IDs are not
+ * included, so this cannot recover attribution for user-defined models.
+ */
+export const LEGACY_BUILTIN_MODEL_PROVIDER_IDS: Readonly<Record<string, string>> = {
+  // DeepSeek
+  'deepseek-chat': 'builtin-deepseek',
+  'deepseek-reasoner': 'builtin-deepseek',
+  // OpenAI
+  'gpt-4o': 'builtin-openai',
+  'gpt-4o-mini': 'builtin-openai',
+  'gpt-5.3-codex': 'builtin-openai',
+  'gpt-5.4': 'builtin-openai',
+  'gpt-5.4-nano': 'builtin-openai',
+  'gpt-5.6-sol': 'builtin-openai',
+  'gpt-5.6-terra': 'builtin-openai',
+  'gpt-5.6-luna': 'builtin-openai',
+  // Google
+  'gemini-2.5-flash': 'builtin-google',
+  'gemini-2.5-pro': 'builtin-google',
+  'gemini-3-flash': 'builtin-google',
+  // Moonshot
+  'kimi-k3': 'builtin-moonshot',
+  'kimi-k3-turbo': 'builtin-moonshot',
+  // MiniMax
+  'MiniMax-Text-01': 'builtin-minimax',
+  'MiniMax-M2': 'builtin-minimax',
+  'image-01': 'builtin-minimax',
+  'music-2.6': 'builtin-minimax',
+  'speech-2.8-turbo': 'builtin-minimax',
+  // Mistral (also hosts ZAI GLM)
+  'glm-4.6': 'builtin-mistral',
+  'glm-5': 'builtin-mistral',
+  'mistral-large-latest': 'builtin-mistral',
+  'mistral-medium-latest': 'builtin-mistral',
+};
+
+/**
+ * Best-effort attribution for an API model ID that maps to a shipped built-in
+ * model, including retired built-in IDs. Returns null for unknown/custom IDs.
+ */
+export function getLegacyBuiltInAttribution(apiModelId: string | undefined): ProviderAttribution | null {
+  if (!apiModelId) return null;
+  const currentModel = DEFAULT_MODELS.find((model) => model.apiModelId === apiModelId);
+  const providerId = currentModel?.providerId ?? LEGACY_BUILTIN_MODEL_PROVIDER_IDS[apiModelId];
+  if (!providerId) return null;
+  const provider = DEFAULT_PROVIDERS.find((candidate) => candidate.id === providerId);
+  if (!provider) return null;
+  return {
+    providerId: provider.id,
+    providerName: provider.name,
+    providerFormat: provider.messageFormat,
+  };
+}
+
+/** Resolve attribution for a configured provider ID (the authoritative path). */
+export function getProviderAttribution(
+  providerId: string | undefined,
+  providers: LlmProvider[],
+): ProviderAttribution | null {
+  if (!providerId) return null;
+  const provider = providers.find((candidate) => candidate.id === providerId);
+  if (!provider) return null;
+  return {
+    providerId: provider.id,
+    providerName: provider.name,
+    providerFormat: provider.messageFormat,
+  };
 }

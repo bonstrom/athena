@@ -324,7 +324,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(function MessageBubble(
       stopSpeech();
     } else {
       setSpeaking(true);
-      void speakText(stripMarkdown(message.content.trim()), message.id)
+      void speakText(stripMarkdown(message.content.trim()), message.id, message.topicId)
         .catch(() => {
           /* playback errors are non-critical */
         })

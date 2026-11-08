@@ -102,6 +102,9 @@ jest.mock('../../components/ModelSelector', () => ({
   getDefaultModel: (): UserChatModel => mockGetDefaultModel(),
   getAvailableModels: (): UserChatModel[] => mockGetAvailableModels(),
   getPeakMultiplier: jest.fn(() => 1),
+  getProviderAttributionForModel: jest.fn((): null => null),
+  getProviderFormatForModel: jest.fn((): string => 'openai'),
+  getRecordedPeakMultiplier: jest.fn((): undefined => undefined),
 }));
 
 jest.mock('../../store/TopicStore', () => ({
@@ -202,7 +205,12 @@ jest.mock('../../database/AthenaDb', () => ({
 }));
 
 import { useChatStore } from '../../store/ChatStore';
-import { calculateCostUSD } from '../../components/ModelSelector';
+import {
+  calculateCostUSD,
+  getProviderAttributionForModel,
+  getProviderFormatForModel,
+  getRecordedPeakMultiplier,
+} from '../../components/ModelSelector';
 
 function createDeferred<Value>(): {
   promise: Promise<Value>;
@@ -585,6 +593,13 @@ describe('ChatStore', () => {
 
   it('assigns cost and cache usage to the assistant message, not the user message', async () => {
     jest.mocked(calculateCostUSD).mockReturnValue(1);
+    jest.mocked(getProviderAttributionForModel).mockReturnValue({
+      providerId: 'p1',
+      providerName: 'OpenAI',
+      providerFormat: 'openai',
+    });
+    jest.mocked(getProviderFormatForModel).mockReturnValue('openai');
+    jest.mocked(getRecordedPeakMultiplier).mockReturnValue(2);
     mockOrchestrateLlmLoop.mockResolvedValue({
       finalContent: 'Assistant final answer',
       totalPromptTokens: 10,
@@ -618,6 +633,21 @@ describe('ChatStore', () => {
     expect(assistantMessage?.totalCost).toBe(1);
     expect(assistantMessage?.cachedTokens).toBe(60);
     expect(assistantMessage?.cacheCreationTokens).toBe(10);
+    expect(assistantMessage?.providerId).toBe('p1');
+    expect(assistantMessage?.providerName).toBe('OpenAI');
+    expect(assistantMessage?.providerFormat).toBe('openai');
+    expect(assistantMessage?.peakMultiplier).toBe(2);
+    expect(calculateCostUSD).toHaveBeenCalledWith(
+      expect.anything(),
+      10,
+      5,
+      { cached_tokens: 60, cache_creation_tokens: 10 },
+      2,
+      'openai',
+    );
+
+    jest.mocked(getRecordedPeakMultiplier).mockReturnValue(undefined);
+    jest.mocked(getProviderAttributionForModel).mockReturnValue(null);
   });
 
   it('streams into transient state without mutating messagesByTopic, then commits', async () => {

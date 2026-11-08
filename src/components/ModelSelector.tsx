@@ -2,7 +2,13 @@ import React from 'react';
 import { FormControl, InputLabel, MenuItem, Select, Box, Tooltip, Typography, ListSubheader } from '@mui/material';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
 import { useProviderStore } from '../store/ProviderStore';
-import { UserChatModel } from '../types/provider';
+import {
+  getLegacyBuiltInAttribution,
+  getProviderAttribution,
+  ProviderAttribution,
+  ProviderMessageFormat,
+  UserChatModel,
+} from '../types/provider';
 import { DEEPSEEK_PEAK_HOURS_UTC, DEEPSEEK_PEAK_MULTIPLIER } from '../constants';
 import { formatCost } from '../utils/currency';
 import { useAuthStore } from '../store/AuthStore';
@@ -31,16 +37,47 @@ export function getPeakMultiplier(model: ChatModel): number {
   return 1;
 }
 
+/**
+ * Resolve the provider that currently owns a model. Falls back to the shipped
+ * built-in alias map only when the configured provider is unavailable, so
+ * persisted attribution stays authoritative.
+ */
+export function getProviderAttributionForModel(model: ChatModel): ProviderAttribution | null {
+  return (
+    getProviderAttribution(model.providerId, useProviderStore.getState().providers) ??
+    getLegacyBuiltInAttribution(model.apiModelId)
+  );
+}
+
+export function getProviderFormatForModel(model: ChatModel): ProviderMessageFormat {
+  return getProviderAttributionForModel(model)?.providerFormat ?? 'openai';
+}
+
+/**
+ * DeepSeek is the only provider with time-of-day pricing in this app. Return
+ * undefined for other providers so exports do not imply peak pricing exists.
+ */
+export function getRecordedPeakMultiplier(model: ChatModel): number | undefined {
+  return model.providerId === 'builtin-deepseek' ? getPeakMultiplier(model) : undefined;
+}
+
+/**
+ * Cost calculation is format-aware because the two usage conventions differ:
+ * OpenAI prompt/input tokens include cached tokens, while Anthropic
+ * `input_tokens` excludes both cache reads and cache creation.
+ */
 export function calculateCostUSD(
   model: ChatModel,
   prompt: number,
   completion: number,
   promptDetails?: { cached_tokens?: number; cache_creation_tokens?: number },
   peakMultiplier?: number,
+  providerFormat: ProviderMessageFormat = 'openai',
 ): number {
   const cachedTokens = promptDetails?.cached_tokens ?? 0;
   const cacheCreationTokens = promptDetails?.cache_creation_tokens ?? 0;
-  const regularPromptTokens = Math.max(0, prompt - cachedTokens - cacheCreationTokens);
+  const regularPromptTokens =
+    providerFormat === 'anthropic' ? Math.max(0, prompt) : Math.max(0, prompt - cachedTokens - cacheCreationTokens);
   const multiplier = peakMultiplier ?? 1;
   return (
     (regularPromptTokens / 1_000_000) * model.input * multiplier +

@@ -2,6 +2,7 @@ import { Attachment } from '../database/AthenaDb';
 import { generateMinimaxImage, generateMinimaxMusic, generateMinimaxSpeech } from './llmService';
 import { useAuthStore } from '../store/AuthStore';
 import { useUiStore } from '../store/UiStore';
+import { trackOperationUsage } from './usageTrackingService';
 
 export interface MediaResult {
   content: string;
@@ -127,9 +128,17 @@ export function stopSpeech(): void {
   useUiStore.getState().setCurrentlySpeakingMessageId(null);
 }
 
-export async function generateSpeech(text: string, signal?: AbortSignal): Promise<string> {
+export async function generateSpeech(text: string, signal?: AbortSignal, topicId?: string): Promise<string> {
   const { ttsVoiceId } = useAuthStore.getState();
   const { audioHex } = await generateMinimaxSpeech(text, ttsVoiceId, signal);
+  if (topicId) {
+    void trackOperationUsage({
+      topicId,
+      operationType: 'media_speech',
+      apiModelId: 'speech-2.8-turbo',
+      usageUnknown: true,
+    });
+  }
 
   const bytes = new Uint8Array(audioHex.length / 2);
   for (let i = 0; i < audioHex.length / 2; i++) {
@@ -140,7 +149,7 @@ export async function generateSpeech(text: string, signal?: AbortSignal): Promis
   return URL.createObjectURL(audioBlob);
 }
 
-export async function speakText(text: string, messageId?: string): Promise<void> {
+export async function speakText(text: string, messageId?: string, topicId?: string): Promise<void> {
   stopSpeech();
 
   const abortController = new AbortController();
@@ -150,7 +159,7 @@ export async function speakText(text: string, messageId?: string): Promise<void>
   }
 
   try {
-    const url = await generateSpeech(text, abortController.signal);
+    const url = await generateSpeech(text, abortController.signal, topicId);
     currentSpeechObjectUrl = url;
 
     if (abortController.signal.aborted) {

@@ -91,6 +91,9 @@ jest.mock('../../components/ModelSelector', () => ({
   getDefaultModel: jest.fn(),
   calculateCostUSD: jest.fn((): number => 0),
   getPeakMultiplier: jest.fn((): number => 1),
+  getProviderAttributionForModel: jest.fn((): null => null),
+  getProviderFormatForModel: jest.fn((): string => 'openai'),
+  getRecordedPeakMultiplier: jest.fn((): undefined => undefined),
 }));
 
 jest.mock('../../database/AthenaDb', () => ({
@@ -911,6 +914,13 @@ describe('ChecklistStore', () => {
       expect(state.items.find((i) => i.content === 'Task 1')?.details).toBe('Do it now');
       expect(state.items.find((i) => i.content === 'Task 1')?.createdBy).toBe('assistant');
       expect(mockGenerateTopicName).toHaveBeenCalledWith('t1', 'Plan my day');
+      expect(mockOperationUsageAdd).toHaveBeenCalledWith(
+        expect.objectContaining({
+          topicId: 't1',
+          operationType: 'checklist_generate',
+          model: 'test-model',
+        }),
+      );
       expect(state.history.map((h) => h.role)).toEqual(['user', 'assistant']);
       expect(state.history[0].content).toBe('Plan my day');
     });

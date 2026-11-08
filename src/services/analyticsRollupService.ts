@@ -35,7 +35,16 @@ type ContributionLedger = Record<string, ContributionLedgerEntry | undefined>;
 
 type RollupSourceRecord = Pick<
   Message & LlmOperationUsage,
-  'id' | 'created' | 'failed' | 'promptTokens' | 'completionTokens' | 'totalCost' | 'latencyMs' | 'model' | 'rawResponse'
+  | 'id'
+  | 'created'
+  | 'failed'
+  | 'promptTokens'
+  | 'completionTokens'
+  | 'totalCost'
+  | 'latencyMs'
+  | 'model'
+  | 'rawResponse'
+  | 'providerName'
 >;
 
 function readLedger(value: unknown): ContributionLedger {
@@ -196,7 +205,7 @@ function buildContribution(record: RollupSourceRecord): RecordContribution {
     completionTokens: record.completionTokens,
     totalCost: record.totalCost,
     ...(record.latencyMs != null && record.latencyMs > 0 && { latencyMs: record.latencyMs }),
-    providerName: resolveProviderName(record.model),
+    providerName: record.providerName ?? resolveProviderName(record.model),
     toolUsage: parseToolUsage(record.rawResponse),
   };
 }

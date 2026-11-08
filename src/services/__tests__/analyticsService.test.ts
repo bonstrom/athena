@@ -194,6 +194,131 @@ describe('operation usage accounting', () => {
 
     expect(tools).toEqual([{ tool: 'update_scratchpad', calls: 1, successRate: 100, errors: [] }]);
   });
+
+  it('builds per-model and per-operation breakdowns without inflating message counts', async (): Promise<void> => {
+    const stats = await computeLocalStats();
+
+    expect(stats.modelUsage).toHaveLength(1);
+    const modelRow = stats.modelUsage![0];
+    expect(modelRow.model).toBe('gpt-4');
+    expect(modelRow.provider).toBe('OpenAI');
+    expect(modelRow.messages).toBe(1);
+    expect(modelRow.operations).toBe(1);
+    expect(modelRow.promptTokens).toBe(30);
+    expect(modelRow.completionTokens).toBe(15);
+    expect(modelRow.cost).toBeCloseTo(0.3);
+    expect(modelRow.summaryCalls).toBe(0);
+
+    expect(stats.operationUsage).toEqual([
+      {
+        operation: 'checklist_edit',
+        calls: 1,
+        failedCount: 0,
+        promptTokens: 20,
+        completionTokens: 10,
+        cost: 0.2,
+        usageUnknownCount: 0,
+      },
+    ]);
+  });
+
+  it('prefers persisted provider attribution over the current model mapping', async (): Promise<void> => {
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({
+        model: 'gpt-4',
+        providerName: 'Recorded Provider',
+        providerId: 'p1',
+        providerFormat: 'anthropic',
+        totalCost: 0.1,
+      }),
+    ]);
+    mockOperationUsagesToArray.mockResolvedValue([
+      {
+        id: 'operation-1',
+        topicId: 'topic-1',
+        operationType: 'topic_name',
+        model: 'gpt-4',
+        providerName: 'Recorded Provider',
+        providerFormat: 'anthropic',
+        created: '2026-01-01T12:00:00.000Z',
+        promptTokens: 5,
+        completionTokens: 2,
+        totalCost: 0.02,
+        failed: false,
+      },
+    ]);
+
+    const stats = await computeLocalStats();
+
+    expect(stats.providerBreakdown).toHaveLength(1);
+    expect(stats.providerBreakdown![0].provider).toBe('Recorded Provider');
+    expect(stats.providerBreakdown![0].messages).toBe(1);
+    expect(stats.providerBreakdown![0].cost).toBeCloseTo(0.12);
+    expect(stats.providerBreakdown![0].tokens).toBe(157);
+    expect(stats.modelUsage![0].provider).toBe('Recorded Provider');
+    expect(stats.cacheByFormat!.anthropic.recordCount).toBe(2);
+    expect(stats.cacheByFormat!.openai.recordCount).toBe(0);
+  });
+
+  it('reports stored summary cost as a separate model subtotal', async (): Promise<void> => {
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({
+        model: 'gpt-4',
+        totalCost: 0.1,
+        summary: 'Stored summary',
+        summaryCost: 0.05,
+        summaryTokens: 42,
+        summaryModel: 'gemini-3.7-flash',
+        summaryProviderName: 'Google',
+      }),
+    ]);
+    mockOperationUsagesToArray.mockResolvedValue([]);
+
+    const stats = await computeLocalStats();
+
+    const summaryRow = stats.modelUsage!.find((row) => row.model === 'gemini-3.7-flash');
+    expect(summaryRow).toBeDefined();
+    expect(summaryRow!.provider).toBe('Google');
+    expect(summaryRow!.summaryCalls).toBe(1);
+    expect(summaryRow!.summaryCost).toBeCloseTo(0.05);
+    // Summary cost stays out of the recorded-cost rollup.
+    expect(summaryRow!.cost).toBe(0);
+    expect(stats.totalCost).toBeCloseTo(0.1);
+  });
+
+  it('counts provider-unreported operation usage without inventing cost', async (): Promise<void> => {
+    mockMessagesToArray.mockResolvedValue([]);
+    mockOperationUsagesToArray.mockResolvedValue([
+      {
+        id: 'operation-media',
+        topicId: 'topic-1',
+        operationType: 'media_image',
+        model: 'image-01',
+        created: '2026-01-01T12:00:00.000Z',
+        promptTokens: 0,
+        completionTokens: 0,
+        totalCost: 0,
+        failed: false,
+        usageUnknown: true,
+      },
+    ]);
+
+    const stats = await computeLocalStats();
+
+    expect(stats.totalCost).toBe(0);
+    expect(stats.operationUsage).toEqual([
+      {
+        operation: 'media_image',
+        calls: 1,
+        failedCount: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        cost: 0,
+        usageUnknownCount: 1,
+      },
+    ]);
+    expect(stats.modelUsage![0].usageUnknownCount).toBe(1);
+  });
 });
 
 describe('cache format accounting', () => {
@@ -591,7 +716,7 @@ describe('exportAnalytics / importAnalytics backward compatibility', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { value: origRevoke, configurable: true, writable: true });
   });
 
-  it('exports with athena-analytics-v2 format and only aggregate stats', async () => {
+  it('exports with athena-analytics-v3 format and only aggregate stats', async () => {
     mockMessagesToArray.mockResolvedValue([
       makeMsg({
         content: 'TOP_SECRET_CONVERSATION',
@@ -648,7 +773,17 @@ describe('exportAnalytics / importAnalytics backward compatibility', () => {
       reader.readAsText(blob);
     });
     const payload = JSON.parse(text) as Record<string, unknown>;
-    expect(Object.keys(payload).sort()).toEqual(['appVersion', 'deviceId', 'exportedAt', 'format', 'stats', 'userId']);
+    expect(Object.keys(payload).sort()).toEqual([
+      'appVersion',
+      'costUnit',
+      'deviceId',
+      'exportedAt',
+      'format',
+      'stats',
+      'userId',
+    ]);
+    expect(payload.format).toBe('athena-analytics-v3');
+    expect(payload.costUnit).toBe('USD');
 
     const stats = payload.stats as Record<string, unknown>;
     expect(Object.keys(stats).sort()).toEqual(
@@ -666,6 +801,8 @@ describe('exportAnalytics / importAnalytics backward compatibility', () => {
         'messagesByModel',
         'messagesByType',
         'messagesWithReasoning',
+        'modelUsage',
+        'operationUsage',
         'providerBreakdown',
         'summaryGeneratedCount',
         'summaryTotalCost',
@@ -756,6 +893,29 @@ describe('exportAnalytics / importAnalytics backward compatibility', () => {
       },
     });
     const file = new File([v2Data], 'test.json', { type: 'application/json' });
+
+    const result = await importAnalytics(file);
+    expect(result.success).toBe(true);
+  });
+
+  it('importAnalytics accepts v3 format with costUnit', async () => {
+    const v3Data = JSON.stringify({
+      format: 'athena-analytics-v3',
+      deviceId: 'device-3',
+      userId: 'user-3',
+      exportedAt: '2026-01-01T00:00:00.000Z',
+      appVersion: '3.0',
+      costUnit: 'USD',
+      stats: {
+        totalMessages: 300,
+        totalCost: 15.0,
+        messagesByType: {},
+        messagesByModel: {},
+        messageSizeDistribution: {},
+        features: {},
+      },
+    });
+    const file = new File([v3Data], 'test.json', { type: 'application/json' });
 
     const result = await importAnalytics(file);
     expect(result.success).toBe(true);

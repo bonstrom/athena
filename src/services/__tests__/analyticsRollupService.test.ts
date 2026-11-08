@@ -651,6 +651,20 @@ describe('rollupAnalytics', () => {
     expect(merged.providerStats).toEqual({ OpenAI: { cost: 0.03, tokens: 45, messageCount: 2 } });
   });
 
+  it('prefers persisted provider attribution over current model resolution', async () => {
+    mockGetState.mockReturnValue({ models: [], providers: [] });
+    mockMessagesToArray.mockResolvedValue([
+      makeMsg({ id: 'c', model: 'retired-model', providerName: 'Recorded Provider', totalCost: 0.02 }),
+    ]);
+
+    await rollupAnalytics();
+
+    const merged = mockSnapshotPut.mock.calls[0][0];
+    expect(merged.providerStats).toEqual({
+      'Recorded Provider': { cost: 0.02, tokens: 150, messageCount: 1 },
+    });
+  });
+
   it('caps latency samples at MAX_LATENCY_SAMPLES', async () => {
     const manySamples = Array.from({ length: 290 }, (_, i) => i + 1);
     const existing: AnalyticsSnapshot = {
