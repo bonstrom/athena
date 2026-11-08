@@ -23,7 +23,13 @@ import {
   TableRow,
   Tooltip,
 } from '@mui/material';
-import { Download as DownloadIcon, Upload as UploadIcon, Delete as DeleteIcon, Refresh as RefreshIcon } from '@mui/icons-material';
+import {
+  Download as DownloadIcon,
+  Upload as UploadIcon,
+  Delete as DeleteIcon,
+  Refresh as RefreshIcon,
+  ContentCopy as ContentCopyIcon,
+} from '@mui/icons-material';
 import { BarChart, LineChart } from '@mui/x-charts';
 import {
   computeLocalStats,
@@ -105,6 +111,257 @@ function ProgressRow({ label, value, total }: { label: string; value: number; to
 
 function dateLabel(ds: string): string {
   return ds.slice(5);
+}
+
+/** Escape a value so it cannot break out of a Markdown table cell. */
+function mdCell(value: string | number): string {
+  return String(value).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+
+function mdRow(cells: (string | number)[]): string {
+  return `| ${cells.map(mdCell).join(' | ')} |`;
+}
+
+function mdTable(headers: string[], rows: (string | number)[][]): string {
+  return [mdRow(headers), `| ${headers.map(() => '---').join(' | ')} |`, ...rows.map(mdRow)].join('\n');
+}
+
+interface AnalyticsReportInput {
+  stats: AnalyticsStats;
+  combined: AnalyticsStats | null;
+  importedSources: Record<string, AnalyticsExport>;
+  trends: TrendRow[];
+  providerRows: ProviderBreakdown[];
+  toolUsage: ToolUsageRow[];
+  latencyPerc: LatencyPercentiles;
+  dateFormat: string;
+  userName: string;
+  trendRangeLabel?: string;
+}
+
+/**
+ * Build a self-contained Markdown report of everything the Analytics page
+ * shows, so it can be pasted into an LLM for interpretation. Uses the same
+ * aggregate data as the export and never includes conversation content.
+ */
+export function buildAnalyticsReport(input: AnalyticsReportInput): string {
+  const { stats, combined, importedSources, trends, providerRows, toolUsage, latencyPerc, dateFormat, userName } = input;
+  const { trendRangeLabel } = input;
+  const total = combined ?? stats;
+  const lines: string[] = [];
+
+  lines.push('# Athena Usage Analytics');
+  lines.push('');
+  lines.push(`Generated: ${new Date().toLocaleDateString(dateFormat)}`);
+  lines.push(`Source: ${userName || 'This device'}${Object.keys(importedSources).length > 0 ? ' plus aggregated imports' : ''}`);
+  if (total.firstMessageAt) {
+    lines.push(`First activity: ${new Date(total.firstMessageAt).toLocaleDateString(dateFormat)}`);
+  }
+  if (total.lastMessageAt) {
+    lines.push(`Last activity: ${new Date(total.lastMessageAt).toLocaleDateString(dateFormat)}`);
+  }
+  lines.push('');
+  lines.push('> Aggregate usage statistics only. No conversation content, topic names, prompts, or API keys are included.');
+  lines.push('');
+
+  // ── Aggregated sources ──
+  if (Object.keys(importedSources).length > 0) {
+    lines.push('## Aggregated Sources');
+    lines.push('');
+    const rows: (string | number)[][] = [
+      [userName || 'You', stats.totalMessages, formatCost(stats.totalCost)],
+      ...Object.values(importedSources).map((source) => [
+        source.userId || 'Unknown',
+        source.stats.totalMessages,
+        formatCost(source.stats.totalCost),
+      ]),
+      ['Combined', total.totalMessages, formatCost(total.totalCost)],
+    ];
+    lines.push(mdTable(['Source', 'Messages', 'Cost'], rows));
+    lines.push('');
+  }
+
+  // ── Totals ──
+  lines.push('## Totals');
+  lines.push('');
+  lines.push(
+    mdTable(
+      ['Metric', 'Value'],
+      [
+        ['Messages', total.totalMessages],
+        ['Failed messages', total.failedMessageCount],
+        ['Prompt tokens', formatTokens(total.totalPromptTokens)],
+        ['Completion tokens', formatTokens(total.totalCompletionTokens)],
+        ['Cached tokens', formatTokens(total.totalCachedTokens)],
+        ['Cache creation tokens', formatTokens(total.totalCacheCreationTokens)],
+        ['Total tokens', formatTokens(total.totalPromptTokens + total.totalCompletionTokens)],
+        ['Total cost', formatCost(total.totalCost)],
+      ],
+    ),
+  );
+  lines.push('');
+
+  // ── Trends ──
+  if (trends.length > 0) {
+    lines.push('## Trends');
+    lines.push('');
+    if (trendRangeLabel) {
+      lines.push(`Range: ${trendRangeLabel}`);
+      lines.push('');
+    }
+    lines.push(
+      mdTable(
+        ['Date', 'Messages', 'Cost', 'Tokens', 'Fail %', 'p50 latency', 'p95 latency'],
+        trends.map((t) => [
+          t.date,
+          t.messageCount,
+          formatCost(t.cost),
+          formatTokens(t.tokens),
+          `${t.failPercent}%`,
+          t.p50Latency != null ? formatLatency(t.p50Latency) : 'N/A',
+          t.p95Latency != null ? formatLatency(t.p95Latency) : 'N/A',
+        ]),
+      ),
+    );
+    lines.push('');
+  }
+
+  // ── By provider ──
+  if (providerRows.length > 0) {
+    lines.push('## By Provider');
+    lines.push('');
+    lines.push(
+      mdTable(
+        ['Provider', 'Messages', 'Cost', 'Tokens'],
+        providerRows.map((p) => [p.provider, p.messages, formatCost(p.cost), formatTokens(p.tokens)]),
+      ),
+    );
+    lines.push('');
+  }
+
+  // ── Messages by model ──
+  const modelEntries = Object.entries(total.messagesByModel).sort(([, a], [, b]) => b - a);
+  if (modelEntries.length > 0) {
+    lines.push('## Messages by Model');
+    lines.push('');
+    lines.push(mdTable(['Model', 'Messages'], modelEntries));
+    lines.push('');
+  }
+
+  // ── Tool usage ──
+  if (toolUsage.length > 0) {
+    lines.push('## Tool Usage');
+    lines.push('');
+    lines.push(
+      mdTable(
+        ['Tool', 'Calls', 'Success rate'],
+        toolUsage.map((t) => [t.tool, t.calls, `${t.successRate}%`]),
+      ),
+    );
+    lines.push('');
+  }
+
+  // ── Summary effectiveness ──
+  lines.push('## Summary Effectiveness');
+  lines.push('');
+  lines.push(
+    mdTable(
+      ['Metric', 'Value'],
+      [
+        ['Summaries generated', total.summaryGeneratedCount],
+        ['Total generation cost', formatCost(total.summaryTotalCost)],
+        [
+          'Summaries read by LLM',
+          total.summaryGeneratedCount > 0
+            ? `${total.summaryUniqueReadCount}/${total.summaryGeneratedCount} (${Math.round(
+                (total.summaryUniqueReadCount / total.summaryGeneratedCount) * 100,
+              )}%)`
+            : '0/0 (0%)',
+        ],
+        ['Total read events', total.summaryTotalReadCount],
+      ],
+    ),
+  );
+  lines.push('');
+
+  // ── Message size distribution ──
+  lines.push('## Message Size Distribution (characters)');
+  lines.push('');
+  lines.push(
+    mdTable(
+      ['Bucket', 'User', 'LLM', 'Total'],
+      SIZE_BUCKET_ORDER.map((bucket) => [
+        bucket,
+        total.userMessageSizeDistribution[bucket] || 0,
+        total.assistantMessageSizeDistribution[bucket] || 0,
+        total.messageSizeDistribution[bucket] || 0,
+      ]),
+    ),
+  );
+  lines.push('');
+
+  // ── Performance ──
+  const avgLatency = total.latencyCount > 0 ? total.totalLatencyMs / total.latencyCount : null;
+  const avgTps =
+    total.latencyCount > 0 && total.totalCompletionTokens > 0
+      ? Math.round(total.totalCompletionTokens / (total.totalLatencyMs / 1000))
+      : null;
+  const cacheTotal = total.totalCachedTokens + total.totalCacheCreationTokens + total.totalPromptTokens;
+  lines.push('## Performance');
+  lines.push('');
+  lines.push(
+    mdTable(
+      ['Metric', 'Value'],
+      [
+        ['Average latency', avgLatency != null ? formatLatency(avgLatency) : 'N/A'],
+        ['p50 latency', latencyPerc.p50 != null ? formatLatency(latencyPerc.p50) : 'N/A'],
+        ['p95 latency', latencyPerc.p95 != null ? formatLatency(latencyPerc.p95) : 'N/A'],
+        ['Average tokens per second', avgTps ?? 'N/A'],
+        ['Cache hit rate', cacheTotal > 0 ? `${Math.round((total.totalCachedTokens / cacheTotal) * 100)}%` : '0%'],
+      ],
+    ),
+  );
+  lines.push('');
+
+  // ── Content stats ──
+  const byType = total.messagesByType;
+  lines.push('## Content Stats');
+  lines.push('');
+  lines.push(
+    mdTable(
+      ['Metric', 'Value'],
+      [
+        ['User messages', byType.user || 0],
+        ['Assistant messages', byType.assistant || 0],
+        ['System messages', byType.system || 0],
+        ['AI notes', byType.aiNote || 0],
+        ['Failed messages', total.failedMessageCount],
+        [
+          'Error rate',
+          total.totalMessages > 0 ? `${Math.round((total.failedMessageCount / total.totalMessages) * 100)}%` : '0%',
+        ],
+        ['Messages with reasoning', total.messagesWithReasoning],
+        ['Messages with embeddings', total.totalEmbeddings],
+        ['Total attachments', total.totalAttachments],
+        ['Web searches', total.totalWebSearches],
+        ['Forks (branches)', total.totalForks],
+        ['Debate topics', total.debateTopicCount],
+        ['Topics with scratchpad', total.topicsWithScratchpad],
+      ],
+    ),
+  );
+  lines.push('');
+
+  // ── Active features ──
+  const featureEntries = Object.entries(stats.features);
+  if (featureEntries.length > 0) {
+    lines.push('## Active Features');
+    lines.push('');
+    lines.push(mdTable(['Feature', 'Value'], featureEntries));
+    lines.push('');
+  }
+
+  return lines.join('\n');
 }
 
 const Analytics: React.FC = () => {
@@ -279,6 +536,36 @@ const Analytics: React.FC = () => {
   const providerRows: ProviderBreakdown[] = [...byProvider.values()].sort((a, b) => b.messages - a.messages);
   const hasLegacyImportedSources = Object.values(importedSources).some((s) => !s.stats.providerBreakdown);
 
+  const handleCopyForLlm = (): void => {
+    if (!stats) return;
+    const trendRangeLabel =
+      trendMode === 'all'
+        ? 'All time'
+        : trendMode === 'custom'
+          ? `Custom (${customFrom || 'start'} to ${customTo || 'now'})`
+          : `Last ${trendDays} days`;
+    const report = buildAnalyticsReport({
+      stats,
+      combined,
+      importedSources,
+      trends,
+      providerRows,
+      toolUsage,
+      latencyPerc,
+      dateFormat,
+      userName,
+      trendRangeLabel,
+    });
+    navigator.clipboard
+      .writeText(report)
+      .then(() => {
+        setSnack({ open: true, message: 'Analytics report copied to clipboard.', severity: 'success' });
+      })
+      .catch(() => {
+        setSnack({ open: true, message: 'Failed to copy analytics report.', severity: 'error' });
+      });
+  };
+
   if (loading) {
     return (
       <Box sx={{ width: '100%', maxWidth: 800 }}>
@@ -303,6 +590,9 @@ const Analytics: React.FC = () => {
       <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
         <Button variant="contained" startIcon={<DownloadIcon />} onClick={handleExport}>
           Export Analytics
+        </Button>
+        <Button variant="outlined" startIcon={<ContentCopyIcon />} onClick={handleCopyForLlm}>
+          Copy as Markdown
         </Button>
         <Button variant="outlined" startIcon={<UploadIcon />} onClick={handleImportClick}>
           Import Analytics

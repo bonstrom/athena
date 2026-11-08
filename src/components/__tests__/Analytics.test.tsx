@@ -1,5 +1,5 @@
 import { renderWithTheme } from '../../testUtils';
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { AnalyticsExport, AnalyticsStats, ProviderBreakdown } from '../../services/analyticsService';
 
 const mockComputeLocalStats = jest.fn<Promise<AnalyticsStats>, []>();
@@ -166,6 +166,43 @@ describe('Analytics', () => {
     renderWithTheme(<Analytics />);
 
     expect(await screen.findByText('Export Analytics')).toBeInTheDocument();
+  });
+
+  it('copies a Markdown summary of the analytics to the clipboard', async () => {
+    const writeText = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    renderWithTheme(<Analytics />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy as Markdown' }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const report = writeText.mock.calls[0][0];
+    expect(report).toContain('# Athena Usage Analytics');
+    expect(report).toContain('## Totals');
+    expect(report).toContain('| Messages | 42 |');
+    expect(report).toContain('## By Provider');
+    expect(report).toContain('| OpenAI | 21 |');
+    expect(report).toContain('## Tool Usage');
+    expect(report).toContain('| update_scratchpad | 20 | 90% |');
+    expect(await screen.findByText('Analytics report copied to clipboard.')).toBeInTheDocument();
+  });
+
+  it('shows an error when copying the report fails', async () => {
+    const writeText = jest.fn<Promise<void>, [string]>(() => Promise.reject(new Error('denied')));
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    renderWithTheme(<Analytics />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy as Markdown' }));
+
+    expect(await screen.findByText('Failed to copy analytics report.')).toBeInTheDocument();
   });
 
   it('uses imported provider message counts even when their models are unknown locally', async () => {
